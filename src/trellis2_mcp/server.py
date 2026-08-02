@@ -383,6 +383,13 @@ def _save_outputs(
             verbose=False,
         )
 
+        # Baking allocates enormous transient buffers (15.5 GB at 2048x100). Once
+        # bake_texture returns they are free but still held by torch's caching
+        # allocator, so the process keeps squatting on them between calls and
+        # starves every other process on the GPU. Hand them back to the driver.
+        gc.collect()
+        torch.cuda.empty_cache()
+
         # z-up -> y-up, so height is the Y extent from here on.
         vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
         material = trimesh.visual.material.PBRMaterial(
@@ -715,6 +722,17 @@ def generate_3d_multi_image(
         bool,
         Field(description="Release TRELLIS from VRAM before baking. Required for render_resolution=2048."),
     ] = False,
+    asset_type: Annotated[
+        str,
+        Field(description="Which gen_ai folder to publish into: characters, props, or environments"),
+    ] = "characters",
+    source_prompt: Annotated[
+        str,
+        Field(description="Prompt the reference images came from. Recorded in metadata.json as provenance."),
+    ] = "",
+    source_image_model: Annotated[
+        str, Field(description="Image model that produced the references (e.g. flux2-klein-9b)")
+    ] = "",
     preprocess_image: Annotated[bool, Field(description="Auto-remove background and crop each image")] = True,
     formats: Annotated[
         str,
@@ -734,12 +752,19 @@ def generate_3d_multi_image(
         invalid = _check_bake_params(texture_size, render_resolution, nviews)
         if invalid:
             return {"success": False, "error": invalid}
+        if asset_type not in ASSET_TYPES:
+            return {
+                "success": False,
+                "error": f"asset_type must be one of {', '.join(ASSET_TYPES)}, got '{asset_type}'",
+            }
 
         image_paths: list[str] = json.loads(images)
         pil_images = [_decode_image(p) for p in image_paths]
 
         if not output_name:
             output_name = f"trellis_multi_{int(time.time())}"
+
+        started = time.time()
 
         format_list = [f.strip() for f in formats.split(",") if f.strip()]
 
@@ -775,10 +800,49 @@ def generate_3d_multi_image(
                 evict_trellis_for_bake=evict_trellis_for_bake,
             )
 
+        metadata = {
+            "original_prompt": source_prompt or None,
+            "tool": "TRELLIS",
+            "trellis_model": os.path.basename(TRELLIS_MODEL),
+            "image_model": source_image_model or None,
+            "asset_type": asset_type,
+            "seed": seed,
+            "rigged": False,
+            "rig_tool": None,
+            "conditioning": {"mode": "multi_image", "num_images": len(pil_images), "blend_mode": mode},
+            "source_images": image_paths,
+            "generation": {
+                "ss_steps": ss_steps,
+                "ss_cfg_strength": ss_cfg_strength,
+                "slat_steps": slat_steps,
+                "slat_cfg_strength": slat_cfg_strength,
+                "simplify": simplify,
+                "texture_size": texture_size,
+                "render_resolution": render_resolution,
+                "nviews": nviews,
+                "lambda_tv": lambda_tv,
+                "target_height_m": target_height_m,
+            },
+            "geometry": saved["geometry"],
+            "elapsed_seconds": round(time.time() - started, 1),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        if not source_prompt:
+            metadata["_provenance_warning"] = (
+                "No source_prompt was supplied, so how this asset was made cannot be reconstructed. "
+                "Pass source_prompt and source_image_model to generate_3d_multi_image."
+            )
+
+        published = _publish_asset(
+            saved["files"], output_name, asset_type, metadata,
+            image_paths[0] if image_paths and os.path.isfile(image_paths[0]) else "",
+        )
+
         return {
             "success": True,
             "output_name": output_name,
             "files": saved["files"],
+            "published_to": published,
             "geometry": saved["geometry"],
             "num_images": len(pil_images),
             "mode": mode,
@@ -1072,6 +1136,11 @@ def free_gpu() -> dict[str, Any]:
     """
     with _gpu_lock:
         evicted = _evict_trellis()
+        # Always release cached blocks, not just when TRELLIS was resident. After a
+        # large bake the allocator can hold many GB with almost nothing allocated,
+        # and returning early would report success while freeing nothing.
+        gc.collect()
+        torch.cuda.empty_cache()
         return {"success": True, "trellis_evicted": evicted, "gpu": _vram()}
 
 
