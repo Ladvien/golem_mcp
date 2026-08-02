@@ -5,7 +5,9 @@ import gc
 import io
 import json
 import os
+import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -39,6 +41,12 @@ SKINTOKENS_CKPTS = (
     "experiments/articulation_xl_quantization_256_token_4/grpo_1400.ckpt",
 )
 RIG_INPUT_SUFFIXES = (".glb", ".obj", ".fbx")
+
+# Shared asset library on codex_fs (NFS export from 'three', autofs-mounted).
+# Local OUTPUT_DIR stays the working area; these are the durable locations.
+CODEX_GEN_AI_DIR = Path(os.environ.get("CODEX_GEN_AI_DIR", "/mnt/codex_fs/game_assets/models/gen_ai"))
+CODEX_GENERATED_DIR = Path(os.environ.get("CODEX_GENERATED_DIR", "/mnt/codex_fs/game_assets/generated"))
+ASSET_TYPES = ("characters", "props", "environments")
 
 BMB_HOST = os.environ.get("BMB_HOST", "bmb")
 BMB_MFLUX_PYTHON = os.environ.get("BMB_MFLUX_PYTHON", "~/mflux-venv/bin/python3")
@@ -153,6 +161,66 @@ def _vram() -> dict[str, float]:
         "vram_allocated_gb": round(torch.cuda.memory_allocated(0) / 1e9, 2),
         "vram_reserved_gb": round(torch.cuda.memory_reserved(0) / 1e9, 2),
     }
+
+
+# --- codex_fs publishing ----------------------------------------------------
+
+
+def _slugify(text: str, limit: int = 50) -> str:
+    """Match the naming already used across models/ and game_assets/generated/."""
+    slug = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    return slug[:limit].rstrip("_") or "asset"
+
+
+def _codex_available() -> None:
+    """codex_fs is autofs-mounted; a stalled mount must fail loudly, not silently skip."""
+    if not CODEX_GEN_AI_DIR.parent.parent.exists():
+        raise RuntimeError(
+            f"codex_fs is not mounted - {CODEX_GEN_AI_DIR} is unreachable. "
+            "Check the NFS export from 'three' (192.168.1.103)."
+        )
+
+
+def _publish_reference_image(local_png: Path, prompt: str) -> str:
+    """File a generated reference image under game_assets/generated/<slug>_<ts>/."""
+    _codex_available()
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    dest = CODEX_GENERATED_DIR / f"{_slugify(prompt)}_{stamp}"
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(local_png, dest / "reference.png")
+    return str(dest)
+
+
+def _publish_asset(
+    files: dict[str, str],
+    output_name: str,
+    asset_type: str,
+    metadata: dict[str, Any],
+    reference_image: str,
+) -> str:
+    """Publish a generated asset bundle into the curated gen_ai tree.
+
+    Refuses to overwrite: these directories are the curated library, and silently
+    clobbering one would destroy a promoted asset and its provenance.
+    """
+    _codex_available()
+    dest = CODEX_GEN_AI_DIR / asset_type / output_name
+    if dest.exists():
+        raise FileExistsError(
+            f"{dest} already exists. Pick a different output_name, or remove that directory "
+            "if you intend to replace the asset."
+        )
+    dest.mkdir(parents=True)
+
+    if "glb" in files:
+        shutil.copy2(files["glb"], dest / "asset.glb")
+    if "ply" in files:
+        shutil.copy2(files["ply"], dest / "asset.ply")
+    if reference_image and os.path.isfile(reference_image):
+        shutil.copy2(reference_image, dest / "reference.png")
+
+    (dest / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    return str(dest)
 
 
 def _decode_image(source: str) -> Image.Image:
@@ -432,6 +500,22 @@ def generate_3d(
             ),
         ),
     ] = False,
+    asset_type: Annotated[
+        str,
+        Field(description="Which gen_ai folder to publish into: characters, props, or environments"),
+    ] = "characters",
+    source_prompt: Annotated[
+        str,
+        Field(
+            description=(
+                "The prompt the reference image was generated from. Recorded in metadata.json - "
+                "without it the asset's provenance is unrecoverable later."
+            )
+        ),
+    ] = "",
+    source_image_model: Annotated[
+        str, Field(description="Image model that produced the reference (e.g. flux2-klein-9b)")
+    ] = "",
     preprocess_image: Annotated[bool, Field(description="Auto-remove background and crop to subject")] = True,
     formats: Annotated[
         str,
@@ -450,11 +534,18 @@ def generate_3d(
         invalid = _check_bake_params(texture_size, render_resolution, nviews)
         if invalid:
             return {"success": False, "error": invalid}
+        if asset_type not in ASSET_TYPES:
+            return {
+                "success": False,
+                "error": f"asset_type must be one of {', '.join(ASSET_TYPES)}, got '{asset_type}'",
+            }
 
         img = _decode_image(image)
 
         if not output_name:
             output_name = f"trellis_{int(time.time())}"
+
+        started = time.time()
 
         format_list = [f.strip() for f in formats.split(",") if f.strip()]
 
@@ -489,10 +580,48 @@ def generate_3d(
                 evict_trellis_for_bake=evict_trellis_for_bake,
             )
 
+        metadata = {
+            "original_prompt": source_prompt or None,
+            "tool": "TRELLIS",
+            "trellis_model": os.path.basename(TRELLIS_MODEL),
+            "image_model": source_image_model or None,
+            "asset_type": asset_type,
+            "seed": seed,
+            "rigged": False,
+            "rig_tool": None,
+            "generation": {
+                "ss_steps": ss_steps,
+                "ss_cfg_strength": ss_cfg_strength,
+                "slat_steps": slat_steps,
+                "slat_cfg_strength": slat_cfg_strength,
+                "simplify": simplify,
+                "texture_size": texture_size,
+                "render_resolution": render_resolution,
+                "nviews": nviews,
+                "lambda_tv": lambda_tv,
+                "target_height_m": target_height_m,
+            },
+            "geometry": saved["geometry"],
+            "source_image": image if os.path.isfile(image) else None,
+            "elapsed_seconds": round(time.time() - started, 1),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        if not source_prompt:
+            metadata["_provenance_warning"] = (
+                "No source_prompt was supplied, so how this asset was made cannot be reconstructed. "
+                "Pass source_prompt and source_image_model to generate_3d."
+            )
+
+        published = _publish_asset(
+            saved["files"], output_name, asset_type, metadata,
+            image if os.path.isfile(image) else "",
+        )
+
         return {
             "success": True,
             "output_name": output_name,
             "files": saved["files"],
+            "published_to": published,
             "geometry": saved["geometry"],
             "next_step": f"rig_model(mesh='{output_name}.glb') to add a skeleton and skin weights",
             "parameters": {
@@ -678,6 +807,46 @@ def generate_3d_multi_image(
 # --- rigging (SkinTokens / TokenRig) ---------------------------------------
 
 
+def _publish_rig(
+    source: Path,
+    rigged: Path,
+    elapsed: float,
+    num_beams: int,
+    use_transfer: bool,
+    use_postprocess: bool,
+    use_skeleton: bool,
+) -> str | None:
+    """Add the rigged mesh to its published asset directory and mark it rigged.
+
+    Matched by the source mesh's stem against the gen_ai tree, which is where
+    generate_3d publishes. A mesh rigged from somewhere else has no asset
+    directory to update, and simply reports None.
+    """
+    for asset_type in ASSET_TYPES:
+        asset_dir = CODEX_GEN_AI_DIR / asset_type / source.stem
+        meta_path = asset_dir / "metadata.json"
+        if not meta_path.is_file():
+            continue
+
+        shutil.copy2(rigged, asset_dir / "asset_rigged.glb")
+        metadata = json.loads(meta_path.read_text())
+        metadata["rigged"] = True
+        metadata["rig_tool"] = "SkinTokens/TokenRig"
+        metadata["rig"] = {
+            "checkpoint": SKINTOKENS_CKPTS[1],
+            "num_beams": num_beams,
+            "use_transfer": use_transfer,
+            "use_postprocess": use_postprocess,
+            "use_skeleton": use_skeleton,
+            "elapsed_seconds": elapsed,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "bone_naming": "generic (bone_0..bone_N) - not Mixamo or UE5 conventions",
+        }
+        meta_path.write_text(json.dumps(metadata, indent=2) + "\n")
+        return str(asset_dir)
+    return None
+
+
 def _glb_dimensions(path: Path) -> dict[str, Any]:
     """Bounding box of an exported GLB, so scale stays visible after rigging.
 
@@ -861,11 +1030,14 @@ def rig_model(
                 "log": tail,
             }
 
+        published = _publish_rig(source, target, elapsed, num_beams, use_transfer, use_postprocess, use_skeleton)
+
         return {
             "success": True,
             "output_name": output_name,
             "input": str(source),
             "rigged_glb": str(target),
+            "published_to": published,
             "size_bytes": target.stat().st_size,
             "elapsed_seconds": elapsed,
             "trellis_evicted": evicted,
@@ -1141,12 +1313,18 @@ def generate_image(
                 "remote_path": remote_output,
             }
 
+        reference_dir = _publish_reference_image(local_output, prompt)
+
         return {
             "success": True,
             "output_name": output_name,
             "local_path": str(local_output),
             "remote_path": remote_output,
-            "next_step": f"generate_3d(image='{local_output}') to turn this into a 3D mesh",
+            "reference_dir": reference_dir,
+            "next_step": (
+                f"generate_3d(image='{local_output}', source_prompt=<this prompt>, "
+                f"source_image_model='{model}') to turn this into a 3D mesh"
+            ),
             "parameters": {
                 "model": model,
                 "seed": seed,

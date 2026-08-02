@@ -180,6 +180,38 @@ a running instance keeps serving the old code.
 
 ---
 
+## Where output goes
+
+Local `$TRELLIS_OUTPUT_DIR` is the working area. The durable location is the
+`codex_fs` library (NFS export from `three`, autofs-mounted), written on every run:
+
+| What | Where |
+|---|---|
+| Reference images | `game_assets/generated/<prompt_slug>_<YYYYMMDD_HHMMSS>/reference.png` |
+| Generated assets | `game_assets/models/gen_ai/<asset_type>/<output_name>/` |
+
+An asset directory holds `asset.glb`, `asset.ply`, `reference.png`, and
+`metadata.json`. `rig_model` adds `asset_rigged.glb` to the same directory and
+flips `rigged` to true in the metadata, so a rigged asset stays one bundle.
+
+`asset_type` selects the `gen_ai` subfolder — `characters`, `props` or
+`environments`. Publishing **refuses to overwrite** an existing directory: these
+are library assets, and silently clobbering one would destroy its provenance.
+Pick a different `output_name` or remove the directory deliberately.
+
+> **Note on the raw/curated split.** `/mnt/codex_fs/models/` is the documented
+> target for raw pipeline output, with `gen_ai/` reserved for hand-promoted
+> assets. This server writes generated assets straight into `gen_ai/` by explicit
+> choice, so that tree now contains everything generated, not a curated subset.
+
+**Record provenance at generation time.** Pass `source_prompt` and
+`source_image_model` to `generate_3d`; they are the only record of how an asset
+was made and cannot be reconstructed afterwards. Omitting `source_prompt` writes a
+`_provenance_warning` into the metadata rather than leaving the gap silent.
+`generate_image` returns the prompt-derived `reference_dir` to carry forward.
+
+---
+
 ## Getting the best mesh and texture
 
 ### Scale: every asset comes out ~1 m tall
