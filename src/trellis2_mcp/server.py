@@ -753,7 +753,15 @@ def generate_image(
             le=30.0,
         ),
     ] = 1.0,
-    negative_prompt: Annotated[str, Field(description="What the model should NOT generate")] = "",
+    negative_prompt: Annotated[
+        str,
+        Field(
+            description=(
+                "NOT SUPPORTED by FLUX.2 - leave empty and describe what you DO want instead. "
+                "Passing a value here is rejected with an explanation rather than silently dropped."
+            )
+        ),
+    ] = "",
     image_strength: Annotated[
         float,
         Field(description="Init image influence strength (0=none, 1=full). Only used with image_path.", ge=0.0, le=1.0),
@@ -766,6 +774,19 @@ def generate_image(
     Generation takes 10-30 seconds for flux2-klein-4b at 4 steps.
     """
     try:
+        # Every model here is driven through the FLUX.2 CLI, which rejects
+        # --negative-prompt outright. Silently dropping it would quietly change
+        # what the caller asked for.
+        if negative_prompt:
+            return {
+                "success": False,
+                "error": (
+                    "FLUX.2 does not support negative prompts. Remove negative_prompt and fold the "
+                    f"exclusions into the positive prompt instead (e.g. describe the clean background "
+                    f"you want rather than excluding '{negative_prompt}')."
+                ),
+            }
+
         if model in FLUX2_DISTILLED_MODELS and guidance != 1.0:
             return {
                 "success": False,
