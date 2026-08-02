@@ -180,6 +180,79 @@ a running instance keeps serving the old code.
 
 ---
 
+## Getting the best mesh and texture
+
+### Scale: every asset comes out ~1 m tall
+
+TRELLIS normalizes into a unit cube, so a generated human, a teacup and a
+cathedral all export about 1 metre. Anything reading a measurement in metres —
+garment conforming, physics, engine import — is silently wrong until it is scaled.
+
+`generate_3d` always reports `geometry.dimensions_m`, and `target_height_m` scales
+at export:
+
+```
+generate_3d(image="ref.png", target_height_m=1.75)   # adult human
+```
+
+The `.ply` Gaussian splat is always exported at normalized scale; only the `.glb`
+is scaled. `rig_model` reports `dimensions_m` too, since `use_transfer` inherits
+whatever scale the source mesh had.
+
+### Texture: `render_resolution` is the real ceiling
+
+The texture is baked from renders of the Gaussian splat. Upstream `to_glb`
+hardcodes those renders at 1024px, which means a `texture_size` above 1024 only
+upsamples — four times the file size, no additional detail. This server calls the
+bake internals directly so the source resolution is a parameter, and **rejects**
+`texture_size > render_resolution` rather than letting you pay for empty pixels.
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `render_resolution` | 1024 | Detail ceiling. 2048 needs `evict_trellis_for_bake=true` |
+| `nviews` | 100 | Coverage of hidden areas (armpits, crotch, under chin); fewer seams |
+| `lambda_tv` | 0.01 | Texture smoothing. Lower is sharper |
+
+**Bake VRAM is the binding constraint.** `bake_texture` in `opt` mode holds every
+view's observation, mask, UV and UV-derivative buffer on the GPU simultaneously for
+all 2500 optimizer steps, so cost is `nviews x resolution^2 x 37 bytes`:
+
+| | 100 views | 150 | 200 |
+|---|---|---|---|
+| **1024** | 3.9 GB | 5.8 GB | 7.8 GB |
+| **2048** | 15.5 GB | 23.3 GB | 31.0 GB |
+
+On a 24 GB card, `2048 x 100` fits only with TRELLIS evicted
+(`evict_trellis_for_bake=true`, costing a ~30s reload next generation).
+`2048 x 150` does not fit at all. Both are checked up front — a request that
+cannot work fails in seconds with the numbers, rather than OOMing after minutes
+of decimation and UV unwrap.
+
+### Geometry: `simplify` is a *removal* ratio
+
+`simplify` is passed to `pyvista`'s `decimate(target_reduction)`, which removes
+that fraction of faces. `simplify=0.95` keeps **5%**; `0.8` keeps 20%; `0`
+disables simplification entirely.
+
+(Upstream's `postprocess_mesh` docstring says "ratio of faces to keep" — it is
+wrong; `to_glb`'s "ratio of faces to remove" is correct.)
+
+Geometric detail is capped by the mesh decoder's `resolution: 64` lattice, so
+below roughly `0.5` you are adding redundant triangles rather than detail.
+
+### The biggest lever is multi-view conditioning
+
+From a single image the entire unseen side of the object is hallucinated — which,
+for a character, is exactly the surface garments and armor conform to. Generate 3–4
+consistent views and use `generate_3d_multi_image`. No sampler setting comes close
+to this.
+
+`ss_steps` / `slat_steps` are past the knee around 24; 12→24 is visible, 24→50
+mostly is not. Input image quality matters more: clean cutout, subject filling the
+frame, flat even lighting.
+
+---
+
 ## GPU hot-swapping
 
 TRELLIS and TokenRig each want most of a 24 GB card, so exactly one holds the GPU

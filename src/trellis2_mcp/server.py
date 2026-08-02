@@ -93,9 +93,12 @@ mcp = FastMCP(
         "generate_3d / generate_3d_multi_image turn images into a textured .glb via TRELLIS; "
         "rig_model adds a skeleton and skin weights via SkinTokens/TokenRig. "
         "TRELLIS and the rigger share one RTX 3090 and hot-swap automatically - "
-        "calls serialize on the GPU, so run them one at a time."
+        "calls serialize on the GPU, so run them one at a time. "
+        "IMPORTANT: TRELLIS normalizes every asset into a unit cube, so output is ~1 m tall "
+        "regardless of subject. Pass target_height_m, or scale downstream, before using any "
+        "measurement in metres. Check geometry.dimensions_m in the response."
     ),
-    version="0.3.0",
+    version="0.4.0",
 )
 
 # --- GPU arbiter -----------------------------------------------------------
@@ -165,6 +168,81 @@ def _decode_image(source: str) -> Image.Image:
     return Image.open(io.BytesIO(base64.b64decode(source))).convert("RGBA")
 
 
+# --- mesh + texture bake ----------------------------------------------------
+#
+# This inlines trellis.utils.postprocessing_utils.to_glb. Upstream hardcodes the
+# two values that actually cap texture quality:
+#
+#     observations, ... = render_multiview(app_rep, resolution=1024, nviews=100)
+#     texture = bake_texture(..., lambda_tv=0.01)
+#
+# so asking to_glb for a 2048 texture bakes it from 1024px observations - four
+# times the file size carrying no additional real detail. Calling the same
+# internals directly turns those into parameters.
+#
+# bake_texture's 'opt' mode moves EVERY view's observation, mask, uv and
+# uv-derivative buffer onto the GPU at once and holds them for all 2500
+# optimizer steps, so VRAM scales as nviews * resolution^2:
+#     observation f32 3ch (12) + mask bool (1) + uv f32 2ch (8) + uv_dr f32 4ch (16)
+_BAKE_BYTES_PER_PIXEL_PER_VIEW = 37
+# Rasterization context, the texture itself, Adam state, and fragmentation.
+_BAKE_VRAM_MARGIN = 1.5e9
+
+
+def _bake_vram_estimate(render_resolution: int, nviews: int) -> float:
+    return nviews * render_resolution * render_resolution * _BAKE_BYTES_PER_PIXEL_PER_VIEW
+
+
+def _dims(extents) -> dict[str, float]:
+    """Bounding-box extents as metres. Y is up (the mesh is rotated z-up -> y-up)."""
+    return {
+        "width": round(float(extents[0]), 4),
+        "height": round(float(extents[1]), 4),
+        "depth": round(float(extents[2]), 4),
+    }
+
+
+def _check_bake_params(texture_size: int, render_resolution: int, nviews: int) -> str | None:
+    """Reject impossible bake settings up front. Returns an error message, or None."""
+    if texture_size > render_resolution:
+        return (
+            f"texture_size={texture_size} exceeds render_resolution={render_resolution}. The texture is "
+            f"baked from renders at render_resolution, so a larger texture only upsamples - bigger file, "
+            f"no extra detail. Either lower texture_size to {render_resolution}, or raise render_resolution."
+        )
+
+    needed = _bake_vram_estimate(render_resolution, nviews) + _BAKE_VRAM_MARGIN
+    _free, total = torch.cuda.mem_get_info(0)
+    if needed > total * 0.85:
+        max_views = int((total * 0.85 - _BAKE_VRAM_MARGIN) // (render_resolution**2 * _BAKE_BYTES_PER_PIXEL_PER_VIEW))
+        return (
+            f"Baking at {render_resolution}px x {nviews} views needs ~{needed / 1e9:.1f} GB VRAM, which "
+            f"exceeds this GPU's {total / 1e9:.1f} GB under any conditions. At {render_resolution}px the "
+            f"ceiling is about {max_views} views."
+        )
+    return None
+
+
+def _preflight_bake_vram(render_resolution: int, nviews: int) -> None:
+    """Refuse a bake that will not fit, before minutes of decimation and UV unwrap."""
+    needed = _bake_vram_estimate(render_resolution, nviews) + _BAKE_VRAM_MARGIN
+    free, _total = torch.cuda.mem_get_info(0)
+    if needed <= free:
+        return
+
+    max_views = int((free - _BAKE_VRAM_MARGIN) // (render_resolution**2 * _BAKE_BYTES_PER_PIXEL_PER_VIEW))
+    remedy = f"drop nviews to {max_views}" if max_views >= 1 else f"lower render_resolution below {render_resolution}"
+    resident = (
+        " TRELLIS is still resident; pass evict_trellis_for_bake=true to release it for the bake."
+        if _pipeline is not None
+        else ""
+    )
+    raise RuntimeError(
+        f"Texture bake at {render_resolution}px x {nviews} views needs ~{needed / 1e9:.1f} GB VRAM but only "
+        f"{free / 1e9:.1f} GB is free. Either {remedy}.{resident}"
+    )
+
+
 def _save_outputs(
     outputs: dict,
     stem: str,
@@ -172,31 +250,108 @@ def _save_outputs(
     fill_holes: bool,
     fill_holes_max_size: float,
     texture_size: int,
-) -> dict[str, str]:
-    from trellis.utils import postprocessing_utils
+    render_resolution: int,
+    nviews: int,
+    lambda_tv: float,
+    target_height_m: float,
+    evict_trellis_for_bake: bool,
+) -> dict[str, Any]:
+    import numpy as np
+    import trimesh
+    from trellis.utils.postprocessing_utils import bake_texture, parametrize_mesh, postprocess_mesh
+    from trellis.utils.render_utils import render_multiview
 
-    result: dict[str, str] = {}
+    files: dict[str, str] = {}
+    geometry: dict[str, Any] = {}
 
     if "gaussian" in outputs and "mesh" in outputs:
-        glb_path = OUTPUT_DIR / f"{stem}.glb"
-        glb = postprocessing_utils.to_glb(
-            outputs["gaussian"][0],
-            outputs["mesh"][0],
-            simplify=simplify,
+        app_rep = outputs["gaussian"][0]
+        mesh = outputs["mesh"][0]
+
+        # The pipeline weights play no part in baking - the gaussian and mesh are
+        # standalone GPU tensors. Releasing TRELLIS here is what makes 2048px
+        # baking reachable at all on a 24 GB card.
+        if evict_trellis_for_bake:
+            _evict_trellis()
+
+        _preflight_bake_vram(render_resolution, nviews)
+
+        vertices = mesh.vertices.cpu().numpy()
+        faces = mesh.faces.cpu().numpy()
+
+        vertices, faces = postprocess_mesh(
+            vertices,
+            faces,
+            simplify=simplify > 0,
+            simplify_ratio=simplify,
             fill_holes=fill_holes,
-            fill_holes_max_size=fill_holes_max_size,
-            texture_size=texture_size,
+            fill_holes_max_hole_size=fill_holes_max_size,
+            fill_holes_max_hole_nbe=int(250 * np.sqrt(1 - simplify)),
+            fill_holes_resolution=1024,
+            fill_holes_num_views=1000,
+            debug=False,
             verbose=False,
         )
+        vertices, faces, uvs = parametrize_mesh(vertices, faces)
+
+        observations, extrinsics, intrinsics = render_multiview(
+            app_rep, resolution=render_resolution, nviews=nviews
+        )
+        masks = [np.any(observation > 0, axis=-1) for observation in observations]
+        extrinsics = [extrinsics[i].cpu().numpy() for i in range(len(extrinsics))]
+        intrinsics = [intrinsics[i].cpu().numpy() for i in range(len(intrinsics))]
+
+        texture = bake_texture(
+            vertices,
+            faces,
+            uvs,
+            observations,
+            masks,
+            extrinsics,
+            intrinsics,
+            texture_size=texture_size,
+            mode="opt",
+            lambda_tv=lambda_tv,
+            verbose=False,
+        )
+
+        # z-up -> y-up, so height is the Y extent from here on.
+        vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
+        material = trimesh.visual.material.PBRMaterial(
+            roughnessFactor=1.0,
+            baseColorTexture=Image.fromarray(texture),
+            baseColorFactor=np.array([255, 255, 255, 255], dtype=np.uint8),
+        )
+        glb = trimesh.Trimesh(vertices, faces, visual=trimesh.visual.TextureVisuals(uv=uvs, material=material))
+
+        extents = glb.bounds[1] - glb.bounds[0]
+        geometry["normalized_dimensions_m"] = _dims(extents)
+
+        if target_height_m > 0:
+            factor = target_height_m / float(extents[1])
+            glb.apply_scale(factor)
+            extents = glb.bounds[1] - glb.bounds[0]
+            geometry["scale_factor_applied"] = round(factor, 4)
+
+        geometry["dimensions_m"] = _dims(extents)
+        geometry["triangles"] = int(len(glb.faces))
+        geometry["scale_note"] = (
+            "TRELLIS normalizes every asset into a unit cube, so height is ~1 m regardless of subject. "
+            "Pass target_height_m to scale at export, or scale downstream before using any metric measurement."
+        )
+
+        glb_path = OUTPUT_DIR / f"{stem}.glb"
         glb.export(str(glb_path))
-        result["glb"] = str(glb_path)
+        files["glb"] = str(glb_path)
 
     if "gaussian" in outputs:
         ply_path = OUTPUT_DIR / f"{stem}.ply"
         outputs["gaussian"][0].save_ply(str(ply_path))
-        result["ply"] = str(ply_path)
+        files["ply"] = str(ply_path)
+        if target_height_m > 0:
+            geometry["ply_note"] = "The .ply Gaussian splat is exported at TRELLIS's normalized scale, unscaled."
 
-    return result
+    return {"files": files, "geometry": geometry}
 
 
 @mcp.tool
@@ -227,6 +382,56 @@ def generate_3d(
         float, Field(description="Maximum hole area to fill (relative to bounding box)", ge=0.0, le=1.0)
     ] = 0.04,
     texture_size: Annotated[int, Field(description="Output texture resolution in pixels", ge=256, le=4096)] = 1024,
+    render_resolution: Annotated[
+        int,
+        Field(
+            description=(
+                "Resolution of the renders the texture is baked FROM. This is the real detail ceiling - "
+                "texture_size above this only upsamples. Raising to 2048 needs evict_trellis_for_bake=true."
+            ),
+            ge=256,
+            le=2048,
+        ),
+    ] = 1024,
+    nviews: Annotated[
+        int,
+        Field(
+            description=(
+                "Number of views baked from. More views means better coverage of hidden areas "
+                "(armpits, crotch, under chin) and fewer seams. VRAM scales linearly with this."
+            ),
+            ge=8,
+            le=300,
+        ),
+    ] = 100,
+    lambda_tv: Annotated[
+        float,
+        Field(
+            description="Total-variation smoothing on the baked texture. Lower keeps it sharper, higher blurs.",
+            ge=0.0,
+            le=0.1,
+        ),
+    ] = 0.01,
+    target_height_m: Annotated[
+        float,
+        Field(
+            description=(
+                "Scale the exported mesh to this height in metres (e.g. 1.75 for an adult human). "
+                "0 leaves TRELLIS's normalized unit-cube scale, which is ~1 m regardless of subject."
+            ),
+            ge=0.0,
+            le=1000.0,
+        ),
+    ] = 0.0,
+    evict_trellis_for_bake: Annotated[
+        bool,
+        Field(
+            description=(
+                "Release TRELLIS from VRAM before baking, freeing ~6 GB. Required for render_resolution=2048 "
+                "on a 24 GB card. Costs a ~30s reload on the next generation."
+            ),
+        ),
+    ] = False,
     preprocess_image: Annotated[bool, Field(description="Auto-remove background and crop to subject")] = True,
     formats: Annotated[
         str,
@@ -237,8 +442,15 @@ def generate_3d(
 
     Returns paths to generated .glb (textured mesh) and .ply (Gaussian splat) files.
     Generation takes 30-60 seconds on an RTX 3090.
+
+    Output is normalized into a unit cube (~1 m tall whatever the subject). Use
+    target_height_m, or scale downstream, before relying on any metric measurement.
     """
     try:
+        invalid = _check_bake_params(texture_size, render_resolution, nviews)
+        if invalid:
+            return {"success": False, "error": invalid}
+
         img = _decode_image(image)
 
         if not output_name:
@@ -263,19 +475,25 @@ def generate_3d(
                 preprocess_image=preprocess_image,
             )
 
-            result = _save_outputs(
+            saved = _save_outputs(
                 outputs,
                 output_name,
                 simplify=simplify,
                 fill_holes=fill_holes,
                 fill_holes_max_size=fill_holes_max_size,
                 texture_size=texture_size,
+                render_resolution=render_resolution,
+                nviews=nviews,
+                lambda_tv=lambda_tv,
+                target_height_m=target_height_m,
+                evict_trellis_for_bake=evict_trellis_for_bake,
             )
 
         return {
             "success": True,
             "output_name": output_name,
-            "files": result,
+            "files": saved["files"],
+            "geometry": saved["geometry"],
             "next_step": f"rig_model(mesh='{output_name}.glb') to add a skeleton and skin weights",
             "parameters": {
                 "seed": seed,
@@ -285,6 +503,10 @@ def generate_3d(
                 "slat_cfg_strength": slat_cfg_strength,
                 "simplify": simplify,
                 "texture_size": texture_size,
+                "render_resolution": render_resolution,
+                "nviews": nviews,
+                "lambda_tv": lambda_tv,
+                "target_height_m": target_height_m,
             },
         }
 
@@ -330,6 +552,40 @@ def generate_3d_multi_image(
     fill_holes: Annotated[bool, Field(description="Fill holes in the generated mesh")] = True,
     fill_holes_max_size: Annotated[float, Field(description="Maximum hole area to fill", ge=0.0, le=1.0)] = 0.04,
     texture_size: Annotated[int, Field(description="Output texture resolution in pixels", ge=256, le=4096)] = 1024,
+    render_resolution: Annotated[
+        int,
+        Field(
+            description=(
+                "Resolution of the renders the texture is baked FROM - the real detail ceiling. "
+                "texture_size above this only upsamples. 2048 needs evict_trellis_for_bake=true."
+            ),
+            ge=256,
+            le=2048,
+        ),
+    ] = 1024,
+    nviews: Annotated[
+        int,
+        Field(description="Number of views baked from. More means better hidden-area coverage.", ge=8, le=300),
+    ] = 100,
+    lambda_tv: Annotated[
+        float,
+        Field(description="Total-variation smoothing on the texture. Lower is sharper.", ge=0.0, le=0.1),
+    ] = 0.01,
+    target_height_m: Annotated[
+        float,
+        Field(
+            description=(
+                "Scale the exported mesh to this height in metres. 0 leaves TRELLIS's normalized "
+                "unit-cube scale, which is ~1 m regardless of subject."
+            ),
+            ge=0.0,
+            le=1000.0,
+        ),
+    ] = 0.0,
+    evict_trellis_for_bake: Annotated[
+        bool,
+        Field(description="Release TRELLIS from VRAM before baking. Required for render_resolution=2048."),
+    ] = False,
     preprocess_image: Annotated[bool, Field(description="Auto-remove background and crop each image")] = True,
     formats: Annotated[
         str,
@@ -339,8 +595,17 @@ def generate_3d_multi_image(
     """Generate a 3D asset from multiple images (multi-view conditioning).
 
     Provide 2-6 images of the same object from different angles for best results.
+    This is the biggest structural quality lever: from a single image the entire
+    unseen side is hallucinated.
+
+    Output is normalized into a unit cube (~1 m tall whatever the subject). Use
+    target_height_m, or scale downstream, before relying on any metric measurement.
     """
     try:
+        invalid = _check_bake_params(texture_size, render_resolution, nviews)
+        if invalid:
+            return {"success": False, "error": invalid}
+
         image_paths: list[str] = json.loads(images)
         pil_images = [_decode_image(p) for p in image_paths]
 
@@ -367,19 +632,25 @@ def generate_3d_multi_image(
                 preprocess_image=preprocess_image,
             )
 
-            result = _save_outputs(
+            saved = _save_outputs(
                 outputs,
                 output_name,
                 simplify=simplify,
                 fill_holes=fill_holes,
                 fill_holes_max_size=fill_holes_max_size,
                 texture_size=texture_size,
+                render_resolution=render_resolution,
+                nviews=nviews,
+                lambda_tv=lambda_tv,
+                target_height_m=target_height_m,
+                evict_trellis_for_bake=evict_trellis_for_bake,
             )
 
         return {
             "success": True,
             "output_name": output_name,
-            "files": result,
+            "files": saved["files"],
+            "geometry": saved["geometry"],
             "num_images": len(pil_images),
             "mode": mode,
             "next_step": f"rig_model(mesh='{output_name}.glb') to add a skeleton and skin weights",
@@ -405,6 +676,19 @@ def generate_3d_multi_image(
 
 
 # --- rigging (SkinTokens / TokenRig) ---------------------------------------
+
+
+def _glb_dimensions(path: Path) -> dict[str, Any]:
+    """Bounding box of an exported GLB, so scale stays visible after rigging.
+
+    use_transfer preserves the source scale, so a rigged asset inherits whatever
+    scale generate_3d produced - including TRELLIS's ~1 m unit-cube default.
+    """
+    import trimesh
+
+    scene = trimesh.load(str(path), force="scene")
+    extents = scene.bounds[1] - scene.bounds[0]
+    return {"dimensions_m": _dims(extents)}
 
 
 def _rig_preflight() -> None:
@@ -585,6 +869,7 @@ def rig_model(
             "size_bytes": target.stat().st_size,
             "elapsed_seconds": elapsed,
             "trellis_evicted": evicted,
+            "geometry": _glb_dimensions(target),
             "parameters": {
                 "num_beams": num_beams,
                 "use_transfer": use_transfer,
