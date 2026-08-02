@@ -1253,6 +1253,213 @@ def _scp_from_bmb(remote_path: str, local_path: str) -> bool:
     return result.returncode == 0
 
 
+def _mflux_generate(
+    prompt: str,
+    model: str,
+    output_name: str,
+    seed: int,
+    steps: int,
+    height: int,
+    width: int,
+    quantize: int,
+    guidance: float,
+    image_path: str = "",
+    image_strength: float = 0.4,
+) -> tuple[Path, str]:
+    """Run mflux on bmb and copy the result back. Raises on any failure.
+
+    Shared by generate_image and generate_views so there is one code path from
+    prompt to local PNG.
+    """
+    remote_dir = _bmb_path(BMB_MFLUX_OUTPUT)
+    remote_output = f"{remote_dir}/{output_name}.png"
+    local_output = IMAGE_OUTPUT_DIR / f"{output_name}.png"
+
+    cmd_parts = [
+        f"mkdir -p {shlex.quote(remote_dir)} &&",
+        f"{shlex.quote(_bmb_path(BMB_MFLUX_PYTHON))} -m mflux.models.flux2.cli.flux2_generate",
+        f"--model {shlex.quote(model)}",
+        f"--quantize {quantize}",
+        f"--steps {steps}",
+        f"--height {height}",
+        f"--width {width}",
+        f"--seed {seed}",
+        f"--guidance {guidance}",
+        f"--output {shlex.quote(remote_output)}",
+        f"--prompt {shlex.quote(prompt)}",
+    ]
+    if image_path:
+        cmd_parts.append(f"--image-path {shlex.quote(_bmb_path(image_path))}")
+        cmd_parts.append(f"--image-strength {image_strength}")
+
+    result = _ssh_bmb(" ".join(cmd_parts), timeout=900)
+    if result.returncode != 0:
+        tail = (result.stderr or result.stdout or "").strip().splitlines()
+        detail = tail[-1] if tail else "no output"
+        raise RuntimeError(f"mflux failed (exit {result.returncode}): {detail}")
+
+    # A local file is the whole point: generate_3d consumes this path. Reporting
+    # success with an unreachable path just moves the failure downstream, where it
+    # surfaces as an unreadable-image error with no hint of the real cause.
+    if not _scp_from_bmb(remote_output, str(local_output)):
+        raise RuntimeError(
+            f"Image generated on {BMB_HOST} at {remote_output}, but copying it back failed. "
+            f"Check SSH/scp access to {BMB_HOST}."
+        )
+    if not local_output.is_file() or local_output.stat().st_size == 0:
+        raise RuntimeError(f"Copy from {BMB_HOST} produced no usable file at {local_output}")
+
+    return local_output, remote_output
+
+
+# Orbit views for multi-view conditioning. A fixed seed plus exactly one changed
+# clause keeps the subject consistent across views, which is what makes
+# multi-image conditioning work.
+#
+# front and back are reliable. left and right are NOT: FLUX.2 klein returns a
+# front-facing three-quarter regardless of how forcefully the profile is worded
+# (tested plain and emphatic, on klein-4b and klein-9b). The two come out nearly
+# identical to each other and close to the front view, so they cost ~110s each and
+# add almost nothing. Hence the default set is front+back only.
+VIEW_CLAUSES = {
+    "front": "seen from directly in front, facing the camera",
+    "back": (
+        "seen from directly behind, the back of the head and body facing the camera, face not visible"
+    ),
+    "left": (
+        "seen from the left side at exactly 90 degrees, a strict flat side profile with the body "
+        "turned fully to the left edge of frame, not a three-quarter view"
+    ),
+    "right": (
+        "seen from the right side at exactly 90 degrees, a strict flat side profile with the body "
+        "turned fully to the right edge of frame, not a three-quarter view"
+    ),
+}
+
+# Phrases that would fight the injected view clause and desynchronise the set.
+_VIEW_CONFLICTS = (
+    "seen from", "viewed from", "from behind", "facing directly", "in profile",
+    "front view", "back view", "side view", "rear view", "three-quarter",
+)
+
+
+def _publish_view_set(paths: dict[str, Path], prompt: str) -> str:
+    """File a whole orbit set into one game_assets/generated/ directory."""
+    _codex_available()
+    dest = CODEX_GENERATED_DIR / f"{_slugify(prompt)}_{time.strftime('%Y%m%d_%H%M%S')}"
+    dest.mkdir(parents=True, exist_ok=True)
+    for view, path in paths.items():
+        shutil.copy2(path, dest / f"reference_{view}.png")
+    return str(dest)
+
+
+@mcp.tool
+def generate_views(
+    prompt: Annotated[
+        str,
+        Field(
+            description=(
+                "Subject description WITHOUT any view or facing language - the tool supplies that per view. "
+                "Describe the subject, clothing, pose, lighting and background only."
+            )
+        ),
+    ],
+    views: Annotated[
+        str,
+        Field(
+            description=(
+                "Comma-separated subset of: front, back, left, right. Default is front+back - with FLUX.2 klein "
+                "the side views come back as front-facing three-quarters that duplicate the front."
+            )
+        ),
+    ] = "front,back",
+    model: Annotated[str, Field(description="Image model. flux2-klein-9b for quality, -4b for speed")] = (
+        "flux2-klein-9b"
+    ),
+    output_name: Annotated[str, Field(description="Base name; each view is saved as <name>_<view>.png")] = "",
+    seed: Annotated[
+        int,
+        Field(description="Shared across every view. Holding it fixed is what keeps the subject consistent", ge=0),
+    ] = 7,
+    steps: Annotated[int, Field(description="Inference steps per view", ge=1, le=50)] = 8,
+    height: Annotated[int, Field(description="Image height in pixels", ge=256, le=2048)] = 1024,
+    width: Annotated[int, Field(description="Image width in pixels", ge=256, le=2048)] = 1024,
+    quantize: Annotated[int, Field(description="Quantization bits", ge=3, le=8)] = 8,
+) -> dict[str, Any]:
+    """Generate a consistent set of orbit views for multi-view 3D conditioning.
+
+    From a single image TRELLIS invents everything it cannot see, so the back of a
+    character is pure hallucination. Conditioning on several views fixes that, and
+    this produces the set: one seed, one prompt, one clause changed per view.
+
+    Takes several minutes - each view is a full image generation (~110s on
+    flux2-klein-9b). Feed the returned images_json straight to
+    generate_3d_multi_image.
+
+    Avoid strongly asymmetric details like a patch on one arm: they tend to mirror
+    between front and back, giving TRELLIS contradictory evidence.
+    """
+    try:
+        requested = [v.strip().lower() for v in views.split(",") if v.strip()]
+        unknown = [v for v in requested if v not in VIEW_CLAUSES]
+        if unknown:
+            return {
+                "success": False,
+                "error": f"Unknown view(s): {', '.join(unknown)}. Valid: {', '.join(VIEW_CLAUSES)}",
+            }
+        if len(requested) < 2:
+            return {
+                "success": False,
+                "error": "Multi-view conditioning needs at least 2 views; use generate_image for a single view.",
+            }
+
+        # View language in the base prompt would fight the injected clause and
+        # desynchronise the set, which is the one thing that makes this work.
+        lowered = prompt.lower()
+        found = [p for p in _VIEW_CONFLICTS if p in lowered]
+        if found:
+            return {
+                "success": False,
+                "error": (
+                    f"The prompt contains view language ({', '.join(found)}), which would conflict with the "
+                    "clause this tool adds per view. Remove it and describe only the subject."
+                ),
+            }
+
+        if not output_name:
+            output_name = f"views_{int(time.time())}"
+
+        started = time.time()
+        produced: dict[str, Path] = {}
+        for view in requested:
+            local, _remote = _mflux_generate(
+                prompt=f"{prompt}, {VIEW_CLAUSES[view]}",
+                model=model, output_name=f"{output_name}_{view}", seed=seed, steps=steps,
+                height=height, width=width, quantize=quantize, guidance=1.0,
+            )
+            produced[view] = local
+
+        reference_dir = _publish_view_set(produced, prompt)
+        ordered = [str(produced[v]) for v in requested]
+
+        return {
+            "success": True,
+            "output_name": output_name,
+            "views": {v: str(p) for v, p in produced.items()},
+            "images_json": json.dumps(ordered),
+            "reference_dir": reference_dir,
+            "elapsed_seconds": round(time.time() - started, 1),
+            "next_step": (
+                f"generate_3d_multi_image(images=<images_json>, source_prompt=<this prompt>, "
+                f"source_image_model='{model}', asset_type='characters')"
+            ),
+            "parameters": {"seed": seed, "model": model, "steps": steps, "views": requested},
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
 @mcp.tool
 def generate_image(
     prompt: Annotated[str, Field(description="Text description of the image to generate")],
@@ -1326,61 +1533,11 @@ def generate_image(
         if not output_name:
             output_name = f"flux_{int(time.time())}"
 
-        remote_dir = _bmb_path(BMB_MFLUX_OUTPUT)
-        remote_output = f"{remote_dir}/{output_name}.png"
-        local_output = IMAGE_OUTPUT_DIR / f"{output_name}.png"
-
-        cmd_parts = [
-            f"mkdir -p {shlex.quote(remote_dir)} &&",
-            f"{shlex.quote(_bmb_path(BMB_MFLUX_PYTHON))} -m mflux.models.flux2.cli.flux2_generate",
-            f"--model {shlex.quote(model)}",
-            f"--quantize {quantize}",
-            f"--steps {steps}",
-            f"--height {height}",
-            f"--width {width}",
-            f"--seed {seed}",
-            f"--guidance {guidance}",
-            f"--output {shlex.quote(remote_output)}",
-            f"--prompt {shlex.quote(prompt)}",
-        ]
-
-        if negative_prompt:
-            cmd_parts.append(f"--negative-prompt {shlex.quote(negative_prompt)}")
-        if image_path:
-            cmd_parts.append(f"--image-path {shlex.quote(_bmb_path(image_path))}")
-            cmd_parts.append(f"--image-strength {image_strength}")
-
-        full_cmd = " ".join(cmd_parts)
-
-        result = _ssh_bmb(full_cmd, timeout=600)
-
-        if result.returncode != 0:
-            return {
-                "success": False,
-                "error": f"mflux failed (exit {result.returncode})",
-                "stderr": result.stderr[-2000:] if result.stderr else "",
-                "stdout": result.stdout[-2000:] if result.stdout else "",
-            }
-
-        # A local file is the whole point: generate_3d consumes this path. Reporting
-        # success with an unreachable path just moves the failure downstream, where
-        # it surfaces as an unreadable-image error with no hint of the real cause.
-        if not _scp_from_bmb(remote_output, str(local_output)):
-            return {
-                "success": False,
-                "error": (
-                    f"Image generated on {BMB_HOST} at {remote_output}, but copying it back failed. "
-                    f"Check SSH/scp access to {BMB_HOST}."
-                ),
-                "remote_path": remote_output,
-            }
-
-        if not local_output.is_file() or local_output.stat().st_size == 0:
-            return {
-                "success": False,
-                "error": f"Copy from {BMB_HOST} produced no usable file at {local_output}",
-                "remote_path": remote_output,
-            }
+        local_output, remote_output = _mflux_generate(
+            prompt=prompt, model=model, output_name=output_name, seed=seed, steps=steps,
+            height=height, width=width, quantize=quantize, guidance=guidance,
+            image_path=image_path, image_strength=image_strength,
+        )
 
         reference_dir = _publish_reference_image(local_output, prompt)
 

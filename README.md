@@ -22,6 +22,7 @@ The two GPU stages **hot-swap on one RTX 3090** — see [GPU hot-swapping](#gpu-
 | Tool | What it does |
 |---|---|
 | `generate_image` | FLUX.2 text-to-image (or img2img) via mflux on `bmb`, copied back to `big` |
+| `generate_views` | A consistent front/back/left/right set from one prompt, for multi-view conditioning |
 | `generate_3d` | Single image → textured `.glb` + Gaussian `.ply` via TRELLIS |
 | `generate_3d_multi_image` | Multi-view conditioning (2–6 images of one object) |
 | `rig_model` | Mesh → rigged `.glb` with skeleton + skin weights via TokenRig |
@@ -275,9 +276,50 @@ below roughly `0.5` you are adding redundant triangles rather than detail.
 ### The biggest lever is multi-view conditioning
 
 From a single image the entire unseen side of the object is hallucinated — which,
-for a character, is exactly the surface garments and armor conform to. Generate 3–4
-consistent views and use `generate_3d_multi_image`. No sampler setting comes close
-to this.
+for a character, is exactly the surface garments and armor conform to. No sampler
+setting comes close to fixing this; only more conditioning views do.
+
+`generate_views` produces the set, then feed it straight through:
+
+```
+views = generate_views(prompt="<subject only, no view language>", seed=7)
+generate_3d_multi_image(images=views["images_json"], source_prompt=..., asset_type="characters")
+```
+
+What makes it work, confirmed against a single-image control with identical bake
+settings:
+
+- **One seed across every view.** This does most of the consistency work.
+- **One clause changed, nothing else.** The tool appends the view phrase and
+  leaves the rest of the prompt byte-identical, so the subject does not drift.
+- **The same image model for all views.**
+
+Give it the subject only — clothing, pose, lighting, background. View language in
+your prompt (`seen from`, `facing directly`, `in profile`, …) fights the injected
+clause and desynchronises the set, so it is rejected rather than silently blended.
+
+**Avoid strongly asymmetric details.** A patch on one arm tends to mirror between
+front and back, handing TRELLIS contradictory evidence about which arm carries it.
+It survived that in testing, but the cleaner run omits it.
+
+**The default set is `front,back`, and that is deliberate.** FLUX.2 klein will not
+produce a 90° profile no matter how forcefully the prompt demands one — tested
+with plain and emphatic phrasing on both `klein-4b` and `klein-9b`. `left` and
+`right` come back as front-facing three-quarters, nearly identical to each other
+and close to the front view, so they cost ~110s each and add almost nothing. They
+remain available if you want to try them on a different subject.
+
+If you need genuine side coverage, that is the point where a purpose-built
+multi-view diffuser (Zero123++ / SV3D / MV-Adapter) earns its setup cost.
+
+**Watch for pose drift.** Limb positions can shift between views — arms hanging in
+front/back but spread in the sides. That is contradictory *geometry* evidence,
+which matters more than texture drift. Pin the pose explicitly in the prompt
+("arms held straight out at shoulder height") rather than loosely ("arms away from
+the body").
+
+Budget the time: each view is a full generation (~110s on `flux2-klein-9b`), so a
+four-view set is 7–8 minutes before TRELLIS even starts.
 
 `ss_steps` / `slat_steps` are past the knee around 24; 12→24 is visible, 24→50
 mostly is not. Input image quality matters more: clean cutout, subject filling the
