@@ -18,26 +18,19 @@ because that is what TRELLIS does to everything. Three transforms put it on a bo
 
 One rule for every garment, no correspondence search and no ICP.
 
-DRAPING (bpy) - NOT FINISHED, see below
----------------------------------------
-Shrinkwrap first, then cloth. Shrinkwrap resolves gross interpenetration in one
-deterministic pass; starting the cloth solver from an interpenetrated state is
-what makes it explode. Both are available headless in bpy 4.5.9.
+DRAPING (bpy)
+-------------
+Shrinkwrap to evict penetrating vertices, then cloth to relax the result. Both run
+headless in bpy 4.5.9.
 
-STATUS: the drape runs end to end and does move geometry (garment depth collapsed
-0.616 -> 0.288 onto a 0.257 m torso), but it does NOT yet produce a clean fit.
-Measured on corset -> female_base_v5: 32.4% of garment vertices sit inside the
-body after placement and 30.9% after draping, so the cloth pass is barely
-improving it.
+The mode matters more than anything else here. `wrap_mode='OUTSIDE'` moves a vertex
+ONLY if it is inside the target, so it pushes the intersecting parts out and leaves
+the rest of the garment's shape untouched. Measured on corset -> female_base_v5,
+that took vertices-inside-the-body from 32.4% after placement to **0.0%**.
 
-The cause is not placement. The placed garment's bounding box is roomier than the
-body's on both horizontal axes, and the penetration is spread evenly up the
-garment (33/38/0/34/58% by fifth) rather than concentrated anywhere. It is a
-cross-section SHAPE mismatch - the corset's flatter panels cut through an
-elliptical torso even though the boxes clear. Fixing it needs the garment to start
-fully outside the body and settle inward, with pinned openings, rather than
-shrinkwrapping a nearly-coincident surface. Do not treat the current output as
-usable.
+`TARGET_PROJECT` was tried first and is wrong for this: it projects every vertex
+onto the surface, which collapses a corset flat against the skin, and because it
+pulls a nearly-coincident surface in both directions it still left 30.9% inside.
 
 AXES
 ----
@@ -207,14 +200,25 @@ def drape(garment_path: Path, body_path: Path, out_path: Path, frames: int, thic
 
     body.modifiers.new("Collision", "COLLISION")
 
+    # wrap_mode OUTSIDE moves a vertex ONLY if it is inside the target. That is the
+    # whole trick: it evicts the penetrating vertices while leaving the rest of the
+    # garment's shape alone. TARGET_PROJECT was tried first and is wrong here - it
+    # projects every vertex onto the surface, collapsing a corset flat against the
+    # skin, and it left 30.9% of vertices still inside because it pulls a
+    # nearly-coincident surface both ways.
     sw = garment.modifiers.new("Shrinkwrap", "SHRINKWRAP")
     sw.target = body
-    sw.wrap_method = "TARGET_PROJECT"
+    sw.wrap_method = "NEAREST_SURFACEPOINT"
+    sw.wrap_mode = "OUTSIDE"
     sw.offset = thickness            # hold the cloth off the skin
     bpy.context.view_layer.objects.active = garment
     bpy.ops.object.modifier_apply(modifier="Shrinkwrap")
 
+    # Cloth then relaxes the stretch the eviction introduced. Gravity is zeroed:
+    # the garment is unpinned, and under gravity an unpinned corset simply slides
+    # off the body instead of settling on it.
     cloth = garment.modifiers.new("Cloth", "CLOTH")
+    cloth.settings.effector_weights.gravity = 0.0
     cloth.collision_settings.collision_quality = 5     # default 2 is too low here
     cloth.collision_settings.distance_min = thickness
     cloth.settings.quality = 8

@@ -65,7 +65,17 @@ MVADAPTER_VRAM_REQUIRED = 19e9
 # and writes face labels instead.
 SEGVIGEN_REPO = Path(os.environ.get("SEGVIGEN_REPO", "/home/ladvien/segvigen/repo"))
 SEGVIGEN_PYTHON = Path(os.environ.get("SEGVIGEN_PYTHON", "/home/ladvien/segvigen/.venv/bin/python"))
-SEGVIGEN_DRIVER = Path(__file__).resolve().parents[2] / "scripts" / "segvigen_segment.py"
+_SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
+SEGVIGEN_DRIVER = _SCRIPTS / "segvigen_segment.py"
+# Garment generation shares the SegviGen environment because that is where
+# TRELLIS.2 lives - it was installed as SegviGen's backbone and became runnable
+# once the SDPA attention backend landed. generate_3d still runs TRELLIS 1, which
+# cannot represent an open surface and would seal a garment shut.
+GARMENT_DRIVER = _SCRIPTS / "trellis2_garment.py"
+GARMENT_FIT_DRIVER = _SCRIPTS / "garment_fit.py"
+# Measured 3.4 GB peak for TRELLIS.2 image-to-3D at pipeline_type=512, against the
+# 24 GB its README asks for. Sized to the measurement with headroom.
+GARMENT_VRAM_REQUIRED = 6e9
 SEGVIGEN_OUTPUT_DIR = Path(os.environ.get("SEGVIGEN_OUTPUT_DIR", str(OUTPUT_DIR / "segmentation")))
 # Measured at ~16.6 GB on a dressed character; the README's "24 GB" is boilerplate
 # inherited from TRELLIS.2.
@@ -75,7 +85,7 @@ SEGVIGEN_VRAM_REQUIRED = 18e9
 # Local OUTPUT_DIR stays the working area; these are the durable locations.
 CODEX_GEN_AI_DIR = Path(os.environ.get("CODEX_GEN_AI_DIR", "/mnt/codex_fs/game_assets/models/gen_ai"))
 CODEX_GENERATED_DIR = Path(os.environ.get("CODEX_GENERATED_DIR", "/mnt/codex_fs/game_assets/generated"))
-ASSET_TYPES = ("characters", "props", "environments")
+ASSET_TYPES = ("characters", "props", "environments", "garments")
 
 BMB_HOST = os.environ.get("BMB_HOST", "bmb")
 BMB_MFLUX_PYTHON = os.environ.get("BMB_MFLUX_PYTHON", "~/mflux-venv/bin/python3")
@@ -1654,6 +1664,237 @@ def segment_mesh(
                 "trimesh.load(<input>, force='mesh', process=False). process=False matters: "
                 "welding would reorder faces and the labels would no longer line up."
             ),
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+def _garment_preflight() -> None:
+    """Raise with actionable detail if the garment path is not installed."""
+    missing: list[str] = []
+    if not SEGVIGEN_PYTHON.is_file():
+        missing.append(f"interpreter {SEGVIGEN_PYTHON}")
+    if not (SEGVIGEN_REPO / "microsoft" / "TRELLIS.2-4B" / "pipeline.json").is_file():
+        missing.append(str(SEGVIGEN_REPO / "microsoft/TRELLIS.2-4B/pipeline.json"))
+    for driver in (GARMENT_DRIVER, GARMENT_FIT_DRIVER):
+        if not driver.is_file():
+            missing.append(str(driver))
+    if missing:
+        raise RuntimeError(
+            "The garment path is not installed. Missing: " + "; ".join(missing)
+            + ". Run scripts/install_segvigen.sh - garments share that environment because "
+            "TRELLIS.2 lives there."
+        )
+
+
+def _garment_prompt(description: str) -> str:
+    """Build the product-shot prompt.
+
+    The wording is the whole reason this works. Measured: a corset masked out of a
+    dressed character reconstructs as a featureless blob with 36.5% of its air
+    sealed in, while the same garment described as a standalone product shot
+    reconstructs cleanly at 0.07%. A garment worn on a body has its interior
+    occluded; asking the model to invert that gives a stuffed lump. Every clause
+    below pushes towards "this object is alone and you can see inside it".
+    """
+    return (
+        f"Product photograph of a single {description}, standing alone with nothing inside it, "
+        "no body, no mannequin, no person. Hollow interior visible through the openings. "
+        "Centred on a plain flat white background, even studio lighting, no shadows, "
+        "full object in frame, sharp focus, catalogue photo."
+    )
+
+
+def _publish_garment(output_name: str, files: dict[str, Path], metadata: dict[str, Any]) -> str:
+    """Publish a garment bundle to the curated tree, refusing to overwrite.
+
+    Keys are the destination filenames, matching _publish_asset's convention
+    (asset.glb, reference.png) so a garment directory reads like every other one.
+    """
+    _codex_available()
+    dest = CODEX_GEN_AI_DIR / "garments" / output_name
+    if dest.exists():
+        raise FileExistsError(
+            f"{dest} already exists. Pick a different output_name, or remove that directory "
+            "if you intend to replace the garment."
+        )
+    dest.mkdir(parents=True)
+    for filename, src in files.items():
+        if src and src.is_file():
+            shutil.copy2(src, dest / filename)
+    (dest / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    return str(dest)
+
+
+@mcp.tool
+def generate_garment(
+    garment: Annotated[
+        str,
+        Field(
+            description=(
+                "What the garment is, as a noun phrase - e.g. 'black leather armour corset "
+                "with brass buckles'. Taken verbatim from the character prompt that produced "
+                "the outfit, so the same words that generated it also define it."
+            )
+        ),
+    ],
+    body: Annotated[
+        str,
+        Field(
+            description=(
+                "Target body .glb to fit onto. Absolute path, or a name resolved against the "
+                "curated characters tree (e.g. 'female_base_v5')."
+            )
+        ),
+    ],
+    output_name: Annotated[str, Field(description="Base name for the garment asset")] = "",
+    anchor: Annotated[
+        str,
+        Field(description="Where on the body it sits: torso, chest, waist, hips, legs or full"),
+    ] = "torso",
+    seed: Annotated[int, Field(description="Seed for the garment generation", ge=0)] = 0,
+    drape: Annotated[bool, Field(description="Run the cloth pass after placing")] = True,
+    publish: Annotated[bool, Field(description="Publish the bundle to codex_fs")] = True,
+    timeout: Annotated[int, Field(description="Hard limit per stage, seconds", ge=60, le=7200)] = 3600,
+) -> dict[str, Any]:
+    """Generate a garment as its own open-surface asset and fit it to a body.
+
+    This exists because segmentation cannot serve it. Splitting a garment off a
+    dressed character yields the outer shell only - no interior, no thickness, and
+    nothing where cloth meets skin - so it can never be conformed onto a different
+    body. Measured separately: SegviGen partitions by structure, not material, and
+    never follows a garment edge at all.
+
+    Three stages: a product-shot image of the garment alone, TRELLIS.2 to turn it
+    into an open-surface mesh, then placement and a cloth pass onto the target body.
+    TRELLIS.2 rather than this server's generate_3d, which runs TRELLIS 1 and
+    defaults fill_holes=True - either of which would seal the garment shut.
+
+    Fails loudly rather than returning a bad garment: a mesh that comes back
+    watertight, or with more than 5% of its air sealed inside, is rejected. Both
+    mean a body could never go in it.
+    """
+    try:
+        _garment_preflight()
+
+        target = Path(body)
+        if not target.is_absolute():
+            candidate = CODEX_GEN_AI_DIR / "characters" / body / "asset.glb"
+            target = candidate if candidate.is_file() else OUTPUT_DIR / body
+        if not target.is_file():
+            raise FileNotFoundError(f"Target body not found: {target}")
+
+        if not output_name:
+            output_name = _slugify(garment)[:48] or f"garment_{int(time.time())}"
+        work = SEGVIGEN_OUTPUT_DIR.parent / "garments" / output_name
+        work.mkdir(parents=True, exist_ok=True)
+        started = time.time()
+
+        # 1. Product shot. @mcp.tool registers the function and returns it
+        #    unchanged, so within this module it is directly callable.
+        prompt = _garment_prompt(garment)
+        image_result = generate_image(
+            prompt=prompt, output_name=f"{output_name}_ref", seed=seed,
+            steps=6, width=1024, height=1024,
+        )
+        if not image_result.get("success"):
+            return {"success": False, "stage": "generate_image", "error": image_result.get("error")}
+        reference = image_result.get("image_path") or str(IMAGE_OUTPUT_DIR / f"{output_name}_ref.png")
+
+        env = dict(os.environ)
+        env["ATTN_BACKEND"] = "sdpa"
+        env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+        # 2. Mesh it. This is the only GPU stage.
+        with _gpu_lock:
+            evicted = _evict_trellis()
+            gc.collect()
+            torch.cuda.empty_cache()
+            free, _total = torch.cuda.mem_get_info(0)
+            if free < GARMENT_VRAM_REQUIRED:
+                raise RuntimeError(
+                    f"Garment generation needs ~{GARMENT_VRAM_REQUIRED / 1e9:.0f} GB VRAM but only "
+                    f"{free / 1e9:.1f} GB is free, even after evicting TRELLIS."
+                )
+            gen = subprocess.run(
+                [str(SEGVIGEN_PYTHON), str(GARMENT_DRIVER),
+                 "--image", reference, "--out-dir", str(work), "--name", output_name,
+                 "--seed", str(seed), "--preview"],
+                cwd=str(SEGVIGEN_REPO), env=env, capture_output=True, text=True, timeout=timeout,
+            )
+        garment_report_path = work / f"{output_name}_garment.json"
+        if not garment_report_path.is_file():
+            return {
+                "success": False, "stage": "trellis2_garment",
+                "error": f"no garment report at {garment_report_path} (exit {gen.returncode})",
+                "log": "\n".join((gen.stdout + gen.stderr).strip().splitlines()[-30:]),
+            }
+        garment_report = json.loads(garment_report_path.read_text())
+
+        # 3. Place, and optionally drape. CPU only - no GPU lock needed.
+        fit_cmd = [str(SEGVIGEN_PYTHON), str(GARMENT_FIT_DRIVER),
+                   "--garment", garment_report["garment_glb"], "--body", str(target),
+                   "--out-dir", str(work), "--name", f"{output_name}_fitted", "--anchor", anchor]
+        if not drape:
+            fit_cmd.append("--no-drape")
+        fit = subprocess.run(fit_cmd, capture_output=True, text=True, timeout=timeout)
+        fit_report_path = work / f"{output_name}_fitted_fit.json"
+        if not fit_report_path.is_file():
+            return {
+                "success": False, "stage": "garment_fit",
+                "error": f"no fit report at {fit_report_path} (exit {fit.returncode})",
+                "log": "\n".join((fit.stdout + fit.stderr).strip().splitlines()[-30:]),
+            }
+        fit_report = json.loads(fit_report_path.read_text())
+
+        elapsed = round(time.time() - started, 1)
+        fitted = fit_report.get("draped_glb") or fit_report["placed_glb"]
+
+        warnings: list[str] = list(garment_report.get("warnings", []))
+        penetration = fit_report.get("penetration_after_drape", fit_report["penetration_after_placement"])
+        if penetration > 0.01:
+            warnings.append(
+                f"{penetration:.1%} of garment vertices are still inside the body. Check the "
+                "render before using it; raising --ease or the anchor band usually fixes it."
+            )
+
+        metadata = {
+            "asset_type": "garments", "tool": "TRELLIS.2", "garment": garment,
+            "prompt": prompt, "seed": seed, "anchor": anchor, "draped": drape,
+            "target_body": str(target), "reference_image": reference,
+            "generation": garment_report, "fit": fit_report,
+            "elapsed_seconds": elapsed, "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        published = None
+        if publish:
+            published = _publish_garment(
+                output_name,
+                {
+                    "asset.glb": Path(fitted),                              # fitted to the body
+                    "asset_unfitted.glb": Path(garment_report["garment_glb"]),  # as generated
+                    "reference.png": Path(reference),
+                },
+                metadata,
+            )
+
+        return {
+            "success": True,
+            "output_name": output_name,
+            "garment_glb": garment_report["garment_glb"],
+            "fitted_glb": fitted,
+            "published_to": published,
+            "reference_image": reference,
+            "target_body": str(target),
+            "is_open_surface": not garment_report["is_watertight"],
+            "enclosed_air_fraction": garment_report["enclosed_air_fraction"],
+            "penetration": penetration,
+            "faces": garment_report["faces"],
+            "peak_vram_gb": garment_report["peak_vram_gb"],
+            "trellis_evicted": evicted,
+            "elapsed_seconds": elapsed,
+            "warnings": warnings,
+            "fit": fit_report,
         }
 
     except Exception as e:
