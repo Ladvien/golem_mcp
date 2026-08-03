@@ -1129,21 +1129,17 @@ def _mesh_diagnostics(path: Path) -> dict[str, Any]:
             "196^3 voxelization, so open shells and flipped normals push the model off the "
             "distribution it was tuned against."
         )
-    # Generated meshes carry dozens of tiny specks; warning on those is noise. Only
-    # components large enough to be a real part (cape, hair, separate clothing) can
-    # actually pull weights across a gap.
+    # Reported, deliberately NOT warned on. Measured across four real assets: every
+    # one is 119-302 shells with the largest holding only 2.7-13.6% of vertices, so
+    # a generated body is simply not one connected piece. A warning that fires every
+    # single time teaches the reader to ignore the warnings list.
     substantial = sum(1 for c in components if len(c.vertices) >= 0.02 * max(verts, 1))
-    if substantial > 1:
-        warnings.append(
-            f"{substantial} substantial disconnected parts (of {len(components)} total). Skin "
-            "weights transfer by Euclidean nearest neighbour, which jumps across gaps - if weights "
-            "bleed between parts, that is what use_postprocess is for."
-        )
 
     return {
         "vertices": verts,
         "triangles": int(len(mesh.faces)),
         "components": int(len(components)),
+        "substantial_components": substantial,
         "is_watertight": bool(mesh.is_watertight),
         "bbox_largest_dim_m": round(largest, 4),
         "bbox_inflation": inflation,
