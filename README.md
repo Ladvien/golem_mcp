@@ -25,7 +25,9 @@ The two GPU stages **hot-swap on one RTX 3090** — see [GPU hot-swapping](#gpu-
 | `generate_views` | A consistent front/back/left/right set from one prompt, for multi-view conditioning |
 | `generate_3d` | Single image → textured `.glb` + Gaussian `.ply` via TRELLIS |
 | `generate_3d_multi_image` | Multi-view conditioning (2–6 images of one object) |
+| `generate_orbit_views` | 6 geometrically consistent orbit views from one reference image, via MV-Adapter |
 | `rig_model` | Mesh → rigged `.glb` with skeleton + skin weights via TokenRig |
+| `segment_mesh` | Mesh → per-face part labels via SegviGen, leaving the mesh untouched |
 | `free_gpu` | Evict TRELLIS from VRAM and report free memory |
 | `health_check` | Readiness, GPU state, and whether the rigger is installed |
 | `list_outputs` | Recent outputs across 3D, rigged, and image dirs |
@@ -426,6 +428,68 @@ and clenched fists cross-contaminate finger weights.
 
 ---
 
+## Part segmentation (`segment_mesh`)
+
+Labels every face of a mesh with a part id and writes a **sidecar**, never a new
+mesh:
+
+```
+segment_mesh(mesh="succubus_1011.glb", seed=0)
+```
+
+You get `<stem>_face_labels.npy` (int32, one entry per face) and
+`<stem>_parts.json` next to it, plus a part-coloured preview GLB for eyeballing.
+Measured 45–85 s per asset on a 3090.
+
+### It does not use SegviGen's own export, on purpose
+
+SegviGen's `slat_to_glb` calls `o_voxel.postprocess.to_glb(..., remesh=True,
+decimation_target=100000)`. That is a remeshed reconstruction, not your asset: an
+11,200-vertex / 15,692-face character comes back as **71,053 / 97,052**, wearing
+a baked copy of the part colours with the original UVs, texture and rig gone.
+
+`scripts/segvigen_segment.py` stops before that step and reads the part signal
+out of the voxel field instead. The voxels are a direct discretization of *your*
+mesh on a 512³ grid (~2 mm on a 1 m asset), so each face centroid can be mapped
+back into it and assigned the colour of its nearest occupied voxel. Measured
+lookup distance is under 1.2 voxels worst-case. The source file is SHA-256'd
+before and after and the run fails if it changed.
+
+### Labels index `process=False`
+
+```python
+mesh = trimesh.load(src, force="mesh", process=False)   # process=False matters
+labels = np.load("succubus_1011_face_labels.npy")       # len(labels) == len(mesh.faces)
+```
+
+The default `process=True` welds duplicate vertices and reorders faces, after
+which the labels no longer line up.
+
+### The partition is sampled, so re-roll rather than repair
+
+`tex_slat_sample_single` draws its noise from the global RNG and upstream never
+seeds it. The tool seeds it (`seed=0` by default) so a given mesh always returns
+the same partition — but a *different* seed returns a genuinely different one.
+The same character has come back as 2 parts on one seed and 7 on another, and one
+test asset came back undivided at seed 0 (the response warns when `part_count < 2`).
+
+Judge the preview and re-roll. Do not try to merge or split parts afterwards.
+
+### Granularity is structural, not semantic
+
+Parts come out as whole structural pieces. On a winged character: body / left
+wing / right wing / tail, with the two wings landing at mirrored centroids and
+within 3% of each other in face count. On an isolation suit: body versus both
+arms. That suits prop stripping and per-part rigging.
+
+Garment-versus-body separation on a genuinely dressed character is **untested** —
+there is no such asset in the library to try it on.
+
+`color_rgb` in the report is the sampler's arbitrary label colour for a part. It
+changes with the seed and means nothing across meshes; only the partition matters.
+
+---
+
 ## GPU hot-swapping
 
 TRELLIS and TokenRig each want most of a 24 GB card, so exactly one holds the GPU
@@ -433,9 +497,10 @@ at a time. Every GPU tool serializes on a single lock:
 
 - **TRELLIS stays resident** between generations — a reload costs ~30 s, so
   repeated `generate_3d` calls are fast.
-- **`rig_model` evicts TRELLIS first**, then runs the rigger as a subprocess.
-  That process's VRAM is reclaimed by the OS when it exits, so there is nothing
-  to unload on the way back.
+- **`rig_model`, `generate_orbit_views` and `segment_mesh` evict TRELLIS first**,
+  then run in their own subprocess. That process's VRAM is reclaimed by the OS
+  when it exits, so there is nothing to unload on the way back. `segment_mesh`
+  peaks around 16.6 GB and refuses to start below 18 GB free.
 - The next `generate_3d` reloads TRELLIS automatically. `trellis_evicted` in the
   `rig_model` response tells you whether a swap actually happened.
 - `free_gpu` hands the card back manually.

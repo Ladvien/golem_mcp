@@ -1,8 +1,5 @@
 # Setup
 
-> **SegviGen is mid-install.** See `SEGVIGEN_HANDOFF.md` — its two-env layout below
-> collapses to one if the in-progress flash-attn build succeeds.
-
 This server orchestrates several models that **cannot share a Python
 environment**. Each has its own venv on `big`, and the MCP server shells out to
 them. This file explains what each one is, why it is separate, and how to rebuild
@@ -18,10 +15,9 @@ None needs root.
 | **TRELLIS** | `/home/ladvien/trellis` | 3.10 | 2.6.0+cu124 | image → 3D. **Hosts the MCP server itself** | manual (see below) |
 | **SkinTokens** | `/home/ladvien/skintokens` | 3.11 | 2.7.0+cu128 | rigging (`rig_model`) | `scripts/install_skintokens.sh` |
 | **MV-Adapter** | `/home/ladvien/mvadapter` | 3.11 | 2.13.0+cu130 | orbit views (`generate_orbit_views`) | `scripts/install_mvadapter.sh` |
-| **SegviGen prep** | `/home/ladvien/segvigen/.venv-prep` | 3.11 | 2.13.0+cu130 | voxelize + conditioning render | `scripts/install_segvigen.sh` |
-| **SegviGen infer** | `/home/ladvien/segvigen/.venv` | 3.12 | 2.9.0+cu130 | part segmentation model | `scripts/install_segvigen_infer.sh` |
+| **SegviGen** | `/home/ladvien/segvigen/.venv` | 3.11 | 2.13.0+cu130 | part segmentation (`segment_mesh`) | `scripts/install_segvigen.sh` |
 
-Roughly 48 GB on disk in total. The MCP server runs inside the **TRELLIS** env
+Roughly 42 GB on disk in total. The MCP server runs inside the **TRELLIS** env
 (`trellis2-mcp.service`), which is why that one is special — everything else is a
 subprocess target.
 
@@ -36,15 +32,30 @@ Not stubbornness — each pair genuinely conflicts:
   cp313-only).
 - **MV-Adapter**: compiles nvdiffrast, so its torch CUDA major must match the
   system toolkit (13.3) → cu130 → torch 2.13.
-- **SegviGen prep vs infer**: the hard one. No single Python version has prebuilt
-  wheels for both halves, and source-building the missing half exceeds this
-  machine's RAM.
+- **SegviGen**: same cu130 constraint as MV-Adapter, but pinned to Python 3.11
+  because `bpy` has no cp310 wheel at all and `bpy` 5.x (cp313-only) removed
+  `cycles.filter_type`, which `data_toolkit/bpy_render.py` sets.
 
-  | | cp311 | cp312 | cp313 |
-  |---|---|---|---|
-  | `bpy` (render) | ✅ 4.5.9 | ❌ none | ⚠️ 5.1.2, but it removed `cycles.filter_type` which `bpy_render.py` sets |
-  | `flash-attn` cu13 | ❌ none | ✅ 2.8.3 | ❌ none |
-  | `xformers` w/ CUDA | ❌ no cu13 build at any version | ❌ | ❌ |
+### SegviGen attention: SDPA, not flash-attn or xformers
+
+Neither compiled attention backend is obtainable on this box. `xformers` has no
+cu13 build at any version — its PyPI wheel installs but reports "xFormers wasn't
+build with CUDA support" — and no flash-attn cu13 wheel exists for torch 2.13 at
+any Python version.
+
+Building flash-attn from source is not the answer either. It was measured at
+**~7 hours** here: its `setup.py` ignores `TORCH_CUDA_ARCH_LIST` (it reads
+`FLASH_ATTN_CUDA_ARCHS`) and emits `sm_80/90/100/120` for all 72 `.cu` files,
+three-quarters of it dead weight for a 3090. It also cannot be built unguarded —
+at `MAX_JOBS=2` it spawns three `cicc` processes at ~3.7 GB each and exhausts all
+31 GB.
+
+Instead, `scripts/segvigen-patches/` adds an **SDPA backend to trellis2's sparse
+attention**. Upstream already ships one for its *dense* attention
+(`trellis2/modules/attention/full_attn.py`) and simply omitted it from the sparse
+module; the models only use `attn_mode='full'`, so `sparse/windowed_attn.py` is
+never reached and a single dispatch branch closes the gap. Run everything with
+`ATTN_BACKEND=sdpa`.
 
 ## Prerequisites
 
@@ -79,12 +90,15 @@ on this box at all** — it spawns past `MAX_JOBS=2` and exhausts 31 GB.
 ```bash
 ./scripts/install_skintokens.sh        # rigging
 ./scripts/install_mvadapter.sh         # orbit views
-./scripts/install_segvigen.sh          # segmentation prep env (3.11)
-./scripts/install_segvigen_infer.sh    # segmentation inference env (3.12)
+./scripts/install_segvigen.sh          # part segmentation
 ```
 
 Each script's header records the dead ends found while building it — read those
 before "fixing" an apparent oddity.
+
+`install_segvigen.sh` pins both of its clones to exact commits and applies
+`scripts/segvigen-patches/*.patch` on top, so an upstream change cannot silently
+drift out from under the patch. It fails loudly if a patch no longer applies.
 
 ### TRELLIS (hosts the server)
 

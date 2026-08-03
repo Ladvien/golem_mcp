@@ -1,0 +1,78 @@
+diff --git a/inference_full.py b/inference_full.py
+index ed99ca3..cc61e8f 100644
+--- a/inference_full.py
++++ b/inference_full.py
+@@ -16,7 +16,6 @@ from trellis2 import models
+ from collections import OrderedDict
+ from trellis2.pipelines.rembg import BiRefNet
+ from trellis2.representations import MeshWithVoxel
+-from data_toolkit.bpy_render import render_from_transforms
+ from trellis2.modules.image_feature_extractor import DinoV3FeatureExtractor
+ 
+ class Sampler:
+@@ -334,7 +333,12 @@ def inference(ckpt_path, item):
+ 
+     print("-"*100)
+     print("Getting cond ............")
+-    if not item['2d_map']:
++    # PRE-RENDERED: the caller renders the conditioning image in its own process
++    # and passes it in, so bpy never shares a process with the ~16 GB inference
++    # CUDA context. Import lazily so merely importing this module does not pull
++    # Blender in; upstream's standalone CLI still renders for itself.
++    if not item['2d_map'] and not os.path.exists(item['img']):
++        from data_toolkit.bpy_render import render_from_transforms
+         render_from_transforms(item['glb'], item['transforms'], item['img'])
+     image = Image.open(item['img'])
+     image = preprocess_image(rembg_model, image)
+diff --git a/trellis2/modules/sparse/attention/full_attn.py b/trellis2/modules/sparse/attention/full_attn.py
+index 4eb74d2..041c59c 100644
+--- a/trellis2/modules/sparse/attention/full_attn.py
++++ b/trellis2/modules/sparse/attention/full_attn.py
+@@ -211,6 +211,26 @@ def sparse_scaled_dot_product_attention(*args, **kwargs):
+             max_q_seqlen = max(q_seqlen)
+             max_kv_seqlen = max(kv_seqlen)
+         out = flash_attn_3.flash_attn_varlen_func(q, k, v, cu_seqlens_q, cu_seqlens_kv, max_q_seqlen, max_kv_seqlen)
++    elif config.ATTN == 'sdpa':
++        from torch.nn.functional import scaled_dot_product_attention as sdpa
++        if num_all_args == 1:
++            q, k, v = qkv.unbind(dim=1)
++        elif num_all_args == 2:
++            k, v = kv.unbind(dim=1)
++        # The varlen packing is itself the block-diagonal mask, so slice each
++        # sequence out and attend within it. Handing sdpa an explicit mask would
++        # force its math backend and materialize a [T_Q, T_KV] score matrix;
++        # unmasked, it picks its own flash kernel and matches flash_attn's memory.
++        outs = []
++        q_start = kv_start = 0
++        for q_len, kv_len in zip(q_seqlen, kv_seqlen):
++            qi = q[q_start:q_start + q_len].permute(1, 0, 2).unsqueeze(0)      # [1, H, Lq, Ci]
++            ki = k[kv_start:kv_start + kv_len].permute(1, 0, 2).unsqueeze(0)   # [1, H, Lkv, Ci]
++            vi = v[kv_start:kv_start + kv_len].permute(1, 0, 2).unsqueeze(0)   # [1, H, Lkv, Co]
++            outs.append(sdpa(qi, ki, vi)[0].permute(1, 0, 2))                  # [Lq, H, Co]
++            q_start += q_len
++            kv_start += kv_len
++        out = torch.cat(outs, dim=0)    # [T_Q, H, Co]
+     else:
+         raise ValueError(f"Unknown attention module: {config.ATTN}")
+     
+diff --git a/trellis2/modules/sparse/config.py b/trellis2/modules/sparse/config.py
+index a5f4d53..6b1dde4 100644
+--- a/trellis2/modules/sparse/config.py
++++ b/trellis2/modules/sparse/config.py
+@@ -21,7 +21,7 @@ def __from_env():
+         CONV = env_sparse_conv_backend
+     if env_sparse_debug is not None:
+         DEBUG = env_sparse_debug == '1'
+-    if env_sparse_attn_backend is not None and env_sparse_attn_backend in ['xformers', 'flash_attn', 'flash_attn_3']:
++    if env_sparse_attn_backend is not None and env_sparse_attn_backend in ['xformers', 'flash_attn', 'flash_attn_3', 'sdpa']:
+         ATTN = env_sparse_attn_backend
+         
+     print(f"[SPARSE] Conv backend: {CONV}; Attention backend: {ATTN}")
+@@ -38,6 +38,6 @@ def set_debug(debug: bool):
+     global DEBUG
+     DEBUG = debug
+ 
+-def set_attn_backend(backend: Literal['xformers', 'flash_attn']):
++def set_attn_backend(backend: Literal['xformers', 'flash_attn', 'flash_attn_3', 'sdpa']):
+     global ATTN
+     ATTN = backend

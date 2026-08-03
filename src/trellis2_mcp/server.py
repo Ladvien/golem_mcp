@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import gc
+import hashlib
 import io
 import json
 import os
@@ -52,6 +53,19 @@ MVADAPTER_PYTHON = Path(os.environ.get("MVADAPTER_PYTHON", "/home/ladvien/mvadap
 MVADAPTER_AZIMUTHS = (0, 45, 90, 180, 270, 315)
 # Image-to-multiview peaks around 14 GB on the SDXL backbone.
 MVADAPTER_VRAM_REQUIRED = 15e9
+
+# SegviGen predicts 3D part segmentation on top of TRELLIS.2. Its own Python 3.11
+# venv - see scripts/install_segvigen.sh, and SETUP.md for why the attention
+# backend is SDPA. The driver script is ours, not upstream's: SegviGen's own
+# export remeshes the asset away, so scripts/segvigen_segment.py stops before that
+# and writes face labels instead.
+SEGVIGEN_REPO = Path(os.environ.get("SEGVIGEN_REPO", "/home/ladvien/segvigen/repo"))
+SEGVIGEN_PYTHON = Path(os.environ.get("SEGVIGEN_PYTHON", "/home/ladvien/segvigen/.venv/bin/python"))
+SEGVIGEN_DRIVER = Path(__file__).resolve().parents[2] / "scripts" / "segvigen_segment.py"
+SEGVIGEN_OUTPUT_DIR = Path(os.environ.get("SEGVIGEN_OUTPUT_DIR", str(OUTPUT_DIR / "segmentation")))
+# Measured at ~16.6 GB on a dressed character; the README's "24 GB" is boilerplate
+# inherited from TRELLIS.2.
+SEGVIGEN_VRAM_REQUIRED = 18e9
 
 # Shared asset library on codex_fs (NFS export from 'three', autofs-mounted).
 # Local OUTPUT_DIR stays the working area; these are the durable locations.
@@ -1378,6 +1392,213 @@ def rig_model(
             "error": str(e),
             "traceback": traceback.format_exc(),
         }
+
+
+def _segment_preflight() -> None:
+    """Raise with actionable detail if the SegviGen install is incomplete."""
+    missing: list[str] = []
+    if not SEGVIGEN_PYTHON.is_file():
+        missing.append(f"interpreter {SEGVIGEN_PYTHON}")
+    if not (SEGVIGEN_REPO / "inference_full.py").is_file():
+        missing.append(str(SEGVIGEN_REPO / "inference_full.py"))
+    if not (SEGVIGEN_REPO / "microsoft" / "TRELLIS.2-4B" / "pipeline.json").is_file():
+        missing.append(str(SEGVIGEN_REPO / "microsoft/TRELLIS.2-4B/pipeline.json"))
+    if not SEGVIGEN_DRIVER.is_file():
+        missing.append(str(SEGVIGEN_DRIVER))
+    if not list(Path.home().glob(".cache/huggingface/hub/models--fenghora--SegviGen/snapshots/*/full_seg.ckpt")):
+        missing.append("fenghora/SegviGen full_seg.ckpt in the HuggingFace cache")
+    if missing:
+        raise RuntimeError(
+            "SegviGen install is incomplete. Missing: "
+            + "; ".join(missing)
+            + ". Run scripts/install_segvigen.sh to install it."
+        )
+
+
+@mcp.tool
+def segment_mesh(
+    mesh: Annotated[
+        str,
+        Field(
+            description=(
+                "Mesh to segment: .glb. Absolute path, or a bare filename resolved "
+                "against the TRELLIS output dir (e.g. 'trellis_1234.glb')."
+            )
+        ),
+    ],
+    output_name: Annotated[str, Field(description="Base name for the sidecar (without extension)")] = "",
+    seed: Annotated[
+        int, Field(description="Sampler seed. Same seed + same mesh = same partition.", ge=0)
+    ] = 0,
+    preview: Annotated[
+        bool, Field(description="Also write a part-coloured preview GLB for eyeballing")
+    ] = True,
+    timeout: Annotated[int, Field(description="Hard limit in seconds", ge=60, le=7200)] = 3600,
+) -> dict[str, Any]:
+    """Label every face of a mesh with a part id, without touching the mesh.
+
+    Runs SegviGen (part segmentation on the TRELLIS.2 backbone) and writes a
+    sidecar: a face_labels .npy plus a parts .json. Geometry, UVs, texture and any
+    rig are left exactly as they were - the source file is hashed before and after
+    and the run fails if it changed.
+
+    This deliberately does NOT use SegviGen's own GLB export, which is a remeshed
+    reconstruction: an 11,200-vertex asset comes back as 71,053 vertices with a
+    baked copy of the part colours and nothing else preserved.
+
+    Parts come back as whole structural pieces - on a winged character, body /
+    left wing / right wing / tail. Useful for prop stripping and per-part rigging.
+
+    `color_rgb` in the report is the sampler's arbitrary label colour for a part,
+    not a semantic identity: it changes with the seed and means nothing across
+    meshes. Only the partition matters.
+
+    Hot-swaps the GPU: TRELLIS is evicted first, then SegviGen runs in its own
+    Python 3.11 environment and releases the card when it exits.
+    """
+    try:
+        _segment_preflight()
+
+        # Relative names resolve against the TRELLIS output dir so a generate_3d
+        # result can be passed straight through.
+        source = Path(mesh)
+        if not source.is_absolute():
+            source = OUTPUT_DIR / source
+        if not source.is_file():
+            raise FileNotFoundError(f"Input mesh not found: {source}")
+        if source.suffix.lower() != ".glb":
+            raise ValueError(f"Unsupported input format '{source.suffix}'. SegviGen reads .glb only.")
+
+        # Inspect before taking the GPU, same reason as rig_model: these are
+        # properties of the input and reporting them after a 3-minute run helps
+        # nobody. Shell count in particular predicts how clean the partition is.
+        mesh_diag = _mesh_diagnostics(source)
+
+        # The whole promise of this tool is that the asset comes back untouched, so
+        # the server checks that itself rather than trusting the driver's own assert.
+        source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+
+        if not output_name:
+            output_name = source.stem
+        out_dir = SEGVIGEN_OUTPUT_DIR / output_name
+        out_dir.mkdir(parents=True, exist_ok=True)
+        report_path = out_dir / f"{source.stem}_parts.json"
+
+        cmd = [
+            str(SEGVIGEN_PYTHON), str(SEGVIGEN_DRIVER),
+            "--mesh", str(source),
+            "--out-dir", str(out_dir),
+            "--seed", str(seed),
+        ]
+        if preview:
+            cmd.append("--preview")
+
+        started = time.time()
+
+        with _gpu_lock:
+            evicted = _evict_trellis()
+            gc.collect()
+            torch.cuda.empty_cache()
+
+            free, _total = torch.cuda.mem_get_info(0)
+            if free < SEGVIGEN_VRAM_REQUIRED:
+                raise RuntimeError(
+                    f"SegviGen needs ~{SEGVIGEN_VRAM_REQUIRED / 1e9:.0f} GB VRAM but only "
+                    f"{free / 1e9:.1f} GB is free, even after evicting TRELLIS. Something else is "
+                    "holding the GPU."
+                )
+
+            # The driver chdirs into the repo itself, but inference_full.py opens
+            # microsoft/TRELLIS.2-4B/pipeline.json relatively, so cwd must be the
+            # repo from the start.
+            env = dict(os.environ)
+            env["ATTN_BACKEND"] = "sdpa"
+            env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+            proc = subprocess.Popen(
+                cmd, cwd=str(SEGVIGEN_REPO), env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, start_new_session=True,
+            )
+            try:
+                log, _ = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.wait()
+                raise TimeoutError(f"Segmentation exceeded {timeout}s and was killed.") from None
+
+        elapsed = round(time.time() - started, 1)
+        tail = "\n".join(log.strip().splitlines()[-40:]) if log else ""
+
+        # The written report is the only trustworthy signal, as elsewhere in this
+        # server - and it is also the thing the caller actually needs, so a
+        # readable, parseable report doubles as the success check.
+        if not report_path.is_file():
+            return {
+                "success": False,
+                "error": f"Segmentation produced no report at {report_path} (exit {proc.returncode}, {elapsed}s)",
+                "log": tail,
+            }
+        report = json.loads(report_path.read_text())
+
+        if hashlib.sha256(source.read_bytes()).hexdigest() != source_digest:
+            return {
+                "success": False,
+                "error": f"{source} was modified during segmentation. The sidecar was discarded.",
+            }
+
+        # Deliberately NOT seeded with mesh_diag["warnings"]: those are tuned for
+        # rig quality (training-mixture vertex ranges, GRPO reward voxelization) and
+        # say nothing about segmentation. The diagnostics themselves are still
+        # returned, because the counts are worth seeing.
+        warnings: list[str] = []
+        if not mesh_diag.get("is_watertight", True):
+            warnings.append(
+                "Mesh is not watertight, so some face centroids fall outside the voxelized "
+                "surface and take the colour of the nearest occupied voxel instead. Check the "
+                "preview along thin or open shells, where that guess is least reliable."
+            )
+        if len(report["parts"]) < 2:
+            warnings.append(
+                f"Only {len(report['parts'])} part was found, so the mesh was not actually "
+                "divided. Re-run with a different seed - the partition is sampled, and the "
+                "same mesh has returned anywhere from 2 to 7 parts across seeds."
+            )
+
+        return {
+            "success": True,
+            "output_name": output_name,
+            "input": str(source),
+            "face_labels": report["face_labels"],
+            "report": str(report_path),
+            "preview_glb": report.get("preview"),
+            "part_count": len(report["parts"]),
+            "parts": report["parts"],
+            "vertices": report["vertices"],
+            "faces": report["faces"],
+            "source_sha256": source_digest,
+            "source_unchanged": True,   # verified above by re-hashing, not assumed
+            "max_lookup_distance_voxels": round(
+                report["lookup"]["max_distance_normalized"] / report["lookup"]["voxel_size_normalized"], 2
+            ),
+            "elapsed_seconds": elapsed,
+            "trellis_evicted": evicted,
+            "seed": seed,
+            "mesh_diagnostics": mesh_diag,
+            "warnings": warnings,
+            "reroll_note": (
+                "The partition is sampled, not deduced. A fixed seed makes it reproducible, "
+                "but a different seed gives a genuinely different split - judge the preview "
+                "and re-roll rather than trying to merge parts afterwards."
+            ),
+            "usage_note": (
+                "face_labels is an int32 .npy with one entry per face of "
+                "trimesh.load(<input>, force='mesh', process=False). process=False matters: "
+                "welding would reorder faces and the labels would no longer line up."
+            ),
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
 @mcp.tool

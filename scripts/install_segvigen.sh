@@ -26,9 +26,41 @@
 #   4. Python 3.11, not 3.10: bpy is unobtainable on 3.10. PyPI has no cp310 bpy at
 #      any version and download.blender.org/pypi now returns 403. bpy is needed for
 #      the conditioning render (data_toolkit/bpy_render.py) and supplies mathutils.
-#   5. xformers, not flash-attn: no flash-attn wheel exists for cu13 + this torch +
-#      cp311, and building it from source takes hours. TRELLIS.2 supports
-#      ATTN_BACKEND=xformers (trellis2/modules/sparse/config.py), so we use it.
+#   5. SDPA, not flash-attn and not xformers. Neither compiled attention backend
+#      is obtainable here: xformers has no cu13 build at ANY version (its PyPI
+#      wheel installs but reports "xFormers wasn't build with CUDA support"), and
+#      no flash-attn cu13 wheel exists for torch 2.13 at any Python version.
+#      Building flash-attn from source was measured at ~7 hours on this box - its
+#      setup.py ignores TORCH_CUDA_ARCH_LIST (it reads FLASH_ATTN_CUDA_ARCHS) and
+#      emits sm_80/90/100/120 for all 72 .cu files, three-quarters of it dead
+#      weight for a 3090. It also cannot be built unguarded: at MAX_JOBS=2 it
+#      spawns three cicc processes at ~3.7 GB each and exhausts all 31 GB.
+#      Instead we add an SDPA backend to trellis2's SPARSE attention, which
+#      upstream already ships for its DENSE attention
+#      (trellis2/modules/attention/full_attn.py) but omitted from the sparse
+#      module. The models only use attn_mode='full', so sparse/windowed_attn.py
+#      is never reached and one dispatch branch closes the gap. See
+#      scripts/segvigen-patches/. Run everything with ATTN_BACKEND=sdpa.
+#
+# OTHER TRAPS, EACH ALREADY PAID FOR:
+#
+#   - inference_full.py's --img is the render's OUTPUT path, not an input. The
+#     patch in segvigen-patches makes it skip the render when that file already
+#     exists, so the caller can render in its own process (bpy must not share a
+#     process with the ~16 GB inference CUDA context).
+#   - example_full_seg.py is training-data prep, NOT an inference example. Reading
+#     it as one sends you down a completely wrong path.
+#   - bpy 5.x removed cycles.filter_type, which data_toolkit/bpy_render.py sets.
+#     Hence the 4.5.9 pin, and hence cp311 (5.x is cp313-only).
+#   - mathutils is not a site-packages module. bpy registers it in sys.modules from
+#     its embedded interpreter, so `import mathutils` works only AFTER `import bpy`.
+#
+# PROVEN ON THIS BOX (do not re-litigate):
+#
+#   - The 512^3 voxelizer accepts our generated assets, which are ~269 disconnected
+#     non-watertight shells. That was the single biggest risk to the whole approach.
+#   - Inference peaks at ~16.6 GB VRAM and takes 45-85 s per asset on a 3090. The
+#     README's "24 GB minimum" is boilerplate inherited from TRELLIS.2.
 set -euo pipefail
 
 ROOT="${SEGVIGEN_ROOT:-/home/ladvien/segvigen}"
@@ -36,6 +68,12 @@ REPO="$ROOT/repo"                 # SegviGen
 T2="$ROOT/TRELLIS.2"              # provides o-voxel source
 VENV="$ROOT/.venv"
 PY="$VENV/bin/python"
+
+# Pinned because we apply a source patch on top. An unpinned clone would let
+# upstream drift out from under the patch and fail in a confusing place.
+SEGVIGEN_COMMIT=81ec99ede1fbe566c73322dd968cd64bb508f5f7
+TRELLIS2_COMMIT=75fbf0183001ed9876c8dbb35de6b68552ee08bd
+PATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/segvigen-patches"
 
 command -v uv >/dev/null || { echo "FATAL: uv not on PATH" >&2; exit 1; }
 export CUDA_HOME="${CUDA_HOME:-/opt/cuda}"
@@ -47,10 +85,29 @@ mkdir -p "$ROOT"
 
 # --- sources -----------------------------------------------------------------
 # TRELLIS.2 must be --recursive: o-voxel vendors Eigen as a submodule.
-[ -d "$T2/.git" ] || { echo "==> Cloning TRELLIS.2 (recursive)"; \
-    git clone -b main --recursive https://github.com/microsoft/TRELLIS.2.git "$T2"; }
-[ -d "$REPO/.git" ] || { echo "==> Cloning SegviGen"; \
-    git clone https://github.com/Nelipot-Lee/SegviGen.git "$REPO"; }
+[ -d "$T2/.git" ] || { echo "==> Cloning TRELLIS.2 (recursive) @ $TRELLIS2_COMMIT"; \
+    git clone --recursive https://github.com/microsoft/TRELLIS.2.git "$T2"; \
+    git -C "$T2" checkout --recurse-submodules "$TRELLIS2_COMMIT"; }
+[ -d "$REPO/.git" ] || { echo "==> Cloning SegviGen @ $SEGVIGEN_COMMIT"; \
+    git clone https://github.com/Nelipot-Lee/SegviGen.git "$REPO"; \
+    git -C "$REPO" checkout "$SEGVIGEN_COMMIT"; }
+
+# The SDPA backend (header note 5) and the pre-rendered-conditioning-image change
+# live here, not in the clone. `git apply --check --reverse` succeeding means the
+# patch is already in - that is the idempotent case, not an error.
+echo "==> Applying source patches"
+for p in "$PATCH_DIR"/*.patch; do
+    name=$(basename "$p")
+    if git -C "$REPO" apply --check --reverse "$p" 2>/dev/null; then
+        echo "    $name already applied"
+    elif git -C "$REPO" apply "$p"; then
+        echo "    $name applied"
+    else
+        echo "FATAL: $name does not apply to $REPO." >&2
+        echo "       Expected SegviGen at $SEGVIGEN_COMMIT, found $(git -C "$REPO" rev-parse HEAD)." >&2
+        exit 1
+    fi
+done
 
 # --- environment -------------------------------------------------------------
 if [ -x "$PY" ]; then
@@ -74,11 +131,14 @@ uv pip install --python "$PY" torch==2.13.0 torchvision==0.28.0 \
 # root, and routinely fails to build), spconv (unused - sparse conv defaults to
 # CONV='flex_gemm'), mathutils (no cp311 wheel and its source needs PyLong_AsInt
 # from CPython 3.13; bpy bundles it instead).
+# numpy is capped below 2 because bpy 4.5.9 requires it. Left unpinned, this step
+# installs numpy 2.x and the bpy step below immediately downgrades it, so every
+# re-run churns two packages and briefly leaves the env inconsistent.
 echo "==> Installing base requirements"
 uv pip install --python "$PY" \
     imageio imageio-ffmpeg tqdm easydict opencv-python-headless ninja trimesh \
     tensorboard pandas lpips zstandard kornia timm \
-    numpy scipy Pillow omegaconf safetensors huggingface_hub einops
+    "numpy<2" scipy Pillow omegaconf safetensors huggingface_hub einops
 
 echo "==> Installing utils3d (pinned commit, as upstream does)"
 uv pip install --python "$PY" \
@@ -87,11 +147,15 @@ uv pip install --python "$PY" \
 echo "==> Pinning transformers==4.57.6 (SegviGen: TRELLIS.2 issue #101)"
 uv pip install --python "$PY" "transformers==4.57.6"
 
-echo "==> Installing xformers (attention backend; see note 5 above)"
-uv pip install --python "$PY" xformers
-
-echo "==> Installing bpy 4.5.9 (Blender as a module; supplies mathutils)"
-uv pip install --python "$PY" "bpy==4.5.9"
+# Guarded because uv reinstalls this ~350 MB wheel on every run otherwise - it
+# considers the installed tree dirty, presumably because Blender writes into its
+# own package directory at runtime.
+if "$PY" -c "import bpy; assert bpy.app.version[:2] == (4, 5)" 2>/dev/null; then
+    echo "==> bpy 4.5.x already installed"
+else
+    echo "==> Installing bpy 4.5.9 (Blender as a module; supplies mathutils)"
+    uv pip install --python "$PY" "bpy==4.5.9"
+fi
 
 # --- CUDA extensions ---------------------------------------------------------
 # nvdiffrast IS required, despite trellis2's segmentation chain never reaching
@@ -168,7 +232,7 @@ EOF
 
 # --- verify ------------------------------------------------------------------
 echo "==> Verifying"
-cd "$REPO" && ATTN_BACKEND=xformers "$PY" - <<'EOF'
+cd "$REPO" && ATTN_BACKEND=sdpa "$PY" - <<'EOF'
 import sys
 
 import torch
@@ -180,16 +244,28 @@ import flex_gemm  # noqa: F401
 import o_voxel  # noqa: F401
 print("o_voxel + flex_gemm import OK")
 
-import mathutils  # noqa: F401  (from bpy)
-import xformers  # noqa: F401
-print("mathutils + xformers import OK")
+# mathutils is not a site-packages module: bpy registers it in sys.modules from
+# its embedded interpreter, so it is importable only AFTER bpy. data_toolkit's
+# bpy_render.py relies on exactly that ordering.
+import bpy  # noqa: F401
+import mathutils  # noqa: F401
+print("bpy + mathutils import OK")
 
 sys.path.insert(0, ".")
 from trellis2 import models  # noqa: F401
 from trellis2.representations import MeshWithVoxel  # noqa: F401
 import trellis2.modules.sparse as sp  # noqa: F401
 print("trellis2 imports OK (no nvdiffrast)")
+
+# The patch is the whole reason this env works; prove it took, rather than
+# discovering it two minutes into an inference run.
+assert sp.config.ATTN == 'sdpa', f"sdpa backend not selected, got {sp.config.ATTN}"
+q = sp.VarLenTensor(torch.randn(6, 3, 2, 16, device='cuda', dtype=torch.bfloat16),
+                    [slice(0, 4), slice(4, 6)])
+out = sp.sparse_scaled_dot_product_attention(q)
+assert out.feats.shape == (6, 2, 16) and out.feats.isfinite().all()
+print("sparse sdpa attention OK")
 EOF
 
 echo
-echo "==> Done. Run inference with ATTN_BACKEND=xformers set."
+echo "==> Done. Run inference with ATTN_BACKEND=sdpa set."
