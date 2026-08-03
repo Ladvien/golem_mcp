@@ -66,6 +66,19 @@ if grep -q "host='0.0.0.0'" "$BPY_SERVER"; then
 fi
 grep -n "bottle.run" "$BPY_SERVER"
 
+# NOTE: TokenRig rigs are NOT reproducible, and no seed patch will make them so.
+# demo.py generates with do_sample=True and ships no seed. Adding one was tried
+# and measured: seeding torch/numpy/random at parse_args, then again per-batch
+# immediately before generate, then additionally with
+# torch.use_deterministic_algorithms(True, warn_only=True),
+# CUBLAS_WORKSPACE_CONFIG=:4096:8 and cudnn.deterministic - the same mesh at the
+# same seed still produced 47 vs 44 joints. Hashing the input batch across two
+# runs gave identical digests, so the data pipeline IS deterministic and the
+# divergence is inside the CUDA forward; warn_only leaves flash-attn's
+# nondeterministic kernels in place and there is no deterministic flash-attn.
+# Autoregressive beam-sample then amplifies float jitter into a different token,
+# which changes the whole skeleton. Re-running is the only way to reroll.
+
 echo "==> Downloading checkpoints"
 # download.py writes to local_dir="." so it must run with cwd=repo.
 cd "$REPO" && "$PY" download.py --model

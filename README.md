@@ -327,6 +327,105 @@ frame, flat even lighting.
 
 ---
 
+## Getting the best rig
+
+`rig_model` reports `mesh_diagnostics` before rigging and a `skeleton` report
+after, plus a merged `warnings` list. Both are recorded into the published
+`metadata.json`. What they mean:
+
+### Tighten the bounding box — the biggest non-obvious lever
+
+`Asset.normalize_vertices()` divides by `(v_max - v_min).max()` — uniformly, by
+the **largest** bounding-box dimension — and joint coordinates are then quantized
+into **256 bins**. So joint placement resolution is `largest_dimension / 256`, and
+anything that widens the box without adding riggable geometry costs precision on
+**all three axes**: a held weapon, a pedestal, wide wings, stray fragments.
+
+Measured on a real asset: appending one stray triangle 1.2 m from the body took
+`bbox_inflation` from 1.03 to 1.99 and joint resolution from **3.91 mm to
+7.56 mm**. Half the precision, from one triangle. Rig the body alone and reattach
+props afterwards.
+
+`joint_resolution_mm` and `bbox_inflation` are in every rig response.
+
+### Rigs are not reproducible, and cannot be made so
+
+`demo.py` generates with `do_sample=True` and ships no seed. Adding one was tried
+and measured — seeding `torch`/`numpy`/`random` at startup, again per-batch
+immediately before generate, then additionally with
+`torch.use_deterministic_algorithms(True, warn_only=True)`,
+`CUBLAS_WORKSPACE_CONFIG=:4096:8` and cuDNN determinism. The same mesh at the same
+seed still produced **47 vs 44 joints**.
+
+Hashing the input batch across two runs gave identical digests, so the data
+pipeline *is* deterministic — the divergence is inside the CUDA forward, where
+`warn_only` leaves flash-attn's nondeterministic kernels in place (there is no
+deterministic flash-attn), and autoregressive beam-sample amplifies float jitter
+into a different token, which changes the whole skeleton.
+
+Practical consequence: **rerolling is just re-running.** Generate 3–5 candidates
+at `num_beams=3`, compare their `skeleton` reports, then re-run the winner's
+settings at `num_beams=10`. You cannot recreate a specific good rig, so keep the
+GLB — `metadata.json` marks this with `reproducible: false` rather than implying
+its recorded parameters would reproduce the asset.
+
+### Judge the skeleton first
+
+The model generates the entire skeleton, *then* the skin tokens conditioned on it.
+A bad skeleton poisons the skinning and no postprocessing recovers it. The
+`skeleton` block gives `joints`, `roots`, `chain_tips`, `branch_points`,
+`max_depth` and `symmetry` — check those before looking at deformation.
+
+| Signal | Meaning |
+|---|---|
+| `symmetry` below 0.8 | Limbs that should mirror don't. `repetition_penalty` (2.0) may be suppressing the coordinate repeats mirrored limbs legitimately share — try 1.1–1.5 |
+| `zero_weight_vertices` above 0 | Vertices that will never deform. Invisible in rest pose, a frozen spike under animation |
+| `unweighted_bones` above 0 | Sequence truncation — `max_length=2048` caps at roughly 250 bones |
+
+A known-good reference: the rigged succubus scores 43 joints, 1 root, 12 tips,
+depth 7, symmetry 0.86, zero dead vertices.
+
+### `use_postprocess` can only take away
+
+It applies geodesic voxel binding as a **multiplicative** mask
+(`asset.skin *= voxel_skin(...)`), so it can remove influence but never add it.
+Use it when weights bleed across gaps — arm driving the ribcage, a cape picking up
+leg weights — because weight transfer is Euclidean nearest-neighbour and jumps
+across anatomical gaps. But on thin geometry it can strip a vertex entirely, which
+is what `zero_weight_vertices` catches. Always compare a run with and without.
+
+### Other levers
+
+- **`temperature`**: lower (0.7–0.8) for conventional bipeds and quadrupeds. **Raise
+  it** for novel creatures — the supervised model regresses to average solutions on
+  out-of-distribution assets and drops auxiliary limbs, so a wingless dragon wants
+  *higher* temperature, not lower.
+- **`use_skeleton`** is the highest-quality path: rig once, fix the skeleton by hand
+  in Blender, then re-skin against it. Skeleton errors propagate into skinning but
+  not the reverse, and skinning is the part the model is genuinely good at.
+- **`target_height_m` does not affect rig quality.** SkinTokens renormalizes, so
+  scale is irrelevant to it — don't tune it hoping.
+- **Vertex count**: the training mixture spans ~1.3k–17k vertices. Note the shape
+  encoder samples a fixed number of surface points, so raw count matters less for
+  the *skeleton* than for skin decode and transfer. If you decimate to a proxy,
+  remember transfer to a *different* vertex count drops off exact Umeyama alignment
+  onto a PCA fallback that can come back mirrored or rotated.
+- **`group_per_vertex` stays at 4** and is not exposed: it's hardcoded in `demo.py`
+  and the GRPO sparsity reward explicitly penalises more than 4 influences above
+  0.1, so raising it works against the training objective.
+- **Bone names are `bone_0..bone_N`**, not Mixamo or UE5. `demo.py` hardcodes the
+  class as `"articulation"`, so the `configs/skeleton/` templates aren't wired into
+  this path.
+
+### This feeds back into your image prompt
+
+A-pose with limbs clearly separated from the torso and fingers splayed is required
+**by the rigging step**, not just by TRELLIS. Weight transfer is Euclidean
+nearest-neighbour, so arms pinned to the ribcage bleed torso weights into the arms
+and clenched fists cross-contaminate finger weights.
+
+---
+
 ## GPU hot-swapping
 
 TRELLIS and TokenRig each want most of a 24 GB card, so exactly one holds the GPU

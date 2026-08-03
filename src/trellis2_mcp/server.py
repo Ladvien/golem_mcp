@@ -9,6 +9,7 @@ import re
 import shlex
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import threading
@@ -41,6 +42,16 @@ SKINTOKENS_CKPTS = (
     "experiments/articulation_xl_quantization_256_token_4/grpo_1400.ckpt",
 )
 RIG_INPUT_SUFFIXES = (".glb", ".obj", ".fbx")
+
+# MV-Adapter generates 6 geometrically consistent views from one reference image,
+# including true 90/270 degree profiles. Its own Python 3.11 venv, same reason as
+# SkinTokens; see scripts/install_mvadapter.sh.
+MVADAPTER_REPO = Path(os.environ.get("MVADAPTER_REPO", "/home/ladvien/mvadapter/repo"))
+MVADAPTER_PYTHON = Path(os.environ.get("MVADAPTER_PYTHON", "/home/ladvien/mvadapter/.venv/bin/python"))
+# Matches the inference script's default azimuths, in the order it emits them.
+MVADAPTER_AZIMUTHS = (0, 45, 90, 180, 270, 315)
+# Image-to-multiview peaks around 14 GB on the SDXL backbone.
+MVADAPTER_VRAM_REQUIRED = 15e9
 
 # Shared asset library on codex_fs (NFS export from 'three', autofs-mounted).
 # Local OUTPUT_DIR stays the working area; these are the durable locations.
@@ -871,6 +882,141 @@ def generate_3d_multi_image(
 # --- rigging (SkinTokens / TokenRig) ---------------------------------------
 
 
+def _read_glb(path: Path) -> tuple[dict[str, Any], bytes]:
+    """Return a GLB's JSON chunk and its binary chunk."""
+    data = path.read_bytes()
+    if data[:4] != b"glTF":
+        raise ValueError(f"{path} is not a GLB")
+    offset = 12
+    gltf: dict[str, Any] | None = None
+    binary = b""
+    while offset < len(data):
+        length, ctype = struct.unpack_from("<II", data, offset)
+        chunk = data[offset + 8 : offset + 8 + length]
+        if ctype == 0x4E4F534A:
+            gltf = json.loads(chunk)
+        elif ctype == 0x004E4942:
+            binary = chunk
+        offset += 8 + length + (-length % 4)
+    if gltf is None:
+        raise ValueError(f"{path} has no JSON chunk")
+    return gltf, binary
+
+
+_GLTF_COMPONENTS = {5120: "b", 5121: "B", 5122: "h", 5123: "H", 5125: "I", 5126: "f"}
+_GLTF_COMPONENT_SIZES = {5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4}
+_GLTF_TYPE_COUNTS = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}
+
+
+def _read_accessor(gltf: dict[str, Any], binary: bytes, index: int) -> list[tuple[float, ...]]:
+    """Decode a glTF accessor into tuples, honouring normalized integer forms."""
+    acc = gltf["accessors"][index]
+    view = gltf["bufferViews"][acc["bufferView"]]
+    ncomp = _GLTF_TYPE_COUNTS[acc["type"]]
+    fmt = _GLTF_COMPONENTS[acc["componentType"]]
+    size = _GLTF_COMPONENT_SIZES[acc["componentType"]] * ncomp
+    start = view.get("byteOffset", 0) + acc.get("byteOffset", 0)
+    stride = view.get("byteStride") or size
+
+    scale = 1.0
+    if acc.get("normalized"):
+        scale = {5121: 255.0, 5123: 65535.0, 5120: 127.0, 5122: 32767.0}.get(acc["componentType"], 1.0)
+
+    out = []
+    for i in range(acc["count"]):
+        vals = struct.unpack_from("<" + fmt * ncomp, binary, start + i * stride)
+        out.append(tuple(v / scale for v in vals) if scale != 1.0 else tuple(float(v) for v in vals))
+    return out
+
+
+def _skeleton_report(path: Path) -> dict[str, Any]:
+    """Structure and skin-weight health of a rigged GLB.
+
+    Judge the skeleton before the weights: TokenRig generates the whole skeleton
+    first and conditions the skin tokens on it, so a bad skeleton poisons the
+    skinning and no amount of postprocessing recovers it.
+    """
+    gltf, binary = _read_glb(path)
+    skins = gltf.get("skins", [])
+    if not skins:
+        return {"joints": 0, "warnings": ["Output has no skin - rigging produced no skeleton."]}
+
+    nodes = gltf["nodes"]
+    joints = skins[0]["joints"]
+    jset = set(joints)
+
+    parent = {}
+    for i, node in enumerate(nodes):
+        for child in node.get("children", []):
+            parent[child] = i
+    kids = {j: [c for c in nodes[j].get("children", []) if c in jset] for j in joints}
+    roots = [j for j in joints if parent.get(j) not in jset]
+
+    def depth(j, d=0):
+        return d if not kids[j] else max(depth(c, d + 1) for c in kids[j])
+
+    # Mirror symmetry across X. Asymmetric limbs are the documented signature of
+    # repetition_penalty set too high - bone coordinates legitimately repeat
+    # between mirrored limbs, and the penalty suppresses exactly that.
+    trs = {j: nodes[j].get("translation", [0.0, 0.0, 0.0]) for j in joints}
+    spread = max((abs(t[0]) for t in trs.values()), default=0.0)
+    tol = max(spread * 0.05, 1e-4)
+    matched = 0
+    for t in trs.values():
+        if abs(t[0]) <= tol:
+            matched += 1  # on the midline, self-symmetric
+            continue
+        if any(
+            abs(o[0] + t[0]) <= tol and abs(o[1] - t[1]) <= tol and abs(o[2] - t[2]) <= tol
+            for o in trs.values()
+        ):
+            matched += 1
+    symmetry = round(matched / len(joints), 3) if joints else 0.0
+
+    report: dict[str, Any] = {
+        "joints": len(joints),
+        "roots": len(roots),
+        "chain_tips": sum(1 for j in joints if not kids[j]),
+        "branch_points": sum(1 for j in joints if len(kids[j]) > 1),
+        "max_depth": max((depth(r) for r in roots), default=0),
+        "symmetry": symmetry,
+    }
+
+    warnings: list[str] = []
+    prim = gltf["meshes"][0]["primitives"][0]
+    attrs = prim.get("attributes", {})
+    if "WEIGHTS_0" in attrs and "JOINTS_0" in attrs:
+        weights = _read_accessor(gltf, binary, attrs["WEIGHTS_0"])
+        joint_idx = _read_accessor(gltf, binary, attrs["JOINTS_0"])
+        dead = sum(1 for w in weights if sum(w) < 1e-6)
+        influenced = {int(j) for jl, wl in zip(joint_idx, weights) for j, w in zip(jl, wl) if w > 1e-6}
+        unweighted = len(joints) - len(influenced)
+        report["zero_weight_vertices"] = dead
+        report["unweighted_bones"] = unweighted
+        if dead:
+            warnings.append(
+                f"{dead} vertices have zero total weight and will not deform. use_postprocess "
+                "applies geodesic voxel binding as a MULTIPLICATIVE mask, so it can only remove "
+                "influence - on thin geometry it can strip a vertex entirely. Compare against a "
+                "run without it."
+            )
+        if unweighted > 0:
+            warnings.append(
+                f"{unweighted} bones carry no skin weight. TokenRig's sequence is capped at "
+                "max_length=2048, roughly 250 bones, and truncation leaves trailing bones "
+                "unskinned."
+            )
+    if symmetry < 0.8:
+        warnings.append(
+            f"Skeleton symmetry is {symmetry}. If limbs that should mirror do not, "
+            "repetition_penalty (default 2.0) may be suppressing the coordinate repeats that "
+            "mirrored limbs legitimately share - try 1.1-1.5."
+        )
+
+    report["warnings"] = warnings
+    return report
+
+
 def _publish_rig(
     source: Path,
     rigged: Path,
@@ -879,6 +1025,8 @@ def _publish_rig(
     use_transfer: bool,
     use_postprocess: bool,
     use_skeleton: bool,
+    mesh_diagnostics: dict[str, Any],
+    skeleton: dict[str, Any],
 ) -> str | None:
     """Add the rigged mesh to its published asset directory and mark it rigged.
 
@@ -905,10 +1053,103 @@ def _publish_rig(
             "elapsed_seconds": elapsed,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "bone_naming": "generic (bone_0..bone_N) - not Mixamo or UE5 conventions",
+            "reproducible": False,
+            "_reproducibility_note": (
+                "TokenRig generates with do_sample=True and exposes no seed; the same mesh and "
+                "parameters produce a different skeleton every run. These parameters describe how "
+                "this rig was made, but will not recreate it."
+            ),
+            "input_mesh": mesh_diagnostics,
+            "skeleton": skeleton,
         }
         meta_path.write_text(json.dumps(metadata, indent=2) + "\n")
         return str(asset_dir)
     return None
+
+
+# TokenRig quantizes joint coordinates into this many bins across the mesh's
+# largest bounding-box dimension (checkpoint articulation_xl_quantization_256_...,
+# and src/data/augment.py defaults discrete=256). Asset.normalize_vertices divides
+# by (v_max - v_min).max(), so the scale is uniform: anything that widens the
+# bounding box without adding riggable geometry costs precision on ALL THREE axes.
+_JOINT_QUANTIZATION_BINS = 256
+# The training mixture averages ~1.3k (ModelsResource) to ~17k (VRoid) vertices.
+_VERT_RANGE = (1_000, 20_000)
+
+
+def _mesh_diagnostics(path: Path) -> dict[str, Any]:
+    """Inspect a mesh for the conditions that determine rig quality.
+
+    Advisory, never blocking - an off-distribution mesh still rigs usefully. The
+    point is that these conditions are otherwise invisible until the rig is bad.
+    """
+    import numpy as np
+    import trimesh
+
+    # process=True welds duplicate vertices. Exported GLBs split vertices at UV and
+    # normal seams, so without welding every seam looks like a topological break and
+    # connectivity, watertightness and component counts are all meaningless.
+    mesh = trimesh.load(str(path), force="mesh", process=True)
+    verts_arr = np.asarray(mesh.vertices)
+    extents = mesh.bounds[1] - mesh.bounds[0]
+    largest = float(extents.max())
+
+    components = mesh.split(only_watertight=False)
+
+    # Measure bbox inflation against the bulk of the geometry rather than the
+    # largest connected component: generated meshes routinely come in many pieces,
+    # so "biggest component" is not the body. A prop, base or stray fragment is a
+    # small number of vertices sitting far out, which is exactly what comparing the
+    # full extent to the 1st-99th percentile extent detects.
+    core = np.percentile(verts_arr, 99, axis=0) - np.percentile(verts_arr, 1, axis=0)
+    core_largest = float(core.max())
+    inflation = round(largest / core_largest, 3) if core_largest > 0 else 1.0
+
+    warnings: list[str] = []
+    if inflation > 1.25:
+        warnings.append(
+            f"Bounding box is {inflation}x the extent of the bulk of the geometry, so a prop, base "
+            f"or stray fragment is widening it. Joint coordinates are quantized across the LARGEST "
+            f"dimension, so this costs precision on all three axes, not just that one. Rig the body "
+            f"alone and reattach afterwards."
+        )
+    verts = int(len(mesh.vertices))
+    if verts > _VERT_RANGE[1]:
+        warnings.append(
+            f"{verts} vertices is above the ~{_VERT_RANGE[1]} top of the training mixture. "
+            "Raise simplify on generate_3d, or rig a decimated copy - but note that transferring "
+            "to a different vertex count drops off the exact Umeyama alignment onto a PCA "
+            "fallback that can come back mirrored or rotated."
+        )
+    elif verts < _VERT_RANGE[0]:
+        warnings.append(f"{verts} vertices is below the ~{_VERT_RANGE[0]} floor of the training mixture.")
+    if not bool(mesh.is_watertight):
+        warnings.append(
+            "Mesh is not watertight. Two of the four GRPO reward functions were computed over a "
+            "196^3 voxelization, so open shells and flipped normals push the model off the "
+            "distribution it was tuned against."
+        )
+    # Generated meshes carry dozens of tiny specks; warning on those is noise. Only
+    # components large enough to be a real part (cape, hair, separate clothing) can
+    # actually pull weights across a gap.
+    substantial = sum(1 for c in components if len(c.vertices) >= 0.02 * max(verts, 1))
+    if substantial > 1:
+        warnings.append(
+            f"{substantial} substantial disconnected parts (of {len(components)} total). Skin "
+            "weights transfer by Euclidean nearest neighbour, which jumps across gaps - if weights "
+            "bleed between parts, that is what use_postprocess is for."
+        )
+
+    return {
+        "vertices": verts,
+        "triangles": int(len(mesh.faces)),
+        "components": int(len(components)),
+        "is_watertight": bool(mesh.is_watertight),
+        "bbox_largest_dim_m": round(largest, 4),
+        "bbox_inflation": inflation,
+        "joint_resolution_mm": round(largest / _JOINT_QUANTIZATION_BINS * 1000, 2),
+        "warnings": warnings,
+    }
 
 
 def _glb_dimensions(path: Path) -> dict[str, Any]:
@@ -1032,6 +1273,10 @@ def rig_model(
         if source.suffix.lower() not in RIG_INPUT_SUFFIXES:
             raise ValueError(f"Unsupported input format '{source.suffix}'. Supported: {', '.join(RIG_INPUT_SUFFIXES)}")
 
+        # Inspect before taking the GPU: the conditions that decide rig quality are
+        # properties of the input, and reporting them after a 50s run helps nobody.
+        mesh_diag = _mesh_diagnostics(source)
+
         if not output_name:
             output_name = f"{source.stem}_rigged"
         target = RIG_OUTPUT_DIR / f"{output_name}.glb"
@@ -1094,7 +1339,11 @@ def rig_model(
                 "log": tail,
             }
 
-        published = _publish_rig(source, target, elapsed, num_beams, use_transfer, use_postprocess, use_skeleton)
+        skeleton = _skeleton_report(target)
+        published = _publish_rig(
+            source, target, elapsed, num_beams, use_transfer, use_postprocess, use_skeleton,
+            mesh_diag, skeleton,
+        )
 
         return {
             "success": True,
@@ -1106,6 +1355,14 @@ def rig_model(
             "elapsed_seconds": elapsed,
             "trellis_evicted": evicted,
             "geometry": _glb_dimensions(target),
+            "mesh_diagnostics": mesh_diag,
+            "skeleton": skeleton,
+            "warnings": mesh_diag.get("warnings", []) + skeleton.get("warnings", []),
+            "reroll_note": (
+                "Rigs are not reproducible - generation samples, and the same mesh gives a "
+                "different skeleton each run. Judge the skeleton first; if it is wrong, re-run "
+                "rather than trying to fix weights, because the skin tokens are conditioned on it."
+            ),
             "parameters": {
                 "num_beams": num_beams,
                 "use_transfer": use_transfer,
@@ -1351,6 +1608,148 @@ def _publish_view_set(paths: dict[str, Path], prompt: str) -> str:
     for view, path in paths.items():
         shutil.copy2(path, dest / f"reference_{view}.png")
     return str(dest)
+
+
+def _mvadapter_preflight() -> None:
+    """Fail with actionable detail if the MV-Adapter install is incomplete."""
+    missing: list[str] = []
+    if not MVADAPTER_PYTHON.is_file():
+        missing.append(f"interpreter {MVADAPTER_PYTHON}")
+    if not (MVADAPTER_REPO / "scripts" / "inference_i2mv_sdxl.py").is_file():
+        missing.append(str(MVADAPTER_REPO / "scripts/inference_i2mv_sdxl.py"))
+    if missing:
+        raise RuntimeError(
+            "MV-Adapter install is incomplete. Missing: "
+            + "; ".join(missing)
+            + ". Run scripts/install_mvadapter.sh to install it."
+        )
+
+
+@mcp.tool
+def generate_orbit_views(
+    image: Annotated[str, Field(description="Reference image path. A clean front view works best.")],
+    output_name: Annotated[str, Field(description="Base name; views are saved as <name>_az<deg>.png")] = "",
+    text: Annotated[
+        str, Field(description="Short quality/style hint used alongside the reference image")
+    ] = "high quality",
+    steps: Annotated[int, Field(description="Inference steps", ge=1, le=100)] = 50,
+    guidance_scale: Annotated[float, Field(description="Guidance scale", ge=0.0, le=20.0)] = 3.0,
+    seed: Annotated[int, Field(description="Random seed", ge=0)] = 21,
+    remove_bg: Annotated[
+        bool, Field(description="Segment the subject out of its background before conditioning")
+    ] = True,
+    timeout: Annotated[int, Field(description="Hard limit in seconds", ge=60, le=3600)] = 1800,
+) -> dict[str, Any]:
+    """Generate 6 geometrically consistent orbit views from one reference image.
+
+    Uses MV-Adapter, which produces true 90/270 degree profiles - something FLUX.2
+    klein will not do at any prompt, and the reason generate_views defaults to
+    front+back only. Views come out at azimuths 0, 45, 90, 180, 270, 315.
+
+    Hot-swaps the GPU: TRELLIS is evicted first, then MV-Adapter runs in its own
+    Python 3.11 environment and releases the card when it exits.
+
+    Feed the returned images_json straight to generate_3d_multi_image.
+    """
+    try:
+        _mvadapter_preflight()
+
+        source = Path(image)
+        if not source.is_absolute():
+            source = IMAGE_OUTPUT_DIR / source
+        if not source.is_file():
+            raise FileNotFoundError(f"Reference image not found: {source}")
+
+        if not output_name:
+            output_name = f"orbit_{int(time.time())}"
+
+        grid_path = IMAGE_OUTPUT_DIR / f"{output_name}_grid.png"
+        started = time.time()
+
+        cmd = [
+            str(MVADAPTER_PYTHON), "-m", "scripts.inference_i2mv_sdxl",
+            "--image", str(source),
+            "--text", text,
+            "--num_inference_steps", str(steps),
+            "--guidance_scale", str(guidance_scale),
+            "--seed", str(seed),
+            "--output", str(grid_path),
+        ]
+        if remove_bg:
+            cmd.append("--remove_bg")
+
+        with _gpu_lock:
+            evicted = _evict_trellis()
+            gc.collect()
+            torch.cuda.empty_cache()
+
+            free, _total = torch.cuda.mem_get_info(0)
+            if free < MVADAPTER_VRAM_REQUIRED:
+                raise RuntimeError(
+                    f"MV-Adapter needs ~{MVADAPTER_VRAM_REQUIRED / 1e9:.0f} GB VRAM but only "
+                    f"{free / 1e9:.1f} GB is free, even after evicting TRELLIS. Something else is "
+                    "holding the GPU."
+                )
+
+            proc = subprocess.Popen(
+                cmd, cwd=str(MVADAPTER_REPO), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, start_new_session=True,
+            )
+            try:
+                log, _ = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.wait()
+                raise TimeoutError(f"MV-Adapter exceeded {timeout}s and was killed.") from None
+
+        tail = "\n".join(log.strip().splitlines()[-30:]) if log else ""
+        if not grid_path.is_file() or grid_path.stat().st_size == 0:
+            return {
+                "success": False,
+                "error": f"MV-Adapter produced no output at {grid_path} (exit {proc.returncode})",
+                "log": tail,
+            }
+
+        # The script writes all views as one horizontal strip; TRELLIS wants them
+        # as separate images.
+        strip = Image.open(grid_path).convert("RGB")
+        count = len(MVADAPTER_AZIMUTHS)
+        if strip.width % count:
+            return {
+                "success": False,
+                "error": f"Output strip is {strip.width}px wide, not divisible into {count} views.",
+            }
+        view_w = strip.width // count
+        paths: dict[str, str] = {}
+        for i, az in enumerate(MVADAPTER_AZIMUTHS):
+            crop = strip.crop((i * view_w, 0, (i + 1) * view_w, strip.height))
+            out = IMAGE_OUTPUT_DIR / f"{output_name}_az{az:03d}.png"
+            crop.save(out)
+            paths[f"az{az:03d}"] = str(out)
+
+        reference_dir = _publish_view_set(
+            {k: Path(v) for k, v in paths.items()}, f"{output_name} orbit views"
+        )
+
+        return {
+            "success": True,
+            "output_name": output_name,
+            "views": paths,
+            "images_json": json.dumps(list(paths.values())),
+            "grid": str(grid_path),
+            "view_size_px": view_w,
+            "azimuths_deg": list(MVADAPTER_AZIMUTHS),
+            "reference_dir": reference_dir,
+            "trellis_evicted": evicted,
+            "elapsed_seconds": round(time.time() - started, 1),
+            "next_step": (
+                "generate_3d_multi_image(images=<images_json>, source_prompt=<the original prompt>, "
+                "asset_type='characters')"
+            ),
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 
 @mcp.tool
