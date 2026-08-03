@@ -482,8 +482,12 @@ wing / right wing / tail, with the two wings landing at mirrored centroids and
 within 3% of each other in face count. On an isolation suit: body versus both
 arms. That suits prop stripping and per-part rigging.
 
-Garment-versus-body separation on a genuinely dressed character is **untested** —
-there is no such asset in the library to try it on.
+**Garment-versus-body separation does not work.** Tested on `succubus_warden`, a
+character in a full leather armour set (corset, pauldrons, thigh guards, plated
+boots), across seeds 0–3: the splits are always structural — body / legs / wings /
+horns / tail — and never follow the armour edge. Seed 0 found 2 parts, seed 1
+found 11, seeds 2 and 3 found 4, and in none of them did a part correspond to a
+garment. If you need clothing separated from skin, this is the wrong tool.
 
 `color_rgb` in the report is the sampler's arbitrary label colour for a part. It
 changes with the seed and means nothing across meshes; only the partition matters.
@@ -528,6 +532,22 @@ SkinTokens by hand, do this yourself.
 ---
 
 ## Known issues and gotchas
+
+**`generate_orbit_views` with `remove_bg=True` crashes.** BiRefNet comes back in
+fp16 — newer `transformers` honours the checkpoint's declared `torch_dtype` — but
+`inference_i2mv_sdxl.py:239` does `birefnet.to(device)` with no dtype cast, while
+`remove_bg()` at line 76 still feeds it fp32 from `transforms.ToTensor()`. It dies
+with `Input type (float) and bias type (c10::Half) should be the same`. Pass
+`remove_bg=False` when the reference image already has a clean background; the
+real fix is `.to(device, dtype=next(net.parameters()).dtype)` in the MV-Adapter
+clone, which is not yet applied because that repo has no patch mechanism.
+
+**`generate_orbit_views` wants more VRAM than its docs suggest.** Measured at
+**18.1 GB** on a 768x1024 reference, not the ~14 GB the SDXL backbone uses at
+768x768. The preflight was 15 GB, which let a run start with 19.6 GB free and then
+die with CUDA OOM inside the multi-view attention block a minute in.
+`MVADAPTER_VRAM_REQUIRED` is now 19 GB so it refuses up front instead. If another
+service is holding the card (a 4.4 GB embedding server was, here), free it first.
 
 **Rigging hangs forever at the progress bar.** Upstream issue #3: `http_proxy` /
 `https_proxy` intercept the loopback call from the dataloader to `bpy_server`.

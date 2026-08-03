@@ -51,8 +51,12 @@ MVADAPTER_REPO = Path(os.environ.get("MVADAPTER_REPO", "/home/ladvien/mvadapter/
 MVADAPTER_PYTHON = Path(os.environ.get("MVADAPTER_PYTHON", "/home/ladvien/mvadapter/.venv/bin/python"))
 # Matches the inference script's default azimuths, in the order it emits them.
 MVADAPTER_AZIMUTHS = (0, 45, 90, 180, 270, 315)
-# Image-to-multiview peaks around 14 GB on the SDXL backbone.
-MVADAPTER_VRAM_REQUIRED = 15e9
+# Image-to-multiview peaks around 14 GB on the SDXL backbone at 768x768, but was
+# measured at 18.1 GB on a 768x1024 reference. 15 GB let a run start with 19.6 GB
+# free and then die with CUDA OOM inside the multi-view attention block, which is
+# the worst outcome: a minute of GPU time spent to reach a failure the preflight
+# exists to catch. Sized to the observed peak plus headroom.
+MVADAPTER_VRAM_REQUIRED = 19e9
 
 # SegviGen predicts 3D part segmentation on top of TRELLIS.2. Its own Python 3.11
 # venv - see scripts/install_segvigen.sh, and SETUP.md for why the attention
@@ -1394,6 +1398,58 @@ def rig_model(
         }
 
 
+def _publish_segmentation(
+    source: Path, report: dict[str, Any], report_path: Path, seed: int, elapsed: float
+) -> str | None:
+    """Add the part sidecar to its published asset directory.
+
+    Same matching rule as _publish_rig: by the source mesh's stem against the
+    gen_ai tree. A mesh segmented from somewhere else has no asset directory to
+    update and reports None.
+
+    The sidecar is only meaningful next to the exact mesh it indexes, so it is
+    published INTO the asset directory rather than anywhere on its own.
+    """
+    for asset_type in ASSET_TYPES:
+        asset_dir = CODEX_GEN_AI_DIR / asset_type / source.stem
+        meta_path = asset_dir / "metadata.json"
+        if not meta_path.is_file():
+            continue
+
+        shutil.copy2(report["face_labels"], asset_dir / "asset_face_labels.npy")
+        shutil.copy2(report_path, asset_dir / "asset_parts.json")
+        if report.get("preview"):
+            shutil.copy2(report["preview"], asset_dir / "asset_parts_preview.glb")
+
+        metadata = json.loads(meta_path.read_text())
+        metadata["segmented"] = True
+        metadata["segmentation_tool"] = "SegviGen"
+        metadata["segmentation"] = {
+            "part_count": len(report["parts"]),
+            "parts": report["parts"],
+            "seed": seed,
+            "elapsed_seconds": elapsed,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "faces": report["faces"],
+            "vertices": report["vertices"],
+            "source_sha256": report["source_sha256"],
+            "reproducible": True,
+            "_reproducibility_note": (
+                "The partition is sampled. This seed reproduces it exactly; a different seed "
+                "gives a genuinely different split, and the part colours are arbitrary labels "
+                "that change with it."
+            ),
+            "_labels_note": (
+                "asset_face_labels.npy is int32, one entry per face of "
+                "trimesh.load(asset.glb, force='mesh', process=False). process=False matters: "
+                "welding reorders faces and the labels stop lining up."
+            ),
+        }
+        meta_path.write_text(json.dumps(metadata, indent=2) + "\n")
+        return str(asset_dir)
+    return None
+
+
 def _segment_preflight() -> None:
     """Raise with actionable detail if the SegviGen install is incomplete."""
     missing: list[str] = []
@@ -1557,6 +1613,8 @@ def segment_mesh(
                 "surface and take the colour of the nearest occupied voxel instead. Check the "
                 "preview along thin or open shells, where that guess is least reliable."
             )
+        published = _publish_segmentation(source, report, report_path, seed, elapsed)
+
         if len(report["parts"]) < 2:
             warnings.append(
                 f"Only {len(report['parts'])} part was found, so the mesh was not actually "
@@ -1570,6 +1628,7 @@ def segment_mesh(
             "input": str(source),
             "face_labels": report["face_labels"],
             "report": str(report_path),
+            "published_to": published,
             "preview_glb": report.get("preview"),
             "part_count": len(report["parts"]),
             "parts": report["parts"],
