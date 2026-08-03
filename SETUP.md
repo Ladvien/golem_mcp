@@ -15,7 +15,7 @@ None needs root.
 | **TRELLIS** | `/home/ladvien/trellis` | 3.10 | 2.6.0+cu124 | image → 3D. **Hosts the MCP server itself** | manual (see below) |
 | **SkinTokens** | `/home/ladvien/skintokens` | 3.11 | 2.7.0+cu128 | rigging (`rig_model`) | `scripts/install_skintokens.sh` |
 | **MV-Adapter** | `/home/ladvien/mvadapter` | 3.11 | 2.13.0+cu130 | orbit views (`generate_orbit_views`) | `scripts/install_mvadapter.sh` |
-| **SegviGen** | `/home/ladvien/segvigen/.venv` | 3.11 | 2.13.0+cu130 | part segmentation (`segment_mesh`) | `scripts/install_segvigen.sh` |
+| **TRELLIS.2** | `/home/ladvien/segvigen/.venv` | 3.11 | 2.13.0+cu130 | part segmentation (`segment_mesh`) **and** garment generation (`generate_garment`) | `scripts/install_segvigen.sh` |
 
 Roughly 42 GB on disk in total. The MCP server runs inside the **TRELLIS** env
 (`trellis2-mcp.service`), which is why that one is special — everything else is a
@@ -32,9 +32,23 @@ Not stubbornness — each pair genuinely conflicts:
   cp313-only).
 - **MV-Adapter**: compiles nvdiffrast, so its torch CUDA major must match the
   system toolkit (13.3) → cu130 → torch 2.13.
-- **SegviGen**: same cu130 constraint as MV-Adapter, but pinned to Python 3.11
+- **TRELLIS.2**: same cu130 constraint as MV-Adapter, but pinned to Python 3.11
   because `bpy` has no cp310 wheel at all and `bpy` 5.x (cp313-only) removed
   `cycles.filter_type`, which `data_toolkit/bpy_render.py` sets.
+
+### The SegviGen env is really the TRELLIS.2 env
+
+It is named for SegviGen because that is what it was built for, but SegviGen runs
+*on* TRELLIS.2 and the install pulls the whole `TRELLIS.2-4B` backbone. So the
+directory also provides:
+
+- `Trellis2ImageTo3DPipeline` — image-to-3D that can emit **open surfaces**, which
+  `generate_garment` needs and this repo's TRELLIS 1 `generate_3d` cannot do
+- `bpy` 4.5.9 — the cloth and shrinkwrap draping in `scripts/garment_fit.py`
+
+None of that needed extra installation; it became reachable once the SDPA
+attention backend landed. Two TRELLIS generations therefore coexist on purpose:
+TRELLIS 1 for characters (`generate_3d`), TRELLIS.2 for garments and segmentation.
 
 ### SegviGen attention: SDPA, not flash-attn or xformers
 
@@ -90,7 +104,7 @@ on this box at all** — it spawns past `MAX_JOBS=2` and exhausts 31 GB.
 ```bash
 ./scripts/install_skintokens.sh        # rigging
 ./scripts/install_mvadapter.sh         # orbit views
-./scripts/install_segvigen.sh          # part segmentation
+./scripts/install_segvigen.sh          # part segmentation + garments (TRELLIS.2)
 ```
 
 Each script's header records the dead ends found while building it — read those
@@ -149,14 +163,18 @@ Remote paths are resolved against the remote `$HOME` before quoting — a litera
 
 ## Licensing note
 
-`nvdiffrast` is present in the TRELLIS, MV-Adapter and both SegviGen envs, and
+`nvdiffrast` is present in the TRELLIS, MV-Adapter and TRELLIS.2 envs, and
 TRELLIS bakes **every texture** with it (`postprocessing_utils.py:5`, `:378`). Its
 licence is *Nvidia Source Code License (1-Way Commercial)*: "may be used or
 intended for use non-commercially… research or evaluation purposes only." It is
 not optional — `o_voxel` cannot even be imported without it.
 
-Everything else in the pipeline is permissive: TRELLIS (MIT), SkinTokens (MIT),
-MV-Adapter (Apache 2.0), SDXL base (CreativeML Open RAIL++-M), SegviGen (MIT).
+Everything else in the pipeline is permissive: TRELLIS (MIT), TRELLIS.2 (MIT),
+SkinTokens (MIT), MV-Adapter (Apache 2.0), SDXL base (CreativeML Open RAIL++-M),
+SegviGen (MIT).
+
+`generate_garment` inherits the same nvdiffrast constraint, since `o_voxel` is on
+its export path too.
 
 Not legal advice — recorded so the constraint is visible if these assets ever
 become commercial. See

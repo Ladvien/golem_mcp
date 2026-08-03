@@ -28,6 +28,7 @@ The two GPU stages **hot-swap on one RTX 3090** — see [GPU hot-swapping](#gpu-
 | `generate_orbit_views` | 6 geometrically consistent orbit views from one reference image, via MV-Adapter |
 | `rig_model` | Mesh → rigged `.glb` with skeleton + skin weights via TokenRig |
 | `segment_mesh` | Mesh → per-face part labels via SegviGen, leaving the mesh untouched |
+| `generate_garment` | Garment description → its own open-surface `.glb`, fitted and draped onto a target body |
 | `free_gpu` | Evict TRELLIS from VRAM and report free memory |
 | `health_check` | Readiness, GPU state, and whether the rigger is installed |
 | `list_outputs` | Recent outputs across 3D, rigged, and image dirs |
@@ -491,6 +492,70 @@ garment. If you need clothing separated from skin, this is the wrong tool.
 
 `color_rgb` in the report is the sampler's arbitrary label colour for a part. It
 changes with the seed and means nothing across meshes; only the partition matters.
+
+---
+
+## Garments (`generate_garment`)
+
+```
+generate_garment(garment="blackened leather armour corset with brass buckles",
+                 body="female_base_v5", anchor="torso")
+```
+
+Produces a garment as **its own asset** — open-surface, textured, with an
+interior — then places and drapes it on the target body. Measured end to end at
+**300 s and 3.4 GB peak VRAM**; published to `gen_ai/garments/<name>/` as
+`asset.glb` (fitted), `asset_unfitted.glb` (as generated), `reference.png` and a
+`metadata.json` carrying the full provenance.
+
+### Why this is not `segment_mesh`
+
+Splitting a garment off a dressed character gives you the **outer shell only** —
+no interior, no thickness, nothing where cloth meets skin — so it can never be
+conformed onto a different body. (And `segment_mesh` would not find the garment
+edge anyway: it partitions by structure, not material.)
+
+### Why a product shot, not the character's own image
+
+This is the finding the whole tool rests on. Same model, same export settings:
+
+| Source image | Result | Sealed air |
+|---|---|---|
+| Corset masked out of the worn character | featureless blob | **36.5%** |
+| Corset described as a standalone product shot | clean garment | **0.07%** |
+
+Both are topologically open, so a watertightness check passes either. A garment
+worn on a body has its interior occluded and its silhouette broken by skin and
+limbs; inverting that gives a stuffed torso. A product shot is in-distribution.
+`_garment_prompt` therefore wraps your description in "standing alone with nothing
+inside it, no body, no mannequin, hollow interior visible through the openings".
+
+### It fails rather than handing back a bad garment
+
+Two rejections, both of which look fine in a render:
+
+- **watertight** — the open surface was lost (something passed `remesh=True`)
+- **over 5% sealed air** — open but stuffed; a body could never go in it
+
+The threshold is empirical: 0.0007 for real garments against 0.3652 for the blob,
+reproducible across runs. It replaced a volume/convex-hull ratio that returned
+0.52 and 0.0007 for the *same* mesh, because trimesh computes volume by the
+divergence theorem and that is undefined without a closed surface.
+
+### Fitting
+
+`anchor` (torso, chest, waist, hips, legs, full) sets the vertical band, and the
+garment is scaled to span it — TRELLIS preserves true aspect ratio, so girth
+follows for free. Scaling to *enclose* the body horizontally does not work: a
+T-pose body's widest slice at chest height is the **1.70 m arm span**, not the
+0.31 m chest, and matching it produced a 0.94 m corset on a 1.7 m body. Limb
+slices are rejected by width relative to the median.
+
+Draping is shrinkwrap `wrap_mode='OUTSIDE'` — which moves a vertex only if it is
+*inside* the body, evicting intersections without flattening the garment — then a
+cloth pass with gravity zeroed, because an unpinned corset under gravity slides
+off rather than settling. `TARGET_PROJECT` is wrong here: it projects every vertex
+onto the skin and still left 30.9% of them inside.
 
 ---
 
