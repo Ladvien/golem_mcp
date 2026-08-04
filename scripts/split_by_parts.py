@@ -84,7 +84,9 @@ def main() -> int:
             entry["glb"] = str(single)
         report.append(entry)
 
-    combined = out_dir / f"{stem}_parts.glb"
+    # Named _split, not _parts: segment_mesh already writes asset_parts.json and
+    # asset_parts_preview.glb, and a third "parts" file would be ambiguous.
+    combined = out_dir / f"{stem}_split.glb"
     scene.export(str(combined))
 
     # Never drop geometry silently: if a filter removed parts, say which.
