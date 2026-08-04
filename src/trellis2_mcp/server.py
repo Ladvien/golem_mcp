@@ -85,6 +85,7 @@ SEGVIGEN_VRAM_REQUIRED = 18e9
 # and BpyParser (it imports them from the repo root, hence the cwd) but runs on
 # SegviGen's bpy 4.5.9; retarget_animation.py is pure bpy.
 CANONICAL_DRIVER = _SCRIPTS / "canonical_skeleton.py"
+ORIENT_DRIVER = _SCRIPTS / "orient_bones.py"
 RETARGET_DRIVER = _SCRIPTS / "retarget_animation.py"
 ANIMATION_LIBRARY_DRIVER = _SCRIPTS / "animation_library.py"
 ANIMATION_ROOTS = tuple(
@@ -1483,6 +1484,7 @@ def rig_model(
         landmarks = RIG_OUTPUT_DIR / f"{output_name}_landmarks.glb"
         canonical = RIG_OUTPUT_DIR / f"{output_name}_canonical.glb"
         skinned = RIG_OUTPUT_DIR / f"{output_name}_skinned.glb"
+        named = RIG_OUTPUT_DIR / f"{output_name}_named.glb"
 
         params = {
             "num_beams": num_beams, "use_transfer": use_transfer,
@@ -1514,8 +1516,22 @@ def rig_model(
         # makes renaming by index exact.
         _run_script(
             SEGVIGEN_PYTHON, CANONICAL_DRIVER,
-            ["restore-names", "--rigged", str(skinned), "--reference", str(canonical), "--out", str(target)],
+            ["restore-names", "--rigged", str(skinned), "--reference", str(canonical), "--out", str(named)],
             300, "CANONICAL_RESTORE_OK", "Bone name restore",
+        )
+
+        # Point every bone at its child. TokenRig's writer does not, and Blender
+        # draws bones head->tail - so a rig whose joint POSITIONS are perfect still
+        # renders as spokes jutting out of the character, and is unusable for hand
+        # animation because rotating a bone bends its limb about an unrelated axis.
+        # Measured on emberwake_herald: 8 of 18 bones over 20 degrees off, worst
+        # 116.6. Invisible to every retargeting metric - the rest-relative delta
+        # cancels bone-axis convention, so output is byte-identical either way -
+        # which is exactly why it survived this long.
+        _run_script(
+            SEGVIGEN_PYTHON, ORIENT_DRIVER,
+            ["--rigged", str(named), "--out", str(target)],
+            300, "ORIENT_OK", "Bone orientation",
         )
 
         elapsed = round(time.time() - started, 1)
@@ -1539,6 +1555,7 @@ def rig_model(
                 "skinning_seconds": t_skin,
                 "landmark_glb": str(landmarks),
                 "canonical_glb": str(canonical),
+                "pre_orientation_glb": str(named),
             },
             "trellis_evicted": evicted,
             "geometry": _glb_dimensions(target),
