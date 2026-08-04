@@ -1800,7 +1800,10 @@ def generate_garment(
         )
         if not image_result.get("success"):
             return {"success": False, "stage": "generate_image", "error": image_result.get("error")}
-        reference = image_result.get("image_path") or str(IMAGE_OUTPUT_DIR / f"{output_name}_ref.png")
+        # generate_image returns the file under "local_path". An earlier version read
+        # "image_path" with a constructed path as backup, which silently always took
+        # the backup and only worked because the two happened to agree.
+        reference = image_result["local_path"]
 
         env = dict(os.environ)
         env["ATTN_BACKEND"] = "sdpa"

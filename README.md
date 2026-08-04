@@ -466,6 +466,26 @@ labels = np.load("succubus_1011_face_labels.npy")       # len(labels) == len(mes
 The default `process=True` welds duplicate vertices and reorders faces, after
 which the labels no longer line up.
 
+### Splitting into separate objects, with the texture intact
+
+```bash
+scripts/split_by_parts.py --mesh asset.glb --labels asset_face_labels.npy --out-dir .
+```
+
+Writes `asset_parts.glb` — one named mesh per part, each keeping its UVs and
+referencing the same texture. Blender imports it as N objects that are **already
+textured**; there is nothing to re-apply.
+
+**Split `asset.glb`, never `asset_parts_preview.glb`.** The preview is built with
+trimesh `ColorVisuals`, which replaces `TextureVisuals` and so throws the UVs
+away. Parts split off the preview can never be textured, because the coordinates
+that map them onto the TRELLIS.2 texture are already gone — it is there to look
+at, not to work on.
+
+The texture is shared rather than copied per part: 11 parts of a 1.5 MB asset came
+out at 1.59 MB. Pass `--min-face-share` to drop sliver parts (an 11-part split had
+three under 0.2%); what it drops is printed rather than silently removed.
+
 ### The partition is sampled, so re-roll rather than repair
 
 `tex_slat_sample_single` draws its noise from the global RNG and upstream never
