@@ -636,6 +636,21 @@ def placeholder_skin(vertices, joints, parents):
     return skin
 
 
+def gltf_to_blender(v):
+    """glTF Y-up -> Blender Z-up: (x, y, z) -> (x, -z, y).
+
+    trimesh hands us glTF coordinates, but a bpy scene treats whatever it is given
+    as Z-up and the glTF exporter then applies its OWN Y-up conversion on write.
+    Without pre-converting, the two rotations compound and the character ships
+    lying on its side - measured as extents [0.694, 0.365, 1.0] where the source
+    asset is [0.694, 1.0, 0.365].
+    """
+    v = np.asarray(v, dtype=np.float64)
+    out = np.empty_like(v)
+    out[..., 0], out[..., 1], out[..., 2] = v[..., 0], -v[..., 2], v[..., 1]
+    return out
+
+
 def cmd_fit(args):
     import trimesh
     from src.rig_package.info.asset import Asset
@@ -660,10 +675,13 @@ def cmd_fit(args):
         joints = joints.astype(np.float32)
 
     skin = placeholder_skin(mesh.vertices, joints, parents)
+    # Convert to Blender's axis convention before handing the data to bpy; the
+    # exporter converts back on write. See gltf_to_blender.
     asset = Asset.from_data(
-        vertices=np.asarray(mesh.vertices, dtype=np.float32),
+        vertices=gltf_to_blender(mesh.vertices).astype(np.float32),
         faces=np.asarray(mesh.faces, dtype=np.int64),
-        joints=joints, parents=parents, joint_names=names, skin=skin,
+        joints=gltf_to_blender(joints).astype(np.float32),
+        parents=parents, joint_names=names, skin=skin,
         armature_name="Armature",
     )
     BpyParser.export_asset(asset, args.out, do_not_normalize=True)

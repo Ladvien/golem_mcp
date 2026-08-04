@@ -1,0 +1,218 @@
+#!/usr/bin/env python
+"""Retarget an animation clip onto a canonically-rigged character.
+
+    retarget_animation.py --character rigged.glb --clip walk.fbx --out walking.glb
+
+WHY A RETARGET AND NOT A DIRECT APPLICATION
+-------------------------------------------
+Matching bone names is necessary but not sufficient, and this was measured rather
+than assumed. Applying `mutant walking.fbx` straight onto `forge_mixamo.glb`
+matched all 23 of our bones to the clip's channels - and produced a character
+collapsed on its side. A clip keys LOCAL rotations relative to ITS OWN rest pose
+and bone rolls; our bones take their orientation from TokenRig joint positions.
+
+So each bone is driven by the source's rest-relative DELTA rather than its raw
+local rotation:
+
+    delta        = src_posed_world_rot * src_rest_world_rot^-1
+    target_world = delta * tgt_rest_world_rot
+
+which is correct for any pair of rest poses, and is what makes one clip library
+drive characters this pipeline generated.
+
+WHY A NAME MAP
+--------------
+A retarget is required regardless, and once rest poses are being reconciled a
+name map costs almost nothing more. That turns the canonical skeleton choice from
+load-bearing into a table entry, and it unlocks every library on disk rather than
+the one that happens to share our naming:
+
+    game_assets/animation/  Quaternius UAL v1+v2, 86 clips, UE5 Mannequin names,
+                            CC0 public domain, shipped with and without root motion
+    game_assets/SCP-610/    20 Mixamo clips, mixamorig: names
+
+TWO TRAPS, BOTH MEASURED
+------------------------
+  * Blender 4.4+ slotted actions: assigning `animation_data.action` evaluates
+    NOTHING unless `action_slot` is bound as well. Every bone sits at its rest
+    quaternion, which looks exactly like a broken rig.
+  * Mixamo FBX keys location in CENTIMETRES. On a 1 m character that is a 100x
+    root translation - measured mean vertex motion of 105 units, character gone
+    from the scene. Root motion is therefore scaled by the height ratio, and off
+    by default.
+"""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+# Source convention -> our canonical core. Values are our Mixamo names; keys are
+# what the clip calls them. Only the core is mapped: extra chains (wings, tail,
+# horns) are deliberately left undriven so a standard clip cannot flail them.
+UE5_TO_CANON = {
+    "pelvis": "mixamorig:Hips",
+    "spine_01": "mixamorig:Spine", "spine_02": "mixamorig:Spine1",
+    "spine_03": "mixamorig:Spine2", "neck_01": "mixamorig:Neck", "Head": "mixamorig:Head",
+    "clavicle_l": "mixamorig:LeftShoulder", "upperarm_l": "mixamorig:LeftArm",
+    "lowerarm_l": "mixamorig:LeftForeArm", "hand_l": "mixamorig:LeftHand",
+    "clavicle_r": "mixamorig:RightShoulder", "upperarm_r": "mixamorig:RightArm",
+    "lowerarm_r": "mixamorig:RightForeArm", "hand_r": "mixamorig:RightHand",
+    "thigh_l": "mixamorig:LeftUpLeg", "calf_l": "mixamorig:LeftLeg",
+    "foot_l": "mixamorig:LeftFoot", "ball_l": "mixamorig:LeftToeBase",
+    "thigh_r": "mixamorig:RightUpLeg", "calf_r": "mixamorig:RightLeg",
+    "foot_r": "mixamorig:RightFoot", "ball_r": "mixamorig:RightToeBase",
+}
+MIXAMO_TO_CANON = {n: n for n in set(UE5_TO_CANON.values())}
+MAPS = {"ue5": UE5_TO_CANON, "mixamo": MIXAMO_TO_CANON}
+
+
+def pick_map(source_bones, requested="auto"):
+    """Choose the name map with the most hits against the clip's own bones."""
+    if requested != "auto":
+        return requested, MAPS[requested]
+    scored = [(sum(1 for k in m if k in source_bones), name) for name, m in MAPS.items()]
+    hits, name = max(scored)
+    if hits < 6:
+        raise SystemExit(
+            f"no source convention matches this clip (best {hits} bones). "
+            f"Its bones look like: {sorted(source_bones)[:8]}. Add a map to MAPS."
+        )
+    return name, MAPS[name]
+
+
+def hierarchy_order(arm, names):
+    """Parents before children - `pose_bone.matrix` assignment is order-sensitive."""
+    depth = {}
+    for n in names:
+        d, b = 0, arm.data.bones[n]
+        while b.parent:
+            d, b = d + 1, b.parent
+        depth[n] = d
+    return sorted(names, key=lambda n: depth[n])
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--character", required=True, help="canonically rigged .glb")
+    ap.add_argument("--clip", required=True, help=".fbx or .glb carrying the animation")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--clip-index", type=int, default=0, help="which action, if the file has several")
+    ap.add_argument("--source-map", default="auto", choices=["auto", "ue5", "mixamo"])
+    ap.add_argument("--root-motion", action="store_true",
+                    help="carry hip translation, scaled by the height ratio (default: in place)")
+    ap.add_argument("--list-clips", action="store_true", help="print the file's actions and exit")
+    args = ap.parse_args()
+
+    import bpy
+    from mathutils import Matrix
+
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.ops.import_scene.gltf(filepath=args.character)
+    tgt = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
+    if tgt is None:
+        raise SystemExit(f"{args.character} has no armature - it is not a rigged character")
+    tgt_bones = {b.name for b in tgt.data.bones}
+    mesh = next(o for o in bpy.context.scene.objects if o.type == "MESH")
+
+    before_obj = set(bpy.context.scene.objects)
+    before_act = set(bpy.data.actions)
+    loader = bpy.ops.import_scene.fbx if args.clip.lower().endswith(".fbx") else bpy.ops.import_scene.gltf
+    loader(filepath=args.clip)
+    src = next(o for o in bpy.context.scene.objects
+               if o.type == "ARMATURE" and o not in before_obj)
+    actions = [a for a in bpy.data.actions if a not in before_act]
+    if args.list_clips:
+        print(json.dumps({"clip": args.clip, "actions": [a.name for a in actions]}, indent=2))
+        return 0
+    if not actions:
+        raise SystemExit(f"{args.clip} contains no animation")
+    act = actions[min(args.clip_index, len(actions) - 1)]
+
+    if src.animation_data is None:
+        src.animation_data_create()
+    src.animation_data.action = act
+    # Blender 4.4+ slotted actions: without this every bone stays at rest.
+    if hasattr(src.animation_data, "action_slot") and getattr(act, "slots", None):
+        src.animation_data.action_slot = act.slots[0]
+
+    src_bones = {b.name for b in src.data.bones}
+    map_name, name_map = pick_map(src_bones, args.source_map)
+    pairs = [(s, t) for s, t in name_map.items() if s in src_bones and t in tgt_bones]
+    if len(pairs) < 6:
+        raise SystemExit(f"only {len(pairs)} bones map between clip and character; too few to retarget")
+    order = hierarchy_order(tgt, [t for _s, t in pairs])
+    by_target = {t: s for s, t in pairs}
+
+    # Rest orientations in ARMATURE space, not world. Including matrix_world does
+    # not cancel in the delta - it CONJUGATES it:
+    #     (M*posed)*(M*rest)^-1 = Q_M * (posed*rest^-1) * Q_M^-1
+    # and a Mixamo FBX imports with a -90 deg X rotation on its armature object,
+    # which showed up as the retargeted character lying on its side.
+    src_rest = {s: src.pose.bones[s].bone.matrix_local.to_quaternion() for s, _t in pairs}
+    tgt_rest = {t: tgt.pose.bones[t].bone.matrix_local.to_quaternion() for _s, t in pairs}
+
+    height_ratio = 1.0
+    if args.root_motion:
+        sd, td = max(src.dimensions), max(mesh.dimensions)
+        height_ratio = (td / sd) if sd > 1e-6 else 1.0
+
+    for pb in tgt.pose.bones:
+        pb.rotation_mode = "QUATERNION"
+    if tgt.animation_data is None:
+        tgt.animation_data_create()
+    new_act = bpy.data.actions.new(name=f"retargeted_{Path(args.clip).stem}")
+    tgt.animation_data.action = new_act
+    if hasattr(tgt.animation_data, "action_slot") and getattr(new_act, "slots", None):
+        tgt.animation_data.action_slot = new_act.slots[0]
+
+    source_action_name = act.name       # captured before the stale actions are freed
+    start, end = (int(round(v)) for v in act.frame_range)
+    hips = "mixamorig:Hips"
+    root_src = by_target.get(hips)
+    src_hips_rest = src.pose.bones[root_src].bone.matrix_local.translation if root_src else None
+
+    for frame in range(start, end + 1):
+        bpy.context.scene.frame_set(frame)
+        bpy.context.view_layer.update()
+        for t in order:
+            s = by_target[t]
+            spb, tpb = src.pose.bones[s], tgt.pose.bones[t]
+            delta = spb.matrix.to_quaternion() @ src_rest[s].inverted()
+            want = delta @ tgt_rest[t]
+            cur = tpb.matrix.copy()
+            loc = cur.translation.copy()
+            if args.root_motion and t == hips and src_hips_rest is not None:
+                off = spb.matrix.translation - src_hips_rest
+                loc = loc + off * height_ratio
+            tpb.matrix = Matrix.LocRotScale(loc, want, cur.to_scale())
+            bpy.context.view_layer.update()
+        for t in order:
+            tgt.pose.bones[t].keyframe_insert("rotation_quaternion", frame=frame)
+        if args.root_motion:
+            tgt.pose.bones[hips].keyframe_insert("location", frame=frame)
+
+    # Drop the source rig AND its action before export. Removing only the object
+    # still ships the raw clip in the GLB, where it is picked up ahead of the
+    # retargeted one - and it carries the source's centimetre root translation.
+    bpy.data.objects.remove(src, do_unlink=True)
+    for stale in [a for a in bpy.data.actions if a is not new_act]:
+        bpy.data.actions.remove(stale)
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.export_scene.gltf(filepath=args.out, export_format="GLB", export_animations=True)
+
+    report = {
+        "character": args.character, "clip": args.clip, "out": args.out,
+        "action": source_action_name, "source_convention": map_name,
+        "bones_mapped": len(pairs), "frames": end - start + 1,
+        "root_motion": args.root_motion, "height_ratio": round(height_ratio, 4),
+        "unmapped_target_bones": sorted(tgt_bones - {t for _s, t in pairs}),
+    }
+    print(json.dumps(report, indent=2))
+    print(f"RETARGET_OK {args.out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
