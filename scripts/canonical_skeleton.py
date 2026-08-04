@@ -98,8 +98,17 @@ import numpy as np
 
 sys.path.insert(0, "/home/ladvien/skintokens/repo")
 
-UP, LAT, DEP = 1, 2, 0    # glTF Y-up; arm span on Z, body depth on X
+# glTF is Y-up, so UP is fixed. LAT is only a LAST RESORT: which horizontal axis
+# carries left-to-right varies per asset (measured: X on three of four library
+# characters, Z on the fourth), so classify() derives it and reports lat_axis.
+UP, LAT, DEP = 1, 2, 0
 GLTF_JSON_CHUNK = 0x4E4F534A
+
+# Where the glenohumeral joint sits as a fraction of standing height. This is the
+# one proportion the generated skeleton cannot supply: it attaches arm chains at
+# the clavicle root, measured at 0.88-0.95 H across the library, which is ear
+# height rather than a shoulder.
+SHOULDER_FRAC = 0.82
 
 
 
@@ -182,9 +191,6 @@ def classify(parents, pos):
 
     spine = path(max(leaves, key=frac))
     on_spine = set(spine)
-    # Body axis from the SPINE: a median over all joints is dragged sideways by
-    # whichever limb carries more bones.
-    ctr = float(np.median(pos[spine, LAT]))
 
     def subtree(i):
         out, stack = [], [i]
@@ -194,19 +200,43 @@ def classify(parents, pos):
             stack.extend(children[k])
         return out
 
+    # WHICH AXIS IS LEFT-TO-RIGHT. This was hardcoded to glTF Z and is wrong for
+    # most assets - measured across the library, arm-tip separation per axis:
+    #
+    #     emberwake_herald  [0.411 0.000 0.000]   lateral is X
+    #     forge_warden      [0.609 0.035 0.016]   lateral is X
+    #     succubus_warden   [0.375 0.000 0.000]   lateral is X
+    #     female_base_v5    [0.000 0.000 1.616]   lateral is Z
+    #
+    # so on three of four, every "lateral" measurement below was reading DEPTH.
+    # Sorting limbs by front/back carries no left/right information at all, which
+    # is why side assignment behaved randomly and why arms could end up labelled
+    # against the legs. Limbs spread sideways far more than fore-and-aft, so the
+    # widest-spread horizontal axis is the lateral one.
+    off_spine = [c for node in spine for c in children[node] if c not in on_spine]
+    horiz = [k for k in (0, 1, 2) if k != UP]
+    if off_spine:
+        cents = np.stack([np.mean(pos[subtree(c)], axis=0) for c in off_spine])
+        lat = max(horiz, key=lambda k: float(cents[:, k].max() - cents[:, k].min()))
+    else:
+        lat = LAT
+    # Body axis from the SPINE: a median over all joints is dragged sideways by
+    # whichever limb carries more bones.
+    ctr = float(np.median(pos[spine, lat]))
+
     branches = []
     for node in spine:
         for c in children[node]:
             if c in on_spine:
                 continue
             st = subtree(c)
-            far = max(st, key=lambda k: abs(pos[k, LAT] - ctr))
+            far = max(st, key=lambda k: abs(pos[k, lat] - ctr))
             branches.append({
                 "root": c, "at": node, "at_frac": frac(node), "size": len(st),
                 "min_frac": min(frac(k) for k in st),
                 "max_frac": max(frac(k) for k in st),
-                "lat_reach": float(abs(pos[far, LAT] - ctr) / h),
-                "lat_mean": float(np.mean(pos[st, LAT]) - ctr),
+                "lat_reach": float(abs(pos[far, lat] - ctr) / h),
+                "lat_mean": float(np.mean(pos[st, lat]) - ctr),
                 "nodes": st,
             })
 
@@ -240,6 +270,7 @@ def classify(parents, pos):
         if len(pair) == 2 and pair[0]["lat_mean"] < pair[1]["lat_mean"]:
             pair.reverse()
     return {"spine": spine, "legs": legs, "arms": arms, "extra": extra,
+            "lat_axis": lat, "lat_center": ctr,
             "children": children, "parents": parents, "pos": pos, "height": float(h)}
 
 
@@ -334,7 +365,6 @@ def mixamo_from_generated(rigged_glb, links=3):
     # retarget_animation's body frame flips with it, reads a 180 degree yaw, and
     # plays the walk mirrored. The feet settle it: the last segment of a leg chain
     # is the foot, and feet point where the character faces.
-    ctr = float(np.median(pos[spine, LAT]))
     up_v = pos[sh_i] - pos[hips_i]
     up_v = up_v / max(np.linalg.norm(up_v), 1e-9)
     toe_v = np.zeros(3)
@@ -353,20 +383,19 @@ def mixamo_from_generated(rigged_glb, links=3):
     # the same proportion the earlier geometric fitter used, and the one place
     # proportion beats the generated skeleton, whose arm chain has not left the
     # neck yet at t=0.12.
-    hip_half = float(np.mean([abs(pos[b["root"], LAT] - ctr) for b in legs]))
-    sh_off = hip_half * 1.15
     hips_up = float(pos[hips_i, UP])
     height = c["height"]
+    lo_up = float(pos[:, UP].min())
 
     for tag, arm, leg in (("Left", arms[0], legs[0]), ("Right", arms[1], legs[1])):
         arm_line = longest_line(c, arm)
         # Shoulder joint = where the chain has swung sh_off clear of the midline.
-        t_sh = t_where(pos, arm_line, lambda q: abs(float(q[LAT]) - ctr), sh_off)
-        # Bound it hard. The lateral rule alone overcorrects a stocky build: a dwarf
-        # has wide hips relative to its shoulders, so hip_half*1.15 is not reached
-        # until well down the humerus, and the shoulder landed at 0.67 H. A shoulder
-        # is always near the START of an arm chain whatever the proportions.
-        t_sh = min(max(t_sh, 0.05), 0.30)
+        # Shoulder by HEIGHT, not by lateral offset. Once the lateral axis was
+        # fixed, the offset rule stopped discriminating: an arm chain clears
+        # hip_half*1.15 within its first segment, so the joint sat back at the
+        # clavicle root at 0.94 H. Height separates clavicle from humerus directly.
+        t_sh = t_where(pos, arm_line, lambda q: float(q[UP]), lo_up + SHOULDER_FRAC * height)
+        t_sh = min(max(t_sh, 0.05), 0.35)
         t_elbow = t_sh + (0.9 - t_sh) * 0.5
         a = resample(pos, arm_line, [0.0, t_sh, t_elbow, 0.9])
         add(f"mixamorig:{tag}Shoulder", "mixamorig:Spine2", a[0])
