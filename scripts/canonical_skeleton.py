@@ -502,6 +502,120 @@ def gltf_to_blender(v):
     return out
 
 
+# --------------------------------------------------------------------------- #
+# texture transfer
+# --------------------------------------------------------------------------- #
+_COMPONENT = {5120: "b", 5121: "B", 5122: "h", 5123: "H", 5125: "I", 5126: "f"}
+_COUNT = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}
+
+
+def _read_accessor(gltf, binary, index):
+    """An accessor as an (count, components) numpy array, honouring byteStride."""
+    acc = gltf["accessors"][index]
+    view = gltf["bufferViews"][acc["bufferView"]]
+    fmt = _COMPONENT[acc["componentType"]]
+    ncomp = _COUNT[acc["type"]]
+    item = struct.calcsize(fmt) * ncomp
+    stride = view.get("byteStride") or item
+    base = view.get("byteOffset", 0) + acc.get("byteOffset", 0)
+    rows = [
+        struct.unpack_from("<" + fmt * ncomp, binary, base + i * stride)
+        for i in range(acc["count"])
+    ]
+    return np.array(rows)
+
+
+def _append(binary, payload):
+    """Append 4-byte-aligned bytes to the BIN chunk; return (offset, length)."""
+    while len(binary) % 4:
+        binary += b"\x00"
+    offset = len(binary)
+    return binary + payload, offset, len(payload)
+
+
+def transfer_texture(source_glb, fitted_glb):
+    """Copy UVs and material from the source mesh onto the fitted GLB.
+
+    SkinTokens' Asset carries geometry and a rig and NOTHING else - it has no UV,
+    texture or material field at all - so everything written through
+    BpyParser.export_asset comes out untextured. Measured across the chain:
+
+        source asset        materials=1 images=1  TEXCOORD_0 present
+        pass 1 landmark rig materials=1 images=1  TEXCOORD_0 present
+        the fit output      materials=0 images=0  TEXCOORD_0 GONE
+        final shipped rig   materials=0 images=0  TEXCOORD_0 GONE
+
+    TokenRig itself preserves them - pass 1 proves that - so restoring them here,
+    before the skinning pass, is enough to carry them all the way to the final rig.
+
+    The vertex arrays do not correspond: export_asset writes the mesh unindexed,
+    one vertex per face corner (4,700 vertices became 17,782 for 5,928 faces). The
+    FACES do correspond, so UVs are rebuilt corner by corner through them.
+    """
+    src_chunks = _glb_chunks(source_glb)
+    src = json.loads(bytes(next(c[1] for c in src_chunks if c[0] == GLTF_JSON_CHUNK)).decode("utf-8"))
+    src_bin = bytes(next(c[1] for c in src_chunks if c[0] != GLTF_JSON_CHUNK))
+    src_prim = src["meshes"][0]["primitives"][0]
+    if "TEXCOORD_0" not in src_prim["attributes"] or "material" not in src_prim:
+        raise SystemExit(f"{source_glb} has no UVs or no material; nothing to transfer")
+
+    dst_chunks = _glb_chunks(fitted_glb)
+    ji = next(i for i, c in enumerate(dst_chunks) if c[0] == GLTF_JSON_CHUNK)
+    bi = next(i for i, c in enumerate(dst_chunks) if c[0] != GLTF_JSON_CHUNK)
+    dst = json.loads(bytes(dst_chunks[ji][1]).decode("utf-8"))
+    dst_bin = bytes(dst_chunks[bi][1])
+    dst_prim = dst["meshes"][0]["primitives"][0]
+
+    src_faces = _read_accessor(src, src_bin, src_prim["indices"]).reshape(-1, 3)
+    dst_faces = _read_accessor(dst, dst_bin, dst_prim["indices"]).reshape(-1, 3)
+    if len(src_faces) != len(dst_faces):
+        raise SystemExit(
+            f"face counts differ: source {len(src_faces)} vs fitted {len(dst_faces)}. "
+            "UVs can only be rebuilt when the fit preserved the face list."
+        )
+    src_uv = _read_accessor(src, src_bin, src_prim["attributes"]["TEXCOORD_0"])
+    nvert = dst["accessors"][dst_prim["attributes"]["POSITION"]]["count"]
+    uv = np.zeros((nvert, 2), dtype=np.float32)
+    uv[dst_faces.reshape(-1)] = src_uv[src_faces.reshape(-1)]
+
+    dst_bin, uv_off, uv_len = _append(dst_bin, uv.astype("<f4").tobytes())
+    dst["bufferViews"].append({"buffer": 0, "byteOffset": uv_off, "byteLength": uv_len})
+    dst["accessors"].append({
+        "bufferView": len(dst["bufferViews"]) - 1, "componentType": 5126, "type": "VEC2",
+        "count": nvert, "min": [float(uv[:, 0].min()), float(uv[:, 1].min())],
+        "max": [float(uv[:, 0].max()), float(uv[:, 1].max())],
+    })
+    dst_prim["attributes"]["TEXCOORD_0"] = len(dst["accessors"]) - 1
+
+    image = src["images"][0]
+    if "bufferView" not in image:
+        raise SystemExit("source image is not stored in a bufferView; refusing to guess")
+    iv = src["bufferViews"][image["bufferView"]]
+    blob = src_bin[iv.get("byteOffset", 0):iv.get("byteOffset", 0) + iv["byteLength"]]
+    dst_bin, im_off, im_len = _append(dst_bin, blob)
+    dst["bufferViews"].append({"buffer": 0, "byteOffset": im_off, "byteLength": im_len})
+    dst.setdefault("images", []).append(
+        {"bufferView": len(dst["bufferViews"]) - 1, "mimeType": image.get("mimeType", "image/png")})
+    if src.get("samplers"):
+        dst.setdefault("samplers", []).extend(src["samplers"])
+    dst.setdefault("textures", []).append({"source": len(dst["images"]) - 1})
+    if src.get("samplers"):
+        dst["textures"][-1]["sampler"] = len(dst["samplers"]) - 1
+
+    material = json.loads(json.dumps(src["materials"][src_prim["material"]]))
+    pbr = material.get("pbrMetallicRoughness", {})
+    if "baseColorTexture" in pbr:
+        pbr["baseColorTexture"] = dict(pbr["baseColorTexture"], index=len(dst["textures"]) - 1)
+    dst.setdefault("materials", []).append(material)
+    dst_prim["material"] = len(dst["materials"]) - 1
+
+    dst["buffers"][0]["byteLength"] = len(dst_bin)
+    dst_chunks[ji][1] = bytearray(json.dumps(dst, separators=(",", ":")).encode("utf-8"))
+    dst_chunks[bi][1] = bytearray(dst_bin)
+    _write_glb(fitted_glb, dst_chunks)
+    return {"uvs": nvert, "faces": len(dst_faces), "image_bytes": im_len}
+
+
 def cmd_fit(args):
     import trimesh
     from src.rig_package.info.asset import Asset
@@ -521,13 +635,14 @@ def cmd_fit(args):
         armature_name="Armature",
     )
     BpyParser.export_asset(asset, args.out, do_not_normalize=True)
+    texture = transfer_texture(args.mesh, args.out)
 
     report_path = args.out.rsplit(".", 1)[0] + "_skeleton.json"
     extras = gen_report["extras"]
     report = {
         "source": args.mesh, "out": args.out, "from_rig": args.from_rig,
         "bones": len(names), "core_bones": len(names) - len(extras),
-        "extras": extras, "from_generated": gen_report,
+        "extras": extras, "from_generated": gen_report, "texture": texture,
         "names": names,
     }
     open(report_path, "w").write(json.dumps(report, indent=2))
@@ -549,6 +664,16 @@ def _glb_chunks(path):
         chunks.append([ctype, data[off + 8:off + 8 + clen]])
         off += 8 + clen
     return chunks
+
+
+def _write_glb(path, chunks):
+    out = b""
+    for ctype, payload in chunks:
+        payload = bytes(payload)
+        pad = (4 - len(payload) % 4) % 4
+        payload += (b" " if ctype == GLTF_JSON_CHUNK else b"\x00") * pad
+        out += struct.pack("<II", len(payload), ctype) + payload
+    open(path, "wb").write(struct.pack("<III", 0x46546C67, 2, 12 + len(out)) + out)
 
 
 def cmd_restore(args):
@@ -578,12 +703,7 @@ def cmd_restore(args):
         doc["nodes"][node]["name"] = wanted[slot]
     chunks[ji][1] = json.dumps(doc, separators=(",", ":")).encode("utf-8")
 
-    out = b""
-    for ctype, payload in chunks:
-        pad = (4 - len(payload) % 4) % 4
-        payload += (b" " if ctype == GLTF_JSON_CHUNK else b"\x00") * pad
-        out += struct.pack("<II", len(payload), ctype) + payload
-    open(args.out, "wb").write(struct.pack("<III", 0x46546C67, 2, 12 + len(out)) + out)
+    _write_glb(args.out, chunks)
 
     print(json.dumps({"rigged": args.rigged, "out": args.out,
                       "renamed": len(wanted), "sample": wanted[:6]}, indent=2))
