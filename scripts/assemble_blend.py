@@ -7,6 +7,12 @@ Each item goes in its own collection, sits on the ground plane, and gets a 3D te
 label underneath, so a pipeline's stages can be compared in one viewport instead of
 opening five files.
 
+It opens in Solid shading with Colour set to Texture, so a textured asset looks
+textured on open rather than like grey clay - Blender's default Solid/Material
+colour ignores the base colour map. Material Preview is still one keystroke away
+(Z) if you want full shading. This only applies when you OPEN the file; appending
+it into an existing session uses that session's shading instead.
+
 The scene's frame range is taken from the longest action found, and every armature
 with an action gets its action slot bound - Blender 4.4+ evaluates NOTHING from
 `animation_data.action` alone, which looks exactly like a rig that failed to
@@ -173,9 +179,43 @@ def main() -> int:
     scene.frame_start = 1
     scene.frame_end = max(frame_end, 1)
 
+    # Save the VIEWPORT shading too, not just the scene. Blender's default is Solid
+    # with Material colour, which draws a textured character as grey clay - the
+    # asset looks unfinished when it is not. Solid + Texture shows the base colour
+    # map at Solid's speed, without waiting for Material Preview to compile
+    # shaders. Written across every screen because the file may open in any
+    # workspace, and read back after saving because a silently-empty
+    # bpy.data.screens would leave this doing nothing.
+    views = 0
+    for screen in bpy.data.screens:
+        for area in screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            for space in area.spaces:
+                if space.type == "VIEW_3D":
+                    space.shading.type = "SOLID"
+                    space.shading.color_type = "TEXTURE"
+                    views += 1
+    if not views:
+        raise SystemExit(
+            "no VIEW_3D space to configure - bpy.data.screens is empty, so the saved "
+            "file would open with default shading and the textures would not show"
+        )
+
+    frame_end = scene.frame_end          # read before the file is reopened below:
     bpy.ops.wm.save_as_mainfile(filepath=args.out)
+    # Confirm it survived the write; "Load UI" restores this on open. Reopening
+    # invalidates every Python handle into the old file, so anything still needed
+    # is captured above.
+    bpy.ops.wm.open_mainfile(filepath=args.out)
+    modes = {
+        (sp.shading.type, sp.shading.color_type)
+        for sc in bpy.data.screens for ar in sc.areas if ar.type == "VIEW_3D"
+        for sp in ar.spaces if sp.type == "VIEW_3D"
+    }
     print(f"items: {[i['label'] for i in placed]}")
-    print(f"frames: 1-{scene.frame_end}   row width: {total:.2f}   tallest: {tallest:.2f}")
+    print(f"viewport shading saved as: {sorted(modes)} across {views} 3D views")
+    print(f"frames: 1-{frame_end}   row width: {total:.2f}   tallest: {tallest:.2f}")
     print(f"ASSEMBLE_OK {args.out}")
     return 0
 
