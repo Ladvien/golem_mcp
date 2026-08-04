@@ -1,28 +1,32 @@
 #!/usr/bin/env python
-"""Image -> textured mesh with TRELLIS.2, as a subprocess of the MCP server.
+"""Image -> textured mesh with TRELLIS.2. NOT wired into generate_3d.
 
-WHY THIS REPLACED TRELLIS 1 FOR generate_3d
--------------------------------------------
-A/B on the same conditioning image and seed, both at 2048px texture and a
-comparable face budget:
+STATUS: the migration was attempted and reverted. generate_3d stays on TRELLIS 1.
+This driver remains for display-only assets that never get rigged.
 
-                   TRELLIS 1        TRELLIS.2 (1024)
-  raw faces        ~14k             8,964,384
-  delivered        83,288           95,854
-  peak VRAM        17.0 GB          5.6 GB
-  wall time        80 s             197 s
+TRELLIS.2 makes visibly better-looking characters - defined facial features, scale
+texture, rivets and material separation where TRELLIS 1 gives smooth blobs - at
+comparable wall time (85s vs 80s at pipeline_type=512), and in a fraction of the
+VRAM (TRELLIS 1's 2048px bake wanted 17.0 GB and was refused by its own preflight
+until views were cut).
 
-TRELLIS.2 resolves facial features, scale texture, rivets and material
-separation that TRELLIS 1 renders as smooth blobs - and does it in a third of the
-VRAM. TRELLIS 1's 2048px texture bake wanted 17.0 GB and was refused twice by its
-own preflight; it only fit after dropping to 90 views.
+It is still the wrong choice for this pipeline, because its meshes are
+topologically FRAGMENTED and that breaks the rigging stage generate_3d exists to
+feed:
 
-It is also a SUBPROCESS, where TRELLIS 1 ran in-process. That is why the MCP
-server had to live in the python 3.10 / cu124 environment, and why the server
-itself peaked at 19.5 GB RSS and was OOM-killed mid-run. Generation memory now
-belongs to a process that exits.
+                       TRELLIS 1     TRELLIS.2
+  vertices : faces     0.74          1.57      (a coherent mesh is ~0.5)
+  boundary edges       5,816         66,756
+  rig_model wall       39 s          >20 min, never observed to finish
 
-Cost: ~2.5x wall time. Worth it.
+More vertices than faces means the surface is in pieces. remesh=True does not fix
+it (22,792 boundary edges, still not watertight): the open-surface representation
+that makes TRELLIS.2 right for GARMENTS is the same property that makes its
+character meshes unriggable. Reviving this needs a mesh repair stage between
+generation and rigging, not a different export flag.
+
+Runs as a subprocess, unlike TRELLIS 1 which generate_3d loads in-process - the
+reason the server peaked at 19.5 GB RSS and was OOM-killed mid-run.
 """
 
 import argparse
@@ -114,26 +118,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
-# ---------------------------------------------------------------------------
-# STATUS: NOT wired into generate_3d. The migration was attempted and reverted.
-#
-# TRELLIS.2 makes visibly better-looking characters - defined facial features,
-# scale texture, rivets, material separation where TRELLIS 1 gives smooth blobs,
-# at comparable wall time (85s vs 80s at pipeline_type=512).
-#
-# But its meshes are topologically FRAGMENTED, and that breaks the rigging stage
-# this pipeline exists to feed:
-#
-#                        TRELLIS 1     TRELLIS.2
-#   vertices : faces     0.74          1.57      (a coherent mesh is ~0.5)
-#   boundary edges       5,816         66,756
-#   rig_model wall       39 s          >20 min, never observed to finish
-#
-# remesh=True does not fix it: 22,792 boundary edges and still not watertight.
-# The open-surface representation that makes TRELLIS.2 right for GARMENTS is the
-# same property that makes its character meshes unriggable.
-#
-# So generate_3d stays on TRELLIS 1, and this driver remains available for
-# display-only assets that never get rigged. Reviving the migration needs a mesh
-# repair stage between generation and rigging, not a different export flag.
