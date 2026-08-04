@@ -4,14 +4,14 @@
 Run by the SegviGen venv (python 3.11), normally as a subprocess of the MCP
 server's `generate_garment` tool.
 
-WHY TRELLIS.2 AND NOT THIS REPO'S generate_3d
----------------------------------------------
-`generate_3d` runs TRELLIS **1**, whose iso-surface extraction cannot represent an
-open surface, and it defaults `fill_holes=True` (server.py) which would seal a
-garment shut. TRELLIS.2's O-Voxel uses a Flexible Dual Grid that captures open
-boundaries without requiring a watertight mesh - its README lists "Open Surfaces
-(e.g. clothing)" as a headline capability. That is the whole reason a garment can
-be generated as its own asset rather than carved off a character.
+WHY THIS IS SEPARATE FROM generate_3d
+-------------------------------------
+Both now run TRELLIS.2, but this driver exports for a GARMENT: `remesh=False` to
+keep open boundaries, and a hard check that the result is not a sealed lump.
+`generate_3d` targets a rig-compatible vertex budget instead. O-Voxel's Flexible
+Dual Grid is what makes open surfaces possible at all - its README lists "Open
+Surfaces (e.g. clothing)" as a headline capability, and iso-surface methods like
+TRELLIS 1 cannot represent one.
 
 WHY A STANDALONE GARMENT IMAGE, NOT ONE MASKED OFF A DRESSED CHARACTER
 ----------------------------------------------------------------------
@@ -126,19 +126,23 @@ def main() -> int:
     os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
 
     sys.path.insert(0, str(REPO))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     os.chdir(REPO)   # pipeline.json is opened at a relative path
 
     import numpy as np
     import o_voxel
     import torch
+    import trellis2_common as t2
     import trimesh
     from PIL import Image
-    from trellis2.pipelines import Trellis2ImageTo3DPipeline
 
     started = time.time()
     print(f"[1/3] loading TRELLIS.2-4B ({args.pipeline_type})", flush=True)
-    pipeline = Trellis2ImageTo3DPipeline.from_pretrained("microsoft/TRELLIS.2-4B")
-    pipeline.cuda()
+    # Trimmed load: pipeline.json lists eight models (14.82 GB) and low_vram=True
+    # pins them all in host RAM, but a '512' run never touches the two 1024 flow
+    # models. See scripts/trellis2_common.py - this was the difference between
+    # running and being OOM-killed on this box.
+    pipeline, dropped_models = t2.load_pipeline(args.pipeline_type)
 
     print(f"[2/3] generating from {image_path.name} (seed {args.seed})", flush=True)
     mesh = pipeline.run(Image.open(image_path), seed=args.seed, pipeline_type=args.pipeline_type)[0]
@@ -194,6 +198,7 @@ def main() -> int:
         "enclosed_air_fraction": round(sealed, 4),
         "extents": [round(v, 4) for v in extents],
         "peak_vram_gb": round(peak_gb, 2),
+        "dropped_models": dropped_models,
         "elapsed_seconds": round(time.time() - started, 1),
         "warnings": warnings,
     }
