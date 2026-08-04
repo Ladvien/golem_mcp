@@ -6,6 +6,16 @@ and ends with a Blender scene to look at.
 
 Everything after the fence is written for the agent, not for you.
 
+Two things this prompt deliberately does NOT do, both learned the hard way:
+
+- It does not tell the agent which failures are "expected". Pre-labelling a
+  failure as a machine limit means the agent cannot notice when that stage turns
+  into a real defect. It gets the evidence commands instead, and decides.
+- It does not treat tool-reported numbers as acceptance. `frame_alignment_deg`
+  moved 180 -> 97 -> 9 degrees across three separate fixes while the retargeted
+  walk stayed broken. Correctness is measured on the geometry, by the snippet in
+  step 12.
+
 ---
 
 ```
@@ -20,6 +30,9 @@ Record every call's outcome. Do NOT stop at the first failure: note it, keep
 going, and give me a pass/fail table at the end. I want to know which things are
 broken, not just the first one.
 
+Judge every stage on evidence you gathered, not on what a tool told you about
+itself. Where I give you a measurement to run, the measurement decides.
+
 THE SUBJECT
 Use this exact text as SUBJECT wherever a step refers to it:
 
@@ -28,19 +41,22 @@ Use this exact text as SUBJECT wherever a step refers to it:
   wearing a sleeveless deep crimson tunic, polished brass shoulder plates and
   brass greaves, a wide black leather belt, bare arms
 
-It is built for the pipeline rather than for looks: the T-pose gives the rigger
-limb chains to find AND matches the rest pose every animation clip assumes, the
-six distinct materials give the segmenter parts to find, and the two horns
-exercise the appendage chains that animation must leave alone.
+It is built for the pipeline rather than for looks: the T-pose in step 2 gives the
+rigger limb chains to find AND matches the rest pose every animation clip is
+authored against, and the six distinct materials give the segmenter parts to find.
 
-Name every output `emberwake_herald` (or `emberwake_herald_<suffix>`) so the
-tools' publishing logic files them all under one asset directory.
+Name step 4's output exactly `emberwake_herald`. Later stages that take a `body=`
+or `character=` argument resolve against that name, and rig, segmentation and
+animation results are published back into its asset directory. Outputs you give a
+different name (e.g. `emberwake_herald_mv`) get their OWN asset directory — that
+is expected, not a bug.
 
 THE STEPS
 
-1.  health_check. Report free VRAM. If less than ~19 GB is free, say so now —
-    steps 6 and 7 need that much and will refuse, and that is a machine limit,
-    not a defect.
+1.  health_check. Report free VRAM, and run `nvidia-smi --query-compute-apps=
+    pid,used_memory,process_name --format=csv` to name anything already holding
+    the card. Steps 6 and 7 need ~18-19 GB; if that is not free, say which
+    process is holding it.
 
 2.  generate_image with prompt = SUBJECT plus this suffix, output_name
     "emberwake_herald_hero", steps 6:
@@ -55,7 +71,7 @@ THE STEPS
     T-pose rest and the retarget preserves the character's own rest offset, so an
     A-posed asset retargets with damped and sometimes inverted arm swing.
 
-    The returned key is `local_path`, not `image_path`. Use that in step 4.
+    The returned key is `local_path`, not `image_path`. Use that in steps 4 and 7.
 
 3.  generate_views with prompt = SUBJECT exactly (no suffix), views
     "front,back,left,right", output_name "emberwake_herald_views". Takes several
@@ -74,40 +90,113 @@ THE STEPS
     — '["/path/a.png","/path/b.png"]' — not a list. Passing a list fails with
     "the JSON object must be str, bytes or bytearray, not list".
 
-6.  segment_mesh on "emberwake_herald.glb". Needs ~18 GB VRAM. If it refuses on
-    VRAM, report that and continue.
+6.  segment_mesh on "emberwake_herald.glb". Report the part count and whether the
+    parts correspond to the subject's distinct materials.
 
 7.  generate_orbit_views on the step 2 image, output_name
-    "emberwake_herald_orbit". Needs ~19 GB VRAM. This one is also known to be
-    broken independently of VRAM — a dtype mismatch in MV-Adapter's background
-    remover — so report whichever failure you actually get and move on.
+    "emberwake_herald_orbit".
 
 8.  generate_garment with garment "hooded cloak with a deep pointed hood and a
     long open front, heavy dark wool", body "emberwake_herald.glb", output_name
-    "emberwake_herald_cloak". If it dies with exit -9, that is the kernel OOM
-    killer taking it, not a crash — say so.
+    "emberwake_herald_cloak".
 
-9.  rig_model on "emberwake_herald.glb". This fits a canonical Mixamo skeleton
-    and runs the rigger twice internally, so expect ~60-90 s. Confirm in the
-    result that `canonical.core_bones` is 23 and
-    `skeleton.zero_weight_vertices` is 0.
+    For 6, 7 and 8: if any of them fails, gather evidence before you classify it.
+    A VRAM refusal names its own numbers. Exit code -9 is SIGKILL — check
+    `journalctl -k --since "10 min ago" | grep -i "killed process"` to see whether
+    the kernel OOM killer took it, and at what RSS. A Python traceback is a
+    defect. Report which of those you actually observed; do not assume.
 
-10. list_animations with search "walk". Report how many clips total and how many
+9.  rig_model on "emberwake_herald.glb". Fits a canonical Mixamo skeleton and runs
+    the rigger twice internally, so expect 60-90 s. Report `canonical.core_bones`
+    (expect 23), `skeleton.zero_weight_vertices` (expect 0), and
+    `canonical.extra_chains`. Extra chains are wing/tail/horn bones outside the
+    mixamorig namespace; on this subject they usually come back EMPTY, which is a
+    known gap in the appendage classifier rather than a pass.
+
+10. VERIFY HANDEDNESS. This is the bug that cost the most to find, and no tool
+    output reveals it — a rig can be perfectly self-consistent and still mirrored
+    against the convention every clip uses. With Blender:
+
+      /home/ladvien/segvigen/.venv/bin/python -c "
+      import bpy
+      bpy.ops.wm.read_factory_settings(use_empty=True)
+      bpy.ops.import_scene.gltf(filepath='<the step 9 rigged glb>')
+      a=[o for o in bpy.context.scene.objects if o.type=='ARMATURE'][0]
+      M='mixamorig:'; R=lambda n: a.pose.bones[M+n].bone.matrix_local.translation
+      up=(R('Spine2')-R('Hips')).normalized()
+      f=((R('LeftToeBase')-R('LeftFoot'))+(R('RightToeBase')-R('RightFoot')))
+      f=(f-up*f.dot(up)).normalized(); lat=up.cross(f); mid=(R('Hips')+R('Spine2'))/2
+      print('LeftArm', (R('LeftArm')-mid).dot(lat), 'LeftUpLeg', (R('LeftUpLeg')-mid).dot(lat))
+      "
+
+    BOTH numbers must be POSITIVE. That is the convention Mixamo and the UE5
+    Mannequin both use. Negative means the rig is mirrored, and arm animation will
+    invert while the legs look fine.
+
+11. list_animations with search "walk". Report how many clips total and how many
     are usable. A clip is a (file, action) pair, so the count is much larger than
     the number of files.
 
-11. apply_animation with character = the rigged .glb's filename from step 9 and
-    clip "mutant walking". Then do it again with a UE5-convention clip to prove
-    the name map works — use clip
-    "/mnt/codex_fs/game_assets/animation/universal_animation_library_v1/Unreal-Godot/UAL1_Standard.glb"
-    with action "Dance_Loop". Report `bones_driven` and `frame_alignment_deg` for
-    both.
+12. apply_animation twice, to prove the name map spans both conventions:
+      a) clip "mutant walking"                                  (Mixamo names)
+      b) clip "/mnt/codex_fs/game_assets/animation/
+         universal_animation_library_v1/Unreal-Godot/UAL1_Standard.glb"
+         with action "Walk_Loop"                                (UE5 names)
 
-12. list_outputs and free_gpu.
+    Both must be WALKS, because a walk has a checkable ground truth and a dance
+    does not. Report `bones_driven` for each. Do NOT report `frame_alignment_deg`
+    as evidence of anything — it has moved by 170 degrees across fixes that
+    changed nothing observable.
+
+    Then MEASURE THE GAIT on each output, and on the two source clips for
+    comparison:
+
+      /home/ladvien/segvigen/.venv/bin/python -c "
+      import bpy
+      def norm(v):
+          m=sum(v)/len(v); c=[x-m for x in v]; g=sum(x*x for x in c)**0.5
+          return [x/g for x in c] if g>1e-9 else c
+      def corr(a,b):
+          x,y=norm(a),norm(b); return sum(p*q for p,q in zip(x,y))
+      def gait(path):
+          bpy.ops.wm.read_factory_settings(use_empty=True)
+          bpy.ops.import_scene.gltf(filepath=path)
+          sc=bpy.context.scene
+          a=[o for o in sc.objects if o.type=='ARMATURE'][0]
+          act=bpy.data.actions[0]
+          if a.animation_data is None: a.animation_data_create()
+          a.animation_data.action=act
+          if getattr(act,'slots',None): a.animation_data.action_slot=act.slots[0]
+          M='mixamorig:'; R=lambda n: a.pose.bones[M+n].bone.matrix_local.translation
+          up=(R('Spine2')-R('Hips')).normalized()
+          f=((R('LeftToeBase')-R('LeftFoot'))+(R('RightToeBase')-R('RightFoot')))
+          f=(f-up*f.dot(up)).normalized()
+          s,e=(int(round(v)) for v in act.frame_range)
+          t={'LeftHand':[], 'LeftFoot':[]}
+          for fr in range(s,e+1):
+              sc.frame_set(fr); bpy.context.view_layer.update()
+              h=a.pose.bones[M+'Hips'].matrix.translation
+              for n in t: t[n].append(float((a.pose.bones[M+n].matrix.translation-h).dot(f)))
+          return corr(t['LeftHand'], t['LeftFoot'])
+      print(gait('<animated glb>'))
+      "
+
+    This is left hand against left foot, measured relative to the hips and
+    projected on the character's OWN forward axis, derived from the toes. It must
+    be NEGATIVE: in a real walk the left arm opposes the left leg. Positive means
+    the arm swings with the same-side leg, which is a broken gait however healthy
+    the tool output looked. The source clips measure about -0.96; anything
+    negative and within ~0.3 of that is fine.
+
+    Do not substitute your own metric for this one. Measuring along a WORLD axis
+    instead of the character's own gives a number that flips sign depending on
+    which way the character happens to face, and it will mislead you.
+
+13. list_outputs and free_gpu.
 
 IF YOU ALSO HAVE SHELL ACCESS
 
-13. If step 6 succeeded, split the mesh into per-part objects:
+14. If step 6 succeeded, split the mesh into per-part objects:
 
       /home/ladvien/segvigen/.venv/bin/python \
         /home/ladvien/trellis2_mcp/scripts/split_by_parts.py \
@@ -115,7 +204,7 @@ IF YOU ALSO HAVE SHELL ACCESS
         --labels <asset dir>/asset_face_labels.npy \
         --out-dir <asset dir>
 
-14. Build the Blender scene and tell me the path:
+15. Build the Blender scene and tell me the path:
 
       /home/ladvien/segvigen/.venv/bin/python \
         /home/ladvien/trellis2_mcp/scripts/assemble_blend.py \
@@ -123,7 +212,7 @@ IF YOU ALSO HAVE SHELL ACCESS
         --item "1 generate_3d=<the step 4 glb>" \
         --item "2 multi_image=<the step 5 glb>" \
         --item "3 rig_model=<the step 9 rigged glb>" \
-        --item "4 apply_animation=<the step 11 animated glb>"
+        --item "4 walk=<the step 12a animated glb>"
 
     It lays the stages out side by side, feet on the ground, labelled, with the
     frame range set so the animated one plays on spacebar.
@@ -131,8 +220,12 @@ IF YOU ALSO HAVE SHELL ACCESS
 WHAT TO GIVE ME
 
   * a pass/fail table, one row per step, with elapsed time
-  * for each failure, whether it is a defect or a machine limit (VRAM, RAM,
-    OOM kill), and the evidence you used to decide
-  * the .blend path from step 14
-  * anything a tool reported that contradicted its own documentation
+  * the handedness numbers from step 10 and the gait numbers from step 12, each
+    against the source clips
+  * for each failure: defect or machine limit, and the specific evidence — the
+    VRAM figures, the OOM-killer line, or the traceback. "Known issue" is not
+    evidence
+  * the .blend path from step 15
+  * anything a tool reported that contradicted its own documentation, and anything
+    where a tool reported success but the measurement disagreed
 ```
