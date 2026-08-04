@@ -36,17 +36,18 @@ a wide black leather belt, bare arms
 with this appended for the hero shot:
 
 ```
-, full body, standing in a neutral A-pose with arms held out and down at 45
-degrees, clearly separated from the torso, legs shoulder-width apart, feet flat on
-the ground, centred on a plain flat white background, even studio lighting, no
-shadows, full figure in frame, sharp focus, game asset reference sheet
+, full body, standing in a T-pose with both arms held straight out horizontally to
+the sides at shoulder height, palms down, elbows straight, legs shoulder-width
+apart, feet flat on the ground, centred on a plain flat white background, even
+studio lighting, no shadows, full figure in frame, sharp focus, game asset
+reference sheet
 ```
 
 Every clause earns its place downstream:
 
 | clause | what needs it |
 |---|---|
-| A-pose wording | `rig_model` reads limb chains off a generated skeleton; arms fused to the torso give it nothing to find |
+| T-pose wording | `rig_model` needs limb chains to find, and every clip is authored against a T-pose rest. Measured: an A-posed asset retargets a UE5 walk at +0.923 (arm swinging with the same-side leg) against the T-posed asset's −0.951 |
 | brass / crimson / leather / skin | `segment_mesh` needs parts to find — six obvious material regions |
 | two curved horns | exercises appendage chains: bones outside `mixamorig:` that `apply_animation` must leave undriven |
 | plain white background | everything downstream of the image assumes the subject is separable |

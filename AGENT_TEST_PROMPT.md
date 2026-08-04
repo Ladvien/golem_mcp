@@ -28,9 +28,10 @@ Use this exact text as SUBJECT wherever a step refers to it:
   wearing a sleeveless deep crimson tunic, polished brass shoulder plates and
   brass greaves, a wide black leather belt, bare arms
 
-It is built for the pipeline rather than for looks: the A-pose gives the rigger
-limb chains to find, the six distinct materials give the segmenter parts to find,
-and the two horns exercise the appendage chains that animation must leave alone.
+It is built for the pipeline rather than for looks: the T-pose gives the rigger
+limb chains to find AND matches the rest pose every animation clip assumes, the
+six distinct materials give the segmenter parts to find, and the two horns
+exercise the appendage chains that animation must leave alone.
 
 Name every output `emberwake_herald` (or `emberwake_herald_<suffix>`) so the
 tools' publishing logic files them all under one asset directory.
@@ -44,11 +45,15 @@ THE STEPS
 2.  generate_image with prompt = SUBJECT plus this suffix, output_name
     "emberwake_herald_hero", steps 6:
 
-      , full body, standing in a neutral A-pose with arms held out and down at 45
-      degrees, clearly separated from the torso, legs shoulder-width apart, feet
-      flat on the ground, centred on a plain flat white background, even studio
-      lighting, no shadows, full figure in frame, sharp focus, game asset
-      reference sheet
+      , full body, standing in a T-pose with both arms held straight out
+      horizontally to the sides at shoulder height, palms down, elbows straight,
+      legs shoulder-width apart, feet flat on the ground, centred on a plain flat
+      white background, even studio lighting, no shadows, full figure in frame,
+      sharp focus, game asset reference sheet
+
+    The T-pose is load-bearing, not cosmetic. Every clip is authored against a
+    T-pose rest and the retarget preserves the character's own rest offset, so an
+    A-posed asset retargets with damped and sometimes inverted arm swing.
 
     The returned key is `local_path`, not `image_path`. Use that in step 4.
 

@@ -20,8 +20,10 @@ WHY THE SUBJECT IS SHAPED THE WAY IT IS
 ---------------------------------------
 Every clause in SUBJECT is load-bearing for some downstream stage:
 
-  * A-pose wording      rig_model reads limb chains off a generated skeleton, and
-                        arms fused to the torso give it nothing to find.
+  * T-pose wording      rig_model reads limb chains off a generated skeleton, and
+                        arms fused to the torso give it nothing to find. It also
+                        matches the rest pose every clip is authored against - see
+                        the measurements above HERO_PROMPT.
   * distinct materials  segment_mesh has to have parts to find. Brass plates over
                         a crimson tunic over bare skin is three obvious regions.
   * two curved horns    exercises the appendage chains - bones outside the
@@ -53,11 +55,24 @@ SUBJECT = (
     "a wide black leather belt, bare arms"
 )
 
+# T-POSE, NOT A-POSE, AND THIS IS LOAD-BEARING. Every Mixamo and UE5 clip is
+# authored against a T-pose rest, and the retarget preserves the target's own rest
+# offset. Measured on this character, rest-arm laterality against the source's
+# +1.00, with gait as left-hand-vs-left-foot (negative = correct):
+#
+#     A-pose asset   lat +0.38   Mixamo -0.673, swing 23%   UE5 +0.923 WRONG, 5%
+#     T-pose asset   lat +0.94   Mixamo -0.940, swing 58%   UE5 -0.951 ok,   27%
+#
+# An arm hanging down is nearly parallel to the vertical axis a walk clip swings it
+# about, so most of the clip's rotation becomes twist rather than swing. A T-pose
+# also separates arms from the torso even better than an A-pose, so the rigging
+# reason for the A-pose is satisfied too.
 HERO_PROMPT = (
-    f"{SUBJECT}, full body, standing in a neutral A-pose with arms held out and down "
-    "at 45 degrees, clearly separated from the torso, legs shoulder-width apart, feet flat "
-    "on the ground, centred on a plain flat white background, even studio lighting, "
-    "no shadows, full figure in frame, sharp focus, game asset reference sheet"
+    f"{SUBJECT}, full body, standing in a T-pose with both arms held straight out "
+    "horizontally to the sides at shoulder height, palms down, elbows straight, legs "
+    "shoulder-width apart, feet flat on the ground, centred on a plain flat white "
+    "background, even studio lighting, no shadows, full figure in frame, sharp focus, "
+    "game asset reference sheet"
 )
 
 GARMENT = "hooded cloak with a deep pointed hood and a long open front, heavy dark wool"
