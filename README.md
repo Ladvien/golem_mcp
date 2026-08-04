@@ -26,9 +26,11 @@ The two GPU stages **hot-swap on one RTX 3090** — see [GPU hot-swapping](#gpu-
 | `generate_3d` | Single image → textured `.glb` + Gaussian `.ply` via TRELLIS |
 | `generate_3d_multi_image` | Multi-view conditioning (2–6 images of one object) |
 | `generate_orbit_views` | 6 geometrically consistent orbit views from one reference image, via MV-Adapter |
-| `rig_model` | Mesh → rigged `.glb` with skeleton + skin weights via TokenRig |
+| `rig_model` | Mesh → rigged `.glb` carrying the canonical Mixamo skeleton, via TokenRig |
 | `segment_mesh` | Mesh → per-face part labels via SegviGen, leaving the mesh untouched |
 | `generate_garment` | Garment description → its own open-surface `.glb`, fitted and draped onto a target body |
+| `list_animations` | The animation clips on disk, and which of them can drive our rigs |
+| `apply_animation` | Retarget a clip onto a canonically rigged character; no GPU, no per-character setup |
 | `free_gpu` | Evict TRELLIS from VRAM and report free memory |
 | `health_check` | Readiness, GPU state, and whether the rigger is installed |
 | `list_outputs` | Recent outputs across 3D, rigged, and image dirs |
@@ -163,6 +165,7 @@ All paths are environment variables with the defaults below.
 | `TRELLIS_OUTPUT_DIR` | `/home/ladvien/trellis/output` |
 | `SKINTOKENS_REPO` | `/home/ladvien/skintokens/repo` |
 | `SKINTOKENS_PYTHON` | `/home/ladvien/skintokens/.venv/bin/python` |
+| `ANIMATION_ROOTS` | `/mnt/codex_fs/game_assets/animation:/mnt/codex_fs/game_assets/SCP-610` |
 | `BMB_HOST` | `bmb` |
 | `BMB_MFLUX_PYTHON` | `~/mflux-venv/bin/python3` |
 | `BMB_MFLUX_OUTPUT` | `~/mflux-output` |

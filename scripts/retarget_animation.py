@@ -266,10 +266,16 @@ def main() -> int:
         if args.root_motion:
             tgt.pose.bones[hips].keyframe_insert("location", frame=frame)
 
-    # Drop the source rig AND its action before export. Removing only the object
-    # still ships the raw clip in the GLB, where it is picked up ahead of the
-    # retargeted one - and it carries the source's centimetre root translation.
-    bpy.data.objects.remove(src, do_unlink=True)
+    # Drop EVERYTHING the clip import brought in, plus its action. Removing only
+    # the armature object left the source character's MESH in the scene - the
+    # Quaternius packs ship the UE5 Mannequin alongside the animation, so the
+    # output GLB contained a full second character standing next to ours. The
+    # Mixamo FBXs carry no mesh, which is why this only appeared on the glb
+    # libraries. Removing only the object (not the action) ships the raw clip too,
+    # where it is picked up ahead of the retargeted one, carrying the source's
+    # centimetre root translation.
+    for obj in [o for o in bpy.context.scene.objects if o not in before_obj]:
+        bpy.data.objects.remove(obj, do_unlink=True)
     for stale in [a for a in bpy.data.actions if a is not new_act]:
         bpy.data.actions.remove(stale)
     bpy.ops.object.select_all(action="SELECT")
