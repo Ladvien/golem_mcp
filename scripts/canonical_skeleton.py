@@ -374,7 +374,18 @@ def mixamo_from_generated(rigged_glb, links=3):
             toe_v = toe_v + (pos[ln[-1]] - pos[ln[-2]])
     toe_v = toe_v - up_v * float(toe_v @ up_v)
     lat_v = pos[legs[1]["root"]] - pos[legs[0]["root"]]
-    if float(np.cross(lat_v, up_v) @ toe_v) < 0:
+    # Handedness must match the clip convention, not merely be self-consistent.
+    # Measured against a Mixamo rig, every one of ITS Left bones sits at +lat where
+    # lat = up x fwd; ours sat at -lat. Internally consistent, mirrored against the
+    # world. A mirror is not a rotation, so a rotation-based retarget cannot
+    # reproduce it: the delta that swings a +lat arm forward swings a -lat arm
+    # BACKWARD. Legs point down, so their fore/aft response does not depend on which
+    # side they are on - which is exactly why legs retargeted correctly while arms
+    # inverted, and why this hid for so long.
+    #
+    # (a x b).c = det[a,b,c], so this test is lat_v . (up x fwd), and the Mixamo
+    # convention is Left at +lat, hence Right-minus-Left at NEGATIVE lat.
+    if float(np.cross(lat_v, up_v) @ toe_v) > 0:
         legs = legs[::-1]
         arms = arms[::-1]
 
