@@ -35,11 +35,19 @@ TWO NON-OBVIOUS CONSTRAINTS
    result. Joint ORDER survives (the identical parent arrays prove it), so
    renaming by index is exact.
 
-STATUS: THE MECHANISM WORKS; THE LANDMARK FITTER DOES NOT GENERALISE
---------------------------------------------------------------------
-`restore-names` and the SkinTokens writer path are verified end to end (see
-Phase 0 above). `fit` is NOT production-ready - geometric landmark detection was
-tried and measured against three characters, and fails differently on each:
+STATUS: WORKING VIA --from-rig. PURE GEOMETRY DOES NOT GENERALISE.
+------------------------------------------------------------------
+Use `fit --from-rig <rigged.glb>`, which takes landmarks from a generated
+skeleton. Verified on all three library characters: each yields a byte-identical
+23-bone Mixamo core, and one named pose drives characters of different heights
+with no per-character setup (6/6 bones found, ~91% of vertices moved on both a
+1.0 m dwarf and a 1.7 m base body, displacement scaling with height as LBS should).
+On forge_warden the resulting rig scores symmetry 0.913 - the best in the library,
+against the README's 0.86 reference.
+
+Geometric landmark detection (the default path, no --from-rig) was tried first and
+measured against the same three characters. It fails differently on each, and is
+kept only as a fallback for assets with no generated rig to read:
 
   female_base_v5  T-pose arms are CONTIGUOUS with the torso, so the central-run
                   width at shoulder height is 1.674 - the whole arm span. Nothing
@@ -59,14 +67,21 @@ differing head-to-body ratios". Their answer was a learned 2D pose prior (PGSE):
 render a front view, run a fine-tuned RTMPose, lift to 3D with the known camera.
 
 The A-pose-is-enforced argument for going geometric was mine, and measurement
-falsified it. Two candidate replacements for this step, neither yet tried:
+falsified it. --from-rig replaces it: TokenRig's generated skeleton demonstrably
+finds the limbs on these assets, so it supplies the landmarks that slice geometry
+could not. Three things were needed to read it correctly:
 
-  * 2D pose on the front render, HumanRig-style. The pipeline already renders
-    front views with exact camera parameters (data_toolkit/transforms.json), so
-    only the estimator is missing.
-  * Landmarks from TokenRig's OWN generated skeleton, which demonstrably finds
-    the limbs on these assets (symmetry 0.86-0.87), then matched onto the Mixamo
-    template by tree correspondence. Costs a second rig pass.
+  * accumulate full TRS matrices, not translations - bone nodes carry rotation,
+    and each offset is expressed along its parent's rotated axis. Summing
+    translations alone put the feet at mid-height.
+  * classify by STRUCTURE, not coordinates. The spine is the path to the highest
+    leaf and limbs hang off it. Extremes only work for a T-pose: on the arms-down
+    succubus the most-lateral leaf was a foot, on the dwarf it was the head.
+  * choose limbs as symmetric PAIRS. Ranking branches individually kept picking
+    horn stubs as arms; mirroring is a far stronger signal than any single
+    branch's position, and it handles A-pose and T-pose under one rule.
+
+Cost: one extra rig pass, since the generated skeleton must exist first.
 """
 
 import argparse
@@ -198,6 +213,171 @@ def landmarks(mesh, samples=300_000):
     }
 
 
+
+# --------------------------------------------------------------------------- #
+# landmarks from a GENERATED skeleton
+# --------------------------------------------------------------------------- #
+def read_skeleton(path):
+    """(names, parents, world joint positions) from a rigged GLB's skin."""
+    d = open(path, "rb").read()
+    ln = struct.unpack("<I", d[12:16])[0]
+    doc = json.loads(d[20:20 + ln].decode("utf-8"))
+    nodes, joints = doc["nodes"], doc["skins"][0]["joints"]
+    parent_of = {}
+    for i, n in enumerate(nodes):
+        for c in n.get("children", []):
+            parent_of[c] = i
+
+    def local(n):
+        """Bone nodes carry ROTATION as well as translation. Accumulating
+        translations alone puts the feet at mid-height, because each offset is
+        expressed along its parent's rotated axis."""
+        if "matrix" in n:
+            return np.array(n["matrix"], dtype=float).reshape(4, 4).T
+        m = np.eye(4)
+        if "rotation" in n:
+            x, y, z, w = n["rotation"]
+            m[:3, :3] = np.array([
+                [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+        if "scale" in n:
+            m[:3, :3] = m[:3, :3] @ np.diag(n["scale"])
+        if "translation" in n:
+            m[:3, 3] = n["translation"]
+        return m
+
+    def world(i):
+        chain, k = [], i
+        while k is not None:
+            chain.append(k)
+            k = parent_of.get(k)
+        m = np.eye(4)
+        for k in reversed(chain):
+            m = m @ local(nodes[k])
+        return m[:3, 3]
+
+    slot = {n: s for s, n in enumerate(joints)}
+    return ([nodes[i].get("name", "") for i in joints],
+            np.array([slot.get(parent_of.get(i), -1) for i in joints], dtype=int),
+            np.stack([world(i) for i in joints]))
+
+
+def classify(parents, pos):
+    """Spine, legs, arms and leftovers, from structure rather than coordinates.
+
+    Picking limbs by extreme coordinates only works for a T-pose: on the
+    arms-down succubus the most-lateral leaf was a foot, and on the dwarf it was
+    the head. The spine is the path to the highest leaf; everything else hangs
+    off it, and limbs are chosen as symmetric PAIRS - by far the strongest signal.
+    """
+    n = len(parents)
+    children = {i: [] for i in range(n)}
+    for i, p in enumerate(parents):
+        if p >= 0:
+            children[p].append(i)
+    leaves = [i for i in range(n) if not children[i]]
+    lo, hi = pos[:, UP].min(), pos[:, UP].max()
+    h = max(hi - lo, 1e-9)
+
+    def frac(i):
+        return float((pos[i, UP] - lo) / h)
+
+    def path(i):
+        out = []
+        while i >= 0:
+            out.append(i)
+            i = parents[i]
+        return out[::-1]
+
+    spine = path(max(leaves, key=frac))
+    on_spine = set(spine)
+    # Body axis from the SPINE: a median over all joints is dragged sideways by
+    # whichever limb carries more bones.
+    ctr = float(np.median(pos[spine, LAT]))
+
+    def subtree(i):
+        out, stack = [], [i]
+        while stack:
+            k = stack.pop()
+            out.append(k)
+            stack.extend(children[k])
+        return out
+
+    branches = []
+    for node in spine:
+        for c in children[node]:
+            if c in on_spine:
+                continue
+            st = subtree(c)
+            far = max(st, key=lambda k: abs(pos[k, LAT] - ctr))
+            branches.append({
+                "root": c, "at": node, "at_frac": frac(node), "size": len(st),
+                "min_frac": min(frac(k) for k in st),
+                "max_frac": max(frac(k) for k in st),
+                "lat_reach": float(abs(pos[far, LAT] - ctr) / h),
+                "lat_mean": float(np.mean(pos[st, LAT]) - ctr),
+                "nodes": st,
+            })
+
+    def best_pair(cands, cost):
+        best, chosen = None, None
+        for i in range(len(cands)):
+            for j in range(i + 1, len(cands)):
+                a, b = cands[i], cands[j]
+                sym = (abs(a["at_frac"] - b["at_frac"])
+                       + abs(a["size"] - b["size"]) / max(a["size"], b["size"], 1))
+                score = sym + cost(a, b)
+                if best is None or score < best:
+                    best, chosen = score, (a, b)
+        return list(chosen) if chosen else []
+
+    def extent(b):
+        return (b["max_frac"] - b["min_frac"]) + b["lat_reach"]
+
+    legs = best_pair(branches, lambda a, b: a["min_frac"] + b["min_frac"])
+    if not legs:
+        legs = sorted(branches, key=lambda b: b["min_frac"])[:2]
+    rest = [b for b in branches if b not in legs]
+    # size >= 3 and real extent: ranking on branch height alone picked the
+    # succubus's horn stubs (size 2, spanning 0.85-0.92) as arms.
+    cand = [b for b in rest
+            if b["at_frac"] > 0.45 and b["min_frac"] > 0.15 and b["size"] >= 3]
+    arms = best_pair(cand, lambda a, b: (2.0 - a["at_frac"] - b["at_frac"])
+                     - 1.5 * (extent(a) + extent(b)))
+    extra = [b for b in rest if b not in arms]
+    for pair in (legs, arms):                      # left = greater lateral
+        if len(pair) == 2 and pair[0]["lat_mean"] < pair[1]["lat_mean"]:
+            pair.reverse()
+    return {"spine": spine, "legs": legs, "arms": arms, "extra": extra,
+            "children": children, "parents": parents, "pos": pos, "height": float(h)}
+
+
+def longest_line(c, branch):
+    """The main limb line: longest root-to-leaf path inside a branch subtree."""
+    children, best = c["children"], None
+    stack = [[branch["root"]]]
+    while stack:
+        p = stack.pop()
+        kids = children[p[-1]]
+        if not kids:
+            if best is None or len(p) > len(best):
+                best = p
+        for k in kids:
+            stack.append(p + [k])
+    return best or [branch["root"]]
+
+
+def resample(pos, line, ts):
+    """Positions at arc-length fractions along a joint polyline."""
+    pts = pos[line]
+    if len(pts) == 1:
+        return [pts[0] for _ in ts]
+    d = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))])
+    total = d[-1] if d[-1] > 1e-9 else 1.0
+    return [np.array([np.interp(t * total, d, pts[:, k]) for k in range(3)]) for t in ts]
+
+
 # --------------------------------------------------------------------------- #
 # core skeleton
 # --------------------------------------------------------------------------- #
@@ -259,6 +439,92 @@ def core_skeleton(lm):
     parents = np.array([s[1] for s in spec], dtype=np.int32)
     joints = np.stack([s[2] for s in spec]).astype(np.float32)
     return names, parents, joints
+
+
+
+def mixamo_from_generated(rigged_glb, links=3):
+    """Mixamo skeleton placed from a GENERATED skeleton's own limb chains.
+
+    Geometric landmark detection was tried first and does not generalise - see the
+    status note above. TokenRig's generated skeleton does find the limbs on these
+    assets (symmetry 0.86-0.87 library-wide), so it serves as the landmark source
+    that slice geometry could not. Costs one extra rig pass.
+    """
+    _names, parents, pos = read_skeleton(rigged_glb)
+    c = classify(parents, pos)
+    spine, legs, arms = c["spine"], c["legs"], c["arms"]
+    if len(legs) < 2 or len(arms) < 2:
+        raise SystemExit(
+            f"could not identify two legs and two arms in {rigged_glb} "
+            f"(found {len(legs)} legs, {len(arms)} arms). The generated skeleton is "
+            "too degenerate to use as a landmark source."
+        )
+
+    hips_i = min(b["at"] for b in legs)          # spine node the legs hang from
+    sh_i = max(b["at"] for b in arms)            # spine node the arms hang from
+    si = {n: k for k, n in enumerate(spine)}
+    torso = spine[si[hips_i]:si[sh_i] + 1] or [hips_i, sh_i]
+    upper = spine[si[sh_i]:] or [sh_i]
+
+    spec, order = [], {}
+
+    def add(name, parent, pos_):
+        order[name] = len(spec)
+        spec.append((name, order[parent] if parent else -1, np.asarray(pos_, float)))
+
+    t = resample(pos, torso, [0.0, 0.33, 0.66, 1.0])
+    add("mixamorig:Hips", None, t[0])
+    add("mixamorig:Spine", "mixamorig:Hips", t[1])
+    add("mixamorig:Spine1", "mixamorig:Spine", t[2])
+    add("mixamorig:Spine2", "mixamorig:Spine1", t[3])
+    u = resample(pos, upper, [0.25, 0.6, 1.0])
+    add("mixamorig:Neck", "mixamorig:Spine2", u[0])
+    add("mixamorig:Head", "mixamorig:Neck", u[1])
+    add("mixamorig:HeadTop_End", "mixamorig:Head", u[2])
+
+    for tag, arm, leg in (("Left", arms[0], legs[0]), ("Right", arms[1], legs[1])):
+        a = resample(pos, longest_line(c, arm), [0.0, 0.12, 0.5, 0.9])
+        add(f"mixamorig:{tag}Shoulder", "mixamorig:Spine2", a[0])
+        add(f"mixamorig:{tag}Arm", f"mixamorig:{tag}Shoulder", a[1])
+        add(f"mixamorig:{tag}ForeArm", f"mixamorig:{tag}Arm", a[2])
+        add(f"mixamorig:{tag}Hand", f"mixamorig:{tag}ForeArm", a[3])
+        g = resample(pos, longest_line(c, leg), [0.0, 0.5, 0.88, 1.0])
+        add(f"mixamorig:{tag}UpLeg", "mixamorig:Hips", g[0])
+        add(f"mixamorig:{tag}Leg", f"mixamorig:{tag}UpLeg", g[1])
+        add(f"mixamorig:{tag}Foot", f"mixamorig:{tag}Leg", g[2])
+        add(f"mixamorig:{tag}ToeBase", f"mixamorig:{tag}Foot", g[3])
+
+    # Leftover chains keep their geometry as named extras. Outside the mixamorig
+    # namespace on purpose: retargeting drives mixamorig:* and ignores these, which
+    # is what lets a standard clip run on a winged character.
+    lo = pos[:, UP].min()
+    extras = []
+    for b in c["extra"]:
+        if b["size"] < 2:
+            continue
+        f = (np.mean(pos[b["nodes"], UP]) - lo) / c["height"]
+        side = "L" if b["lat_mean"] >= 0 else "R"
+        if f > max(x["at_frac"] for x in arms):
+            kind, anchor = f"horn_{side}", "mixamorig:Head"
+        elif f < min(x["at_frac"] for x in legs):
+            kind, anchor = "tail", "mixamorig:Hips"
+        else:
+            kind, anchor = f"wing_{side}", "mixamorig:Spine2"
+        pts = resample(pos, longest_line(c, b), list(np.linspace(0, 1, links + 1))[1:])
+        parent = anchor
+        base = sum(1 for e in extras if e[0].startswith(kind))
+        for k, q in enumerate(pts):
+            nm = f"{kind}_{base + k + 1:02d}"
+            add(nm, parent, q)
+            parent = nm
+            extras.append((nm, kind))
+
+    names = [x[0] for x in spec]
+    par = np.array([x[1] for x in spec], dtype=np.int32)
+    joints = np.stack([x[2] for x in spec]).astype(np.float32)
+    report = {"source_rig": rigged_glb, "generated_joints": int(len(parents)),
+              "spine_len": len(spine), "extras": [e[0] for e in extras]}
+    return names, par, joints, report
 
 
 # --------------------------------------------------------------------------- #
@@ -376,11 +642,16 @@ def cmd_fit(args):
     from src.rig_package.parser.bpy import BpyParser
 
     mesh = trimesh.load(args.mesh, force="mesh", process=False)
-    lm = landmarks(mesh)
-    names, parents, joints = core_skeleton(lm)
-
-    extra_report = []
-    if not args.no_appendages:
+    if args.from_rig:
+        names, parents, joints, gen_report = mixamo_from_generated(args.from_rig)
+        extra_report = [{"from_generated": gen_report}]
+        lm = {"mode": "from-rig", **gen_report}
+    else:
+        gen_report = None
+        lm = landmarks(mesh)
+        names, parents, joints = core_skeleton(lm)
+        extra_report = []
+    if not args.from_rig and not args.no_appendages:
         chains, extra_report = appendage_chains(lm, names, parents, joints)
         for nm, par, pos in chains:
             names.append(nm)
@@ -403,7 +674,7 @@ def cmd_fit(args):
         "bones": len(names), "core_bones": len(names) - len(extra_report) * 3,
         "appendages": extra_report,
         "landmarks": {k: (round(v, 4) if isinstance(v, float) else v)
-                      for k, v in lm.items() if k != "points"},
+                      for k, v in lm.items() if k not in ("points",)},
         "names": names,
     }
     open(report_path, "w").write(json.dumps(report, indent=2))
@@ -474,6 +745,9 @@ def main() -> int:
     f = sub.add_parser("fit", help="write a mesh GLB carrying a Mixamo armature")
     f.add_argument("--mesh", required=True)
     f.add_argument("--out", required=True)
+    f.add_argument("--from-rig",
+                   help="a rigged GLB whose generated skeleton supplies the landmarks. "
+                        "This is the working path; geometric fitting does not generalise.")
     f.add_argument("--no-appendages", action="store_true",
                    help="core skeleton only; skip wing/tail/horn chains")
     f.set_defaults(func=cmd_fit)
