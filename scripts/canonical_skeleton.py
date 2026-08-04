@@ -258,6 +258,25 @@ def longest_line(c, branch):
     return best or [branch["root"]]
 
 
+def t_where(pos, line, key, target, lo=0.0, hi=1.0, steps=200):
+    """Arc-length fraction along `line` at which key(point) first reaches `target`.
+
+    Used to anchor joints to ANATOMY rather than to a chain index. The generated
+    skeleton's branch points are not joints: an arm chain starts at the clavicle
+    root beside the neck (measured at 0.93 H) and a leg chain starts at the pelvis
+    attachment (0.58 H), so sampling either at a fixed small t puts the shoulder in
+    the character's ear and the femur head in its belly.
+    """
+    prev_t, prev_v = lo, key(resample(pos, line, [lo])[0])
+    for i in range(1, steps + 1):
+        t = lo + (hi - lo) * i / steps
+        v = key(resample(pos, line, [t])[0])
+        if (prev_v - target) * (v - target) <= 0 and abs(v - prev_v) > 1e-12:
+            return prev_t + (t - prev_t) * (target - prev_v) / (v - prev_v)
+        prev_t, prev_v = t, v
+    return hi
+
+
 def resample(pos, line, ts):
     """Positions at arc-length fractions along a joint polyline."""
     pts = pos[line]
@@ -309,13 +328,61 @@ def mixamo_from_generated(rigged_glb, links=3):
     add("mixamorig:Head", "mixamorig:Neck", u[1])
     add("mixamorig:HeadTop_End", "mixamorig:Head", u[2])
 
+    # WHICH SIDE IS WHICH. classify() calls the greater lateral coordinate "left",
+    # which is arbitrary - it depends on which way the character happens to face.
+    # forge_warden came out mirrored, and a mirrored rig flips the lateral axis, so
+    # retarget_animation's body frame flips with it, reads a 180 degree yaw, and
+    # plays the walk mirrored. The feet settle it: the last segment of a leg chain
+    # is the foot, and feet point where the character faces.
+    ctr = float(np.median(pos[spine, LAT]))
+    up_v = pos[sh_i] - pos[hips_i]
+    up_v = up_v / max(np.linalg.norm(up_v), 1e-9)
+    toe_v = np.zeros(3)
+    for b in legs:
+        ln = longest_line(c, b)
+        if len(ln) >= 2:
+            toe_v = toe_v + (pos[ln[-1]] - pos[ln[-2]])
+    toe_v = toe_v - up_v * float(toe_v @ up_v)
+    lat_v = pos[legs[1]["root"]] - pos[legs[0]["root"]]
+    if float(np.cross(lat_v, up_v) @ toe_v) < 0:
+        legs = legs[::-1]
+        arms = arms[::-1]
+
+    # Anatomical anchors, measured off this character rather than assumed. The hip
+    # half-width sets where the shoulder joint sits, at the standard 1.15x of it -
+    # the same proportion the earlier geometric fitter used, and the one place
+    # proportion beats the generated skeleton, whose arm chain has not left the
+    # neck yet at t=0.12.
+    hip_half = float(np.mean([abs(pos[b["root"], LAT] - ctr) for b in legs]))
+    sh_off = hip_half * 1.15
+    hips_up = float(pos[hips_i, UP])
+    height = c["height"]
+
     for tag, arm, leg in (("Left", arms[0], legs[0]), ("Right", arms[1], legs[1])):
-        a = resample(pos, longest_line(c, arm), [0.0, 0.12, 0.5, 0.9])
+        arm_line = longest_line(c, arm)
+        # Shoulder joint = where the chain has swung sh_off clear of the midline.
+        t_sh = t_where(pos, arm_line, lambda q: abs(float(q[LAT]) - ctr), sh_off)
+        # Bound it hard. The lateral rule alone overcorrects a stocky build: a dwarf
+        # has wide hips relative to its shoulders, so hip_half*1.15 is not reached
+        # until well down the humerus, and the shoulder landed at 0.67 H. A shoulder
+        # is always near the START of an arm chain whatever the proportions.
+        t_sh = min(max(t_sh, 0.05), 0.30)
+        t_elbow = t_sh + (0.9 - t_sh) * 0.5
+        a = resample(pos, arm_line, [0.0, t_sh, t_elbow, 0.9])
         add(f"mixamorig:{tag}Shoulder", "mixamorig:Spine2", a[0])
         add(f"mixamorig:{tag}Arm", f"mixamorig:{tag}Shoulder", a[1])
         add(f"mixamorig:{tag}ForeArm", f"mixamorig:{tag}Arm", a[2])
         add(f"mixamorig:{tag}Hand", f"mixamorig:{tag}ForeArm", a[3])
-        g = resample(pos, longest_line(c, leg), [0.0, 0.5, 0.88, 1.0])
+
+        leg_line = longest_line(c, leg)
+        # Femoral head sits BELOW the pelvis attachment the chain starts at, or the
+        # thigh pivots from inside the belly.
+        t_hip = t_where(pos, leg_line, lambda q: float(q[UP]), hips_up - 0.035 * height)
+        # Same reasoning: measured as a fraction of BODY height, the drop is far too
+        # big for short legs - it put the dwarf's femur head at 0.42 H. The femoral
+        # head is just below the pelvis attachment on any build.
+        t_hip = min(max(t_hip, 0.0), 0.10)
+        g = resample(pos, leg_line, [t_hip, 0.5, 0.88, 1.0])
         add(f"mixamorig:{tag}UpLeg", "mixamorig:Hips", g[0])
         add(f"mixamorig:{tag}Leg", f"mixamorig:{tag}UpLeg", g[1])
         add(f"mixamorig:{tag}Foot", f"mixamorig:{tag}Leg", g[2])

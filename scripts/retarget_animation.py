@@ -99,22 +99,37 @@ def body_frame(arm, canon_to_own):
     # Keyed by CANONICAL name and resolved through the map, because the clip's rig
     # speaks its own convention - a UE5 Mannequin has pelvis and thigh_l, not
     # mixamorig:Hips and mixamorig:LeftUpLeg.
-    need = ("mixamorig:LeftUpLeg", "mixamorig:RightUpLeg",
-            "mixamorig:Hips", "mixamorig:Spine2")
+    need = ("mixamorig:Hips", "mixamorig:Spine2",
+            "mixamorig:LeftFoot", "mixamorig:RightFoot",
+            "mixamorig:LeftToeBase", "mixamorig:RightToeBase")
     missing = [n for n in need if n not in canon_to_own]
     if missing:
         raise SystemExit(
             f"cannot build a body frame for {arm.name}: no mapping for {missing}. "
-            "The hip axis and spine are what define which way the character faces, "
-            "so a clip missing them cannot be aligned."
+            "The spine gives up and the feet give forward; a clip missing either "
+            "cannot be aligned."
         )
 
     def rest(n):
         return arm.pose.bones[canon_to_own[n]].bone.matrix_local.translation
-    lat = (rest("mixamorig:RightUpLeg") - rest("mixamorig:LeftUpLeg")).normalized()
+    # Forward comes from the TOES, not from a hip-axis cross product. Measured, the
+    # cross-product convention disagrees with anatomy on every standard rig:
+    #
+    #     Mixamo clip rig        lat x up . toe-fwd = -1.00
+    #     UE5 Mannequin rig      lat x up . toe-fwd = -1.00
+    #     our fitted rigs        lat x up . toe-fwd = +1.00
+    #
+    # so the alignment baked in a 180 degree yaw and the character moonwalked -
+    # planted foot travelling FORWARD through the stance phase. forge_warden only
+    # looked right because its sides were mirrored and the two errors cancelled.
+    #
+    # Anchoring on the feet makes the frame anatomical on both sides, so no
+    # handedness convention has to agree with anything.
     up = (rest("mixamorig:Spine2") - rest("mixamorig:Hips")).normalized()
-    up = (up - lat * up.dot(lat)).normalized()      # Gram-Schmidt; hips are rarely square
-    fwd = lat.cross(up)
+    fwd = ((rest("mixamorig:LeftToeBase") - rest("mixamorig:LeftFoot"))
+           + (rest("mixamorig:RightToeBase") - rest("mixamorig:RightFoot")))
+    fwd = (fwd - up * fwd.dot(up)).normalized()
+    lat = up.cross(fwd)
     return Matrix((Vector((lat.x, up.x, fwd.x)),
                    Vector((lat.y, up.y, fwd.y)),
                    Vector((lat.z, up.z, fwd.z))))
