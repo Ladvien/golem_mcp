@@ -81,6 +81,41 @@ def pick_map(source_bones, requested="auto"):
     return name, MAPS[name]
 
 
+def body_frame(arm, names_present):
+    """Orthonormal frame built from the rig's own rest pose: lateral, up, forward.
+
+    Characters do not all face the same way in world space. Measured on two of
+    ours - female_base_v5 carries its arms along Z (hands at +/-0.734, mesh only
+    +/-0.17 wide in X) while forge_warden carries them along X. They are yawed 90
+    degrees apart.
+
+    That matters because a clip's delta is a WORLD rotation. Applied raw to a rig
+    yawed against the clip's own convention, a Mixamo arm swing arrives as an arm
+    raise - which is exactly what female_base_v5 did. Conjugating the delta by the
+    rotation between the two body frames puts it back in the right plane.
+    """
+    from mathutils import Matrix, Vector
+
+    def rest(n):
+        return arm.pose.bones[n].bone.matrix_local.translation
+
+    need = ("mixamorig:LeftUpLeg", "mixamorig:RightUpLeg",
+            "mixamorig:Hips", "mixamorig:Spine2")
+    missing = [n for n in need if n not in names_present]
+    if missing:
+        raise SystemExit(
+            f"cannot build a body frame for {arm.name}: missing {missing}. "
+            "The hip axis and spine are what define which way the character faces."
+        )
+    lat = (rest("mixamorig:RightUpLeg") - rest("mixamorig:LeftUpLeg")).normalized()
+    up = (rest("mixamorig:Spine2") - rest("mixamorig:Hips")).normalized()
+    up = (up - lat * up.dot(lat)).normalized()      # Gram-Schmidt; hips are rarely square
+    fwd = lat.cross(up)
+    return Matrix((Vector((lat.x, up.x, fwd.x)),
+                   Vector((lat.y, up.y, fwd.y)),
+                   Vector((lat.z, up.z, fwd.z))))
+
+
 def hierarchy_order(arm, names):
     """Parents before children - `pose_bone.matrix` assignment is order-sensitive."""
     depth = {}
@@ -153,6 +188,13 @@ def main() -> int:
     src_rest = {s: src.pose.bones[s].bone.matrix_local.to_quaternion() for s, _t in pairs}
     tgt_rest = {t: tgt.pose.bones[t].bone.matrix_local.to_quaternion() for _s, t in pairs}
 
+    # Rotation taking the clip's body frame onto ours. Identity when the two rigs
+    # already face the same way, which is why forge_warden retargeted correctly
+    # while female_base_v5 did not.
+    align = body_frame(tgt, tgt_bones) @ body_frame(src, src_bones).inverted()
+    align_q = align.to_quaternion()
+    align_inv = align_q.inverted()
+
     height_ratio = 1.0
     if args.root_motion:
         sd, td = max(src.dimensions), max(mesh.dimensions)
@@ -180,6 +222,7 @@ def main() -> int:
             s = by_target[t]
             spb, tpb = src.pose.bones[s], tgt.pose.bones[t]
             delta = spb.matrix.to_quaternion() @ src_rest[s].inverted()
+            delta = align_q @ delta @ align_inv          # into our body frame
             want = delta @ tgt_rest[t]
             cur = tpb.matrix.copy()
             loc = cur.translation.copy()
@@ -206,6 +249,7 @@ def main() -> int:
         "character": args.character, "clip": args.clip, "out": args.out,
         "action": source_action_name, "source_convention": map_name,
         "bones_mapped": len(pairs), "frames": end - start + 1,
+        "frame_alignment_deg": round(align_q.angle * 57.29578, 1),
         "root_motion": args.root_motion, "height_ratio": round(height_ratio, 4),
         "unmapped_target_bones": sorted(tgt_bones - {t for _s, t in pairs}),
     }
