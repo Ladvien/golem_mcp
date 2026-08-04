@@ -81,6 +81,22 @@ SEGVIGEN_OUTPUT_DIR = Path(os.environ.get("SEGVIGEN_OUTPUT_DIR", str(OUTPUT_DIR 
 # inherited from TRELLIS.2.
 SEGVIGEN_VRAM_REQUIRED = 18e9
 
+# Canonical rigging and animation. canonical_skeleton.py needs SkinTokens' Asset
+# and BpyParser (it imports them from the repo root, hence the cwd) but runs on
+# SegviGen's bpy 4.5.9; retarget_animation.py is pure bpy.
+CANONICAL_DRIVER = _SCRIPTS / "canonical_skeleton.py"
+RETARGET_DRIVER = _SCRIPTS / "retarget_animation.py"
+ANIMATION_LIBRARY_DRIVER = _SCRIPTS / "animation_library.py"
+ANIMATION_ROOTS = tuple(
+    Path(p) for p in os.environ.get(
+        "ANIMATION_ROOTS",
+        "/mnt/codex_fs/game_assets/animation:/mnt/codex_fs/game_assets/SCP-610",
+    ).split(":")
+)
+ANIMATION_CACHE = OUTPUT_DIR / "animation_cache.json"
+ANIM_OUTPUT_DIR = OUTPUT_DIR / "animated"
+ANIM_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 # Shared asset library on codex_fs (NFS export from 'three', autofs-mounted).
 # Local OUTPUT_DIR stays the working area; these are the durable locations.
 CODEX_GEN_AI_DIR = Path(os.environ.get("CODEX_GEN_AI_DIR", "/mnt/codex_fs/game_assets/models/gen_ai"))
@@ -1052,9 +1068,10 @@ def _publish_rig(
     num_beams: int,
     use_transfer: bool,
     use_postprocess: bool,
-    use_skeleton: bool,
     mesh_diagnostics: dict[str, Any],
     skeleton: dict[str, Any],
+    fit_report: dict[str, Any],
+    canonical: dict[str, Any],
 ) -> str | None:
     """Add the rigged mesh to its published asset directory and mark it rigged.
 
@@ -1074,21 +1091,28 @@ def _publish_rig(
         metadata["rig_tool"] = "SkinTokens/TokenRig"
         metadata["rig"] = {
             "checkpoint": SKINTOKENS_CKPTS[1],
+            "skeleton_convention": "mixamo-canonical",
             "num_beams": num_beams,
             "use_transfer": use_transfer,
             "use_postprocess": use_postprocess,
-            "use_skeleton": use_skeleton,
             "elapsed_seconds": elapsed,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "bone_naming": "generic (bone_0..bone_N) - not Mixamo or UE5 conventions",
-            "reproducible": False,
+            "bone_naming": (
+                "Mixamo (mixamorig:*) 23-bone core, plus named wing_/tail_/horn_ chains "
+                "for whatever else the mesh has. Identical across every character, which "
+                "is what makes clips shareable."
+            ),
+            "skeleton_reproducible": True,
+            "skinning_reproducible": False,
             "_reproducibility_note": (
-                "TokenRig generates with do_sample=True and exposes no seed; the same mesh and "
-                "parameters produce a different skeleton every run. These parameters describe how "
-                "this rig was made, but will not recreate it."
+                "The skeleton is fitted deterministically and is the same for every asset. "
+                "Skin weights still come from TokenRig, which generates with do_sample=True "
+                "and exposes no seed, so re-running gives different weights on the same bones."
             ),
             "input_mesh": mesh_diagnostics,
             "skeleton": skeleton,
+            "canonical": canonical,
+            "canonical_fit": fit_report.get("from_generated", {}),
         }
         meta_path.write_text(json.dumps(metadata, indent=2) + "\n")
         return str(asset_dir)
@@ -1222,6 +1246,141 @@ def _rig_env() -> dict[str, str]:
     return env
 
 
+def _canonical_preflight() -> None:
+    """Raise if the canonical-rigging drivers or their interpreter are missing."""
+    missing = [
+        str(p) for p in (SEGVIGEN_PYTHON, CANONICAL_DRIVER, RETARGET_DRIVER)
+        if not p.is_file()
+    ]
+    if missing:
+        raise RuntimeError(
+            "Canonical rigging is unavailable. Missing: " + "; ".join(missing)
+            + ". The drivers ship with this repo; the interpreter comes from "
+            "scripts/install_segvigen.sh."
+        )
+
+
+def _run_script(
+    python: Path, script: Path, argv: list[str], timeout: int, marker: str, label: str,
+) -> str:
+    """Run a driver script and verify it printed its success marker.
+
+    Exit codes are not trusted here for the same reason they are not trusted for
+    demo.py: a driver can fail after writing partial output and still exit 0. The
+    marker is printed as the last act of a successful run.
+    """
+    proc = subprocess.run(
+        [str(python), str(script), *argv],
+        cwd=str(SKINTOKENS_REPO), env=_rig_env(),
+        capture_output=True, text=True, timeout=timeout,
+    )
+    if marker not in proc.stdout:
+        tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-30:])
+        raise RuntimeError(f"{label} failed (exit {proc.returncode}). Output:\n{tail}")
+    return proc.stdout
+
+
+def _demo_pass(
+    source: Path, target: Path, use_skeleton: bool, label: str, params: dict[str, Any], timeout: int,
+) -> float:
+    """One TokenRig pass. Returns elapsed seconds; raises with the log tail on failure."""
+    cmd = [
+        str(SKINTOKENS_PYTHON), "demo.py",
+        "--input", str(source), "--output", str(target),
+        "--num_beams", str(params["num_beams"]),
+        "--top_k", str(params["top_k"]),
+        "--top_p", str(params["top_p"]),
+        "--temperature", str(params["temperature"]),
+        "--repetition_penalty", str(params["repetition_penalty"]),
+    ]
+    if params["use_transfer"]:
+        cmd.append("--use_transfer")
+    if params["use_postprocess"]:
+        cmd.append("--use_postprocess")
+    if use_skeleton:
+        cmd.append("--use_skeleton")
+
+    started = time.time()
+    # demo.py resolves bpy_server.py, checkpoints and configs relative to the repo
+    # root, so it must run with cwd there.
+    proc = subprocess.Popen(
+        cmd, cwd=str(SKINTOKENS_REPO), env=_rig_env(),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True,
+    )
+    try:
+        log, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.wait()
+        _kill_orphan_bpy_server()
+        raise TimeoutError(
+            f"{label} exceeded {timeout}s and was killed. Lower num_beams "
+            f"(currently {params['num_beams']}) or raise timeout. Note that timeout "
+            "is PER PASS and canonical rigging runs two."
+        ) from None
+
+    elapsed = round(time.time() - started, 1)
+    # demo.py prints "[Error] ..." on an export failure but still exits 0, so the
+    # exit code alone does not mean the pass succeeded. The written file does.
+    if not target.is_file() or target.stat().st_size == 0:
+        tail = "\n".join(log.strip().splitlines()[-40:]) if log else ""
+        raise RuntimeError(
+            f"{label} produced no output at {target} (exit {proc.returncode}, {elapsed}s)."
+            + (f" Log tail:\n{tail}" if tail else "")
+        )
+    return elapsed
+
+
+def _joint_hierarchy(path: Path) -> tuple[list[str], list[int]]:
+    """(bone names, parent indices) for a rigged GLB's skin, in joint order."""
+    gltf, _binary = _read_glb(path)
+    nodes = gltf["nodes"]
+    joints = gltf["skins"][0]["joints"]
+    parent_of = {c: i for i, n in enumerate(nodes) for c in n.get("children", [])}
+    slot = {n: k for k, n in enumerate(joints)}
+    names = [nodes[i].get("name", "") for i in joints]
+    parents = [slot.get(parent_of.get(i), -1) for i in joints]
+    return names, parents
+
+
+def _verify_canonical(final: Path, canonical: Path, fit_report: dict[str, Any]) -> dict[str, Any]:
+    """Confirm the shipped rig carries exactly the skeleton that was supplied.
+
+    Every character having an identical bone list is the whole point, so it is
+    asserted rather than eyeballed. Two separate invariants:
+
+      * the final rig's names and hierarchy match the CANONICAL GLB's, in order -
+        this is what makes restore-names-by-index valid, and it fails if TokenRig
+        reordered or altered the supplied skeleton.
+      * the name SET matches what the fitter specified. Not the order: the fitter
+        specifies joints in hierarchy-construction order while BpyParser writes
+        them in its own, and comparing those two orders only ever tests the
+        exporter's bookkeeping.
+    """
+    got, got_parents = _joint_hierarchy(final)
+    ref, ref_parents = _joint_hierarchy(canonical)
+    if got != ref or got_parents != ref_parents:
+        raise RuntimeError(
+            f"Rigged output does not match the supplied skeleton: {len(got)} bones vs "
+            f"{len(ref)} supplied, hierarchy "
+            f"{'differs' if got_parents != ref_parents else 'matches'}. "
+            "Renaming by index is only valid when TokenRig honoured the skeleton exactly."
+        )
+    want = set(fit_report["names"])
+    if set(got) != want:
+        raise RuntimeError(
+            f"Rig carries the wrong skeleton. Missing: {sorted(want - set(got))[:8]}. "
+            f"Unexpected: {sorted(set(got) - want)[:8]}."
+        )
+    core = [n for n in got if n.startswith("mixamorig:")]
+    return {
+        "canonical": True,
+        "bones": len(got),
+        "core_bones": len(core),
+        "extra_chains": sorted({n.rsplit("_", 1)[0] for n in got if not n.startswith("mixamorig:")}),
+    }
+
+
 def _kill_orphan_bpy_server() -> None:
     """Kill a bpy_server left holding port 59876 after a killed rig run.
 
@@ -1259,9 +1418,6 @@ def rig_model(
     use_postprocess: Annotated[
         bool, Field(description="Voxel-based skin cleanup. Enable when weights bleed across disconnected parts")
     ] = False,
-    use_skeleton: Annotated[
-        bool, Field(description="Input already has a skeleton: predict skin weights only, skip skeleton generation")
-    ] = False,
     top_k: Annotated[int, Field(description="Sampling top_k", ge=1, le=200)] = 5,
     top_p: Annotated[float, Field(description="Sampling top_p", ge=0.1, le=1.0)] = 0.95,
     temperature: Annotated[float, Field(description="Sampling temperature", ge=0.1, le=2.0)] = 1.0,
@@ -1273,19 +1429,39 @@ def rig_model(
             le=3.0,
         ),
     ] = 2.0,
-    timeout: Annotated[int, Field(description="Hard limit in seconds for the rig run", ge=60, le=7200)] = 1800,
+    timeout: Annotated[
+        int, Field(description="Hard limit in seconds PER TokenRig pass; this tool runs two", ge=60, le=7200)
+    ] = 1800,
 ) -> dict[str, Any]:
-    """Generate a skeleton and skin weights for a 3D mesh using SkinTokens/TokenRig.
+    """Rig a mesh with the canonical Mixamo skeleton, so animations are shareable.
 
-    Hot-swaps the GPU: TRELLIS is evicted from VRAM first, then the rigger runs
-    in its own Python 3.11 environment and releases the card when it exits.
-    The next generate_3d call reloads TRELLIS automatically.
+    Every character comes out with the SAME bone list - a 23-bone `mixamorig:*`
+    core plus named `wing_`/`tail_`/`horn_` chains for whatever else the mesh has.
+    That is what lets one clip drive the whole library via apply_animation, and
+    what Unreal's IK Retargeter and Unity's Humanoid avatar need. A per-asset
+    skeleton named bone_0..bone_N cannot do either.
+
+    Runs TokenRig TWICE, because the skeleton fitter needs landmarks:
+
+      1. a normal rig pass, read only for where its limb chains ended up
+      2. fit the Mixamo skeleton onto those landmarks
+      3. a second pass with --use_skeleton, which skins to the supplied skeleton
+         rather than inventing one
+      4. restore the bone names, which TokenRig drops
+
+    So expect roughly twice the runtime of a raw rig. In exchange the skeleton is
+    now fixed by construction - the documented 47-vs-44-joint lottery applies only
+    to step 1, which is thrown away.
+
+    Hot-swaps the GPU: TRELLIS is evicted from VRAM first and the lock is held
+    across both passes. The next generate_3d call reloads TRELLIS automatically.
 
     Output is always .glb. After importing to Blender, delete the
     `glTF_not_exported` node.
     """
     try:
         _rig_preflight()
+        _canonical_preflight()
 
         # Relative names resolve against the TRELLIS output dir so a generate_3d
         # result can be passed straight through.
@@ -1304,69 +1480,50 @@ def rig_model(
         if not output_name:
             output_name = f"{source.stem}_rigged"
         target = RIG_OUTPUT_DIR / f"{output_name}.glb"
+        landmarks = RIG_OUTPUT_DIR / f"{output_name}_landmarks.glb"
+        canonical = RIG_OUTPUT_DIR / f"{output_name}_canonical.glb"
+        skinned = RIG_OUTPUT_DIR / f"{output_name}_skinned.glb"
 
-        cmd = [
-            str(SKINTOKENS_PYTHON),
-            "demo.py",
-            "--input", str(source),
-            "--output", str(target),
-            "--num_beams", str(num_beams),
-            "--top_k", str(top_k),
-            "--top_p", str(top_p),
-            "--temperature", str(temperature),
-            "--repetition_penalty", str(repetition_penalty),
-        ]
-        if use_transfer:
-            cmd.append("--use_transfer")
-        if use_postprocess:
-            cmd.append("--use_postprocess")
-        if use_skeleton:
-            cmd.append("--use_skeleton")
-
+        params = {
+            "num_beams": num_beams, "use_transfer": use_transfer,
+            "use_postprocess": use_postprocess, "top_k": top_k, "top_p": top_p,
+            "temperature": temperature, "repetition_penalty": repetition_penalty,
+        }
         started = time.time()
 
+        # One lock across the whole chain: pass 2 needs the card again, and letting
+        # another tool take it in between would strand a half-finished rig.
         with _gpu_lock:
             evicted = _evict_trellis()
+            t_landmarks = _demo_pass(source, landmarks, False, "Landmark rig pass", params, timeout)
 
-            # demo.py resolves bpy_server.py, checkpoints and configs relative to
-            # the repo root, so it must run with cwd there.
-            proc = subprocess.Popen(
-                cmd,
-                cwd=str(SKINTOKENS_REPO),
-                env=_rig_env(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                start_new_session=True,
+            # The fitter reads joint positions from the landmark rig and vertices
+            # from the ORIGINAL mesh, so both must be in the same scale - which is
+            # why the landmark pass runs with the same use_transfer as the final one.
+            _run_script(
+                SEGVIGEN_PYTHON, CANONICAL_DRIVER,
+                ["fit", "--mesh", str(source), "--from-rig", str(landmarks), "--out", str(canonical)],
+                600, "CANONICAL_FIT_OK", "Canonical skeleton fit",
             )
-            try:
-                log, _ = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.wait()
-                _kill_orphan_bpy_server()
-                raise TimeoutError(
-                    f"Rigging exceeded {timeout}s and was killed. "
-                    f"Lower num_beams (currently {num_beams}) or raise timeout."
-                ) from None
+            fit_report = json.loads(Path(str(canonical).rsplit(".", 1)[0] + "_skeleton.json").read_text())
+
+            t_skin = _demo_pass(canonical, skinned, True, "Skinning pass", params, timeout)
+
+        # Name restore is a JSON-chunk patch - no GPU, no bpy, so it runs outside
+        # the lock. TokenRig preserves joint ORDER but drops names, which is what
+        # makes renaming by index exact.
+        _run_script(
+            SEGVIGEN_PYTHON, CANONICAL_DRIVER,
+            ["restore-names", "--rigged", str(skinned), "--reference", str(canonical), "--out", str(target)],
+            300, "CANONICAL_RESTORE_OK", "Bone name restore",
+        )
 
         elapsed = round(time.time() - started, 1)
-        tail = "\n".join(log.strip().splitlines()[-40:]) if log else ""
-
-        # demo.py prints "[Error] ..." on an export failure but still exits 0, so
-        # the exit code alone does not mean the rig succeeded. The written file is
-        # the only trustworthy signal.
-        if not target.is_file() or target.stat().st_size == 0:
-            return {
-                "success": False,
-                "error": f"Rigging produced no output at {target} (exit code {proc.returncode}, {elapsed}s)",
-                "log": tail,
-            }
-
+        canonical_check = _verify_canonical(target, canonical, fit_report)
         skeleton = _skeleton_report(target)
         published = _publish_rig(
-            source, target, elapsed, num_beams, use_transfer, use_postprocess, use_skeleton,
-            mesh_diag, skeleton,
+            source, target, elapsed, num_beams, use_transfer, use_postprocess,
+            mesh_diag, skeleton, fit_report, canonical_check,
         )
 
         return {
@@ -1377,21 +1534,34 @@ def rig_model(
             "published_to": published,
             "size_bytes": target.stat().st_size,
             "elapsed_seconds": elapsed,
+            "passes": {
+                "landmark_rig_seconds": t_landmarks,
+                "skinning_seconds": t_skin,
+                "landmark_glb": str(landmarks),
+                "canonical_glb": str(canonical),
+            },
             "trellis_evicted": evicted,
             "geometry": _glb_dimensions(target),
             "mesh_diagnostics": mesh_diag,
             "skeleton": skeleton,
+            "canonical": canonical_check,
+            "extras_note": (
+                "Chains outside the mixamorig: namespace (wings, tails, horns) are "
+                "deliberately left undriven by apply_animation, so a standard humanoid "
+                "clip cannot flail them. Key them by hand or procedurally."
+            ),
             "warnings": mesh_diag.get("warnings", []) + skeleton.get("warnings", []),
             "reroll_note": (
-                "Rigs are not reproducible - generation samples, and the same mesh gives a "
-                "different skeleton each run. Judge the skeleton first; if it is wrong, re-run "
-                "rather than trying to fix weights, because the skin tokens are conditioned on it."
+                "The SKELETON is now fixed by construction and identical across characters. "
+                "Skin weights still sample, so a bad deformation is worth re-running; a bad "
+                "skeleton is no longer a failure mode. Note that _skeleton_report's symmetry "
+                "mirrors LOCAL node translations and is not rotation-invariant - judge "
+                "deformation by posing, not by that number."
             ),
             "parameters": {
                 "num_beams": num_beams,
                 "use_transfer": use_transfer,
                 "use_postprocess": use_postprocess,
-                "use_skeleton": use_skeleton,
                 "top_k": top_k,
                 "top_p": top_p,
                 "temperature": temperature,
@@ -1900,6 +2070,302 @@ def generate_garment(
             "fit": fit_report,
         }
 
+    except Exception as e:
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+# A canonically rigged character has 23 mixamorig: bones. Accepting slightly fewer
+# leaves room for a character with no toes, but not for a bone_0..bone_N rig.
+_MIXAMO_CORE_MIN = 20
+
+
+def _rigged_bones(path: Path) -> list[str]:
+    """Bone names carried by a rigged GLB's skin, in joint order."""
+    gltf, _binary = _read_glb(path)
+    if not gltf.get("skins"):
+        raise ValueError(f"{path} carries no skin, so it is not a rigged character.")
+    return [gltf["nodes"][j].get("name", "") for j in gltf["skins"][0]["joints"]]
+
+
+def _require_canonical(path: Path) -> list[str]:
+    """Reject a character that was not rigged canonically, before spending a retarget."""
+    bones = _rigged_bones(path)
+    core = [b for b in bones if b.startswith("mixamorig:")]
+    if len(core) < _MIXAMO_CORE_MIN:
+        raise ValueError(
+            f"{path.name} carries {len(core)} mixamorig: bones out of {len(bones)} - it was not "
+            "rigged canonically, and a shared clip cannot drive a per-asset skeleton. Re-run "
+            "rig_model on the original mesh; fitting the Mixamo skeleton is now its only path."
+        )
+    return bones
+
+
+def _library_report(refresh: bool, timeout: int) -> dict[str, Any]:
+    """Scan (or reuse the cache for) every clip on disk."""
+    report_path = OUTPUT_DIR / "animation_library.json"
+    argv = [
+        "--roots", *[str(r) for r in ANIMATION_ROOTS],
+        "--cache", str(ANIMATION_CACHE),
+        "--report", str(report_path),
+    ]
+    if refresh:
+        argv.append("--refresh")
+    _run_script(
+        SEGVIGEN_PYTHON, ANIMATION_LIBRARY_DRIVER, argv, timeout,
+        "LIBRARY_OK", "Animation library scan",
+    )
+    return json.loads(report_path.read_text())
+
+
+def _resolve_clip(clip: str, action: str, report: dict[str, Any]) -> tuple[Path, str, str]:
+    """Resolve a clip to (file, action, display name).
+
+    Accepts either a path to a clip file or a clip `name` from list_animations.
+    The display name is what the output and the metadata entry are named after:
+    every Mixamo export calls its action "Armature|mixamo.com|Layer0", which says
+    nothing about the clip, so a single-action file is named after the file.
+    """
+    path = Path(clip)
+    if path.is_file():
+        return path, action, (action or path.stem)
+    matches = [c for c in report["clip_list"] if c["name"] == clip]
+    if not matches:
+        near = sorted({c["name"] for c in report["clip_list"] if clip.lower() in c["name"].lower()})
+        raise FileNotFoundError(
+            f"No clip file at '{clip}', and no action by that name in the library. "
+            + (f"Close matches: {near[:10]}" if near else "Call list_animations to see what is available.")
+        )
+    files = sorted({c["file"] for c in matches})
+    if len(files) > 1:
+        raise ValueError(
+            f"'{clip}' appears in {len(files)} different files: {files[:5]}. "
+            "Pass the file path as `clip` and the action name as `action` to disambiguate."
+        )
+    # Name the action only when the file holds a choice. A single-action file has
+    # nothing to disambiguate, and not naming it means not depending on a name.
+    n_actions = sum(1 for c in report["clip_list"] if c["file"] == files[0])
+    return Path(files[0]), (matches[0]["action"] if n_actions > 1 else ""), matches[0]["name"]
+
+
+def _publish_animation(
+    character: Path, animated: Path, report: dict[str, Any], name: str,
+) -> str | None:
+    """Add the animated GLB to its published asset directory and record the clip.
+
+    rig_model names its output `<asset>_rigged.glb`, so the asset directory is
+    looked up by the stem with that suffix removed as well as by the stem itself.
+    A character rigged from somewhere else has no directory to update.
+    """
+    stems = [character.stem, character.stem.removesuffix("_rigged")]
+    for asset_type in ASSET_TYPES:
+        for stem in stems:
+            meta_path = CODEX_GEN_AI_DIR / asset_type / stem / "metadata.json"
+            if not meta_path.is_file():
+                continue
+            asset_dir = meta_path.parent
+            slug = _slugify(name, 40)
+            shutil.copy2(animated, asset_dir / f"asset_anim_{slug}.glb")
+            metadata = json.loads(meta_path.read_text())
+            # Keyed by display name so re-applying the same clip replaces its entry
+            # rather than accumulating duplicates.
+            existing = {a["name"]: a for a in metadata.get("animations", [])}
+            existing[name] = {
+                "name": name,
+                "action": report["action"],
+                "file": f"asset_anim_{slug}.glb",
+                "clip_source": report["clip"],
+                "frames": report["frames"],
+                "source_convention": report["source_convention"],
+                "bones_driven": report["bones_mapped"],
+                "frame_alignment_deg": report["frame_alignment_deg"],
+                "root_motion": report["root_motion"],
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            metadata["animations"] = sorted(existing.values(), key=lambda a: a["name"])
+            meta_path.write_text(json.dumps(metadata, indent=2) + "\n")
+            return str(asset_dir)
+    return None
+
+
+@mcp.tool
+def list_animations(
+    search: Annotated[str, Field(description="Case-insensitive substring filter on the action name")] = "",
+    library: Annotated[str, Field(description="Filter to one library, e.g. 'SCP-610' or 'Unreal-Godot'")] = "",
+    convention: Annotated[
+        str, Field(description="Filter by source naming convention: 'mixamo' or 'ue5'")
+    ] = "",
+    limit: Annotated[int, Field(description="Maximum clips to return", ge=1, le=1000)] = 80,
+    refresh: Annotated[
+        bool, Field(description="Rescan every file instead of trusting the size+mtime cache")
+    ] = False,
+    timeout: Annotated[int, Field(description="Hard limit in seconds for a full rescan", ge=60, le=7200)] = 3600,
+) -> dict[str, Any]:
+    """List the animation clips on disk that can drive a canonically rigged character.
+
+    A clip is a (file, action) PAIR, not a file: the Quaternius Universal Animation
+    Library ships one fbx per target engine carrying every clip as a separate
+    action, so counting files undercounts badly.
+
+    `convention` is the name map that matched the clip's own armature. A clip
+    reporting null cannot drive our rigs however it is invoked - that is visible
+    here rather than after a wasted retarget.
+
+    Reading actions means importing each file in Blender, so results are cached by
+    size and mtime. The first call is slow; later ones are near-instant, and a new
+    or changed file is picked up automatically.
+    """
+    try:
+        _canonical_preflight()
+        report = _library_report(refresh, timeout)
+
+        clips = report["clip_list"]
+        if search:
+            clips = [c for c in clips if search.lower() in c["name"].lower()]
+        if library:
+            clips = [c for c in clips if c["library"] == library]
+        if convention:
+            clips = [c for c in clips if c["convention"] == convention]
+
+        shown = clips[:limit]
+        return {
+            "success": True,
+            "clips": shown,
+            "matched": len(clips),
+            "truncated": len(clips) - len(shown),
+            "total_clips": report["clips"],
+            "usable_clips": report["usable"],
+            "by_convention": report["by_convention"],
+            "libraries": sorted({c["library"] for c in report["clip_list"]}),
+            "files_scanned": report["files"],
+            "files_rescanned": report["rescanned"],
+            "unusable_files": report["unusable_files"],
+            "duplicate_names": sorted(
+                n for n in {c["name"] for c in report["clip_list"]}
+                if len({c["file"] for c in report["clip_list"] if c["name"] == n}) > 1
+            )[:20],
+            "note": (
+                "Pass a clip's `name` to apply_animation as `clip`. Names listed under "
+                "duplicate_names appear in more than one file - for those, pass the file "
+                "path as `clip` and the action name as `action`."
+            ),
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+@mcp.tool
+def apply_animation(
+    character: Annotated[
+        str,
+        Field(
+            description=(
+                "Canonically rigged .glb. Absolute path, or a bare filename resolved "
+                "against the rig output dir (e.g. 'succubus_warden_rigged.glb')."
+            )
+        ),
+    ],
+    clip: Annotated[
+        str,
+        Field(
+            description=(
+                "An action name from list_animations when it is unique, or a path to a "
+                ".fbx/.glb clip file. With a bundle file, also pass `action`."
+            )
+        ),
+    ],
+    action: Annotated[
+        str, Field(description="Which action inside the clip file. Required only for multi-action bundles")
+    ] = "",
+    output_name: Annotated[str, Field(description="Base name for the animated output (without extension)")] = "",
+    root_motion: Annotated[
+        bool,
+        Field(description="Carry hip translation, scaled by the height ratio. Off gives an in-place cycle"),
+    ] = False,
+    timeout: Annotated[int, Field(description="Hard limit in seconds", ge=60, le=7200)] = 1800,
+) -> dict[str, Any]:
+    """Retarget an animation clip onto a canonically rigged character.
+
+    Needs no GPU and no per-character setup: one clip drives every character
+    rig_model has produced, verified on a 1.0 m dwarf, a 1.7 m base body and a
+    winged succubus from the same walk.
+
+    This is a real retarget, not a name-match. A clip keys LOCAL rotations against
+    ITS OWN rest pose and bone rolls, so each bone is driven by the source's
+    rest-relative delta instead. That delta is then conjugated into the character's
+    own body frame, because characters do not all face the same way in world space
+    - measured alignments of 88, 127 and 180 degrees across three of ours, so
+    skipping it turns an arm swing into an arm raise.
+
+    Chains outside the `mixamorig:` namespace - wings, tails, horns - are left
+    undriven on purpose, so a humanoid clip cannot flail them.
+    """
+    try:
+        _canonical_preflight()
+
+        source = Path(character)
+        if not source.is_absolute():
+            source = RIG_OUTPUT_DIR / source
+        if not source.is_file():
+            raise FileNotFoundError(
+                f"Rigged character not found: {source}. Bare names resolve against {RIG_OUTPUT_DIR}; "
+                "pass an absolute path for anything else."
+            )
+        bones = _require_canonical(source)
+
+        clip_path, clip_action, clip_name = _resolve_clip(clip, action, _library_report(False, timeout))
+        if not clip_path.is_file():
+            raise FileNotFoundError(f"Clip file not found: {clip_path}")
+
+        if not output_name:
+            output_name = f"{source.stem}_{_slugify(clip_name, 40)}"
+        target = ANIM_OUTPUT_DIR / f"{output_name}.glb"
+        report_path = ANIM_OUTPUT_DIR / f"{output_name}_retarget.json"
+
+        argv = [
+            "--character", str(source),
+            "--clip", str(clip_path),
+            "--out", str(target),
+            "--report", str(report_path),
+        ]
+        if clip_action:
+            argv += ["--action", clip_action]
+        if root_motion:
+            argv.append("--root-motion")
+
+        started = time.time()
+        _run_script(SEGVIGEN_PYTHON, RETARGET_DRIVER, argv, timeout, "RETARGET_OK", "Retarget")
+        elapsed = round(time.time() - started, 1)
+
+        if not target.is_file() or target.stat().st_size == 0:
+            raise RuntimeError(f"Retarget reported success but wrote nothing to {target}")
+
+        report = json.loads(report_path.read_text())
+        published = _publish_animation(source, target, report, clip_name)
+
+        return {
+            "success": True,
+            "output_name": output_name,
+            "character": str(source),
+            "clip": str(clip_path),
+            "clip_name": clip_name,
+            "action": report["action"],
+            "animated_glb": str(target),
+            "published_to": published,
+            "size_bytes": target.stat().st_size,
+            "elapsed_seconds": elapsed,
+            "frames": report["frames"],
+            "bones_driven": report["bones_mapped"],
+            "source_convention": report["source_convention"],
+            "frame_alignment_deg": report["frame_alignment_deg"],
+            "root_motion": root_motion,
+            "undriven_bones": report["unmapped_target_bones"],
+            "character_bones": len(bones),
+            "note": (
+                "Undriven bones are the extra chains and are left at rest by design. "
+                "Root motion is off by default, giving an in-place cycle to drive from "
+                "a game engine's locomotion."
+            ),
+        }
     except Exception as e:
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 

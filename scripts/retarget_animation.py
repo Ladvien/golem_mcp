@@ -81,7 +81,7 @@ def pick_map(source_bones, requested="auto"):
     return name, MAPS[name]
 
 
-def body_frame(arm, names_present):
+def body_frame(arm, canon_to_own):
     """Orthonormal frame built from the rig's own rest pose: lateral, up, forward.
 
     Characters do not all face the same way in world space. Measured on two of
@@ -96,17 +96,21 @@ def body_frame(arm, names_present):
     """
     from mathutils import Matrix, Vector
 
-    def rest(n):
-        return arm.pose.bones[n].bone.matrix_local.translation
-
+    # Keyed by CANONICAL name and resolved through the map, because the clip's rig
+    # speaks its own convention - a UE5 Mannequin has pelvis and thigh_l, not
+    # mixamorig:Hips and mixamorig:LeftUpLeg.
     need = ("mixamorig:LeftUpLeg", "mixamorig:RightUpLeg",
             "mixamorig:Hips", "mixamorig:Spine2")
-    missing = [n for n in need if n not in names_present]
+    missing = [n for n in need if n not in canon_to_own]
     if missing:
         raise SystemExit(
-            f"cannot build a body frame for {arm.name}: missing {missing}. "
-            "The hip axis and spine are what define which way the character faces."
+            f"cannot build a body frame for {arm.name}: no mapping for {missing}. "
+            "The hip axis and spine are what define which way the character faces, "
+            "so a clip missing them cannot be aligned."
         )
+
+    def rest(n):
+        return arm.pose.bones[canon_to_own[n]].bone.matrix_local.translation
     lat = (rest("mixamorig:RightUpLeg") - rest("mixamorig:LeftUpLeg")).normalized()
     up = (rest("mixamorig:Spine2") - rest("mixamorig:Hips")).normalized()
     up = (up - lat * up.dot(lat)).normalized()      # Gram-Schmidt; hips are rarely square
@@ -133,11 +137,15 @@ def main() -> int:
     ap.add_argument("--character", required=True, help="canonically rigged .glb")
     ap.add_argument("--clip", required=True, help=".fbx or .glb carrying the animation")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--clip-index", type=int, default=0, help="which action, if the file has several")
+    ap.add_argument("--action", default="",
+                    help="which action, when a file bundles several (Quaternius UAL ships one "
+                         "fbx per engine holding every clip). See --list-clips.")
     ap.add_argument("--source-map", default="auto", choices=["auto", "ue5", "mixamo"])
     ap.add_argument("--root-motion", action="store_true",
                     help="carry hip translation, scaled by the height ratio (default: in place)")
     ap.add_argument("--list-clips", action="store_true", help="print the file's actions and exit")
+    ap.add_argument("--report", help="write the JSON result here; Blender's own chatter makes "
+                                     "stdout unsafe to parse")
     args = ap.parse_args()
 
     import bpy
@@ -148,6 +156,14 @@ def main() -> int:
     tgt = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
     if tgt is None:
         raise SystemExit(f"{args.character} has no armature - it is not a rigged character")
+    # The FBX importer builds action names as "{armature_name}|{take}". Our
+    # characters ship an armature literally called "Armature", so importing a clip
+    # afterwards renames ITS armature to "Armature.001" and every action name shifts
+    # with it - "Armature|mixamo.com|Layer0" becomes "Armature.001|mixamo.com|Layer0"
+    # and no name the caller was given can match. Freeing the name first keeps the
+    # clip's own names exactly as animation_library.py catalogued them.
+    tgt.name = "TargetRig"
+    tgt.data.name = "TargetRigData"
     tgt_bones = {b.name for b in tgt.data.bones}
     mesh = next(o for o in bpy.context.scene.objects if o.type == "MESH")
 
@@ -163,7 +179,21 @@ def main() -> int:
         return 0
     if not actions:
         raise SystemExit(f"{args.clip} contains no animation")
-    act = actions[min(args.clip_index, len(actions) - 1)]
+    if args.action:
+        act = next((a for a in actions if a.name == args.action), None)
+        if act is None:
+            raise SystemExit(
+                f"{args.clip} has no action named {args.action!r}. It has: "
+                + ", ".join(sorted(a.name for a in actions))
+            )
+    elif len(actions) == 1:
+        act = actions[0]
+    else:
+        raise SystemExit(
+            f"{args.clip} bundles {len(actions)} actions - pass --action NAME to choose one: "
+            + ", ".join(sorted(a.name for a in actions)[:12])
+            + (" ..." if len(actions) > 12 else "")
+        )
 
     if src.animation_data is None:
         src.animation_data_create()
@@ -191,7 +221,7 @@ def main() -> int:
     # Rotation taking the clip's body frame onto ours. Identity when the two rigs
     # already face the same way, which is why forge_warden retargeted correctly
     # while female_base_v5 did not.
-    align = body_frame(tgt, tgt_bones) @ body_frame(src, src_bones).inverted()
+    align = body_frame(tgt, {t: t for _s, t in pairs}) @ body_frame(src, by_target).inverted()
     align_q = align.to_quaternion()
     align_inv = align_q.inverted()
 
@@ -253,6 +283,8 @@ def main() -> int:
         "root_motion": args.root_motion, "height_ratio": round(height_ratio, 4),
         "unmapped_target_bones": sorted(tgt_bones - {t for _s, t in pairs}),
     }
+    if args.report:
+        Path(args.report).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
     print(f"RETARGET_OK {args.out}")
     return 0

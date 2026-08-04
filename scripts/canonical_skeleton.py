@@ -37,17 +37,21 @@ TWO NON-OBVIOUS CONSTRAINTS
 
 STATUS: WORKING VIA --from-rig. PURE GEOMETRY DOES NOT GENERALISE.
 ------------------------------------------------------------------
-Use `fit --from-rig <rigged.glb>`, which takes landmarks from a generated
+`fit --from-rig <rigged.glb>` is the only path: landmarks come from a generated
 skeleton. Verified on all three library characters: each yields a byte-identical
 23-bone Mixamo core, and one named pose drives characters of different heights
 with no per-character setup (6/6 bones found, ~91% of vertices moved on both a
 1.0 m dwarf and a 1.7 m base body, displacement scaling with height as LBS should).
-On forge_warden the resulting rig scores symmetry 0.913 - the best in the library,
-against the README's 0.86 reference.
+Measured world-space mirror symmetry of the fitted core is 1.000 - by construction,
+since it is built from resampled symmetric pairs. (Do NOT quote _skeleton_report's
+symmetry for this: it mirrors LOCAL node translations, so it is not
+rotation-invariant and reads 0.913 or 0.652 for the same skeleton depending only
+on the file's up-axis.)
 
-Geometric landmark detection (the default path, no --from-rig) was tried first and
-measured against the same three characters. It fails differently on each, and is
-kept only as a fallback for assets with no generated rig to read:
+Geometric landmark detection was tried first and measured against the same three
+characters. It failed differently on each, and the code is DELETED rather than
+kept as a fallback - a second path that never works is only a way to get magic
+results. Recorded here so it is not attempted again:
 
   female_base_v5  T-pose arms are CONTIGUOUS with the torso, so the central-run
                   width at shoulder height is 1.674 - the whole arm span. Nothing
@@ -81,7 +85,8 @@ could not. Three things were needed to read it correctly:
     horn stubs as arms; mirroring is a far stronger signal than any single
     branch's position, and it handles A-pose and T-pose under one rule.
 
-Cost: one extra rig pass, since the generated skeleton must exist first.
+Cost: one extra rig pass, since the generated skeleton must exist first. rig_model
+runs both passes itself.
 """
 
 import argparse
@@ -96,121 +101,6 @@ sys.path.insert(0, "/home/ladvien/skintokens/repo")
 UP, LAT, DEP = 1, 2, 0    # glTF Y-up; arm span on Z, body depth on X
 GLTF_JSON_CHUNK = 0x4E4F534A
 
-# Proportions used only where geometry cannot speak: the spine subdivisions and
-# limb midpoints. Everything structural (shoulder, crotch, hands, feet, head top)
-# is measured.
-FRAC = {"toe": 0.02, "ankle": 0.05, "headtop": 1.0}
-
-
-# --------------------------------------------------------------------------- #
-# landmarks
-# --------------------------------------------------------------------------- #
-def slice_stats(pts, c_lat, n=140):
-    """Per-slice (height, total width, CENTRAL-run width, component count).
-
-    The central width - the width of the run straddling the body axis - is what
-    makes this work on winged characters. A succubus's wings are wide at every
-    height, so total width never shows the arm jump that a T-posed body does and
-    shoulder detection fails outright. The central run excludes wings and
-    outstretched arms alike, leaving the head/neck/torso profile.
-    """
-    from scipy import ndimage
-
-    lo, hi = pts[:, UP].min(), pts[:, UP].max()
-    edges = np.linspace(lo, hi, n + 1)
-    out = []
-    for i in range(n):
-        s = pts[(pts[:, UP] >= edges[i]) & (pts[:, UP] < edges[i + 1])]
-        if len(s) < 8:
-            out.append((edges[i], 0.0, 0.0, 0))
-            continue
-        col = s[:, LAT]
-        bins = np.linspace(col.min() - 1e-6, col.max() + 1e-6, 129)
-        occ = ndimage.binary_closing(np.histogram(col, bins=bins)[0] > 0, np.ones(3))
-        lab, ncomp = ndimage.label(occ)
-        step = bins[1] - bins[0]
-        centre_bin = int(np.clip((c_lat - bins[0]) / step, 0, len(occ) - 1))
-        cid = lab[centre_bin]
-        if cid == 0:                       # axis falls in a gap: take the nearest run
-            nz = np.flatnonzero(lab)
-            cid = lab[nz[np.argmin(np.abs(nz - centre_bin))]] if len(nz) else 0
-        central = float((lab == cid).sum() * step) if cid else 0.0
-        out.append((edges[i], float(col.max() - col.min()), central, int(ncomp)))
-    return out, lo, hi
-
-
-def landmarks(mesh, samples=300_000):
-    """Measured anatomy. Surface-sampled: raw vertices are far too sparse.
-
-    On a 6k-vertex mesh a per-slice occupancy histogram of raw vertices is mostly
-    holes and reports 6-13 components through a solid torso - pure noise.
-    """
-    import trimesh
-
-    pts = np.asarray(trimesh.sample.sample_surface(mesh, samples)[0])
-    c_lat = float(np.median(pts[:, LAT]))
-    c_dep = float(np.median(pts[:, DEP]))
-    rows, lo, hi = slice_stats(pts, c_lat)
-    height = hi - lo
-    fr = np.array([(r[0] - lo) / height for r in rows])
-    central = np.array([r[2] for r in rows])
-    comps = np.array([r[3] for r in rows])
-
-    torso_w = float(np.median(central[(fr > 0.35) & (fr < 0.70)]))
-
-    # Neck: a PINCH, not a global minimum. The skull tapers, so the narrowest
-    # upper slice is the crown - taking it put the "neck" at 0.94 on all three
-    # characters, which threw the shoulders into the head and made the fitter
-    # label real arms as wings. Score each candidate by how much wider the
-    # geometry is both above (head) and below (shoulders); the true neck maximises
-    # the smaller of the two.
-    best, neck_f, neck_w = 0.0, None, None
-    for i, f in enumerate(fr):
-        if not (0.55 < f < 0.93) or central[i] <= 0:
-            continue
-        above = central[(fr > f) & (fr < f + 0.22)]
-        below = central[(fr < f) & (fr > f - 0.22)]
-        if len(above) == 0 or len(below) == 0:
-            continue
-        score = min(above.max(), below.max()) / max(central[i], 1e-6)
-        if score > best:
-            best, neck_f, neck_w = score, float(f), float(central[i])
-    if neck_f is None:
-        raise SystemExit("could not locate a neck pinch in the upper body")
-
-    # Shoulders sit just below the neck, where the central run widens again.
-    below = (fr < neck_f) & (fr > neck_f - 0.18) & (central > 1.5 * neck_w)
-    arm_top_f = float(fr[below].max()) if below.any() else float(neck_f - 0.05)
-    shoulder_f = arm_top_f
-
-    legs = (fr < 0.55) & (fr > 0.12) & (comps >= 2)
-    crotch_f = float(fr[legs].max()) if legs.any() else 0.45
-
-    def y(f):
-        return lo + f * height
-
-    band = pts[(pts[:, UP] >= y(shoulder_f - 0.02)) & (pts[:, UP] <= y(arm_top_f + 0.02))]
-    c_lat = float(np.median(pts[:, LAT]))
-    c_dep = float(np.median(pts[:, DEP]))
-    left = band[band[:, LAT] > c_lat]
-    right = band[band[:, LAT] < c_lat]
-    hand_l = left[np.argmax(left[:, LAT])] if len(left) else None
-    hand_r = right[np.argmin(right[:, LAT])] if len(right) else None
-
-    hip = pts[(pts[:, UP] > y(crotch_f)) & (pts[:, UP] < y(crotch_f + 0.10))]
-    leg_off = float(np.percentile(np.abs(hip[:, LAT] - c_lat), 60)) * 0.55 if len(hip) else 0.04 * height
-
-    return {
-        "lo": float(lo), "hi": float(hi), "height": float(height),
-        "center_lat": c_lat, "center_dep": c_dep,
-        "shoulder_frac": shoulder_f, "arm_top_frac": arm_top_f,
-        "neck_frac": neck_f, "neck_width": neck_w,
-        "crotch_frac": crotch_f, "torso_width": torso_w,
-        "leg_offset": leg_off,
-        "hand_L": None if hand_l is None else hand_l.tolist(),
-        "hand_R": None if hand_r is None else hand_r.tolist(),
-        "points": pts,
-    }
 
 
 
@@ -378,69 +268,6 @@ def resample(pos, line, ts):
     return [np.array([np.interp(t * total, d, pts[:, k]) for k in range(3)]) for t in ts]
 
 
-# --------------------------------------------------------------------------- #
-# core skeleton
-# --------------------------------------------------------------------------- #
-def core_skeleton(lm):
-    """Mixamo core, anchored to measured shoulder/crotch rather than fixed ratios.
-
-    A dwarf's head-to-body ratio differs wildly from a tall figure's; anchoring to
-    measurement is what lets one fitter serve both.
-    """
-    lo, height = lm["lo"], lm["height"]
-    c_lat, c_dep = lm["center_lat"], lm["center_dep"]
-    hip_f, sh_f = lm["crotch_frac"] + 0.10, lm["arm_top_frac"]
-    leg_off, sh_off = lm["leg_offset"], lm["leg_offset"] * 1.15
-
-    def point(f, lat=0.0, dep=0.0):
-        v = np.zeros(3)
-        v[UP], v[LAT], v[DEP] = lo + f * height, c_lat + lat, c_dep + dep
-        return v
-
-    # Spine evenly divided between hips and the shoulder line; neck/head above it.
-    span = sh_f - hip_f
-    spine_f = [hip_f + span * t for t in (0.0, 0.30, 0.60, 0.92)]
-    neck_f = lm["neck_frac"]
-    head_f = neck_f + (1.0 - neck_f) * 0.45
-
-    spec = [("mixamorig:Hips", -1, point(spine_f[0]))]
-    order = {"mixamorig:Hips": 0}
-
-    def add(name, parent, pos):
-        order[name] = len(spec)
-        spec.append((name, order[parent], np.asarray(pos, dtype=float)))
-
-    add("mixamorig:Spine", "mixamorig:Hips", point(spine_f[1]))
-    add("mixamorig:Spine1", "mixamorig:Spine", point(spine_f[2]))
-    add("mixamorig:Spine2", "mixamorig:Spine1", point(spine_f[3]))
-    add("mixamorig:Neck", "mixamorig:Spine2", point(neck_f))
-    add("mixamorig:Head", "mixamorig:Neck", point(head_f))
-    add("mixamorig:HeadTop_End", "mixamorig:Head", point(FRAC["headtop"]))
-
-    for side, tag, hand in ((+1, "Left", lm["hand_L"]), (-1, "Right", lm["hand_R"])):
-        shoulder = point(sh_f, side * sh_off * 0.30)
-        arm_root = point(sh_f, side * sh_off)
-        tip = np.asarray(hand, dtype=float) if hand is not None else point(sh_f, side * height * 0.4)
-        add(f"mixamorig:{tag}Shoulder", "mixamorig:Spine2", shoulder)
-        add(f"mixamorig:{tag}Arm", f"mixamorig:{tag}Shoulder", arm_root)
-        # Elbow and wrist interpolate the real shoulder->hand line, so an A-pose
-        # arm angles downward exactly as the mesh does.
-        add(f"mixamorig:{tag}ForeArm", f"mixamorig:{tag}Arm", arm_root + 0.50 * (tip - arm_root))
-        add(f"mixamorig:{tag}Hand", f"mixamorig:{tag}ForeArm", arm_root + 0.88 * (tip - arm_root))
-
-        add(f"mixamorig:{tag}UpLeg", "mixamorig:Hips", point(lm["crotch_frac"], side * leg_off))
-        knee_f = FRAC["ankle"] + (lm["crotch_frac"] - FRAC["ankle"]) * 0.48
-        add(f"mixamorig:{tag}Leg", f"mixamorig:{tag}UpLeg", point(knee_f, side * leg_off))
-        add(f"mixamorig:{tag}Foot", f"mixamorig:{tag}Leg", point(FRAC["ankle"], side * leg_off))
-        add(f"mixamorig:{tag}ToeBase", f"mixamorig:{tag}Foot",
-            point(FRAC["toe"], side * leg_off, 0.05 * height))
-
-    names = [s[0] for s in spec]
-    parents = np.array([s[1] for s in spec], dtype=np.int32)
-    joints = np.stack([s[2] for s in spec]).astype(np.float32)
-    return names, parents, joints
-
-
 
 def mixamo_from_generated(rigged_glb, links=3):
     """Mixamo skeleton placed from a GENERATED skeleton's own limb chains.
@@ -528,89 +355,6 @@ def mixamo_from_generated(rigged_glb, links=3):
 
 
 # --------------------------------------------------------------------------- #
-# appendages
-# --------------------------------------------------------------------------- #
-def appendage_chains(lm, names, parents, joints, links=3, min_frac=0.01):
-    """Chains for geometry the core skeleton does not reach - wings, tail, horns.
-
-    Found as surface points far from every core bone segment, clustered in space.
-    Named outside the mixamorig namespace on purpose: retargeting drives the
-    mixamorig:* bones and ignores these, which is what lets a standard clip run on
-    a winged character without touching the wings.
-    """
-    from scipy import ndimage
-
-    pts = lm["points"]
-    seg_d = np.full(len(pts), np.inf)
-    for j, p in enumerate(parents):
-        a, b = joints[j] if p < 0 else joints[p], joints[j]
-        ab = b - a
-        len2 = float(ab @ ab)
-        t = np.zeros(len(pts)) if len2 < 1e-12 else np.clip((pts - a) @ ab / len2, 0, 1)
-        seg_d = np.minimum(seg_d, np.linalg.norm(pts - (a + t[:, None] * ab), axis=1))
-
-    # Threshold on BODY THICKNESS, not character height. A torso is legitimately
-    # far from its own centreline bone - at 0.09*height the buttocks of
-    # female_base_v5 (7691 points, 0.53 up) were detected as a "tail". A real
-    # appendage protrudes well beyond the torso envelope.
-    reach = max(0.10 * lm["height"], 1.3 * lm["torso_width"] / 2.0)
-    far = seg_d > reach
-    if far.sum() < min_frac * len(pts):
-        return [], []
-
-    # Cluster the outliers on a coarse voxel grid - cheap and dependency-free.
-    far_pts = pts[far]
-    pitch = lm["height"] / 48.0
-    idx = np.floor((far_pts - far_pts.min(axis=0)) / pitch).astype(int)
-    grid = np.zeros(idx.max(axis=0) + 3, dtype=bool)
-    grid[idx[:, 0], idx[:, 1], idx[:, 2]] = True
-    lab, n = ndimage.label(ndimage.binary_dilation(grid, np.ones((3, 3, 3))))
-    cid = lab[idx[:, 0], idx[:, 1], idx[:, 2]]
-
-    extra_names, extra_parents, extra_joints, report = [], [], [], []
-    base = len(names)
-    for c in range(1, n + 1):
-        cl = far_pts[cid == c]
-        if len(cl) < min_frac * len(pts):
-            continue
-        centroid = cl.mean(axis=0)
-        f = (centroid[UP] - lm["lo"]) / lm["height"]
-        lat = centroid[LAT] - lm["center_lat"]
-
-        if f > lm["arm_top_frac"]:
-            kind, anchor = ("horn_L" if lat >= 0 else "horn_R"), "mixamorig:Head"
-        elif f < lm["crotch_frac"] + 0.12:
-            kind, anchor = "tail", "mixamorig:Hips"
-        else:
-            kind, anchor = ("wing_L" if lat >= 0 else "wing_R"), "mixamorig:Spine2"
-
-        # Lay the chain along the cluster's principal axis, rooted at the end
-        # nearest its anchor joint.
-        anchor_idx = names.index(anchor)
-        centred = cl - centroid
-        axis = np.linalg.svd(centred, full_matrices=False)[2][0]
-        t = centred @ axis
-        ends = np.array([centroid + axis * t.min(), centroid + axis * t.max()])
-        if np.linalg.norm(ends[1] - joints[anchor_idx]) < np.linalg.norm(ends[0] - joints[anchor_idx]):
-            ends = ends[::-1]
-
-        parent = anchor_idx
-        for k in range(links):
-            pos = ends[0] + (ends[1] - ends[0]) * ((k + 1) / links)
-            extra_names.append(f"{kind}_{k + 1:02d}")
-            extra_parents.append(parent)
-            extra_joints.append(pos)
-            parent = base + len(extra_joints) - 1
-        report.append({"kind": kind, "anchor": anchor, "points": int(len(cl)),
-                       "height_frac": round(float(f), 3),
-                       "reach_used": round(float(reach), 4)})
-
-    if not extra_names:
-        return [], []
-    return list(zip(extra_names, extra_parents, extra_joints)), report
-
-
-# --------------------------------------------------------------------------- #
 # writing
 # --------------------------------------------------------------------------- #
 def placeholder_skin(vertices, joints, parents):
@@ -657,22 +401,7 @@ def cmd_fit(args):
     from src.rig_package.parser.bpy import BpyParser
 
     mesh = trimesh.load(args.mesh, force="mesh", process=False)
-    if args.from_rig:
-        names, parents, joints, gen_report = mixamo_from_generated(args.from_rig)
-        extra_report = [{"from_generated": gen_report}]
-        lm = {"mode": "from-rig", **gen_report}
-    else:
-        gen_report = None
-        lm = landmarks(mesh)
-        names, parents, joints = core_skeleton(lm)
-        extra_report = []
-    if not args.from_rig and not args.no_appendages:
-        chains, extra_report = appendage_chains(lm, names, parents, joints)
-        for nm, par, pos in chains:
-            names.append(nm)
-            parents = np.append(parents, par)
-            joints = np.vstack([joints, pos[None, :]])
-        joints = joints.astype(np.float32)
+    names, parents, joints, gen_report = mixamo_from_generated(args.from_rig)
 
     skin = placeholder_skin(mesh.vertices, joints, parents)
     # Convert to Blender's axis convention before handing the data to bpy; the
@@ -687,12 +416,11 @@ def cmd_fit(args):
     BpyParser.export_asset(asset, args.out, do_not_normalize=True)
 
     report_path = args.out.rsplit(".", 1)[0] + "_skeleton.json"
+    extras = gen_report["extras"]
     report = {
-        "source": args.mesh, "out": args.out,
-        "bones": len(names), "core_bones": len(names) - len(extra_report) * 3,
-        "appendages": extra_report,
-        "landmarks": {k: (round(v, 4) if isinstance(v, float) else v)
-                      for k, v in lm.items() if k not in ("points",)},
+        "source": args.mesh, "out": args.out, "from_rig": args.from_rig,
+        "bones": len(names), "core_bones": len(names) - len(extras),
+        "extras": extras, "from_generated": gen_report,
         "names": names,
     }
     open(report_path, "w").write(json.dumps(report, indent=2))
@@ -763,11 +491,9 @@ def main() -> int:
     f = sub.add_parser("fit", help="write a mesh GLB carrying a Mixamo armature")
     f.add_argument("--mesh", required=True)
     f.add_argument("--out", required=True)
-    f.add_argument("--from-rig",
+    f.add_argument("--from-rig", required=True,
                    help="a rigged GLB whose generated skeleton supplies the landmarks. "
                         "This is the working path; geometric fitting does not generalise.")
-    f.add_argument("--no-appendages", action="store_true",
-                   help="core skeleton only; skip wing/tail/horn chains")
     f.set_defaults(func=cmd_fit)
 
     r = sub.add_parser("restore-names", help="rename bone_N back to the supplied names")
