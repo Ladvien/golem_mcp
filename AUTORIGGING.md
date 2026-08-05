@@ -8,10 +8,13 @@ because the wrong turns cost more than the fixes and are worth not repeating.
 ## Candid summary
 
 The rig is still not good, and I do not think the remaining distance is more
-tuning. Three problems compound, and only one of them is really "rigging":
+tuning. Three problems, in ascending order of how much work they are:
 
-1. **The generated mesh is not a connected surface.** It is a few hundred
-   disconnected patches. No surface-based skinning algorithm can work on that.
+1. **A hard skin-weight seam at the hip.** 931 of 14,679 edges (6.3%) jump more
+   than 0.5 in weight, the worst of them at Hips↔UpLeg — which is where the skirt
+   is, and what "the skirt tears away" actually is. Localised and directly
+   fixable by smoothing. NOT a mesh defect: the mesh is a single closed manifold,
+   see the corrected §0, where I originally got this badly wrong.
 2. **The skeleton generator is being used as something it is not.** TokenRig
    produces a per-asset skeleton with varying topology and no names. We use it as
    a landmark detector and impose a Mixamo template on top.
@@ -20,60 +23,113 @@ tuning. Three problems compound, and only one of them is really "rigging":
    confirmed it: the same rule that put a human's shoulder right put a dwarf's at
    0.67 H.
 
-Fixing (2) and (3) properly means replacing our fitter with a learned pose prior.
-Fixing (1) may be a one-line mesh repair. I would start there.
+(1) is a weekend of work on a graph that demonstrably exists. (2) and (3) mean
+replacing the fitter with a learned prior — RigAnything or HumanRig, with the
+labelling trade-off spelled out in §6. I would do (1) first: it is the most
+visible remaining defect and the cheapest to attack.
 
 ---
 
-## 0. The finding I would research first: the mesh is not a surface
+## 0. CORRECTED — the mesh is fine. The skinning has a hard seam at the hip.
 
-Measured on the TRELLIS output, before any rigging touches it:
+**The first version of this section was wrong, and a companion review of the
+home-still corpus caught why.** It is left corrected rather than deleted, because
+the mistake is instructive.
 
-| | emberwake_tpose | female_base_v5 | forge_warden |
-|---|---|---|---|
-| vertices | 7,730 | 6,272 | 9,513 |
-| connected components | **316** | 123 | 236 |
-| largest component | 244 verts (**3%** of mesh) | 777 | 289 |
-| edges used by only ONE face | **29%** | 19% | — |
-| Euler characteristic V−E+F | **312** | 106 | — |
+### What I claimed, and why it was wrong
 
-A single closed surface has χ ≈ 2. Welding vertices at tolerances from 0 to 3 mm
-on a 1 m character changes nothing — vertex count does not move, component count
-does not move. These are not unwelded duplicates. The surface is genuinely made of
-hundreds of separate open patches.
+I reported the TRELLIS meshes as "not connected surfaces" — 316 components, 29% of
+edges used by a single face, Euler characteristic 312 — and concluded that no
+surface-based skinning could work. The evidence was a weld sweep from 0 to 3 mm
+that moved neither vertex nor component count.
 
-**Why this matters more than anything else in this document.** Skin weights are
-normally propagated across the surface — bone heat diffusion, geodesic distance,
-anything that walks edges. With 29% of edges being boundaries and no component
-larger than 3% of the mesh, there is nothing to propagate along. Each patch gets
-weights independently, neighbouring patches disagree, and they separate the moment
-a limb rotates. That is exactly the "skirt and boots tear away from the body"
-symptom that has survived every rigging fix in this document.
+That sweep used **vertex-to-vertex** distance, which is insensitive to this failure
+mode at *every* tolerance, so a flat response across it was never evidence either
+way. (Liu, Zhang & Yuksel, arXiv 2409.15458 §4.1.1, make exactly this point: patches
+that abut can still have large vertex-to-vertex distance depending on how each was
+discretised.) `trimesh.merge_vertices` also preserves UV and normal splits by
+default, so it will not weld a texture seam no matter what tolerance it is given.
 
-Things to try, cheapest first:
+Welding on **position alone**:
 
-- **`rig_model(use_postprocess=True)`.** This parameter already exists and its own
-  description is *"Voxel-based skin cleanup. Enable when weights bleed across
-  disconnected parts."* It is default `False` and **has never once been tried in
-  this project.** It is one boolean.
-- **Repair the mesh before rigging.** Remesh to a single manifold — voxel remesh,
-  Poisson, or `trimesh`/Instant Meshes — then rig. Costs surface detail; may cost
-  the texture, since UVs would need reprojecting.
-- **Bind by proximity in 3D rather than along the surface.** Geodesic voxel binding
-  (Maya) exists precisely for meshes like this. Blender's "Bone Envelope" or a
-  voxel heat method is the equivalent.
+| | as loaded | welded on position |
+|---|---|---|
+| vertices | 7,730 | **4,889** (2,841 duplicates, 37%) |
+| connected components | **316** | **1** |
+| boundary edges | 5,050 (29%) | **0 (0.0%)** |
+| Euler characteristic | 312 | **−4** |
 
-Also worth checking whether `generate_3d`'s `simplify=0.95` decimation is what
-shatters it. Nobody has looked at the pre-decimation mesh.
+It is a single closed manifold surface. The "316 components" were UV-atlas seam
+duplicates. **No mesh repair is needed.** Cross-component vertex-to-vertex distance
+measures 0.00 mm — the patches share vertex positions exactly.
 
----
+### The seam hypothesis is also refuted
+
+The obvious follow-up was that duplicated seam vertices might receive *different*
+skin weights and split under motion. Measured on all 4,889 coincident groups in the
+rigged GLB, weight disagreement within a group (L1, 0 = identical, 2 = disjoint):
+
+    median 0.0000    p90 0.0000    max 0.0000
+
+TokenRig assigns coincident vertices identical weights. There are no seam cracks.
+
+### What the skinning problem actually is
+
+Weight discontinuity across mesh edges, on the welded topology:
+
+    median 0.1008   p90 0.4194   p99 0.8709   max 1.5738
+    edges jumping >0.5:  931 (6.34%)
+    edges jumping >1.0:   76 (0.52%)
+
+    worst boundaries: RightUpLeg↔Hips (14), Hips↔LeftUpLeg (7),
+                      RightLeg↔RightUpLeg (6), Head↔HeadTop_End (6)
+
+The sharpest transitions are at the **hip/thigh junction** — precisely where the
+skirt is, and precisely what "the skirt tears away from the body" looks like. The
+weights go near-binary across a handful of edges, so the skirt splits along that
+line when the thigh swings. It is a weight-smoothness problem, localised, and the
+mesh being a genuine manifold means it is directly fixable.
+
+### `use_postprocess=True` — tried, and it makes this worse
+
+The one untried boolean, whose description is *"voxel-based skin cleanup, enable
+when weights bleed across disconnected parts"*:
+
+| | median | p90 | p99 | max | >0.5 | >1.0 |
+|---|---|---|---|---|---|---|
+| OFF | 0.1008 | 0.4194 | 0.8709 | 1.5738 | 6.34% | 0.52% |
+| **ON** | 0.0819 | 0.5606 | 1.3594 | 1.9839 | **12.09%** | **3.07%** |
+
+It sharpens weights toward binary. The median falls because more vertices become
+fully assigned, but hard boundaries **double** and near-binary edges go up sixfold.
+Exactly the wrong direction. Leave it off.
+
+### What I would do instead
+
+**Laplacian smoothing of the skin weights** over the position-welded topology,
+constrained to preserve the partition of unity. The mesh is a closed manifold, the
+problem is 931 edges out of 14,679, and the fix is a well-understood diffusion on a
+graph that demonstrably exists. Nothing volumetric is required.
+
+The corpus review recommended virtual-edge merging (FA-QEM, arXiv 2605.14029),
+winding-number tet meshing plus Bounded Biharmonic Weights, and voxel-grid binding
+(Kavan & Sorkine 2012). All three are sound, and all three are aimed at a mesh
+defect that does not exist here. Worth keeping in mind if a future asset genuinely
+is shattered — but the measurement to run first is the position-weld above, not a
+vertex sweep.
+
+One thing from that review does hold and is worth recording: the **facet
+orientation check came back clean** — 0 of 12,154 manifold edges are wound
+inconsistently — so the winding-number path is not gated shut if it is ever needed.
 
 ## 1. What the pipeline actually does
 
 ```
 prompt ─ generate_image ─→ hero PNG
              ↓
-        generate_3d (TRELLIS) ─→ asset.glb   (textured, 4-10k verts, SHATTERED)
+        generate_3d (TRELLIS) ─→ asset.glb   (textured, 4-10k verts, closed manifold
+                                              once welded on position; as shipped it
+                                              carries ~37% UV-seam duplicates)
              ↓
         rig_model:
           pass 1  TokenRig, no skeleton     → a generated skeleton, used ONLY as
@@ -143,14 +199,17 @@ where one applies.
 
 ## 3. Still open
 
-- **Skin tearing** — skirt and boots separate under large rotations. See §0; I now
-  believe this is the mesh, not the rig.
+- **Skin tearing** — a hard weight boundary at the hip, not a mesh defect. 931
+  edges (6.3%) jump >0.5 in weight, worst at Hips↔UpLeg. See the corrected §0.
+  Laplacian weight smoothing is the targeted fix; `use_postprocess=True` is not.
 - **Femoral heads too far apart** — 31.3% of leg length vs Mixamo's 19.9%, which
   leaves a Hips→UpLeg gap of 17.2% against its 11.5%. Inherited from where the
   generated skeleton branches its legs. Narrowing them moves the thigh pivot, so
   it is a deformation change, not a cosmetic one.
-- **Arm swing amplitude** — 60.5% of the source clip's, against a hand mean offset
-  that is now correct (+17.3% vs +19.2%).
+- **Arm swing amplitude** — 60.5% of the source clip's. Normalising by kinematic
+  chain length rather than leg length (as SAN and Pose-to-Motion do) gives 0.600,
+  essentially unchanged, so this is NOT explained by our short hand chain. It is a
+  real retargeting deficit. Hand mean offset is now correct (+17.3% vs +19.2%).
 - **Appendage classifier** — the horns get no chain at all on `emberwake_herald`;
   `succubus_warden` gets `horn_L`, `horn_R`, `tail`, `wing_R` but misses `wing_L`.
 - **Hand tip too short** — 10.3% of leg against Mixamo's 17.1%, because the arm
