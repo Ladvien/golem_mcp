@@ -108,7 +108,16 @@ GLTF_JSON_CHUNK = 0x4E4F534A
 # one proportion the generated skeleton cannot supply: it attaches arm chains at
 # the clavicle root, measured at 0.88-0.95 H across the library, which is ear
 # height rather than a shoulder.
-SHOULDER_FRAC = 0.82
+# Shoulder joint lateral offset from the midline, as a fraction of leg length,
+# measured off a Mixamo rig (LeftArm at 17.575 with leg 103.922).
+#
+# This used to be anchored on HEIGHT, which cannot work for the T-pose that is now
+# the documented default: a T-posed arm is at constant height along its whole
+# length, so a height threshold finds an arbitrary crossing and the shoulder landed
+# out near the elbow - shoulder-to-wrist came out at 41.1% of leg against Mixamo's
+# 64.4%. Lateral offset discriminates on both poses, because an arm always travels
+# away from the midline whichever way it hangs.
+SHOULDER_LAT = 0.169
 
 # Measured off a real Mixamo rig, as fractions of leg length (UpLeg to ToeBase).
 # The pelvis sits just above the femoral heads there - ours sat at +21.5%, 3.7x too
@@ -126,6 +135,15 @@ TOE_TIP_FRAC = 0.077
 # gap between the pelvis and the thighs. Only ever narrowed, never widened - a
 # character with genuinely narrow hips should keep them.
 FEMUR_SEPARATION = 0.199
+# Wrist placement and elbow split, both measured off the same Mixamo rig as
+# fractions of leg length. Sampling the wrist at a fixed t=0.9 of the arm chain put
+# it only 49.6% of a leg from the shoulder against Mixamo's 64.4%, so the arm was
+# a quarter too short - and a short lever arm is most of why retargeted arm swing
+# came out at 60% of the source's despite the joint rotations matching it to 98%.
+HAND_LEN = 0.171
+# Mixamo's upper arm is 29.7% of leg and its forearm 34.6%, so the elbow sits at
+# 46% of the shoulder-to-wrist span, not the midpoint the fitter assumed.
+ELBOW_SPLIT = 0.461
 
 
 
@@ -392,24 +410,13 @@ def mixamo_from_generated(rigged_glb, links=3):
 
     hips_up = float(pos[hips_i, UP])
     height = c["height"]
-    lo_up = float(pos[:, UP].min())
+    lat_axis = c["lat_axis"]
+    ctr = c["lat_center"]
 
-    # Sample both limbs BEFORE building the spec: the pelvis is placed against the
-    # femoral heads, so they have to be known first.
+    # Legs first: leg length sets the arm proportions below, so it has to exist
+    # before the arms are sampled.
     limb = {}
-    for tag, arm_b, leg_b in (("Left", arms[0], legs[0]), ("Right", arms[1], legs[1])):
-        arm_line = longest_line(c, arm_b)
-        # Shoulder by HEIGHT, not by lateral offset. Once the lateral axis was
-        # fixed, the offset rule stopped discriminating: an arm chain clears
-        # hip_half*1.15 within its first segment, so the joint sat back at the
-        # clavicle root at 0.94 H. Height separates clavicle from humerus directly.
-        t_sh = t_where(pos, arm_line, lambda q: float(q[UP]), lo_up + SHOULDER_FRAC * height)
-        t_sh = min(max(t_sh, 0.05), 0.35)
-        t_elbow = t_sh + (0.9 - t_sh) * 0.5
-        # The extra 1.0 sample is the hand TIP - the chain already runs that far, so
-        # the tip is measured rather than extrapolated.
-        arm_pts = resample(pos, arm_line, [0.0, t_sh, t_elbow, 0.9, 1.0])
-
+    for tag, leg_b in (("Left", legs[0]), ("Right", legs[1])):
         leg_line = longest_line(c, leg_b)
         # Femoral head sits BELOW the pelvis attachment the chain starts at, or the
         # thigh pivots from inside the belly. Measured as a fraction of BODY height
@@ -417,8 +424,7 @@ def mixamo_from_generated(rigged_glb, links=3):
         # 0.42 H - so it is clamped tight.
         t_hip = t_where(pos, leg_line, lambda q: float(q[UP]), hips_up - 0.035 * height)
         t_hip = min(max(t_hip, 0.0), 0.10)
-        leg_pts = resample(pos, leg_line, [t_hip, 0.5, 0.88, 1.0])
-        limb[tag] = (arm_pts, leg_pts)
+        limb[tag] = [None, resample(pos, leg_line, [t_hip, 0.5, 0.88, 1.0])]
 
     # Leg length from the ORIGINAL sampling, before the femoral heads move below.
     leg_len = float(np.mean([
@@ -435,6 +441,22 @@ def mixamo_from_generated(rigged_glb, links=3):
         k = target / separation
         limb["Left"][1][0] = femur_mid + (head_l - femur_mid) * k
         limb["Right"][1][0] = femur_mid + (head_r - femur_mid) * k
+        femur_mid = (limb["Left"][1][0] + limb["Right"][1][0]) / 2
+
+    for tag, arm_b in (("Left", arms[0]), ("Right", arms[1])):
+        arm_line = longest_line(c, arm_b)
+        t_sh = t_where(pos, arm_line, lambda q: abs(float(q[lat_axis]) - ctr),
+                       SHOULDER_LAT * leg_len)
+        t_sh = min(max(t_sh, 0.02), 0.45)
+        # Wrist one hand-length back from the chain end, rather than a fixed
+        # fraction: the chain runs to the fingertips, so t=0.9 landed mid-palm and
+        # left the arm a quarter short.
+        pts = resample(pos, arm_line, list(np.linspace(0.0, 1.0, 101)))
+        arc = float(np.sum(np.linalg.norm(np.diff(np.stack(pts), axis=0), axis=1)))
+        t_hand = 1.0 - (HAND_LEN * leg_len) / max(arc, 1e-9)
+        t_hand = min(max(t_hand, t_sh + 0.15), 0.98)
+        t_elbow = t_sh + (t_hand - t_sh) * ELBOW_SPLIT
+        limb[tag][0] = resample(pos, arm_line, [0.0, t_sh, t_elbow, t_hand, 1.0])
 
     spec, order = [], {}
 
