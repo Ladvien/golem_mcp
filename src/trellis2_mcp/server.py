@@ -86,6 +86,7 @@ SEGVIGEN_VRAM_REQUIRED = 18e9
 # SegviGen's bpy 4.5.9; retarget_animation.py is pure bpy.
 CANONICAL_DRIVER = _SCRIPTS / "canonical_skeleton.py"
 ORIENT_DRIVER = _SCRIPTS / "orient_bones.py"
+SMOOTH_DRIVER = _SCRIPTS / "smooth_weights.py"
 RETARGET_DRIVER = _SCRIPTS / "retarget_animation.py"
 ANIMATION_LIBRARY_DRIVER = _SCRIPTS / "animation_library.py"
 ANIMATION_ROOTS = tuple(
@@ -1487,6 +1488,7 @@ def rig_model(
         canonical = RIG_OUTPUT_DIR / f"{output_name}_canonical.glb"
         skinned = RIG_OUTPUT_DIR / f"{output_name}_skinned.glb"
         named = RIG_OUTPUT_DIR / f"{output_name}_named.glb"
+        smoothed = RIG_OUTPUT_DIR / f"{output_name}_smoothed.glb"
 
         params = {
             "num_beams": num_beams, "use_transfer": use_transfer,
@@ -1522,6 +1524,18 @@ def rig_model(
             300, "CANONICAL_RESTORE_OK", "Bone name restore",
         )
 
+        # Diffuse the weights before anything else touches them. TokenRig's weights
+        # go near-binary across a handful of edges and the mesh splits along that
+        # line under motion - measured at 931 of 14,679 edges jumping more than 0.5,
+        # worst at Hips<->UpLeg, which is where a skirt tears. Smoothing takes that
+        # to 0.81% and eliminates jumps over 1.0 entirely, without moving the median.
+        # (use_postprocess is NOT this: measured, it doubles the hard boundaries.)
+        _run_script(
+            SEGVIGEN_PYTHON, SMOOTH_DRIVER,
+            ["--rigged", str(named), "--out", str(smoothed)],
+            300, "SMOOTH_OK", "Weight smoothing",
+        )
+
         # Point every bone at its child. TokenRig's writer does not, and Blender
         # draws bones head->tail - so a rig whose joint POSITIONS are perfect still
         # renders as spokes jutting out of the character, and is unusable for hand
@@ -1532,7 +1546,7 @@ def rig_model(
         # which is exactly why it survived this long.
         _run_script(
             SEGVIGEN_PYTHON, ORIENT_DRIVER,
-            ["--rigged", str(named), "--out", str(target)],
+            ["--rigged", str(smoothed), "--out", str(target)],
             300, "ORIENT_OK", "Bone orientation",
         )
 
@@ -1557,7 +1571,8 @@ def rig_model(
                 "skinning_seconds": t_skin,
                 "landmark_glb": str(landmarks),
                 "canonical_glb": str(canonical),
-                "pre_orientation_glb": str(named),
+                "pre_smoothing_glb": str(named),
+                "pre_orientation_glb": str(smoothed),
             },
             "trellis_evicted": evicted,
             "geometry": _glb_dimensions(target),
