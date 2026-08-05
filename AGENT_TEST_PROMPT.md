@@ -90,6 +90,11 @@ THE STEPS
     — '["/path/a.png","/path/b.png"]' — not a list. Passing a list fails with
     "the JSON object must be str, bytes or bytearray, not list".
 
+    Easiest correct path: step 3's result already contains an `images_json` field
+    in exactly this format — pass it straight through. Note that step 3's `views`
+    field maps name -> path STRING, not name -> {local_path}; reading it the way
+    generate_image's result reads gives "string indices must be integers".
+
 6.  segment_mesh on "emberwake_herald.glb". Report the part count and whether the
     parts correspond to the subject's distinct materials.
 
@@ -100,6 +105,11 @@ THE STEPS
     long open front, heavy dark wool", body "emberwake_herald.glb", output_name
     "emberwake_herald_cloak".
 
+    A note on 7 and 8 specifically: both are individually working, but they are the
+    two heaviest stages and running everything in ONE long-lived process has been
+    observed to OOM them at exit -9 after the earlier stages have accumulated
+    memory. If either dies that way, re-run it on its own before calling it broken.
+
     For 6, 7 and 8: if any of them fails, gather evidence before you classify it.
     A VRAM refusal names its own numbers. Exit code -9 is SIGKILL — check
     `journalctl -k --since "10 min ago" | grep -i "killed process"` to see whether
@@ -108,10 +118,12 @@ THE STEPS
 
 9.  rig_model on "emberwake_herald.glb". Fits a canonical Mixamo skeleton and runs
     the rigger twice internally, so expect 60-90 s. Report `canonical.core_bones`
-    (expect 27 — a 23-bone Mixamo core plus four tip bones: LeftHand_End,
-    RightHand_End, LeftToe_End, RightToe_End, which exist because Blender gives a
-    CHILDLESS bone its parent's length, so without them the hand and toe bones
-    overshoot the mesh by roughly their own length),
+    (expect 27 for a character with no wings/tail/horns — a 23-bone Mixamo core
+    plus four tip bones: LeftHand_End, RightHand_End, LeftToe_End, RightToe_End,
+    which exist because Blender gives a CHILDLESS bone its parent's length, so
+    without them the hand and toe bones overshoot the mesh by roughly their own
+    length. More than 27 means appendage chains were found, which is correct on a
+    winged or tailed character),
     `skeleton.zero_weight_vertices` (expect 0), and
     `canonical.extra_chains`. Extra chains are wing/tail/horn bones outside the
     mixamorig namespace; on this subject they usually come back EMPTY, which is a

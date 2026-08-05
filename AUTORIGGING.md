@@ -197,21 +197,43 @@ where one applies.
 
 ---
 
+## 2b. Fixed after this document was first written
+
+All measured, all on a fresh asset built end to end by the current pipeline.
+
+| fix | evidence |
+|---|---|
+| **Skin weight seam** | edges jumping >0.5 in weight: 6.34% -> **0.81%**; over 1.0: 0.52% -> **0.00%**, median unmoved. Laplacian diffusion over the position-welded topology, top-4 truncated once at the end |
+| **Femoral separation** | 31.3% of leg -> **20.1%** against Mixamo's 19.9%; Hips->UpLeg gap 27.2% -> **11.7%** against 11.5% |
+| **Shoulder placement** | was anchored on HEIGHT, which cannot discriminate on a T-pose (constant height along the arm) and put the joint out near the elbow. Now anchored on lateral offset, 16.9% of leg |
+| **Wrist and elbow** | wrist one hand-length back from the chain end rather than a fixed t=0.9; elbow at 46% of the shoulder-wrist span, not the midpoint. shoulder->wrist 49.6% -> 55.7-61.0% against 64.4% |
+| **Arm swing** | 0.605 -> **0.703** of source. Joint rotation magnitudes match the source to 98%, so the deficit was lever arm, not retargeting |
+| **Appendage sides** | succubus_warden now resolves wing_L, which the `size < 2` filter had been dropping. Sides come from mirrored pairs rather than the sign of a near-zero lateral mean |
+| **generate_orbit_views** | the documented BiRefNet dtype bug had never been REACHED - the VRAM preflight refused first every time. With the card free it fails at "Input type (float) and bias type (c10::Half)"; BiRefNet's config declares fp16 and newer transformers honours it. Forced to float32, in the checkout and in install_mvadapter.sh's edits list. Returns all six azimuths |
+| **generate_garment** | no code defect at all. It succeeds whenever there is RAM; it had only ever been run under memory pressure |
+
+Final acceptance on a fresh asset: handedness LeftArm +17.5% / LeftUpLeg +10.5%
+(both must be positive), femur separation 20.1% against 19.9%, Hips->UpLeg gap
+11.7% against 11.5%, gait -0.947 against the source's -0.957, hand mean offset
++19.0% against +19.2%.
+
+---
+
 ## 3. Still open
 
-- **Skin tearing** — a hard weight boundary at the hip, not a mesh defect. 931
-  edges (6.3%) jump >0.5 in weight, worst at Hips↔UpLeg. See the corrected §0.
-  Laplacian weight smoothing is the targeted fix; `use_postprocess=True` is not.
-- **Femoral heads too far apart** — 31.3% of leg length vs Mixamo's 19.9%, which
-  leaves a Hips→UpLeg gap of 17.2% against its 11.5%. Inherited from where the
-  generated skeleton branches its legs. Narrowing them moves the thigh pivot, so
-  it is a deformation change, not a cosmetic one.
-- **Arm swing amplitude** — 60.5% of the source clip's. Normalising by kinematic
-  chain length rather than leg length (as SAN and Pose-to-Motion do) gives 0.600,
-  essentially unchanged, so this is NOT explained by our short hand chain. It is a
-  real retargeting deficit. Hand mean offset is now correct (+17.3% vs +19.2%).
-- **Appendage classifier** — the horns get no chain at all on `emberwake_herald`;
-  `succubus_warden` gets `horn_L`, `horn_R`, `tail`, `wing_R` but misses `wing_L`.
+- ~~Skin tearing~~ — **fixed**, see §2b.
+- ~~Femoral heads too far apart~~ — **fixed**, see §2b.
+- **Arm swing amplitude** — improved to ~0.64-0.70 of the source but not closed.
+  Rotation magnitude (98% of source) and lever arm (0.947 of source) are both
+  eliminated as causes, so roughly a quarter of the deficit remains unexplained.
+  Hand mean offset is exact (+19.0% vs +19.2%).
+- **Appendage classifier** — `wing_L` is fixed, but `horn_R` still over-splits into
+  15 chains on `succubus_warden`, and horned characters get NO extras at all
+  because the highest leaf is a horn tip, so the horn is absorbed into the spine.
+  That also makes `HeadTop_End` a horn tip and compresses every height fraction
+  measured against it. Choosing the spine by "most central path among the tallest
+  leaves" was tried and reverted - it broke succubus_warden without fixing
+  emberwake.
 - **Hand tip too short** — 10.3% of leg against Mixamo's 17.1%, because the arm
   chain's last 10% is short. Overshooting was worse, but this undershoots.
 - **`scp610_midstage_v2` cannot be rigged** — 34,670 verts, 3× the next largest

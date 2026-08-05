@@ -138,6 +138,7 @@ def main() -> int:
         # used to work by accident through a fallback; there is no fallback now.
         hero_png = hero["local_path"] if hero else None
 
+    views_json = None
     if args.views:
         view_paths = list(args.views)
         results["generate_views"] = {"reused": view_paths}
@@ -147,8 +148,12 @@ def main() -> int:
         views = stage("generate_views", lambda: call(
             "generate_views", prompt=SUBJECT, views="front,back,left,right",
             output_name=f"{name}_views"))
-        view_paths = [v["local_path"] for v in views["views"].values()] if (
-            views and isinstance(views.get("views"), dict)) else []
+        # generate_views returns {name: path STRING} plus an images_json field
+        # already formatted for generate_3d_multi_image. Reading it as a dict of
+        # {local_path: ...} - the shape generate_image uses - fails with
+        # "string indices must be integers".
+        view_paths = list(views["views"].values()) if views else []
+        views_json = views.get("images_json") if views else None
 
     # evict_trellis_for_bake because the bake and the resident TRELLIS weights do
     # not fit at once on a card that is also hosting something else. Without it the
@@ -161,7 +166,7 @@ def main() -> int:
     # scalar argument. Passing the list itself fails inside json.loads with
     # "the JSON object must be str, bytes or bytearray, not list".
     stage("generate_3d_multi_image", lambda: call(
-        "generate_3d_multi_image", images=json.dumps(view_paths),
+        "generate_3d_multi_image", images=views_json or json.dumps(view_paths),
         output_name=f"{name}_mv", evict_trellis_for_bake=True)
         if view_paths else {"success": False, "error": "no view set"})
 
