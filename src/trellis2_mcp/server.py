@@ -72,6 +72,10 @@ SEGVIGEN_DRIVER = _SCRIPTS / "segvigen_segment.py"
 # once the SDPA attention backend landed. generate_3d still runs TRELLIS 1, which
 # cannot represent an open surface and would seal a garment shut.
 GARMENT_DRIVER = _SCRIPTS / "trellis2_garment.py"
+CHARACTER_DRIVER = _SCRIPTS / "trellis2_character.py"
+# Measured 14.47 GB peak for a pipeline_type=512 character on a 3090, against the
+# 3.4 GB a garment costs - a character is remeshed and textured at 2048.
+CHARACTER_VRAM_REQUIRED = 16e9
 GARMENT_FIT_DRIVER = _SCRIPTS / "garment_fit.py"
 # Measured 3.4 GB peak for TRELLIS.2 image-to-3D at pipeline_type=512, against the
 # 24 GB its README asks for. Sized to the measurement with headroom.
@@ -492,220 +496,165 @@ def generate_3d(
         str,
         Field(description="Path to input image, base64-encoded data, or data: URL. PNG with transparency recommended."),
     ],
-    seed: Annotated[int, Field(description="Random seed for reproducibility", ge=0)] = 42,
+    seed: Annotated[int, Field(description="Random seed for reproducibility", ge=0)] = 0,
     output_name: Annotated[str, Field(description="Base name for output files (without extension)")] = "",
-    ss_steps: Annotated[
-        int, Field(description="Sparse structure sampler steps (fewer=faster, more=better detail)", ge=1, le=100)
-    ] = 12,
-    ss_cfg_strength: Annotated[
-        float, Field(description="Sparse structure CFG strength (higher=more prompt adherence)", ge=1.0, le=20.0)
-    ] = 7.5,
-    slat_steps: Annotated[
-        int, Field(description="SLAT sampler steps (fewer=faster, more=better texture)", ge=1, le=100)
-    ] = 12,
-    slat_cfg_strength: Annotated[
-        float, Field(description="SLAT CFG strength (higher=more prompt adherence)", ge=1.0, le=20.0)
-    ] = 3.0,
-    simplify: Annotated[
-        float, Field(description="Mesh simplification ratio (0=none, 0.95=aggressive)", ge=0.0, le=1.0)
-    ] = 0.95,
-    fill_holes: Annotated[bool, Field(description="Fill holes in the generated mesh")] = True,
-    fill_holes_max_size: Annotated[
-        float, Field(description="Maximum hole area to fill (relative to bounding box)", ge=0.0, le=1.0)
-    ] = 0.04,
-    texture_size: Annotated[int, Field(description="Output texture resolution in pixels", ge=256, le=4096)] = 1024,
-    render_resolution: Annotated[
+    pipeline_type: Annotated[
+        str,
+        Field(description="Quality tier. '512' is the measured default; the cascades cost far more VRAM"),
+    ] = "512",
+    simplify_target: Annotated[
         int,
-        Field(
-            description=(
-                "Resolution of the renders the texture is baked FROM. This is the real detail ceiling - "
-                "texture_size above this only upsamples. Raising to 2048 needs evict_trellis_for_bake=true."
-            ),
-            ge=256,
-            le=2048,
-        ),
-    ] = 1024,
-    nviews: Annotated[
+        Field(description="Face budget before texture baking. The raw mesh is ~870k faces", ge=10_000, le=2_000_000),
+    ] = 300_000,
+    decimation_target: Annotated[
         int,
-        Field(
-            description=(
-                "Number of views baked from. More views means better coverage of hidden areas "
-                "(armpits, crotch, under chin) and fewer seams. VRAM scales linearly with this."
-            ),
-            ge=8,
-            le=300,
-        ),
-    ] = 100,
-    lambda_tv: Annotated[
-        float,
-        Field(
-            description="Total-variation smoothing on the baked texture. Lower keeps it sharper, higher blurs.",
-            ge=0.0,
-            le=0.1,
-        ),
-    ] = 0.01,
-    target_height_m: Annotated[
-        float,
-        Field(
-            description=(
-                "Scale the exported mesh to this height in metres (e.g. 1.75 for an adult human). "
-                "0 leaves TRELLIS's normalized unit-cube scale, which is ~1 m regardless of subject."
-            ),
-            ge=0.0,
-            le=1000.0,
-        ),
-    ] = 0.0,
-    evict_trellis_for_bake: Annotated[
-        bool,
-        Field(
-            description=(
-                "Release TRELLIS from VRAM before baking, freeing ~6 GB. Required for render_resolution=2048 "
-                "on a 24 GB card. Costs a ~30s reload on the next generation."
-            ),
-        ),
-    ] = False,
+        Field(description="Final shipped face budget", ge=2_000, le=1_000_000),
+    ] = 100_000,
+    texture_size: Annotated[int, Field(description="Texture resolution in pixels", ge=512, le=4096)] = 2048,
     asset_type: Annotated[
         str,
         Field(description="Which gen_ai folder to publish into: characters, props, or environments"),
     ] = "characters",
     source_prompt: Annotated[
         str,
-        Field(
-            description=(
-                "The prompt the reference image was generated from. Recorded in metadata.json - "
-                "without it the asset's provenance is unrecoverable later."
-            )
-        ),
+        Field(description="Prompt that produced the reference image, recorded in metadata"),
     ] = "",
     source_image_model: Annotated[
         str, Field(description="Image model that produced the reference (e.g. flux2-klein-9b)")
     ] = "",
-    preprocess_image: Annotated[bool, Field(description="Auto-remove background and crop to subject")] = True,
-    formats: Annotated[
-        str,
-        Field(description="Output formats, comma-separated: mesh,gaussian,radiance_field"),
-    ] = "mesh,gaussian",
+    timeout: Annotated[int, Field(description="Hard limit in seconds", ge=60, le=7200)] = 1800,
 ) -> dict[str, Any]:
-    """Generate a 3D asset from a single image using TRELLIS.
+    """Generate a textured, PBR 3D asset from a single image using TRELLIS.2.
 
-    Returns paths to generated .glb (textured mesh) and .ply (Gaussian splat) files.
-    Generation takes 30-60 seconds on an RTX 3090.
+    Emits base colour AND metallic-roughness as separate 2048px maps, so materials
+    respond to lighting: brass reads as metal rather than as painted cloth.
 
-    Output is normalized into a unit cube (~1 m tall whatever the subject). Use
-    target_height_m, or scale downstream, before relying on any metric measurement.
+    Measured against the TRELLIS 1 path this replaces, on the same input image:
+
+        shipped triangles        5,716  ->  97,249
+        textures              1x 1024   ->  2x 2048
+        metallicRoughness         none  ->  present
+        base colour spread       51.4x  ->  10.7x, median luminance 34 -> 140
+
+    That last line is the substantive one. TRELLIS 1's base colour was not albedo,
+    it was a photograph of a lit object with the shading painted in, so nothing
+    downstream could relight it.
+
+    ~75 s and ~15 GB peak VRAM on an RTX 3090. Output is normalised into a unit
+    cube (~1 m tall whatever the subject), so scale before relying on any metric
+    measurement.
     """
     try:
-        invalid = _check_bake_params(texture_size, render_resolution, nviews)
-        if invalid:
-            return {"success": False, "error": invalid}
         if asset_type not in ASSET_TYPES:
             return {
                 "success": False,
                 "error": f"asset_type must be one of {', '.join(ASSET_TYPES)}, got '{asset_type}'",
             }
+        _garment_preflight()   # same TRELLIS.2 install, same checks
 
         img = _decode_image(image)
-
         if not output_name:
             output_name = f"trellis_{int(time.time())}"
 
+        source_png = OUTPUT_DIR / "images" / f"{output_name}_source.png"
+        source_png.parent.mkdir(parents=True, exist_ok=True)
+        img.save(source_png)
+
         started = time.time()
-
-        format_list = [f.strip() for f in formats.split(",") if f.strip()]
-
         with _gpu_lock:
-            pipeline = _get_pipeline()
-            outputs = pipeline.run(
-                img,
-                seed=seed,
-                sparse_structure_sampler_params={
-                    "steps": ss_steps,
-                    "cfg_strength": ss_cfg_strength,
-                },
-                slat_sampler_params={
-                    "steps": slat_steps,
-                    "cfg_strength": slat_cfg_strength,
-                },
-                formats=format_list,
-                preprocess_image=preprocess_image,
+            # TRELLIS 1 may still be resident from generate_3d_multi_image, which
+            # has not been migrated: TRELLIS.2's run() takes a single image, though
+            # its get_cond() already accepts a list.
+            evicted = _evict_trellis()
+            gc.collect()
+            torch.cuda.empty_cache()
+            free, _total = torch.cuda.mem_get_info(0)
+            if free < CHARACTER_VRAM_REQUIRED:
+                raise RuntimeError(
+                    f"TRELLIS.2 needs ~{CHARACTER_VRAM_REQUIRED / 1e9:.0f} GB VRAM but only "
+                    f"{free / 1e9:.1f} GB is free, even after evicting TRELLIS. Something else "
+                    "is holding the GPU."
+                )
+            _run_script(
+                SEGVIGEN_PYTHON, CHARACTER_DRIVER,
+                [
+                    "--image", str(source_png),
+                    "--out-dir", str(OUTPUT_DIR),
+                    "--name", output_name,
+                    "--seed", str(seed),
+                    "--pipeline-type", pipeline_type,
+                    "--simplify-target", str(simplify_target),
+                    "--decimation-target", str(decimation_target),
+                    "--texture-size", str(texture_size),
+                ],
+                timeout, "CHARACTER_OK", "TRELLIS.2 character generation",
             )
+        elapsed = round(time.time() - started, 1)
 
-            saved = _save_outputs(
-                outputs,
-                output_name,
-                simplify=simplify,
-                fill_holes=fill_holes,
-                fill_holes_max_size=fill_holes_max_size,
-                texture_size=texture_size,
-                render_resolution=render_resolution,
-                nviews=nviews,
-                lambda_tv=lambda_tv,
-                target_height_m=target_height_m,
-                evict_trellis_for_bake=evict_trellis_for_bake,
-            )
+        glb = OUTPUT_DIR / f"{output_name}.glb"
+        report_path = OUTPUT_DIR / f"{output_name}_character.json"
+        if not glb.is_file() or glb.stat().st_size == 0:
+            raise RuntimeError(f"TRELLIS.2 reported success but wrote nothing to {glb}")
+        report = json.loads(report_path.read_text())
 
         metadata = {
             "original_prompt": source_prompt or None,
-            "tool": "TRELLIS",
-            "trellis_model": os.path.basename(TRELLIS_MODEL),
+            "tool": "TRELLIS.2",
+            "trellis_model": "microsoft/TRELLIS.2-4B",
             "image_model": source_image_model or None,
             "asset_type": asset_type,
             "seed": seed,
             "rigged": False,
             "rig_tool": None,
+            "pbr": True,
             "generation": {
-                "ss_steps": ss_steps,
-                "ss_cfg_strength": ss_cfg_strength,
-                "slat_steps": slat_steps,
-                "slat_cfg_strength": slat_cfg_strength,
-                "simplify": simplify,
+                "pipeline_type": pipeline_type,
+                "simplify_target": simplify_target,
+                "decimation_target": decimation_target,
                 "texture_size": texture_size,
-                "render_resolution": render_resolution,
-                "nviews": nviews,
-                "lambda_tv": lambda_tv,
-                "target_height_m": target_height_m,
+                "faces_before_simplify": report["faces_before_simplify"],
+                "peak_vram_gb": report["peak_vram_gb"],
+                "elapsed_seconds": elapsed,
             },
-            "geometry": saved["geometry"],
-            "source_image": image if os.path.isfile(image) else None,
-            "elapsed_seconds": round(time.time() - started, 1),
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "topology": report["topology"],
+            "materials": report["materials"],
         }
-        if not source_prompt:
-            metadata["_provenance_warning"] = (
-                "No source_prompt was supplied, so how this asset was made cannot be reconstructed. "
-                "Pass source_prompt and source_image_model to generate_3d."
-            )
-
         published = _publish_asset(
-            saved["files"], output_name, asset_type, metadata,
-            image if os.path.isfile(image) else "",
+            {"asset.glb": str(glb)}, output_name, asset_type, metadata, str(source_png),
         )
 
+        welded = report["topology"]["position_welded"]
         return {
             "success": True,
             "output_name": output_name,
-            "files": saved["files"],
+            "glb": str(glb),
             "published_to": published,
-            "geometry": saved["geometry"],
+            "reference_image": str(source_png),
+            "size_bytes": glb.stat().st_size,
+            "elapsed_seconds": elapsed,
+            "trellis_evicted": evicted,
+            "faces": report["topology"]["as_shipped"]["faces"],
+            "materials": report["materials"],
+            "topology": report["topology"],
+            "topology_note": (
+                "Components and boundary edges are reported BOTH as-shipped and "
+                "position-welded. The as-shipped numbers describe the UV atlas, not the "
+                f"surface: this mesh welds to {welded['components']} closed shells with "
+                f"{welded['boundary_edge_pct']}% boundary edges. Judge topology on the "
+                "welded figures - a vertex-distance weld cannot see the difference at any "
+                "tolerance, which is what wrongly condemned TRELLIS.2 once already."
+            ),
             "next_step": f"rig_model(mesh='{output_name}.glb') to add a skeleton and skin weights",
             "parameters": {
                 "seed": seed,
-                "ss_steps": ss_steps,
-                "ss_cfg_strength": ss_cfg_strength,
-                "slat_steps": slat_steps,
-                "slat_cfg_strength": slat_cfg_strength,
-                "simplify": simplify,
+                "pipeline_type": pipeline_type,
+                "simplify_target": simplify_target,
+                "decimation_target": decimation_target,
                 "texture_size": texture_size,
-                "render_resolution": render_resolution,
-                "nviews": nviews,
-                "lambda_tv": lambda_tv,
-                "target_height_m": target_height_m,
             },
         }
 
     except Exception as e:
-        # Evict rather than leave a half-run pipeline (or an OOM'd allocator)
-        # holding the card.
         with _gpu_lock:
             _evict_trellis()
         return {
@@ -713,7 +662,6 @@ def generate_3d(
             "error": str(e),
             "traceback": traceback.format_exc(),
         }
-
 
 @mcp.tool
 def generate_3d_multi_image(
