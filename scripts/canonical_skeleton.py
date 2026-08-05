@@ -120,6 +120,12 @@ HIP_ABOVE_FEMUR = 0.058
 # chain in a tip bone (LeftToe_End, LeftHandIndex1...). These add the two tips we
 # were missing; HeadTop_End already did this job for the head.
 TOE_TIP_FRAC = 0.077
+# Femoral head separation. Ours came out at 31.3% of leg length against Mixamo's
+# 19.9%, because the generated skeleton branches its legs at the OUTER HIP SURFACE
+# rather than at the joint centre. That reads as splayed legs and leaves a visible
+# gap between the pelvis and the thighs. Only ever narrowed, never widened - a
+# character with genuinely narrow hips should keep them.
+FEMUR_SEPARATION = 0.199
 
 
 
@@ -414,10 +420,21 @@ def mixamo_from_generated(rigged_glb, links=3):
         leg_pts = resample(pos, leg_line, [t_hip, 0.5, 0.88, 1.0])
         limb[tag] = (arm_pts, leg_pts)
 
+    # Leg length from the ORIGINAL sampling, before the femoral heads move below.
     leg_len = float(np.mean([
         np.linalg.norm(limb[t][1][0] - limb[t][1][3]) for t in ("Left", "Right")
     ]))
-    femur_mid = (limb["Left"][1][0] + limb["Right"][1][0]) / 2
+
+    # Pull the femoral heads medially toward the measured proportion. The generated
+    # skeleton puts them on the outer hip; the joint centre is inboard of that.
+    head_l, head_r = limb["Left"][1][0], limb["Right"][1][0]
+    femur_mid = (head_l + head_r) / 2
+    separation = float(np.linalg.norm(head_l - head_r))
+    target = FEMUR_SEPARATION * leg_len
+    if separation > target > 1e-9:
+        k = target / separation
+        limb["Left"][1][0] = femur_mid + (head_l - femur_mid) * k
+        limb["Right"][1][0] = femur_mid + (head_r - femur_mid) * k
 
     spec, order = [], {}
 
