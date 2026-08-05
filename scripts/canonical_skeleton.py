@@ -224,6 +224,11 @@ def classify(parents, pos):
             i = parents[i]
         return out[::-1]
 
+    # NOTE: choosing the spine by "most central path among the tallest leaves" was
+    # tried, to stop a horn tip being absorbed into the spine on horned characters.
+    # It did not fix emberwake_tpose (same leaf chosen) and it BROKE succubus_warden
+    # - the spine ended below the head, putting Head at 1.09H, above HeadTop_End.
+    # Reverted. The horn-absorbed-into-spine problem is real and still open.
     spine = path(max(leaves, key=frac))
     on_spine = set(spine)
 
@@ -500,11 +505,37 @@ def mixamo_from_generated(rigged_glb, links=3):
     # is what lets a standard clip run on a winged character.
     lo = pos[:, UP].min()
     extras = []
-    for b in c["extra"]:
-        if b["size"] < 2:
+    # Do NOT drop size-1 branches. On succubus_warden the two REAL wings are a
+    # single joint each and were being filtered out, while five larger stubs were
+    # mislabelled horn_R - one of them at lat_mean -0.001, dead on the midline.
+    #
+    # Sides come from mirrored PAIRS, the same signal that identifies limbs, rather
+    # than from the sign of a lateral mean that is noise near the centreline.
+    pool = sorted(c["extra"], key=lambda b: -b["size"])
+    paired, used = {}, set()
+    for i, a_ in enumerate(pool):
+        if i in used:
             continue
+        best, bj = None, None
+        for j in range(i + 1, len(pool)):
+            if j in used:
+                continue
+            b_ = pool[j]
+            if a_["lat_mean"] * b_["lat_mean"] > 0:      # same side, not a pair
+                continue
+            score = (abs(a_["at_frac"] - b_["at_frac"])
+                     + abs(a_["size"] - b_["size"]) / max(a_["size"], b_["size"], 1))
+            if best is None or score < best:
+                best, bj = score, j
+        if bj is not None and best is not None and best < 0.35:
+            used.add(i)
+            used.add(bj)
+            hi, lo_ = (i, bj) if a_["lat_mean"] >= pool[bj]["lat_mean"] else (bj, i)
+            paired[hi], paired[lo_] = "L", "R"
+
+    for idx, b in enumerate(pool):
         f = (np.mean(pos[b["nodes"], UP]) - lo) / c["height"]
-        side = "L" if b["lat_mean"] >= 0 else "R"
+        side = paired.get(idx, "L" if b["lat_mean"] >= 0 else "R")
         if f > max(x["at_frac"] for x in arms):
             kind, anchor = f"horn_{side}", "mixamorig:Head"
         elif f < min(x["at_frac"] for x in legs):
