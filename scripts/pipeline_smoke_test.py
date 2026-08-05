@@ -155,11 +155,11 @@ def main() -> int:
         view_paths = list(views["views"].values()) if views else []
         views_json = views.get("images_json") if views else None
 
-    # evict_trellis_for_bake because the bake and the resident TRELLIS weights do
-    # not fit at once on a card that is also hosting something else. Without it the
-    # preflight refuses at "needs ~5.4 GB but only 5.4 GB is free".
+    # generate_3d runs TRELLIS.2 now: no bake stage, so no evict_trellis_for_bake,
+    # and none of TRELLIS 1's sampler knobs. It emits baseColor + metallicRoughness
+    # at 2048 and ~97k triangles, which is why rig_model decimates a proxy.
     stage("generate_3d", lambda: call(
-        "generate_3d", image=hero_png, output_name=name, evict_trellis_for_bake=True)
+        "generate_3d", image=hero_png, output_name=name)
         if hero_png else {"success": False, "error": "no hero image"})
 
     # `images` is a JSON STRING, not a list - it crosses the MCP boundary as one
@@ -167,7 +167,7 @@ def main() -> int:
     # "the JSON object must be str, bytes or bytearray, not list".
     stage("generate_3d_multi_image", lambda: call(
         "generate_3d_multi_image", images=views_json or json.dumps(view_paths),
-        output_name=f"{name}_mv", evict_trellis_for_bake=True)
+        output_name=f"{name}_mv", evict_trellis_for_bake=True)  # still TRELLIS 1
         if view_paths else {"success": False, "error": "no view set"})
 
     # Known broken: inference_i2mv_sdxl.py does birefnet.to(device) with no dtype

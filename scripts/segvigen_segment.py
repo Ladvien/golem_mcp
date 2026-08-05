@@ -133,6 +133,7 @@ def cluster_colours(colours):
     them.
     """
     import numpy as np
+    from scipy.spatial import cKDTree
 
     # Seed candidates: 8-level-per-channel bins, most populated first.
     binned = (colours // 32).astype(np.int64)
@@ -147,7 +148,11 @@ def cluster_colours(colours):
             seeds.append(mean)
     seeds = np.array(seeds)
 
-    labels = np.argmin(np.linalg.norm(colours[:, None, :] - seeds[None, :, :], axis=2), axis=1)
+    # KD-tree, not a broadcast. `colours[:, None, :] - seeds[None, :, :]` builds an
+    # N x K x 3 array: fine at TRELLIS 1's 5,716 faces, but TRELLIS.2 ships ~97,000
+    # and the same line asked for 117 GB of virtual address space and was OOM-killed
+    # at 11.5 GB resident.
+    labels = cKDTree(seeds).query(colours, k=1, workers=-1)[1]
 
     # Drop clusters too small to be parts, reassigning their faces to the nearest
     # surviving seed, then renumber so part ids are contiguous and population-ordered.
@@ -155,7 +160,7 @@ def cluster_colours(colours):
     keep = np.where(counts >= max(1, int(MIN_PART_FACE_SHARE * len(colours))))[0]
     keep = keep[np.argsort(-counts[keep])]
     kept_seeds = seeds[keep]
-    labels = np.argmin(np.linalg.norm(colours[:, None, :] - kept_seeds[None, :, :], axis=2), axis=1)
+    labels = cKDTree(kept_seeds).query(colours, k=1, workers=-1)[1]
     return labels, kept_seeds
 
 
