@@ -1,0 +1,363 @@
+diff --git a/demo.py b/demo.py
+index a2cb3a2..4daf698 100755
+--- a/demo.py
++++ b/demo.py
+@@ -18,6 +18,7 @@ os.environ["XFORMERS_IGNORE_FLASH_VERSION_CHECK"] = "1"
+ gr.TEMP_DIR = "tmp_gradio"
+ 
+ from src.data.dataset import DatasetConfig, RigDatasetModule
++from src.device import resolve_device
+ from src.data.transform import Transform
+ from src.model.tokenrig import TokenRigResult
+ from src.tokenizer.parse import get_tokenizer
+@@ -169,8 +170,12 @@ def run_rig(
+     dataset_config = DatasetConfig.parse(
+         shuffle=False,
+         batch_size=1,
+-        num_workers=1,
+-        pin_memory=True,
++        # In-process. A worker process cannot carry MPS tensors across the
++        # boundary ("_share_filename_: only available on CPU"), and this dataset is
++        # ONE mesh - a worker was never buying parallelism, just a fork.
++        # pin_memory is a CUDA staging hint and is meaningless with no worker.
++        num_workers=0,
++        pin_memory=False,
+         persistent_workers=False,
+         datapath=datapath,
+     ).split_by_cls()
+@@ -184,11 +189,15 @@ def run_rig(
+ 
+     dataloader = module.predict_dataloader()["articulation"]
+ 
++    # Declared, not detected - see src/device.py. Resolved here rather than at
++    # import so that --help still works without the variable set.
++    _DEVICE = resolve_device()
++
+     results_out = []
+ 
+     for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
+         batch = {
+-            k: v.to("cuda") if isinstance(v, Tensor) else v
++            k: v.to(_DEVICE) if isinstance(v, Tensor) else v
+             for k, v in batch.items()
+         }
+ 
+diff --git a/src/attention.py b/src/attention.py
+new file mode 100644
+index 0000000..7b268e8
+--- /dev/null
++++ b/src/attention.py
+@@ -0,0 +1,51 @@
++"""The one attention implementation, on every host and every device.
++
++WHY THIS REPLACES flash_attn RATHER THAN FALLING BACK TO IT
++-----------------------------------------------------------
++Upstream guards every attention site with `try: import flash_attn_interface /
++except: <something else>`. Traced on this fleet, that try ALWAYS fails, on both
++machines:
++
++  * `flash_attn_interface` is FlashAttention *3*'s top-level module.
++  * big has FlashAttention *2* (2.8.3), which installs as `flash_attn.*`.
++
++So `attention_processor.py` and `miche_transformer_blocks.py` have been running
++their PyTorch SDPA branches on big all along - the flash paths are dead code that
++merely looked live. Only `skin_vae_model.py:47` genuinely reached FA2, and
++`tokenrig.py` imported it without ever calling it.
++
++That left one real call site standing between this model and any non-CUDA device,
++so it is now SDPA too, and the branch is gone rather than demoted to a fallback.
++This is not a downgrade: `F.scaled_dot_product_attention` dispatches to its own
++fused flash kernel on CUDA, so big keeps flash attention - it just reaches it
++through PyTorch instead of a separately compiled wheel.
++
++CONVENTION
++----------
++flash_attn_func takes and returns (B, L, H, D) and hands back a
++(output, softmax_lse) pair. SDPA takes (B, H, L, D) and returns a bare tensor, so
++this transposes either side and pads the return to a pair. The lse is None because
++no call site in this repo reads it.
++"""
++
++import torch
++import torch.nn.functional as F
++
++
++def flash_attn_func(q, k, v):
++    """Attention over (B, L, H, D) tensors. Returns (out, None) to match FA3."""
++    # (B, L, H, D) -> (B, H, L, D)
++    q = q.transpose(1, 2)
++    k = k.transpose(1, 2)
++    v = v.transpose(1, 2)
++
++    # Grouped-query attention: fewer KV heads than query heads. SDPA has an
++    # enable_gqa flag, but expanding here keeps one code path across torch
++    # versions and costs nothing at these sequence lengths.
++    if q.shape[1] != k.shape[1]:
++        repeat = q.shape[1] // k.shape[1]
++        k = k.repeat_interleave(repeat, dim=1)
++        v = v.repeat_interleave(repeat, dim=1)
++
++    out = F.scaled_dot_product_attention(q, k, v)
++    return out.transpose(1, 2), None  # back to (B, L, H, D)
+diff --git a/src/device.py b/src/device.py
+new file mode 100644
+index 0000000..1adf39b
+--- /dev/null
++++ b/src/device.py
+@@ -0,0 +1,78 @@
++"""The one place that decides which accelerator TokenRig runs on.
++
++    SKINTOKENS_DEVICE=cuda   on big  (RTX, 24 GB VRAM)
++    SKINTOKENS_DEVICE=mps    on bmb  (M4 Pro, 48 GB unified)
++
++WHY AN ENV VAR RATHER THAN AUTO-DETECTION
++-----------------------------------------
++Auto-detection is a branch, and a branch that silently picks CPU when the
++accelerator it wanted is missing is exactly the "magic result that takes hours to
++trace" this project forbids. A rig that quietly ran on CPU would not fail - it
++would take forty minutes instead of thirty seconds and look like a hung job.
++
++So the device is declared, not guessed, and an unavailable one is a hard error.
++Both hosts run byte-identical code; only the variable differs.
++
++WHY THIS EXISTS AT ALL
++----------------------
++This box OOM-kills TokenRig. Not for want of VRAM - the GPU has 20 GB free and the
++weights total 1.6 GB - but because system RAM here is backed by ZRAM, a compressed
++block device carved out of the same 32 GB, so `free` reports 25 GB available while
++processes die around 12.7 GB. bmb has 48 GB of real unified memory.
++
++SkinTokens turned out to be portable: no CUDA-compiled extensions anywhere in its
++dependency tree (no spconv, flash-attn, xformers, nvdiffrast, triton), just
++PyTorch, transformers, bpy and trimesh. The entire CUDA surface was two lines -
++this module and the two call sites that import it.
++"""
++
++import os
++
++import torch
++
++_ENV = "SKINTOKENS_DEVICE"
++
++
++def resolve_device() -> torch.device:
++    """The declared device, or a loud failure. Never a quiet downgrade."""
++    name = os.environ.get(_ENV)
++    if not name:
++        raise RuntimeError(
++            f"{_ENV} is not set. Declare the accelerator explicitly - "
++            f"'cuda' on big, 'mps' on bmb, 'cpu' only if you mean it. "
++            f"This is not auto-detected on purpose: a rig that silently fell back "
++            f"to CPU would look like a hung job rather than a failed one."
++        )
++    name = name.strip().lower()
++
++    if name == "cuda" and not torch.cuda.is_available():
++        raise RuntimeError(f"{_ENV}=cuda but torch.cuda.is_available() is False")
++    if name == "mps" and not torch.backends.mps.is_available():
++        raise RuntimeError(f"{_ENV}=mps but torch.backends.mps.is_available() is False")
++    if name not in ("cuda", "mps", "cpu"):
++        raise RuntimeError(f"{_ENV}={name!r} is not one of cuda, mps, cpu")
++
++    return torch.device(name)
++
++
++def autocast_device_type() -> str:
++    """Device type for @torch.autocast decorators, evaluated at import.
++
++    These decorators were written `device_type='cuda'`. Off CUDA torch does not
++    raise on that - it warns and DISABLES the autocast - and that silent disable is
++    what made this model unrunnable on Metal. TokenRig puts its transformer in
++    bfloat16 explicitly while the encoder stays float32, and it is autocast that
++    reconciles the two. With autocast off, a bf16 tensor reaches an fp32 weight and
++    the driver aborts the process outright:
++
++        MPSNDArrayMatrixMultiplication.mm:5028: failed assertion `Destination
++        NDArray and Accumulator NDArray cannot have different datatype'
++
++    Verified on this machine: `torch.autocast('mps', dtype=torch.bfloat16)` works,
++    and the same matmul without it raises `expected mat1 and mat2 to have the same
++    dtype`. So the decorators follow the declared device.
++
++    Importing a model module therefore requires SKINTOKENS_DEVICE to be set. That
++    is deliberate - the alternative is the silent disable above.
++    """
++    return resolve_device().type
+diff --git a/src/model/michelangelo/utils/misc.py b/src/model/michelangelo/utils/misc.py
+index 2174de3..b906792 100755
+--- a/src/model/michelangelo/utils/misc.py
++++ b/src/model/michelangelo/utils/misc.py
+@@ -120,6 +120,15 @@ def get_free_space(path):
+     return free_space
+ 
+ def get_device_type():
++    """Name of the CUDA device, or "" when there is not one.
++
++    Its ONLY caller is FLASH3, which asks `"H100" in get_device_type()`. This ran
++    at import time and raised "Torch not compiled with CUDA enabled" on a Mac,
++    killing the process before any model loaded. Neither machine here is an H100,
++    so the answer was always False - it just could not be reached off CUDA.
++    """
++    if not torch.cuda.is_available():
++        return ""
+     return torch.cuda.get_device_name(0)
+ 
+ def get_hostname():
+diff --git a/src/model/skin_vae/autoencoders/FSQ.py b/src/model/skin_vae/autoencoders/FSQ.py
+index 9f7bcf0..8f30a9f 100755
+--- a/src/model/skin_vae/autoencoders/FSQ.py
++++ b/src/model/skin_vae/autoencoders/FSQ.py
+@@ -10,6 +10,7 @@ from torch import Tensor, int32
+ from torch.amp import autocast
+ 
+ from einops import rearrange, pack, unpack
++from ....device import autocast_device_type
+ 
+ # helper functions
+ 
+@@ -168,7 +169,7 @@ class FSQ(Module):
+ 
+         # whether to force quantization step to be full precision or not
+         force_f32 = self.force_quantization_f32
+-        quantization_context = partial(autocast, 'cuda', enabled = False) if force_f32 else nullcontext
++        quantization_context = partial(autocast, autocast_device_type(), enabled = False) if force_f32 else nullcontext
+ 
+         with quantization_context():
+             orig_dtype = z.dtype
+@@ -188,4 +189,4 @@ class FSQ(Module):
+         if not self.keep_num_codebooks_dim and self.return_indices:
+             indices = maybe(rearrange)(indices, '... 1 -> ...')
+         # return quantized output and indices
+-        return out, indices, None
+\ No newline at end of file
++        return out, indices, None
+diff --git a/src/model/skin_vae_model.py b/src/model/skin_vae_model.py
+index a2b4e88..7176773 100755
+--- a/src/model/skin_vae_model.py
++++ b/src/model/skin_vae_model.py
+@@ -15,13 +15,8 @@ from src.rig_package.info.asset import Asset
+ from .spec import ModelSpec, ModelInput, VaeInput
+ from .skin_vae.autoencoders import SkinFSQCVAEModel
+ 
+-try:
+-    from flash_attn_interface import flash_attn_func # type: ignore
+-except Exception as e:
+-    from flash_attn.flash_attn_interface import flash_attn_func as _flash_attn_func
+-    def flash_attn_func(*args, **kwargs):
+-        res = _flash_attn_func(*args, **kwargs)
+-        return res, None
++from ..attention import flash_attn_func
++from ..device import autocast_device_type
+ 
+ class Perceiver(nn.Module):
+     def __init__(self, channels, out_tokens, num_heads=8):
+@@ -136,7 +131,7 @@ class SkinVAEModel(ModelSpec):
+             uniform_skin=uniform_skin,
+         )
+     
+-    @torch.autocast(device_type='cuda', dtype=torch.bfloat16)
++    @torch.autocast(device_type=autocast_device_type(), dtype=torch.bfloat16)
+     def training_step(self, batch: Dict) -> Dict:
+         raise NotImplementedError()
+     
+@@ -171,7 +166,7 @@ class SkinVAEModel(ModelSpec):
+     def forward(self, batch: Dict) -> Dict:
+         return self.training_step(batch=batch)
+ 
+-    @torch.autocast('cuda', dtype=torch.bfloat16)
++    @torch.autocast(autocast_device_type(), dtype=torch.bfloat16)
+     def predict_step(self, batch: Dict) -> Dict:
+         vertices: Tensor = batch['vertices'].float() # (B, N, 3)
+         num_bones: List[int] = batch['num_bones']
+@@ -205,4 +200,4 @@ class SkinVAEModel(ModelSpec):
+         
+         return {
+             'results': results,
+-        }
+\ No newline at end of file
++        }
+diff --git a/src/model/tokenrig.py b/src/model/tokenrig.py
+index ab35e3f..eabaf89 100755
+--- a/src/model/tokenrig.py
++++ b/src/model/tokenrig.py
+@@ -22,13 +22,8 @@ from ..tokenizer.spec import Tokenizer
+ from ..tokenizer.spec import DetokenizeOutput
+ from ..tokenizer.parse import get_tokenizer
+ 
+-try:
+-    from flash_attn_interface import flash_attn_func # type: ignore
+-except Exception as e:
+-    from flash_attn.flash_attn_interface import flash_attn_func as _flash_attn_func
+-    def flash_attn_func(*args, **kwargs):
+-        res = _flash_attn_func(*args, **kwargs)
+-        return res, None
++from ..attention import flash_attn_func  # noqa: F401  (imported, never called here)
++from ..device import autocast_device_type
+ 
+ class VocabSwitchingLogitsProcessor(LogitsProcessor):
+     def __init__(self, tokenizer: Tokenizer, switch_token_id, eos_token_id, tokens_per_skin, init):
+@@ -106,7 +101,11 @@ class TokenRig(ModelSpec):
+         llm_config.torch_dtype = torch.bfloat16
+         llm_config.pre_norm = True
+         self.llm_config = llm_config
+-        self.transformer = AutoModelForCausalLM.from_config(config=llm_config, attn_implementation="flash_attention_2").to(torch.bfloat16)
++        # "sdpa", not "flash_attention_2", for the reason in src/attention.py: one
++        # attention path on every device. transformers' SDPA dispatches to the same
++        # fused flash kernel on CUDA, so big loses nothing, and a Mac can load the
++        # model at all instead of raising ImportError here.
++        self.transformer = AutoModelForCausalLM.from_config(config=llm_config, attn_implementation="sdpa").to(torch.bfloat16)
+         
+         self.output_proj = nn.Sequential(
+             nn.Linear(self.mesh_encoder.width, self.hidden_size),
+@@ -147,7 +146,7 @@ class TokenRig(ModelSpec):
+         rate = (self.global_step-start_steps) / (end_steps-start_steps)
+         return min(max((1.0-math.cos(math.pi * rate))/2, 0), 1)
+ 
+-    @torch.autocast(device_type='cuda', dtype=torch.bfloat16)
++    @torch.autocast(device_type=autocast_device_type(), dtype=torch.bfloat16)
+     def training_step(self, batch: Dict) -> Dict:
+         raise NotImplementedError()
+     
+@@ -191,7 +190,7 @@ class TokenRig(ModelSpec):
+             start_tokens_list.append(start_tokens)
+         return start_tokens_list
+     
+-    @torch.autocast(device_type='cuda', dtype=torch.bfloat16)
++    @torch.autocast(device_type=autocast_device_type(), dtype=torch.bfloat16)
+     def generate(
+         self,
+         vertices: Tensor,
+diff --git a/src/server/spec.py b/src/server/spec.py
+index f2ca6d7..e945330 100755
+--- a/src/server/spec.py
++++ b/src/server/spec.py
+@@ -6,6 +6,7 @@ import io
+ import os
+ import torch
+ 
++from ..device import resolve_device
+ from ..rig_package.info.asset import Asset
+ from ..model.tokenrig import TokenRig
+ 
+@@ -68,7 +69,7 @@ def bytes_to_object(b, map_location=None):
+ def get_model(
+     ckpt_path: str,
+     hf_path: Optional[str]=None,
+-    device='cuda',
++    device=None,
+ ) -> TokenRig:
+     model = TokenRig.load_from_system_checkpoint(checkpoint_path=ckpt_path)
+     if hf_path is not None:
+@@ -76,10 +77,10 @@ def get_model(
+         a = AutoModel.from_pretrained(
+             hf_path,
+             local_files_only=True,
+-            _attn_implementation="flash_attention_2",
++            _attn_implementation="sdpa",
+             torch_dtype=torch.bfloat16,
+         )
+         model.transformer.model.load_state_dict(a.state_dict())
+ 
+-    model = model.to(device)
++    model = model.to(device if device is not None else resolve_device())
+     return model
