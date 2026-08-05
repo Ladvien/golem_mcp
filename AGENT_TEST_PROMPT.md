@@ -188,6 +188,23 @@ THE STEPS
     the tool output looked. The source clips measure about -0.96; anything
     negative and within ~0.3 of that is fine.
 
+    ALSO REPORT THE MEAN HAND OFFSET, which the correlation above cannot see. It
+    subtracts the mean from both series before correlating, so hands parked
+    permanently behind the character still score a perfect -0.96. That exact defect
+    shipped once and was spotted by eye, not by measurement. Same import and same
+    `f` axis as above, then:
+
+      leg = (R('LeftUpLeg') - R('LeftToeBase')).length
+      per frame: (pose LeftHand - pose Hips).dot(f) / leg * 100
+      report rest value, animated mean, and max-min swing
+
+    Run it on the retargeted output AND on the source clip, and compare:
+      * mean must have the SAME SIGN as the source's. Source ~ +19% of leg length
+        (hands carried in front); a negative mean means the hands trail behind and
+        the walk will look wrong however good the correlation is.
+      * swing should be within ~30% of the source's ~74%. Much less means the
+        clip's motion is being damped away.
+
     Do not substitute your own metric for this one. Measuring along a WORLD axis
     instead of the character's own gives a number that flips sign depending on
     which way the character happens to face, and it will mislead you.
