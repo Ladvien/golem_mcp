@@ -79,6 +79,15 @@ path = sys.argv[1]
 src = open(path).read()
 
 edits = [
+    # BiRefNet's config declares torch_dtype float16 and newer transformers honours
+    # it, so the background remover's weights arrive in half while the transform
+    # feeding it still produces float32: "Input type (float) and bias type
+    # (c10::Half) should be the same", and generate_orbit_views dies at exit 1.
+    # Force it to float32 - it is a small model and fp32 is the better matte.
+    (
+        "        birefnet.to(args.device)",
+        "        birefnet.to(args.device)\n        birefnet.float()",
+    ),
     (
         "    pipe = MVAdapterI2MVSDXLPipeline.from_pretrained(base_model, **pipe_kwargs)",
         '    pipe = MVAdapterI2MVSDXLPipeline.from_pretrained(\n'
