@@ -108,7 +108,11 @@ THE STEPS
 
 9.  rig_model on "emberwake_herald.glb". Fits a canonical Mixamo skeleton and runs
     the rigger twice internally, so expect 60-90 s. Report `canonical.core_bones`
-    (expect 23), `skeleton.zero_weight_vertices` (expect 0), and
+    (expect 27 — a 23-bone Mixamo core plus four tip bones: LeftHand_End,
+    RightHand_End, LeftToe_End, RightToe_End, which exist because Blender gives a
+    CHILDLESS bone its parent's length, so without them the hand and toe bones
+    overshoot the mesh by roughly their own length),
+    `skeleton.zero_weight_vertices` (expect 0), and
     `canonical.extra_chains`. Extra chains are wing/tail/horn bones outside the
     mixamorig namespace; on this subject they usually come back EMPTY, which is a
     known gap in the appendage classifier rather than a pass.

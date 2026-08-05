@@ -110,6 +110,17 @@ GLTF_JSON_CHUNK = 0x4E4F534A
 # height rather than a shoulder.
 SHOULDER_FRAC = 0.82
 
+# Measured off a real Mixamo rig, as fractions of leg length (UpLeg to ToeBase).
+# The pelvis sits just above the femoral heads there - ours sat at +21.5%, 3.7x too
+# high, which reads in the viewport as the femurs not connecting to the spine.
+HIP_ABOVE_FEMUR = 0.058
+# Blender gives a CHILDLESS bone its parent's length, so leaf bones came out at
+# exactly their parent's size: hand 26.0% of leg against Mixamo's 17.1%, toe 15.6%
+# against 7.7% - visibly overshooting the mesh. Mixamo avoids this by ending every
+# chain in a tip bone (LeftToe_End, LeftHandIndex1...). These add the two tips we
+# were missing; HeadTop_End already did this job for the head.
+TOE_TIP_FRAC = 0.077
+
 
 
 
@@ -343,22 +354,6 @@ def mixamo_from_generated(rigged_glb, links=3):
     torso = spine[si[hips_i]:si[sh_i] + 1] or [hips_i, sh_i]
     upper = spine[si[sh_i]:] or [sh_i]
 
-    spec, order = [], {}
-
-    def add(name, parent, pos_):
-        order[name] = len(spec)
-        spec.append((name, order[parent] if parent else -1, np.asarray(pos_, float)))
-
-    t = resample(pos, torso, [0.0, 0.33, 0.66, 1.0])
-    add("mixamorig:Hips", None, t[0])
-    add("mixamorig:Spine", "mixamorig:Hips", t[1])
-    add("mixamorig:Spine1", "mixamorig:Spine", t[2])
-    add("mixamorig:Spine2", "mixamorig:Spine1", t[3])
-    u = resample(pos, upper, [0.25, 0.6, 1.0])
-    add("mixamorig:Neck", "mixamorig:Spine2", u[0])
-    add("mixamorig:Head", "mixamorig:Neck", u[1])
-    add("mixamorig:HeadTop_End", "mixamorig:Head", u[2])
-
     # WHICH SIDE IS WHICH. classify() calls the greater lateral coordinate "left",
     # which is arbitrary - it depends on which way the character happens to face.
     # forge_warden came out mirrored, and a mirrored rig flips the lateral axis, so
@@ -389,18 +384,15 @@ def mixamo_from_generated(rigged_glb, links=3):
         legs = legs[::-1]
         arms = arms[::-1]
 
-    # Anatomical anchors, measured off this character rather than assumed. The hip
-    # half-width sets where the shoulder joint sits, at the standard 1.15x of it -
-    # the same proportion the earlier geometric fitter used, and the one place
-    # proportion beats the generated skeleton, whose arm chain has not left the
-    # neck yet at t=0.12.
     hips_up = float(pos[hips_i, UP])
     height = c["height"]
     lo_up = float(pos[:, UP].min())
 
-    for tag, arm, leg in (("Left", arms[0], legs[0]), ("Right", arms[1], legs[1])):
-        arm_line = longest_line(c, arm)
-        # Shoulder joint = where the chain has swung sh_off clear of the midline.
+    # Sample both limbs BEFORE building the spec: the pelvis is placed against the
+    # femoral heads, so they have to be known first.
+    limb = {}
+    for tag, arm_b, leg_b in (("Left", arms[0], legs[0]), ("Right", arms[1], legs[1])):
+        arm_line = longest_line(c, arm_b)
         # Shoulder by HEIGHT, not by lateral offset. Once the lateral axis was
         # fixed, the offset rule stopped discriminating: an arm chain clears
         # hip_half*1.15 within its first segment, so the joint sat back at the
@@ -408,25 +400,61 @@ def mixamo_from_generated(rigged_glb, links=3):
         t_sh = t_where(pos, arm_line, lambda q: float(q[UP]), lo_up + SHOULDER_FRAC * height)
         t_sh = min(max(t_sh, 0.05), 0.35)
         t_elbow = t_sh + (0.9 - t_sh) * 0.5
-        a = resample(pos, arm_line, [0.0, t_sh, t_elbow, 0.9])
+        # The extra 1.0 sample is the hand TIP - the chain already runs that far, so
+        # the tip is measured rather than extrapolated.
+        arm_pts = resample(pos, arm_line, [0.0, t_sh, t_elbow, 0.9, 1.0])
+
+        leg_line = longest_line(c, leg_b)
+        # Femoral head sits BELOW the pelvis attachment the chain starts at, or the
+        # thigh pivots from inside the belly. Measured as a fraction of BODY height
+        # the drop is far too big for short legs - it put the dwarf's femur head at
+        # 0.42 H - so it is clamped tight.
+        t_hip = t_where(pos, leg_line, lambda q: float(q[UP]), hips_up - 0.035 * height)
+        t_hip = min(max(t_hip, 0.0), 0.10)
+        leg_pts = resample(pos, leg_line, [t_hip, 0.5, 0.88, 1.0])
+        limb[tag] = (arm_pts, leg_pts)
+
+    leg_len = float(np.mean([
+        np.linalg.norm(limb[t][1][0] - limb[t][1][3]) for t in ("Left", "Right")
+    ]))
+    femur_mid = (limb["Left"][1][0] + limb["Right"][1][0]) / 2
+
+    spec, order = [], {}
+
+    def add(name, parent, pos_):
+        order[name] = len(spec)
+        spec.append((name, order[parent] if parent else -1, np.asarray(pos_, float)))
+
+    t = resample(pos, torso, [0.0, 0.33, 0.66, 1.0])
+    # Pelvis against the femoral heads, not at the spine node the legs branch from -
+    # that node is up inside the belly.
+    add("mixamorig:Hips", None, femur_mid + up_v * (HIP_ABOVE_FEMUR * leg_len))
+    add("mixamorig:Spine", "mixamorig:Hips", t[1])
+    add("mixamorig:Spine1", "mixamorig:Spine", t[2])
+    add("mixamorig:Spine2", "mixamorig:Spine1", t[3])
+    u = resample(pos, upper, [0.25, 0.6, 1.0])
+    add("mixamorig:Neck", "mixamorig:Spine2", u[0])
+    add("mixamorig:Head", "mixamorig:Neck", u[1])
+    add("mixamorig:HeadTop_End", "mixamorig:Head", u[2])
+
+    for tag in ("Left", "Right"):
+        a, g = limb[tag]
         add(f"mixamorig:{tag}Shoulder", "mixamorig:Spine2", a[0])
         add(f"mixamorig:{tag}Arm", f"mixamorig:{tag}Shoulder", a[1])
         add(f"mixamorig:{tag}ForeArm", f"mixamorig:{tag}Arm", a[2])
         add(f"mixamorig:{tag}Hand", f"mixamorig:{tag}ForeArm", a[3])
+        add(f"mixamorig:{tag}Hand_End", f"mixamorig:{tag}Hand", a[4])
 
-        leg_line = longest_line(c, leg)
-        # Femoral head sits BELOW the pelvis attachment the chain starts at, or the
-        # thigh pivots from inside the belly.
-        t_hip = t_where(pos, leg_line, lambda q: float(q[UP]), hips_up - 0.035 * height)
-        # Same reasoning: measured as a fraction of BODY height, the drop is far too
-        # big for short legs - it put the dwarf's femur head at 0.42 H. The femoral
-        # head is just below the pelvis attachment on any build.
-        t_hip = min(max(t_hip, 0.0), 0.10)
-        g = resample(pos, leg_line, [t_hip, 0.5, 0.88, 1.0])
         add(f"mixamorig:{tag}UpLeg", "mixamorig:Hips", g[0])
         add(f"mixamorig:{tag}Leg", f"mixamorig:{tag}UpLeg", g[1])
         add(f"mixamorig:{tag}Foot", f"mixamorig:{tag}Leg", g[2])
         add(f"mixamorig:{tag}ToeBase", f"mixamorig:{tag}Foot", g[3])
+        # The leg chain ends at the toe, so the tip is extrapolated along the foot.
+        step = g[3] - g[2]
+        nrm = float(np.linalg.norm(step))
+        step = step / nrm if nrm > 1e-9 else -up_v
+        add(f"mixamorig:{tag}Toe_End", f"mixamorig:{tag}ToeBase",
+            g[3] + step * (TOE_TIP_FRAC * leg_len))
 
     # Leftover chains keep their geometry as named extras. Outside the mixamorig
     # namespace on purpose: retargeting drives mixamorig:* and ignores these, which

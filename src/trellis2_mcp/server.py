@@ -1099,9 +1099,10 @@ def _publish_rig(
             "elapsed_seconds": elapsed,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "bone_naming": (
-                "Mixamo (mixamorig:*) 23-bone core, plus named wing_/tail_/horn_ chains "
-                "for whatever else the mesh has. Identical across every character, which "
-                "is what makes clips shareable."
+                "Mixamo (mixamorig:*) 23-bone core plus four tip bones "
+                "(LeftHand_End, RightHand_End, LeftToe_End, RightToe_End), plus named "
+                "wing_/tail_/horn_ chains for whatever else the mesh has. Identical "
+                "across every character, which is what makes clips shareable."
             ),
             "skeleton_reproducible": True,
             "skinning_reproducible": False,
@@ -1437,7 +1438,8 @@ def rig_model(
     """Rig a mesh with the canonical Mixamo skeleton, so animations are shareable.
 
     Every character comes out with the SAME bone list - a 23-bone `mixamorig:*`
-    core plus named `wing_`/`tail_`/`horn_` chains for whatever else the mesh has.
+    core, four tip bones so leaf bones do not overshoot the mesh, and named
+    `wing_`/`tail_`/`horn_` chains for whatever else the mesh has.
     That is what lets one clip drive the whole library via apply_animation, and
     what Unreal's IK Retargeter and Unity's Humanoid avatar need. A per-asset
     skeleton named bone_0..bone_N cannot do either.
