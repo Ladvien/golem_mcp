@@ -685,25 +685,60 @@ def transfer_texture(source_glb, fitted_glb):
     })
     dst_prim["attributes"]["TEXCOORD_0"] = len(dst["accessors"]) - 1
 
-    image = src["images"][0]
-    if "bufferView" not in image:
-        raise SystemExit("source image is not stored in a bufferView; refusing to guess")
-    iv = src["bufferViews"][image["bufferView"]]
-    blob = src_bin[iv.get("byteOffset", 0):iv.get("byteOffset", 0) + iv["byteLength"]]
-    dst_bin, im_off, im_len = _append(dst_bin, blob)
-    dst["bufferViews"].append({"buffer": 0, "byteOffset": im_off, "byteLength": im_len})
-    dst.setdefault("images", []).append(
-        {"bufferView": len(dst["bufferViews"]) - 1, "mimeType": image.get("mimeType", "image/png")})
-    if src.get("samplers"):
-        dst.setdefault("samplers", []).extend(src["samplers"])
-    dst.setdefault("textures", []).append({"source": len(dst["images"]) - 1})
-    if src.get("samplers"):
-        dst["textures"][-1]["sampler"] = len(dst["samplers"]) - 1
-
+    # EVERY texture the material references, not just images[0].
+    #
+    # This copied one image and remapped only baseColorTexture. The rest of the
+    # material was carried over verbatim, still holding its ORIGINAL indices - which
+    # was invisible while TRELLIS 1 shipped a single base-colour map, because index 0
+    # happened to remain correct. TRELLIS.2 ships baseColor AND metallicRoughness, so
+    # the copy produced a material pointing at textures[1] in a file with one texture,
+    # and Blender's importer died on it:
+    #
+    #     pytexture = mh.gltf.data.textures[tex_info.index]
+    #     IndexError: list index out of range
+    #
+    # which surfaced as the skinning pass failing to parse its own input. Dropping
+    # metallicRoughness silently would have been worse than the crash: it is the
+    # entire reason generate_3d moved to TRELLIS.2.
     material = json.loads(json.dumps(src["materials"][src_prim["material"]]))
     pbr = material.get("pbrMetallicRoughness", {})
-    if "baseColorTexture" in pbr:
-        pbr["baseColorTexture"] = dict(pbr["baseColorTexture"], index=len(dst["textures"]) - 1)
+    slots = [(pbr, k) for k in ("baseColorTexture", "metallicRoughnessTexture") if k in pbr]
+    slots += [(material, k) for k in ("normalTexture", "occlusionTexture", "emissiveTexture")
+              if k in material]
+    if not slots:
+        raise SystemExit(f"{source_glb}'s material references no textures; nothing to transfer")
+
+    remap: dict[int, int] = {}
+    image_bytes = 0
+    for holder, key in slots:
+        src_tex_index = holder[key]["index"]
+        if src_tex_index not in remap:
+            src_tex = src["textures"][src_tex_index]
+            image = src["images"][src_tex["source"]]
+            if "bufferView" not in image:
+                raise SystemExit(
+                    f"source image {src_tex['source']} is not stored in a bufferView; "
+                    "refusing to guess"
+                )
+            iv = src["bufferViews"][image["bufferView"]]
+            off = iv.get("byteOffset", 0)
+            dst_bin, im_off, im_len = _append(dst_bin, src_bin[off:off + iv["byteLength"]])
+            image_bytes += im_len
+            dst["bufferViews"].append({"buffer": 0, "byteOffset": im_off, "byteLength": im_len})
+            dst.setdefault("images", []).append({
+                "bufferView": len(dst["bufferViews"]) - 1,
+                "mimeType": image.get("mimeType", "image/png"),
+            })
+            entry = {"source": len(dst["images"]) - 1}
+            # Carry only the sampler this texture actually uses, so its index stays
+            # meaningful - copying the whole source sampler list would misalign it.
+            if "sampler" in src_tex and src.get("samplers"):
+                dst.setdefault("samplers", []).append(src["samplers"][src_tex["sampler"]])
+                entry["sampler"] = len(dst["samplers"]) - 1
+            dst.setdefault("textures", []).append(entry)
+            remap[src_tex_index] = len(dst["textures"]) - 1
+        holder[key] = dict(holder[key], index=remap[src_tex_index])
+
     dst.setdefault("materials", []).append(material)
     dst_prim["material"] = len(dst["materials"]) - 1
 
@@ -711,7 +746,10 @@ def transfer_texture(source_glb, fitted_glb):
     dst_chunks[ji][1] = bytearray(json.dumps(dst, separators=(",", ":")).encode("utf-8"))
     dst_chunks[bi][1] = bytearray(dst_bin)
     _write_glb(fitted_glb, dst_chunks)
-    return {"uvs": nvert, "faces": len(dst_faces), "image_bytes": im_len}
+    return {
+        "uvs": nvert, "faces": len(dst_faces),
+        "image_bytes": image_bytes, "textures": len(remap),
+    }
 
 
 def cmd_fit(args):

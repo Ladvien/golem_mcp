@@ -4,7 +4,8 @@
 # SkinTokens cannot share the TRELLIS venv: TRELLIS runs Python 3.10 + torch
 # 2.6.0+cu124, SkinTokens requires Python 3.11 (open3d has no cp313 wheel, and
 # bpy >= 5.1 is cp313-only) + torch 2.7.0+cu128. The MCP server therefore
-# invokes rigging as a subprocess against SKINTOKENS_PYTHON.
+# The MCP server runs the two TokenRig passes on RIG_HOST (bmb) over ssh, not here;
+# this install provides the repo that canonical_skeleton.py imports Asset/BpyParser from.
 set -euo pipefail
 
 ROOT="${SKINTOKENS_ROOT:-/home/ladvien/skintokens}"

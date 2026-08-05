@@ -37,7 +37,29 @@ RIG_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # torch 2.7.0+cu128 against TRELLIS's 3.10 + torch 2.6.0+cu124. It runs as a
 # subprocess in its own venv; see scripts/install_skintokens.sh.
 SKINTOKENS_REPO = Path(os.environ.get("SKINTOKENS_REPO", "/home/ladvien/skintokens/repo"))
-SKINTOKENS_PYTHON = Path(os.environ.get("SKINTOKENS_PYTHON", "/home/ladvien/skintokens/.venv/bin/python"))
+# There is no SKINTOKENS_PYTHON any more: nothing here invokes the rigger locally.
+# The local SkinTokens REPO is still required - canonical_skeleton.py imports its
+# Asset and BpyParser, and runs under SEGVIGEN_PYTHON with the repo as cwd.
+
+# TokenRig runs on bmb, always - not here, and not conditionally on mesh size.
+#
+# This box swaps to ZRAM, a compressed block device backed by the same 32 GB of
+# physical memory, so `free` reports ~25 GB available while processes are killed
+# around 12.7 GB. rig_model died there on every TRELLIS.2 mesh. It was never a VRAM
+# problem: the card has 20 GB free and the weights are 1.6 GB.
+#
+# A size threshold - rig small meshes here, large ones there - is exactly the
+# two-path magic this project forbids, and it would put the rare large asset on the
+# path that gets exercised least. So there is one path, and its cost is measured:
+# bmb rigs the reference mesh in 32.1 s against this box's 11.9 s. Metal needs
+# float32; its bfloat16 matmul is off by 0.36 max-abs and generation never
+# terminates. See src/device.py in the SkinTokens tree.
+RIG_HOST = os.environ.get("RIG_HOST", "bmb")
+RIG_REMOTE_REPO = os.environ.get("RIG_REMOTE_REPO", "skintokens/repo")
+RIG_REMOTE_PYTHON = os.environ.get("RIG_REMOTE_PYTHON", "skintokens/.venv/bin/python")
+RIG_REMOTE_TMP = os.environ.get("RIG_REMOTE_TMP", "/tmp/trellis2_rig")
+RIG_DEVICE = os.environ.get("RIG_DEVICE", "mps")
+RIG_DTYPE = os.environ.get("RIG_DTYPE", "float32")
 SKINTOKENS_CKPTS = (
     "experiments/skin_vae_2_10_32768/last.ckpt",
     "experiments/articulation_xl_quantization_256_token_4/grpo_1400.ckpt",
@@ -187,6 +209,12 @@ mcp = FastMCP(
 # TokenRig runs as a subprocess, so its VRAM is reclaimed when that process
 # exits - nothing to evict on the way back.
 _gpu_lock = threading.RLock()
+
+# Rigging no longer contends for this card - it runs on RIG_HOST - but two rigs at
+# once would collide over there on the shared temp dir and bpy_server's fixed port
+# 59876. So the rig chain takes its own lock, and a rig can now overlap a
+# generate_3d instead of evicting TRELLIS and forcing a ~30s reload afterwards.
+_rig_lock = threading.RLock()
 _pipeline: Any = None
 
 
@@ -1087,6 +1115,44 @@ _JOINT_QUANTIZATION_BINS = 256
 _VERT_RANGE = (1_000, 20_000)
 
 
+def _component_sizes(mesh) -> Any:
+    """Vertex counts of each connected component, welded on POSITION.
+
+    Two separate problems are fixed here, and both were silent.
+
+    MEMORY. `mesh.split(only_watertight=False)` returns a full Trimesh per shell -
+    its own vertex array, face array, cached normals and tree. Affordable for the
+    ~5,700-triangle meshes TRELLIS 1 produced; not affordable at TRELLIS.2's 17x.
+    rig_model was OOM-killed HERE, before the rigger was ever reached, on a box
+    whose ZRAM-backed memory dies around 12.7 GB. Only two numbers are ever wanted
+    from the result, so label the vertices and count them: O(V+E), nothing rebuilt.
+
+    CORRECTNESS. trimesh's process=True merges by position AND attributes, so it
+    will not join vertices that are coincident but carry different UVs - which is
+    every vertex on a UV-atlas seam. Measured on the TRELLIS.2 character: 9,425
+    "components", none holding as much as 2% of the mesh. That number describes the
+    atlas, not the surface, and it is the SAME false signal that once got TRELLIS.2
+    reverted for producing "fragmented" meshes (see scripts/trellis2_character.py).
+    A position weld is what sees the actual topology.
+    """
+    import numpy as np
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    # Weld on position alone - 6dp, the tolerance used everywhere else here.
+    _uniq, inverse = np.unique(
+        np.round(np.asarray(mesh.vertices), 6), axis=0, return_inverse=True
+    )
+    inverse = inverse.reshape(-1)
+    n = len(_uniq)
+    edges = inverse[np.asarray(mesh.edges_sorted)]
+    graph = coo_matrix(
+        (np.ones(len(edges), dtype=np.int8), (edges[:, 0], edges[:, 1])), shape=(n, n)
+    )
+    _count, labels = connected_components(graph, directed=False)
+    return np.bincount(labels)
+
+
 def _mesh_diagnostics(path: Path) -> dict[str, Any]:
     """Inspect a mesh for the conditions that determine rig quality.
 
@@ -1104,7 +1170,7 @@ def _mesh_diagnostics(path: Path) -> dict[str, Any]:
     extents = mesh.bounds[1] - mesh.bounds[0]
     largest = float(extents.max())
 
-    components = mesh.split(only_watertight=False)
+    component_sizes = _component_sizes(mesh)
 
     # Measure bbox inflation against the bulk of the geometry rather than the
     # largest connected component: generated meshes routinely come in many pieces,
@@ -1143,12 +1209,12 @@ def _mesh_diagnostics(path: Path) -> dict[str, Any]:
     # one is 119-302 shells with the largest holding only 2.7-13.6% of vertices, so
     # a generated body is simply not one connected piece. A warning that fires every
     # single time teaches the reader to ignore the warnings list.
-    substantial = sum(1 for c in components if len(c.vertices) >= 0.02 * max(verts, 1))
+    substantial = int((component_sizes >= 0.02 * max(verts, 1)).sum())
 
     return {
         "vertices": verts,
         "triangles": int(len(mesh.faces)),
-        "components": int(len(components)),
+        "components": int(len(component_sizes)),
         "substantial_components": substantial,
         "is_watertight": bool(mesh.is_watertight),
         "bbox_largest_dim_m": round(largest, 4),
@@ -1172,21 +1238,42 @@ def _glb_dimensions(path: Path) -> dict[str, Any]:
 
 
 def _rig_preflight() -> None:
-    """Raise with actionable detail if the SkinTokens install is incomplete."""
-    missing: list[str] = []
-    if not SKINTOKENS_PYTHON.is_file():
-        missing.append(f"interpreter {SKINTOKENS_PYTHON}")
-    if not (SKINTOKENS_REPO / "demo.py").is_file():
-        missing.append(str(SKINTOKENS_REPO / "demo.py"))
-    for ckpt in SKINTOKENS_CKPTS:
-        path = SKINTOKENS_REPO / ckpt
-        if not path.is_file() or path.stat().st_size == 0:
-            missing.append(str(path))
+    """Raise with actionable detail if RIG_HOST cannot rig.
+
+    Checked THERE, not here: the interpreter, demo.py and the checkpoints that
+    matter are the remote ones. Verifying the local copies would pass on a box that
+    cannot run a single pass, which is precisely the state this machine is in.
+    """
+    probe = " ; ".join(
+        [f"test -x ~/{RIG_REMOTE_PYTHON} || echo 'interpreter ~/{RIG_REMOTE_PYTHON}'",
+         f"test -f ~/{RIG_REMOTE_REPO}/demo.py || echo '~/{RIG_REMOTE_REPO}/demo.py'"]
+        + [f"test -s ~/{RIG_REMOTE_REPO}/{c} || echo '~/{RIG_REMOTE_REPO}/{c}'"
+           for c in SKINTOKENS_CKPTS]
+    )
+    try:
+        proc = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", RIG_HOST,
+             "bash", "-lc", shlex.quote(probe)],
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"Rigging host {RIG_HOST} did not answer within 60s. Rigging runs "
+            f"there because this box's ZRAM-backed memory OOM-kills TokenRig; "
+            f"there is no local path to fall back to."
+        ) from None
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Cannot reach rigging host {RIG_HOST} over ssh: "
+            f"{(proc.stderr or proc.stdout).strip() or f'exit {proc.returncode}'}"
+        )
+    missing = [line for line in proc.stdout.splitlines() if line.strip()]
     if missing:
         raise RuntimeError(
-            "SkinTokens install is incomplete. Missing: "
+            f"SkinTokens install on {RIG_HOST} is incomplete. Missing: "
             + "; ".join(missing)
-            + ". Run scripts/install_skintokens.sh to install it."
+            + f". Sync it with: rsync -a --exclude=.git {SKINTOKENS_REPO}/ "
+            f"{RIG_HOST}:{RIG_REMOTE_REPO}/"
         )
 
 
@@ -1241,52 +1328,102 @@ def _run_script(
 def _demo_pass(
     source: Path, target: Path, use_skeleton: bool, label: str, params: dict[str, Any], timeout: int,
 ) -> float:
-    """One TokenRig pass. Returns elapsed seconds; raises with the log tail on failure."""
-    cmd = [
-        str(SKINTOKENS_PYTHON), "demo.py",
-        "--input", str(source), "--output", str(target),
+    """One TokenRig pass, run on RIG_HOST. Returns elapsed seconds.
+
+    The mesh goes over, demo.py runs there, the rigged GLB comes back. Only these
+    two passes are remote - every bpy stage around them (decimation, the canonical
+    fit, name restore, weight smoothing, bone orientation, weight transfer) stays
+    local, because they are cheap and they are where the pipeline's own code lives.
+
+    The device and dtype are passed explicitly rather than left to the remote
+    shell's profile. SkinTokens requires both to be declared and fails loudly if
+    they are not, so a misconfigured host cannot silently rig on CPU at 11x the
+    wall clock, or on Metal in bfloat16 and return a mesh that never converged.
+    """
+    remote_in = f"{RIG_REMOTE_TMP}/{source.name}"
+    remote_out = f"{RIG_REMOTE_TMP}/{target.name}"
+
+    argv = " ".join([
+        "--input", shlex.quote(remote_in), "--output", shlex.quote(remote_out),
         "--num_beams", str(params["num_beams"]),
         "--top_k", str(params["top_k"]),
         "--top_p", str(params["top_p"]),
         "--temperature", str(params["temperature"]),
         "--repetition_penalty", str(params["repetition_penalty"]),
-    ]
-    if params["use_transfer"]:
-        cmd.append("--use_transfer")
-    if params["use_postprocess"]:
-        cmd.append("--use_postprocess")
-    if use_skeleton:
-        cmd.append("--use_skeleton")
+        *(["--use_transfer"] if params["use_transfer"] else []),
+        *(["--use_postprocess"] if params["use_postprocess"] else []),
+        *(["--use_skeleton"] if use_skeleton else []),
+    ])
+    # demo.py resolves bpy_server.py, checkpoints and configs relative to the repo
+    # root, so it must run with cwd there. The proxy vars are stripped for the same
+    # reason as locally: demo.py talks to its bpy_server child over loopback HTTP
+    # and a configured http_proxy makes it hang forever (upstream issue #3).
+    script = (
+        f"mkdir -p {shlex.quote(RIG_REMOTE_TMP)} && "
+        f"cd {shlex.quote(RIG_REMOTE_REPO)} && "
+        f"unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY; "
+        f"export NO_PROXY=localhost,127.0.0.1 "
+        f"SKINTOKENS_DEVICE={shlex.quote(RIG_DEVICE)} "
+        f"SKINTOKENS_DTYPE={shlex.quote(RIG_DTYPE)}; "
+        f"rm -f {shlex.quote(remote_out)}; "
+        f"~/{RIG_REMOTE_PYTHON} demo.py {argv} 2>&1"
+    )
 
     started = time.time()
-    # demo.py resolves bpy_server.py, checkpoints and configs relative to the repo
-    # root, so it must run with cwd there.
-    proc = subprocess.Popen(
-        cmd, cwd=str(SKINTOKENS_REPO), env=_rig_env(),
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True,
+    # Before the scp, not inside the run script - scp cannot create its own
+    # destination directory and fails with a bare "No such file or directory".
+    mk = subprocess.run(
+        ["ssh", RIG_HOST, "bash", "-lc",
+         shlex.quote(f"mkdir -p {shlex.quote(RIG_REMOTE_TMP)}")],
+        capture_output=True, text=True, timeout=60,
     )
+    if mk.returncode != 0:
+        raise RuntimeError(
+            f"{label}: could not create {RIG_REMOTE_TMP} on {RIG_HOST}: "
+            f"{(mk.stderr or mk.stdout).strip() or f'exit {mk.returncode}'}"
+        )
+    _rig_scp(str(source), f"{RIG_HOST}:{remote_in}", f"{label}: sending mesh")
     try:
-        log, _ = proc.communicate(timeout=timeout)
+        proc = subprocess.run(
+            ["ssh", RIG_HOST, "bash", "-lc", shlex.quote(script)],
+            capture_output=True, text=True, timeout=timeout,
+        )
     except subprocess.TimeoutExpired:
-        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        proc.wait()
         _kill_orphan_bpy_server()
         raise TimeoutError(
-            f"{label} exceeded {timeout}s and was killed. Lower num_beams "
-            f"(currently {params['num_beams']}) or raise timeout. Note that timeout "
-            "is PER PASS and canonical rigging runs two."
+            f"{label} exceeded {timeout}s on {RIG_HOST} and was abandoned. Lower "
+            f"num_beams (currently {params['num_beams']}) or raise timeout. Note "
+            "that timeout is PER PASS and canonical rigging runs two."
         ) from None
 
-    elapsed = round(time.time() - started, 1)
+    log = (proc.stdout or "") + (proc.stderr or "")
     # demo.py prints "[Error] ..." on an export failure but still exits 0, so the
     # exit code alone does not mean the pass succeeded. The written file does.
+    _rig_scp(f"{RIG_HOST}:{remote_out}", str(target), f"{label}: retrieving rig", required=False)
+    elapsed = round(time.time() - started, 1)
+
     if not target.is_file() or target.stat().st_size == 0:
         tail = "\n".join(log.strip().splitlines()[-40:]) if log else ""
         raise RuntimeError(
-            f"{label} produced no output at {target} (exit {proc.returncode}, {elapsed}s)."
+            f"{label} produced no output at {target} (ran on {RIG_HOST} as "
+            f"{RIG_DEVICE}/{RIG_DTYPE}, exit {proc.returncode}, {elapsed}s)."
             + (f" Log tail:\n{tail}" if tail else "")
         )
     return elapsed
+
+
+def _rig_scp(src: str, dst: str, label: str, required: bool = True) -> None:
+    """Copy one file to or from RIG_HOST, failing loudly with scp's own message."""
+    proc = subprocess.run(
+        ["scp", "-q", "-p", src, dst], capture_output=True, text=True, timeout=600,
+    )
+    if proc.returncode != 0:
+        if not required:
+            return
+        raise RuntimeError(
+            f"{label} failed ({src} -> {dst}): "
+            f"{(proc.stderr or proc.stdout).strip() or f'scp exit {proc.returncode}'}"
+        )
 
 
 def _joint_hierarchy(path: Path) -> tuple[list[str], list[int]]:
@@ -1343,10 +1480,19 @@ def _kill_orphan_bpy_server() -> None:
     """Kill a bpy_server left holding port 59876 after a killed rig run.
 
     demo.py puts bpy_server in its own session (os.setsid), so killing demo.py's
-    process group does not reach it, and its atexit cleanup never runs when we
-    SIGKILL on timeout. The match is the exact argv demo.py spawns.
+    process group does not reach it, and its atexit cleanup never runs when the run
+    is killed on timeout. It runs on RIG_HOST now, so the kill goes there too -
+    leaving it behind makes the NEXT pass fail with "Address already in use".
+
+    pkill matches on argv, and an ssh command line containing the pattern is itself
+    a match, so the pattern must not appear literally in the command being run. It
+    is assembled remotely from two halves for that reason - a pkill that kills its
+    own invoking shell has cost this session real time more than once.
     """
-    subprocess.run(["pkill", "-f", f"^{SKINTOKENS_PYTHON} bpy_server.py$"], capture_output=True)
+    subprocess.run(
+        ["ssh", RIG_HOST, "bash", "-lc", shlex.quote("pkill -f 'bpy_server''.py' || true")],
+        capture_output=True, timeout=60,
+    )
 
 
 @mcp.tool
@@ -1412,8 +1558,10 @@ def rig_model(
     now fixed by construction - the documented 47-vs-44-joint lottery applies only
     to step 1, which is thrown away.
 
-    Hot-swaps the GPU: TRELLIS is evicted from VRAM first and the lock is held
-    across both passes. The next generate_3d call reloads TRELLIS automatically.
+    The two TokenRig passes run on RIG_HOST (bmb), not on this box, whose
+    ZRAM-backed memory OOM-kills the rigger. Every bpy stage around them stays
+    local. TRELLIS is no longer evicted for rigging, so a rig can overlap a
+    generate_3d rather than costing it a ~30s reload.
 
     Output is always .glb. After importing to Blender, delete the
     `glTF_not_exported` node.
@@ -1468,10 +1616,11 @@ def rig_model(
         }
         started = time.time()
 
-        # One lock across the whole chain: pass 2 needs the card again, and letting
-        # another tool take it in between would strand a half-finished rig.
-        with _gpu_lock:
-            evicted = _evict_trellis()
+        # One lock across the whole chain, so a second rig cannot land on RIG_HOST's
+        # temp dir or bpy_server port while this one is mid-flight. It is the RIG
+        # lock, not the GPU lock: nothing here touches the local card any more, so
+        # TRELLIS stays resident and a rig can overlap a generate_3d.
+        with _rig_lock:
             t_landmarks = _demo_pass(rig_input, landmarks, False, "Landmark rig pass", params, timeout)
 
             # The fitter reads joint positions from the landmark rig and vertices
@@ -1560,7 +1709,7 @@ def rig_model(
                 "proxy_glb": str(proxy) if proxy else None,
                 "rigged_at_proxy_resolution": proxy is not None,
             },
-            "trellis_evicted": evicted,
+            "rigged_on": {"host": RIG_HOST, "device": RIG_DEVICE, "dtype": RIG_DTYPE},
             "geometry": _glb_dimensions(target),
             "mesh_diagnostics": mesh_diag,
             "skeleton": skeleton,
