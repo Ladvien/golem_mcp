@@ -91,6 +91,13 @@ SEGVIGEN_VRAM_REQUIRED = 18e9
 CANONICAL_DRIVER = _SCRIPTS / "canonical_skeleton.py"
 ORIENT_DRIVER = _SCRIPTS / "orient_bones.py"
 SMOOTH_DRIVER = _SCRIPTS / "smooth_weights.py"
+RIG_PROXY_DRIVER = _SCRIPTS / "rig_proxy.py"
+# TokenRig's training mixture is 1k-20k vertices and TRELLIS.2 ships ~90k, so the
+# mesh that gets rigged and the mesh that gets shipped are no longer the same one.
+# 8k rather than the 20k ceiling because memory does not scale with the mesh: the
+# model load alone is a fixed ~9.5 GB, and the proxy only supplies landmarks and a
+# weight field that gets resampled onto the full mesh anyway.
+PROXY_VERTEX_TARGET = 8_000
 RETARGET_DRIVER = _SCRIPTS / "retarget_animation.py"
 ANIMATION_LIBRARY_DRIVER = _SCRIPTS / "animation_library.py"
 ANIMATION_ROOTS = tuple(
@@ -1437,6 +1444,22 @@ def rig_model(
         skinned = RIG_OUTPUT_DIR / f"{output_name}_skinned.glb"
         named = RIG_OUTPUT_DIR / f"{output_name}_named.glb"
         smoothed = RIG_OUTPUT_DIR / f"{output_name}_smoothed.glb"
+        oriented = RIG_OUTPUT_DIR / f"{output_name}_oriented.glb"
+
+        # Rig a decimated proxy when the mesh is out of TokenRig's range, and wear
+        # the weights on the full-resolution mesh afterwards. simplify=0.95 used to
+        # force these to be the same mesh, at the cost of 95% of the geometry.
+        rig_input = source
+        proxy = None
+        if mesh_diag["vertices"] > _VERT_RANGE[1]:
+            proxy = RIG_OUTPUT_DIR / f"{output_name}_proxy.glb"
+            _run_script(
+                SEGVIGEN_PYTHON, RIG_PROXY_DRIVER,
+                ["decimate", "--mesh", str(source), "--out", str(proxy),
+                 "--target-vertices", str(PROXY_VERTEX_TARGET)],
+                600, "DECIMATE_OK", "Proxy decimation",
+            )
+            rig_input = proxy
 
         params = {
             "num_beams": num_beams, "use_transfer": use_transfer,
@@ -1449,14 +1472,14 @@ def rig_model(
         # another tool take it in between would strand a half-finished rig.
         with _gpu_lock:
             evicted = _evict_trellis()
-            t_landmarks = _demo_pass(source, landmarks, False, "Landmark rig pass", params, timeout)
+            t_landmarks = _demo_pass(rig_input, landmarks, False, "Landmark rig pass", params, timeout)
 
             # The fitter reads joint positions from the landmark rig and vertices
             # from the ORIGINAL mesh, so both must be in the same scale - which is
             # why the landmark pass runs with the same use_transfer as the final one.
             _run_script(
                 SEGVIGEN_PYTHON, CANONICAL_DRIVER,
-                ["fit", "--mesh", str(source), "--from-rig", str(landmarks), "--out", str(canonical)],
+                ["fit", "--mesh", str(rig_input), "--from-rig", str(landmarks), "--out", str(canonical)],
                 600, "CANONICAL_FIT_OK", "Canonical skeleton fit",
             )
             fit_report = json.loads(Path(str(canonical).rsplit(".", 1)[0] + "_skeleton.json").read_text())
@@ -1494,9 +1517,22 @@ def rig_model(
         # which is exactly why it survived this long.
         _run_script(
             SEGVIGEN_PYTHON, ORIENT_DRIVER,
-            ["--rigged", str(smoothed), "--out", str(target)],
+            ["--rigged", str(smoothed), "--out", str(oriented)],
             300, "ORIENT_OK", "Bone orientation",
         )
+
+        if proxy is None:
+            oriented.replace(target)
+        else:
+            # Sample the proxy's weights onto the full mesh as a smooth field. NOT a
+            # nearest-vertex copy - SkinCells and RSWT both show that failing on
+            # loose garments, with skirts as the named failure case.
+            _run_script(
+                SEGVIGEN_PYTHON, RIG_PROXY_DRIVER,
+                ["transfer", "--proxy", str(oriented), "--mesh", str(source),
+                 "--out", str(target)],
+                900, "TRANSFER_OK", "Weight transfer to full resolution",
+            )
 
         elapsed = round(time.time() - started, 1)
         canonical_check = _verify_canonical(target, canonical, fit_report)
@@ -1521,6 +1557,8 @@ def rig_model(
                 "canonical_glb": str(canonical),
                 "pre_smoothing_glb": str(named),
                 "pre_orientation_glb": str(smoothed),
+                "proxy_glb": str(proxy) if proxy else None,
+                "rigged_at_proxy_resolution": proxy is not None,
             },
             "trellis_evicted": evicted,
             "geometry": _glb_dimensions(target),
