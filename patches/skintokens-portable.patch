@@ -101,10 +101,10 @@ index 0000000..7b268e8
 +    return out.transpose(1, 2), None  # back to (B, L, H, D)
 diff --git a/src/device.py b/src/device.py
 new file mode 100644
-index 0000000..1adf39b
+index 0000000..418d6b5
 --- /dev/null
 +++ b/src/device.py
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,130 @@
 +"""The one place that decides which accelerator TokenRig runs on.
 +
 +    SKINTOKENS_DEVICE=cuda   on big  (RTX, 24 GB VRAM)
@@ -138,6 +138,58 @@ index 0000000..1adf39b
 +import torch
 +
 +_ENV = "SKINTOKENS_DEVICE"
++_DTYPE_ENV = "SKINTOKENS_DTYPE"
++
++_DTYPES = {
++    "bfloat16": torch.bfloat16,
++    "float16": torch.float16,
++    "float32": torch.float32,
++}
++
++
++def resolve_dtype() -> torch.dtype:
++    """The declared compute dtype, or a loud failure.
++
++        SKINTOKENS_DTYPE=bfloat16   on big  (CUDA)
++        SKINTOKENS_DTYPE=float32    on bmb  (Metal)
++
++    WHY THIS IS NOT SIMPLY bfloat16 EVERYWHERE
++    ------------------------------------------
++    Because Metal's bfloat16 is not CUDA's. Measured on this machine against a
++    CPU float32 reference, max absolute error on a 512x512 matmul:
++
++        mps float32     0.00000
++        mps float16     0.04421
++        mps bfloat16    0.36121
++
++    An eight-fold gap between bf16 and fp16 is the signature of accumulating
++    bf16 products in bf16, where CUDA accumulates them in fp32. bf16 carries
++    ~3 decimal digits, so with no wider accumulator the error compounds across
++    the reduction.
++
++    TokenRig is bf16 end to end and generates autoregressively, so that error
++    compounds again over the token sequence: the run does not crash, it simply
++    never emits EOS and dies with "No EOS token found in inputs_ids" after
++    burning 171 seconds. A wrong answer that looks like a hang.
++
++    Declared rather than derived from the device for the same reason as
++    resolve_device: the moment this picks a dtype on your behalf, a numerically
++    broken run becomes indistinguishable from a healthy one.
++    """
++    name = os.environ.get(_DTYPE_ENV)
++    if not name:
++        raise RuntimeError(
++            f"{_DTYPE_ENV} is not set. Declare the compute dtype explicitly - "
++            f"'bfloat16' on big (CUDA), 'float32' on bmb (Metal). Metal's bfloat16 "
++            f"matmul is off by 0.36 max-abs where its float32 is exact, and the "
++            f"failure mode is a generation that never terminates, not an error."
++        )
++    name = name.strip().lower()
++    if name not in _DTYPES:
++        raise RuntimeError(
++            f"{_DTYPE_ENV}={name!r} is not one of {', '.join(_DTYPES)}"
++        )
++    return _DTYPES[name]
 +
 +
 +def resolve_device() -> torch.device:
@@ -232,7 +284,7 @@ index 9f7bcf0..8f30a9f 100755
 \ No newline at end of file
 +        return out, indices, None
 diff --git a/src/model/skin_vae_model.py b/src/model/skin_vae_model.py
-index a2b4e88..7176773 100755
+index a2b4e88..34e95e7 100755
 --- a/src/model/skin_vae_model.py
 +++ b/src/model/skin_vae_model.py
 @@ -15,13 +15,8 @@ from src.rig_package.info.asset import Asset
@@ -247,16 +299,25 @@ index a2b4e88..7176773 100755
 -        res = _flash_attn_func(*args, **kwargs)
 -        return res, None
 +from ..attention import flash_attn_func
-+from ..device import autocast_device_type
++from ..device import autocast_device_type, resolve_dtype
  
  class Perceiver(nn.Module):
      def __init__(self, channels, out_tokens, num_heads=8):
+@@ -40,7 +35,7 @@ class Perceiver(nn.Module):
+         v = self.v_proj(x)  # [B, N, C]
+         q_repeated = self.q_vec.repeat(B, 1, 1, 1)
+         
+-        q = q_repeated.view(B, -1, self.num_heads, self.head_dim).type(torch.bfloat16)
++        q = q_repeated.view(B, -1, self.num_heads, self.head_dim).type(resolve_dtype())
+         k = k.view(B, -1, self.num_heads, self.head_dim)
+         v = v.view(B, -1, self.num_heads, self.head_dim)
+ 
 @@ -136,7 +131,7 @@ class SkinVAEModel(ModelSpec):
              uniform_skin=uniform_skin,
          )
      
 -    @torch.autocast(device_type='cuda', dtype=torch.bfloat16)
-+    @torch.autocast(device_type=autocast_device_type(), dtype=torch.bfloat16)
++    @torch.autocast(device_type=autocast_device_type(), dtype=resolve_dtype())
      def training_step(self, batch: Dict) -> Dict:
          raise NotImplementedError()
      
@@ -265,7 +326,7 @@ index a2b4e88..7176773 100755
          return self.training_step(batch=batch)
  
 -    @torch.autocast('cuda', dtype=torch.bfloat16)
-+    @torch.autocast(autocast_device_type(), dtype=torch.bfloat16)
++    @torch.autocast(autocast_device_type(), dtype=resolve_dtype())
      def predict_step(self, batch: Dict) -> Dict:
          vertices: Tensor = batch['vertices'].float() # (B, N, 3)
          num_bones: List[int] = batch['num_bones']
@@ -277,7 +338,7 @@ index a2b4e88..7176773 100755
 \ No newline at end of file
 +        }
 diff --git a/src/model/tokenrig.py b/src/model/tokenrig.py
-index ab35e3f..eabaf89 100755
+index ab35e3f..b0e9c4e 100755
 --- a/src/model/tokenrig.py
 +++ b/src/model/tokenrig.py
 @@ -22,13 +22,8 @@ from ..tokenizer.spec import Tokenizer
@@ -292,12 +353,34 @@ index ab35e3f..eabaf89 100755
 -        res = _flash_attn_func(*args, **kwargs)
 -        return res, None
 +from ..attention import flash_attn_func  # noqa: F401  (imported, never called here)
-+from ..device import autocast_device_type
++from ..device import autocast_device_type, resolve_dtype
  
  class VocabSwitchingLogitsProcessor(LogitsProcessor):
      def __init__(self, tokenizer: Tokenizer, switch_token_id, eos_token_id, tokens_per_skin, init):
-@@ -106,7 +101,11 @@ class TokenRig(ModelSpec):
-         llm_config.torch_dtype = torch.bfloat16
+@@ -77,7 +72,7 @@ class TokenRig(ModelSpec):
+         self.skin_warmup_start_epoch: int = cfg.get('skin_warmup_start_epoch', 0)
+         self.skin_warmup_end_epoch: int = cfg.get('skin_warmup_end_epoch', -1)
+ 
+-        self.vae = SkinVAEModel.load_from_system_checkpoint(cfg['pretrained_vae']).to(torch.bfloat16)
++        self.vae = SkinVAEModel.load_from_system_checkpoint(cfg['pretrained_vae']).to(resolve_dtype())
+         for param in self.vae.parameters():
+             param.requires_grad_(False)
+         self.vae.eval()
+@@ -88,7 +83,7 @@ class TokenRig(ModelSpec):
+             isinstance(self.mesh_encoder, MAP_MESH_ENCODER.michelangelo) or
+             isinstance(self.mesh_encoder, MAP_MESH_ENCODER.michelangelo_encoder)
+         )
+-        self.mesh_encoder = self.mesh_encoder.to(torch.bfloat16)
++        self.mesh_encoder = self.mesh_encoder.to(resolve_dtype())
+         
+         self.tokenizer: Tokenizer = get_tokenizer(**tokenizer_config)
+         # (tokenizer codebook, fsq vae codebook)
+@@ -103,15 +98,19 @@ class TokenRig(ModelSpec):
+             _d['pretrained_model_name_or_path'] = str(LLM_LOCAL_DIR)
+         llm_config = AutoConfig.from_pretrained(**_d)
+         self.vocab_size = self.tokenizer.vocab_size + self.vae.vocab_size + 1
+-        llm_config.torch_dtype = torch.bfloat16
++        llm_config.torch_dtype = resolve_dtype()
          llm_config.pre_norm = True
          self.llm_config = llm_config
 -        self.transformer = AutoModelForCausalLM.from_config(config=llm_config, attn_implementation="flash_attention_2").to(torch.bfloat16)
@@ -305,16 +388,22 @@ index ab35e3f..eabaf89 100755
 +        # attention path on every device. transformers' SDPA dispatches to the same
 +        # fused flash kernel on CUDA, so big loses nothing, and a Mac can load the
 +        # model at all instead of raising ImportError here.
-+        self.transformer = AutoModelForCausalLM.from_config(config=llm_config, attn_implementation="sdpa").to(torch.bfloat16)
++        self.transformer = AutoModelForCausalLM.from_config(config=llm_config, attn_implementation="sdpa").to(resolve_dtype())
          
          self.output_proj = nn.Sequential(
              nn.Linear(self.mesh_encoder.width, self.hidden_size),
+             nn.RMSNorm(self.hidden_size),
+-        ).to(torch.bfloat16)
++        ).to(resolve_dtype())
+         
+         init_scale = cfg.get('init_scale', None)
+         if init_scale is not None:
 @@ -147,7 +146,7 @@ class TokenRig(ModelSpec):
          rate = (self.global_step-start_steps) / (end_steps-start_steps)
          return min(max((1.0-math.cos(math.pi * rate))/2, 0), 1)
  
 -    @torch.autocast(device_type='cuda', dtype=torch.bfloat16)
-+    @torch.autocast(device_type=autocast_device_type(), dtype=torch.bfloat16)
++    @torch.autocast(device_type=autocast_device_type(), dtype=resolve_dtype())
      def training_step(self, batch: Dict) -> Dict:
          raise NotImplementedError()
      
@@ -323,19 +412,19 @@ index ab35e3f..eabaf89 100755
          return start_tokens_list
      
 -    @torch.autocast(device_type='cuda', dtype=torch.bfloat16)
-+    @torch.autocast(device_type=autocast_device_type(), dtype=torch.bfloat16)
++    @torch.autocast(device_type=autocast_device_type(), dtype=resolve_dtype())
      def generate(
          self,
          vertices: Tensor,
 diff --git a/src/server/spec.py b/src/server/spec.py
-index f2ca6d7..e945330 100755
+index f2ca6d7..6859f66 100755
 --- a/src/server/spec.py
 +++ b/src/server/spec.py
 @@ -6,6 +6,7 @@ import io
  import os
  import torch
  
-+from ..device import resolve_device
++from ..device import resolve_device, resolve_dtype
  from ..rig_package.info.asset import Asset
  from ..model.tokenrig import TokenRig
  
@@ -353,8 +442,9 @@ index f2ca6d7..e945330 100755
              hf_path,
              local_files_only=True,
 -            _attn_implementation="flash_attention_2",
+-            torch_dtype=torch.bfloat16,
 +            _attn_implementation="sdpa",
-             torch_dtype=torch.bfloat16,
++            torch_dtype=resolve_dtype(),
          )
          model.transformer.model.load_state_dict(a.state_dict())
  
