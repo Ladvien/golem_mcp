@@ -939,6 +939,93 @@ def _read_accessor(gltf: dict[str, Any], binary: bytes, index: int) -> list[tupl
     return out
 
 
+def _joint_world_positions(gltf: dict, joints: list[int]) -> dict[int, Any]:
+    """World-space rest position of every joint, by composing the node TRS chain.
+
+    _skeleton_report's other geometry reads node["translation"] directly, which is
+    LOCAL and therefore not rotation-invariant - the same skeleton scored 0.913 and
+    0.652 for symmetry before and after an axis fix that moved nothing. Anything
+    making a claim about pose has to work in world space.
+    """
+    import numpy as np
+
+    nodes = gltf["nodes"]
+    parent: dict[int, int] = {}
+    for i, n in enumerate(nodes):
+        for c in n.get("children", []):
+            parent[c] = i
+
+    def local(i: int):
+        n = nodes[i]
+        if "matrix" in n:                      # column-major in glTF
+            return np.array(n["matrix"], dtype=float).reshape(4, 4).T
+        m = np.eye(4)
+        x, y, z, w = n.get("rotation", [0.0, 0.0, 0.0, 1.0])
+        m[:3, :3] = np.array([
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ])
+        m[:3, :3] *= np.array(n.get("scale", [1.0, 1.0, 1.0]))
+        m[:3, 3] = n.get("translation", [0.0, 0.0, 0.0])
+        return m
+
+    cache: dict[int, Any] = {}
+
+    def world(i: int):
+        if i not in cache:
+            m = local(i)
+            p = parent.get(i)
+            cache[i] = m if p is None else world(p) @ m
+        return cache[i]
+
+    return {j: world(j)[:3, 3] for j in joints}
+
+
+def _rest_pose_check(gltf: dict, joints: list[int]) -> dict[str, Any]:
+    """How close the rig's rest pose is to the T-pose every clip is authored against.
+
+    This is the defect that keeps escaping review because nothing measures it until
+    after a clip is applied and someone looks at a viewport. Measured on this
+    pipeline, same rig code, same clip, differing only in the pose of the SOURCE
+    IMAGE:
+
+        T-pose asset   lat +0.95   gait -0.956   swing 55%
+        A-pose asset   lat +0.41   gait -0.295   swing 23%
+
+    An arm hanging at the side is nearly parallel to the vertical axis a walk clip
+    rotates it about, so most of the clip becomes twist rather than swing. The
+    T-pose requirement was documented in the smoke test and the agent prompt and
+    enforced nowhere, so an arms-down reference silently produced a rig that
+    animates badly.
+
+    Returns laterality in [-1, 1]: +1 is arms straight out, 0 is straight down.
+    """
+    import numpy as np
+
+    names = {gltf["nodes"][j].get("name", ""): j for j in joints}
+    need = ("mixamorig:Hips", "mixamorig:Spine2", "mixamorig:LeftShoulder",
+            "mixamorig:LeftHand", "mixamorig:LeftFoot", "mixamorig:LeftToeBase",
+            "mixamorig:RightFoot", "mixamorig:RightToeBase")
+    if any(n not in names for n in need):
+        return {}
+
+    pos = _joint_world_positions(gltf, joints)
+
+    def unit(v):
+        n = float(np.linalg.norm(v))
+        return v / n if n > 1e-9 else v
+
+    p = {n: pos[names[n]] for n in need}
+    up = unit(p["mixamorig:Spine2"] - p["mixamorig:Hips"])
+    fwd = ((p["mixamorig:LeftToeBase"] - p["mixamorig:LeftFoot"])
+           + (p["mixamorig:RightToeBase"] - p["mixamorig:RightFoot"]))
+    fwd = unit(fwd - float(fwd @ up) * up)     # toes give forward; see retarget_animation
+    lat = unit(np.cross(up, fwd))
+    arm = unit(p["mixamorig:LeftHand"] - p["mixamorig:LeftShoulder"])
+    return {"rest_arm_laterality": round(float(arm @ lat), 3)}
+
+
 def _skeleton_report(path: Path) -> dict[str, Any]:
     """Structure and skin-weight health of a rigged GLB.
 
@@ -993,6 +1080,19 @@ def _skeleton_report(path: Path) -> dict[str, Any]:
     }
 
     warnings: list[str] = []
+    rest = _rest_pose_check(gltf, joints)
+    report.update(rest)
+    lat = rest.get("rest_arm_laterality")
+    if lat is not None and lat < 0.7:
+        warnings.append(
+            f"Rest arm laterality is {lat:+.2f}, where a T-pose reads near +1.00 and arms "
+            f"hanging at the sides read near 0. This rig will SKIN fine and ANIMATE badly: "
+            f"every Mixamo and UE5 clip is authored against a T-pose rest, and the retarget "
+            f"preserves the character's own rest offset. Measured on this pipeline, the same "
+            f"clip on an A-pose asset gave gait -0.30 and 23% arm swing against a T-pose "
+            f"asset's -0.96 and 55%. The cause is upstream, in the reference image: generate "
+            f"it 'full body, standing in a T-pose with both arms held straight out'."
+        )
     prim = gltf["meshes"][0]["primitives"][0]
     attrs = prim.get("attributes", {})
     if "WEIGHTS_0" in attrs and "JOINTS_0" in attrs:
