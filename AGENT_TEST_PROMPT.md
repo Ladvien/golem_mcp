@@ -102,10 +102,19 @@ THE STEPS
 3.  generate_views with prompt = SUBJECT + POSE_SUFFIX, views "front,back",
     output_name "emberwake_views".
 
-    Two views ON PURPOSE, not four. With FLUX.2 klein the left/right views come
-    back as front-facing three-quarters that duplicate the front, which gives the
-    generator contradictory evidence about the sides. If you want to test that
-    claim, run four and compare — but report front+back as the primary result.
+    Then run it AGAIN with views "front,back,left,right", output_name
+    "emberwake_views4". View count is a real trade-off here, not a dial, and I want
+    both measured. On this subject, same prompt and seed:
+
+      2 views   ragged torn hem, correct long black horns, 21 components
+      4 views   clean even hem, horns shrunken and gold-tinted, 50 components
+
+    Neither dominates, because the cause is that the views DISAGREE with each
+    other — adding sides outvoted a bad hem and then the sides' smaller horns
+    outvoted the correct ones. Also note: an older version of this document claimed
+    FLUX.2 klein returns left/right as front-facing three-quarters. With the T-pose
+    prompt above they came back as genuine flat side profiles. Check which you got
+    and say so.
 
     LOOK at both. The back must actually be a back (no face visible) and must
     match the front's outfit. Then keep the `images_json` field from the result —
