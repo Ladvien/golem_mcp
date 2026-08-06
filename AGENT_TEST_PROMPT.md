@@ -111,6 +111,17 @@ THE STEPS
     match the front's outfit. Then keep the `images_json` field from the result —
     step 5 wants exactly that string.
 
+    The result also carries `view_consistency`. Report it. It measures whether the
+    views agree about where garment edges sit on the body, which is the ceiling on
+    this whole pipeline: a front hem at mid-thigh against a back hem below the knee
+    produced a visibly TORN, ragged skirt, because the generator reconciles two
+    garments into one surface. If it names an outlier view, regenerate that view
+    (change the seed) before continuing — it costs one image instead of a mesh, a
+    rig and an animation.
+
+    If `consistent` is false with no majority, step 5 will REFUSE, by design. That
+    is the tool working, not a bug. Say so and regenerate.
+
 4.  generate_3d on the step 2 image, output_name "emberwake_herald".
 
     This runs TRELLIS.2. Report `geometry.triangles` (expect ~90-100k, NOT ~6k),
