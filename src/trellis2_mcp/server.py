@@ -96,6 +96,7 @@ SEGVIGEN_DRIVER = _SCRIPTS / "segvigen_segment.py"
 GARMENT_DRIVER = _SCRIPTS / "trellis2_garment.py"
 CHARACTER_DRIVER = _SCRIPTS / "trellis2_character.py"
 MULTI_IMAGE_DRIVER = _SCRIPTS / "trellis2_multi_image.py"
+VIEW_CONSISTENCY_DRIVER = _SCRIPTS / "view_consistency.py"
 # Measured 14.47 GB peak for a pipeline_type=512 character on a 3090, against the
 # 3.4 GB a garment costs - a character is remeshed and textured at 2048.
 CHARACTER_VRAM_REQUIRED = 16e9
@@ -789,6 +790,22 @@ def generate_3d_multi_image(
         if missing:
             return {"success": False, "error": "image(s) not found: " + ", ".join(missing)}
 
+        # Check the views agree BEFORE spending ~70 s on a mesh and longer on a
+        # rig. The generator reconciles disagreeing views into ONE surface: a front
+        # hem at mid-thigh against a back hem below the knee came back as a visibly
+        # torn, ragged hem. Costs no GPU and about a second.
+        consistency = _view_consistency(image_paths)
+        if consistency.get("no_consensus"):
+            return {
+                "success": False,
+                "error": (
+                    "The reference views do not agree and there is no majority to break the "
+                    "tie, so this would reconcile two different garments into one torn "
+                    "surface. " + " ".join(consistency.get("warnings", []))
+                ),
+                "view_consistency": consistency,
+            }
+
         if not output_name:
             output_name = f"trellis_multi_{int(time.time())}"
 
@@ -843,6 +860,7 @@ def generate_3d_multi_image(
                 "num_images": len(image_paths),
                 "blend_mode": mode,
                 "multi_view_steps": report["multi_view_steps"],
+                "view_consistency": consistency,
             },
             "source_images": image_paths,
             "generation": {
@@ -877,6 +895,7 @@ def generate_3d_multi_image(
             "num_images": len(image_paths),
             "blend_mode": mode,
             "multi_view_steps": report["multi_view_steps"],
+            "view_consistency": consistency,
             "trellis_evicted": evicted,
             "elapsed_seconds": elapsed,
             "geometry": {
@@ -1326,6 +1345,39 @@ def _glb_dimensions(path: Path) -> dict[str, Any]:
     scene = trimesh.load(str(path), force="scene")
     extents = scene.bounds[1] - scene.bounds[0]
     return {"dimensions_m": _dims(extents)}
+
+
+def _view_consistency(image_paths: list[str]) -> dict[str, Any]:
+    """Do these reference views depict the same character? See view_consistency.py.
+
+    Sets `no_consensus` when the views split with no majority, which is the case
+    the caller refuses. A majority with a named dissenter is NOT refused: measured
+    on this pipeline, three views agreeing against one produced a clean hem, so
+    blocking it would reject the best result achieved here. The warning still names
+    the view worth regenerating.
+
+    Advisory-on-failure BY DESIGN. This is a quality gate on the input, not part of
+    generating, so if the checker itself breaks it must not take generation down
+    with it - it reports that it could not run and lets the caller proceed.
+    """
+    proc = subprocess.run(
+        [str(SEGVIGEN_PYTHON), str(VIEW_CONSISTENCY_DRIVER), "--json-only",
+         "--images", *image_paths],
+        capture_output=True, text=True, timeout=180,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        tail = (proc.stderr or proc.stdout).strip().splitlines()[-3:]
+        return {"checked": False, "reason": "; ".join(tail) or f"exit {proc.returncode}"}
+    try:
+        report = json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        return {"checked": False, "reason": f"unparseable output: {e}"}
+
+    agreeing = report.get("agreeing_views") or []
+    outliers = report.get("outlier_views") or []
+    report["checked"] = True
+    report["no_consensus"] = bool(outliers) and len(agreeing) <= len(outliers)
+    return report
 
 
 def _rig_preflight() -> None:
@@ -3119,12 +3171,18 @@ def generate_views(
         reference_dir = _publish_view_set(produced, prompt)
         ordered = [str(produced[v]) for v in requested]
 
+        # Report agreement here as well as in generate_3d_multi_image, so a set that
+        # cannot produce a clean mesh is visible NOW - immediately after the minutes
+        # spent generating it - rather than at the next tool call.
+        consistency = _view_consistency(ordered)
+
         return {
             "success": True,
             "output_name": output_name,
             "views": {v: str(p) for v, p in produced.items()},
             "images_json": json.dumps(ordered),
             "reference_dir": reference_dir,
+            "view_consistency": consistency,
             "elapsed_seconds": round(time.time() - started, 1),
             "next_step": (
                 f"generate_3d_multi_image(images=<images_json>, source_prompt=<this prompt>, "
