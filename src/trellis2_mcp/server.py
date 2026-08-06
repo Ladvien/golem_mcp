@@ -117,10 +117,20 @@ SMOOTH_DRIVER = _SCRIPTS / "smooth_weights.py"
 RIG_PROXY_DRIVER = _SCRIPTS / "rig_proxy.py"
 # TokenRig's training mixture is 1k-20k vertices and TRELLIS.2 ships ~90k, so the
 # mesh that gets rigged and the mesh that gets shipped are no longer the same one.
-# 8k rather than the 20k ceiling because memory does not scale with the mesh: the
-# model load alone is a fixed ~9.5 GB, and the proxy only supplies landmarks and a
-# weight field that gets resampled onto the full mesh anyway.
-PROXY_VERTEX_TARGET = 8_000
+#
+# This was 8k, and the reason was THIS box: a 16,882-vertex proxy was OOM-killed at
+# 9.5 GB RSS on 32 GB of ZRAM-backed memory. Rigging runs on bmb now, with 48 GB of
+# real unified memory, so that constraint is gone and the number should be chosen
+# for weight quality instead.
+#
+# It matters most exactly where 8k was worst. A decimated proxy spends its budget
+# by surface area, so a T-posed character's thin extended arms get very few sample
+# points, and the weight field resampled off them is coarse precisely along the
+# limb that a walk clip rotates furthest. Measured: at 8k the arms tore into spikes
+# under a walk once the rest pose was fixed and swing recovered to 78% of source -
+# the defect had been hidden by a damped 55% swing that never rotated them far
+# enough to show it.
+PROXY_VERTEX_TARGET = 18_000
 RETARGET_DRIVER = _SCRIPTS / "retarget_animation.py"
 ANIMATION_LIBRARY_DRIVER = _SCRIPTS / "animation_library.py"
 ANIMATION_ROOTS = tuple(
