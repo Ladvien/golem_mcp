@@ -3038,8 +3038,40 @@ def generate_views(
     this produces the set: one seed, one prompt, one clause changed per view.
 
     Takes several minutes - each view is a full image generation (~110s on
-    flux2-klein-9b). Feed the returned images_json straight to
-    generate_3d_multi_image.
+    flux2-klein-9b, which runs on bmb via mflux, not on this box's GPU). Feed the
+    returned images_json straight to generate_3d_multi_image.
+
+    DO NOT RAISE height/width ABOVE 1024 HOPING FOR FINER TEXTURE. TRELLIS.2's
+    conditioning resizes every input to the pipeline resolution with LANCZOS -
+    512x512 for the default 512 pipeline - so anything above that is thrown away
+    before the model sees it. A 2048 render costs ~8 minutes per view on bmb and
+    buys nothing; it was measured here.
+
+    What DOES raise effective detail is how much of the frame the subject fills,
+    since that survives the downsample, and the number of views: with only
+    front+back the SIDES are unconditioned, which is why the side of the head
+    comes back featureless.
+
+    HOW MANY VIEWS IS A TRADE-OFF, NOT A DIAL. Measured on one character, same
+    prompt and seed, front+back against front+back+left+right:
+
+        2 views   ragged torn hem, correct long black horns, 21 components
+        4 views   clean even hem, horns shrunken and gold-tinted, 50 components
+
+    Neither dominates, and the reason is that the views DISAGREE with each other.
+    The 2-view set put the front hem at mid-thigh and the back below the knee, so
+    the generator reconciled two lengths into a tear; adding sides outvoted it and
+    the hem came out clean, but the side views drew smaller horns and outvoted
+    those instead. Stating the hem length explicitly in the prompt did NOT fix the
+    disagreement.
+
+    So the ceiling on this stage is reference-view CONSISTENCY, not view count and
+    not pixels. Generate the set, look at all of it, and check the features you
+    care about agree before spending 70 s on a mesh.
+
+    (The docstring here used to say the left/right views come back as front-facing
+    three-quarters. Re-measured with the T-pose prompt above, they came back as
+    genuine flat side profiles. That advice was prompt-dependent.)
 
     Avoid strongly asymmetric details like a patch on one arm: they tend to mirror
     between front and back, giving TRELLIS contradictory evidence.
