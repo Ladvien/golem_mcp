@@ -58,15 +58,27 @@ sys.path.insert(0, REPO)
 def survey(vertices, faces):
     """Components, boundary-edge fraction and Euler characteristic."""
     import numpy as np
-    import trimesh
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
 
     v = np.asarray(vertices)
     f = np.asarray(faces)
     edges = np.sort(np.vstack([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]]), axis=1)
     counts = Counter(map(tuple, edges))
     boundary = sum(1 for n in counts.values() if n == 1)
-    comps = len(trimesh.Trimesh(vertices=v, faces=f, process=False)
-                .split(only_watertight=False))
+
+    # Vertex connectivity, matching server.py:_component_sizes - NOT
+    # trimesh.split(), which connects faces only through a shared EDGE. The two
+    # disagree by more than 20x on these meshes (768 vs 34 on one multi-view
+    # asset), because generated surfaces touch at single vertices constantly.
+    # Two contradictory component counts in one repo is how TRELLIS.2 got
+    # reverted for "fragmentation" the first time; there is now one definition.
+    # It also avoids building a Trimesh per shell, which OOM-killed rig_model.
+    graph = coo_matrix(
+        (np.ones(len(edges), dtype=np.int8), (edges[:, 0], edges[:, 1])),
+        shape=(len(v), len(v)),
+    )
+    comps, _labels = connected_components(graph, directed=False)
     return {
         "vertices": int(len(v)),
         "faces": int(len(f)),

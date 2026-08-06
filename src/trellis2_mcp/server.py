@@ -95,6 +95,7 @@ SEGVIGEN_DRIVER = _SCRIPTS / "segvigen_segment.py"
 # cannot represent an open surface and would seal a garment shut.
 GARMENT_DRIVER = _SCRIPTS / "trellis2_garment.py"
 CHARACTER_DRIVER = _SCRIPTS / "trellis2_character.py"
+MULTI_IMAGE_DRIVER = _SCRIPTS / "trellis2_multi_image.py"
 # Measured 14.47 GB peak for a pipeline_type=512 character on a 3090, against the
 # 3.4 GB a garment costs - a character is remeshed and textured at 2048.
 CHARACTER_VRAM_REQUIRED = 16e9
@@ -597,9 +598,8 @@ def generate_3d(
 
         started = time.time()
         with _gpu_lock:
-            # TRELLIS 1 may still be resident from generate_3d_multi_image, which
-            # has not been migrated: TRELLIS.2's run() takes a single image, though
-            # its get_cond() already accepts a list.
+            # TRELLIS 1 may still be resident from a tool that has not been
+            # migrated (generate_garment's bake path, segment_mesh).
             evicted = _evict_trellis()
             gc.collect()
             torch.cuda.empty_cache()
@@ -720,48 +720,13 @@ def generate_3d_multi_image(
             )
         ),
     ] = "stochastic",
-    ss_steps: Annotated[int, Field(description="Sparse structure sampler steps", ge=1, le=100)] = 12,
-    ss_cfg_strength: Annotated[float, Field(description="Sparse structure CFG strength", ge=1.0, le=20.0)] = 7.5,
-    slat_steps: Annotated[int, Field(description="SLAT sampler steps", ge=1, le=100)] = 12,
-    slat_cfg_strength: Annotated[float, Field(description="SLAT CFG strength", ge=1.0, le=20.0)] = 3.0,
-    simplify: Annotated[float, Field(description="Mesh simplification ratio", ge=0.0, le=1.0)] = 0.95,
-    fill_holes: Annotated[bool, Field(description="Fill holes in the generated mesh")] = True,
-    fill_holes_max_size: Annotated[float, Field(description="Maximum hole area to fill", ge=0.0, le=1.0)] = 0.04,
-    texture_size: Annotated[int, Field(description="Output texture resolution in pixels", ge=256, le=4096)] = 1024,
-    render_resolution: Annotated[
-        int,
-        Field(
-            description=(
-                "Resolution of the renders the texture is baked FROM - the real detail ceiling. "
-                "texture_size above this only upsamples. 2048 needs evict_trellis_for_bake=true."
-            ),
-            ge=256,
-            le=2048,
-        ),
-    ] = 1024,
-    nviews: Annotated[
-        int,
-        Field(description="Number of views baked from. More means better hidden-area coverage.", ge=8, le=300),
-    ] = 100,
-    lambda_tv: Annotated[
-        float,
-        Field(description="Total-variation smoothing on the texture. Lower is sharper.", ge=0.0, le=0.1),
-    ] = 0.01,
-    target_height_m: Annotated[
-        float,
-        Field(
-            description=(
-                "Scale the exported mesh to this height in metres. 0 leaves TRELLIS's normalized "
-                "unit-cube scale, which is ~1 m regardless of subject."
-            ),
-            ge=0.0,
-            le=1000.0,
-        ),
-    ] = 0.0,
-    evict_trellis_for_bake: Annotated[
-        bool,
-        Field(description="Release TRELLIS from VRAM before baking. Required for render_resolution=2048."),
-    ] = False,
+    pipeline_type: Annotated[
+        str,
+        Field(description="TRELLIS.2 pipeline: 512, 1024, 1024_cascade or 1536_cascade"),
+    ] = "512",
+    simplify_target: Annotated[int, Field(description="Face count to simplify to", ge=1000, le=2000000)] = 300000,
+    decimation_target: Annotated[int, Field(description="Final decimation target", ge=1000, le=1000000)] = 100000,
+    texture_size: Annotated[int, Field(description="PBR texture resolution", ge=256, le=4096)] = 2048,
     asset_type: Annotated[
         str,
         Field(description="Which gen_ai folder to publish into: characters, props, or environments"),
@@ -773,25 +738,28 @@ def generate_3d_multi_image(
     source_image_model: Annotated[
         str, Field(description="Image model that produced the references (e.g. flux2-klein-9b)")
     ] = "",
-    preprocess_image: Annotated[bool, Field(description="Auto-remove background and crop each image")] = True,
-    formats: Annotated[
-        str,
-        Field(description="Output formats: mesh,gaussian,radiance_field"),
-    ] = "mesh,gaussian",
+    timeout: Annotated[int, Field(description="Seconds before the driver is killed", ge=60, le=7200)] = 1800,
 ) -> dict[str, Any]:
     """Generate a 3D asset from multiple images (multi-view conditioning).
 
-    Provide 2-6 images of the same object from different angles for best results.
-    This is the biggest structural quality lever: from a single image the entire
-    unseen side is hallucinated.
+    Provide 2-6 images of the same object from different angles. From a single
+    image the entire unseen side is hallucinated - measured on this pipeline, the
+    TRELLIS 1 version of this tool produced a character whose BACK was pure black,
+    because nothing ever conditioned it.
 
-    Output is normalized into a unit cube (~1 m tall whatever the subject). Use
-    target_height_m, or scale downstream, before relying on any metric measurement.
+    Runs TRELLIS.2, so the result carries baseColor AND metallicRoughness at 2048px
+    rather than TRELLIS 1's single baked-lighting diffuse map.
+
+    TRELLIS.2 has no multi-image support of its own - `get_cond` accepting a list
+    means a BATCH of images, not views of one object. TRELLIS 1's per-denoising-step
+    conditioning is ported in scripts/trellis2_multi_image.py; see that file.
+
+    blend_mode is a real quality trade-off, measured on four views of one character:
+    'stochastic' gave a cleaner body (95.7% of the mesh in one shell, 2.2% debris)
+    while 'multidiffusion' recovered detail stochastic dropped - the belt buckle and
+    full horns - at 86.5% / 4.2%. Look at both before committing to one.
     """
     try:
-        invalid = _check_bake_params(texture_size, render_resolution, nviews)
-        if invalid:
-            return {"success": False, "error": invalid}
         if asset_type not in ASSET_TYPES:
             return {
                 "success": False,
@@ -799,72 +767,85 @@ def generate_3d_multi_image(
             }
 
         image_paths: list[str] = json.loads(images)
-        pil_images = [_decode_image(p) for p in image_paths]
+        if len(image_paths) < 2:
+            return {
+                "success": False,
+                "error": (
+                    f"multi-view conditioning needs at least two images; got {len(image_paths)}. "
+                    "Use generate_3d for a single image."
+                ),
+            }
+        missing = [p for p in image_paths if not os.path.isfile(p)]
+        if missing:
+            return {"success": False, "error": "image(s) not found: " + ", ".join(missing)}
 
         if not output_name:
             output_name = f"trellis_multi_{int(time.time())}"
 
         started = time.time()
-
-        format_list = [f.strip() for f in formats.split(",") if f.strip()]
-
         with _gpu_lock:
-            pipeline = _get_pipeline()
-            outputs = pipeline.run_multi_image(
-                pil_images,
-                seed=seed,
-                mode=mode,
-                sparse_structure_sampler_params={
-                    "steps": ss_steps,
-                    "cfg_strength": ss_cfg_strength,
-                },
-                slat_sampler_params={
-                    "steps": slat_steps,
-                    "cfg_strength": slat_cfg_strength,
-                },
-                formats=format_list,
-                preprocess_image=preprocess_image,
+            # TRELLIS 1 may still be resident from another tool.
+            evicted = _evict_trellis()
+            gc.collect()
+            torch.cuda.empty_cache()
+            free, _total = torch.cuda.mem_get_info(0)
+            if free < CHARACTER_VRAM_REQUIRED:
+                raise RuntimeError(
+                    f"TRELLIS.2 needs ~{CHARACTER_VRAM_REQUIRED / 1e9:.0f} GB VRAM but only "
+                    f"{free / 1e9:.1f} GB is free, even after evicting TRELLIS. Something else "
+                    "is holding the GPU."
+                )
+            _run_script(
+                SEGVIGEN_PYTHON, MULTI_IMAGE_DRIVER,
+                [
+                    "--images", *image_paths,
+                    "--out-dir", str(OUTPUT_DIR),
+                    "--name", output_name,
+                    "--seed", str(seed),
+                    "--mode", mode,
+                    "--pipeline-type", pipeline_type,
+                    "--simplify-target", str(simplify_target),
+                    "--decimation-target", str(decimation_target),
+                    "--texture-size", str(texture_size),
+                ],
+                timeout, "MULTI_IMAGE_OK", "TRELLIS.2 multi-image generation",
             )
+        elapsed = round(time.time() - started, 1)
 
-            saved = _save_outputs(
-                outputs,
-                output_name,
-                simplify=simplify,
-                fill_holes=fill_holes,
-                fill_holes_max_size=fill_holes_max_size,
-                texture_size=texture_size,
-                render_resolution=render_resolution,
-                nviews=nviews,
-                lambda_tv=lambda_tv,
-                target_height_m=target_height_m,
-                evict_trellis_for_bake=evict_trellis_for_bake,
-            )
+        glb = OUTPUT_DIR / f"{output_name}.glb"
+        report_path = OUTPUT_DIR / f"{output_name}_multi_image.json"
+        if not glb.is_file() or glb.stat().st_size == 0:
+            raise RuntimeError(f"TRELLIS.2 reported success but wrote nothing to {glb}")
+        report = json.loads(report_path.read_text())
 
         metadata = {
             "original_prompt": source_prompt or None,
-            "tool": "TRELLIS",
-            "trellis_model": os.path.basename(TRELLIS_MODEL),
+            "tool": "TRELLIS.2",
+            "trellis_model": "microsoft/TRELLIS.2-4B",
             "image_model": source_image_model or None,
             "asset_type": asset_type,
             "seed": seed,
             "rigged": False,
             "rig_tool": None,
-            "conditioning": {"mode": "multi_image", "num_images": len(pil_images), "blend_mode": mode},
+            "pbr": True,
+            "conditioning": {
+                "mode": "multi_image",
+                "num_images": len(image_paths),
+                "blend_mode": mode,
+                "multi_view_steps": report["multi_view_steps"],
+            },
             "source_images": image_paths,
             "generation": {
-                "ss_steps": ss_steps,
-                "ss_cfg_strength": ss_cfg_strength,
-                "slat_steps": slat_steps,
-                "slat_cfg_strength": slat_cfg_strength,
-                "simplify": simplify,
+                "pipeline_type": pipeline_type,
+                "simplify_target": simplify_target,
+                "decimation_target": decimation_target,
                 "texture_size": texture_size,
-                "render_resolution": render_resolution,
-                "nviews": nviews,
-                "lambda_tv": lambda_tv,
-                "target_height_m": target_height_m,
+                "faces_before_simplify": report["faces_before_simplify"],
+                "peak_vram_gb": report["peak_vram_gb"],
+                "elapsed_seconds": elapsed,
             },
-            "geometry": saved["geometry"],
-            "elapsed_seconds": round(time.time() - started, 1),
+            "topology": report["topology"],
+            "materials": report["materials"],
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         if not source_prompt:
@@ -874,28 +855,28 @@ def generate_3d_multi_image(
             )
 
         published = _publish_asset(
-            saved["files"], output_name, asset_type, metadata,
-            image_paths[0] if image_paths and os.path.isfile(image_paths[0]) else "",
+            {"asset.glb": str(glb)}, output_name, asset_type, metadata, image_paths[0],
         )
 
+        welded = report["topology"]["position_welded"]
         return {
             "success": True,
             "output_name": output_name,
-            "files": saved["files"],
+            "glb": str(glb),
             "published_to": published,
-            "geometry": saved["geometry"],
-            "num_images": len(pil_images),
-            "mode": mode,
-            "next_step": f"rig_model(mesh='{output_name}.glb') to add a skeleton and skin weights",
-            "parameters": {
-                "seed": seed,
-                "ss_steps": ss_steps,
-                "ss_cfg_strength": ss_cfg_strength,
-                "slat_steps": slat_steps,
-                "slat_cfg_strength": slat_cfg_strength,
-                "simplify": simplify,
-                "texture_size": texture_size,
+            "num_images": len(image_paths),
+            "blend_mode": mode,
+            "multi_view_steps": report["multi_view_steps"],
+            "trellis_evicted": evicted,
+            "elapsed_seconds": elapsed,
+            "geometry": {
+                "triangles": welded["faces"],
+                "vertices": welded["vertices"],
+                "components": welded["components"],
+                "boundary_edge_pct": welded["boundary_edge_pct"],
             },
+            "materials": report["materials"],
+            "next_step": f"rig_model(mesh='{output_name}.glb') to add a skeleton and skin weights",
         }
 
     except Exception as e:
