@@ -2,25 +2,34 @@
 
 Paste everything in the fenced block below to any agent connected to the
 `trellis2-mcp` server on the LAN. It exercises every tool, in dependency order,
-and ends with a Blender scene to look at.
+and ends with renders to look at.
 
 Everything after the fence is written for the agent, not for you.
 
-Two things this prompt deliberately does NOT do, both learned the hard way:
+Three things this prompt deliberately does, all learned the hard way:
 
-- It does not tell the agent which failures are "expected". Pre-labelling a
+- **It does not tell the agent which failures are "expected".** Pre-labelling a
   failure as a machine limit means the agent cannot notice when that stage turns
   into a real defect. It gets the evidence commands instead, and decides.
-- It does not treat tool-reported numbers as acceptance. `frame_alignment_deg`
-  moved 180 -> 97 -> 9 degrees across three separate fixes while the retargeted
-  walk stayed broken. Correctness is measured on the geometry, by the snippet in
-  step 12.
+- **It does not treat tool-reported numbers as acceptance.**
+  `frame_alignment_deg` moved 180 → 97 → 9 degrees across three separate fixes
+  while the retargeted walk stayed broken.
+- **It ends by LOOKING, and says so in as many words.** Every serious defect in
+  this project's history was found by rendering the thing, not by measuring it.
+  The most recent: a rig scoring gait −0.939 and 104% of source arm swing — the
+  best numbers ever recorded here — whose arms were shredded into spikes. Numbers
+  passing is not the finish line.
+
+The agent runs on your laptop; the pipeline runs on `big`. Every shell command
+below is written as `ssh big ...` for that reason. If you are already on `big`,
+drop the prefix.
 
 ---
 
 ```
-You have access to an MCP server called trellis2-mcp that generates game-ready 3D
-characters. Run a full end-to-end test of it and report what works.
+You have access to an MCP server called trellis2-mcp that generates rigged,
+animated, game-ready 3D characters. Run a full end-to-end test and report what
+works.
 
 Work through the steps in order — later steps consume earlier outputs, so don't
 reorder them or run them in parallel. The GPU is shared and serialised by a lock;
@@ -31,7 +40,11 @@ going, and give me a pass/fail table at the end. I want to know which things are
 broken, not just the first one.
 
 Judge every stage on evidence you gathered, not on what a tool told you about
-itself. Where I give you a measurement to run, the measurement decides.
+itself. Where I give you a measurement to run, the measurement decides. Where I
+tell you to look at a render, looking decides — and it OVERRULES the numbers.
+
+Shell commands are written as `ssh big ...` because the pipeline runs there. Drop
+the prefix if you are already on that host.
 
 THE SUBJECT
 Use this exact text as SUBJECT wherever a step refers to it:
@@ -41,119 +54,133 @@ Use this exact text as SUBJECT wherever a step refers to it:
   wearing a sleeveless deep crimson tunic, polished brass shoulder plates and
   brass greaves, a wide black leather belt, bare arms
 
-It is built for the pipeline rather than for looks: the T-pose in step 2 gives the
-rigger limb chains to find AND matches the rest pose every animation clip is
-authored against, and the six distinct materials give the segmenter parts to find.
+It is built for the pipeline rather than for looks: the T-pose in step 2 is
+load-bearing (see below), and the six distinct materials give the segmenter parts
+to find and the PBR channels something to differentiate.
+
+THE T-POSE IS NOT COSMETIC. Every Mixamo and UE5 clip is authored against a T-pose
+rest, and the retarget preserves the character's own rest offset. An arm hanging
+at the side is nearly parallel to the axis a walk clip rotates it about, so most
+of the clip becomes twist instead of swing. Measured on this exact pipeline, same
+rig code, same clip, differing only in the pose of the reference image:
+
+    A-pose reference   rest laterality +0.41   gait -0.295   arm swing 23%
+    T-pose reference   rest laterality +0.98   gait -0.939   arm swing 78%
+
+Use this exact suffix wherever a step says POSE_SUFFIX:
+
+  , full body from head to feet, standing in a T-pose with both arms held
+  straight out horizontally to the sides at shoulder height, palms down, elbows
+  straight, legs shoulder-width apart, feet flat on the ground, the entire figure
+  including both feet inside the frame with margin above the head and below the
+  feet, centred on a plain flat white background, even studio lighting, no
+  shadows, sharp focus, no text, no watermark, no logo, no lettering
 
 Name step 4's output exactly `emberwake_herald`. Later stages that take a `body=`
 or `character=` argument resolve against that name, and rig, segmentation and
 animation results are published back into its asset directory. Outputs you give a
-different name (e.g. `emberwake_herald_mv`) get their OWN asset directory — that
-is expected, not a bug.
+different name get their OWN asset directory — expected, not a bug.
 
 THE STEPS
 
-1.  health_check. Report free VRAM, and run `nvidia-smi --query-compute-apps=
-    pid,used_memory,process_name --format=csv` to name anything already holding
-    the card. Steps 6 and 7 need ~18-19 GB; if that is not free, say which
-    process is holding it.
+1.  health_check. Report free VRAM, then:
+      ssh big 'nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv'
+    to name anything already holding the card. Generation needs ~16 GB free.
 
-2.  generate_image with prompt = SUBJECT plus this suffix, output_name
-    "emberwake_herald_hero", steps 6:
+    Also confirm the rigging host is reachable, because rigging does NOT run on
+    big — it runs on bmb over ssh:
+      ssh big 'ssh -o BatchMode=yes -o ConnectTimeout=10 bmb "echo bmb-ok; sw_vers -productVersion"'
+    If that fails, step 9 will fail and you will know why.
 
-      , full body, standing in a T-pose with both arms held straight out
-      horizontally to the sides at shoulder height, palms down, elbows straight,
-      legs shoulder-width apart, feet flat on the ground, centred on a plain flat
-      white background, even studio lighting, no shadows, full figure in frame,
-      sharp focus, game asset reference sheet
+2.  generate_image with prompt = SUBJECT + POSE_SUFFIX, output_name
+    "emberwake_hero". Then LOOK at the image before going further, and confirm all
+    four: arms horizontal (not hanging), both feet inside the frame, no text or
+    watermark anywhere, plain background. If any of those is wrong, say so and
+    regenerate with a different seed — a bad reference poisons every later stage
+    and you will otherwise spend twenty minutes diagnosing the rig instead.
 
-    The T-pose is load-bearing, not cosmetic. Every clip is authored against a
-    T-pose rest and the retarget preserves the character's own rest offset, so an
-    A-posed asset retargets with damped and sometimes inverted arm swing.
+3.  generate_views with prompt = SUBJECT + POSE_SUFFIX, views "front,back",
+    output_name "emberwake_views".
 
-    The returned key is `local_path`, not `image_path`. Use that in steps 4 and 7.
+    Two views ON PURPOSE, not four. With FLUX.2 klein the left/right views come
+    back as front-facing three-quarters that duplicate the front, which gives the
+    generator contradictory evidence about the sides. If you want to test that
+    claim, run four and compare — but report front+back as the primary result.
 
-3.  generate_views with prompt = SUBJECT exactly (no suffix), views
-    "front,back,left,right", output_name "emberwake_herald_views". Takes several
-    minutes; it runs on a Mac over the network.
+    LOOK at both. The back must actually be a back (no face visible) and must
+    match the front's outfit. Then keep the `images_json` field from the result —
+    step 5 wants exactly that string.
 
-    Do not add words like "front view", "in profile", "seen from" or
-    "three-quarter" to this prompt. The tool rejects them outright because they
-    fight its own per-view conditioning.
+4.  generate_3d on the step 2 image, output_name "emberwake_herald".
 
-4.  generate_3d on the step 2 image, output_name "emberwake_herald", and pass
-    evict_trellis_for_bake=true. Without it the texture bake preflight refuses
-    whenever anything else is holding the card.
+    This runs TRELLIS.2. Report `geometry.triangles` (expect ~90-100k, NOT ~6k),
+    `geometry.components` and `materials`. `materials.metallicRoughnessTexture`
+    MUST be true and the images MUST be 2048x2048 — that is the whole reason this
+    tool moved off TRELLIS 1, and a diffuse-only result is a regression even if
+    the mesh looks fine.
 
-5.  generate_3d_multi_image on the four step 3 images, output_name
-    "emberwake_herald_mv", evict_trellis_for_bake=true. `images` is a JSON STRING
-    — '["/path/a.png","/path/b.png"]' — not a list. Passing a list fails with
-    "the JSON object must be str, bytes or bytearray, not list".
+5.  generate_3d_multi_image with images = step 3's `images_json` string,
+    output_name "emberwake_herald_mv".
 
-    Easiest correct path: step 3's result already contains an `images_json` field
-    in exactly this format — pass it straight through. Note that step 3's `views`
-    field maps name -> path STRING, not name -> {local_path}; reading it the way
-    generate_image's result reads gives "string indices must be integers".
+    `images` is a JSON STRING — '["/path/a.png","/path/b.png"]' — not a list.
+    Passing a list fails with "the JSON object must be str, bytes or bytearray,
+    not list". Step 3's `images_json` is already in that form; pass it through.
 
-6.  segment_mesh on "emberwake_herald.glb". Report the part count and whether the
-    parts correspond to the subject's distinct materials.
+    Report `multi_view_steps`. It MUST be greater than zero — it counts denoising
+    steps that actually saw more than one view, and it exists because a silently
+    single-view run produces a perfectly plausible mesh while reporting itself as
+    multi-view. Expect 36 (three samplers x twelve steps).
 
-7.  generate_orbit_views on the step 2 image, output_name
-    "emberwake_herald_orbit".
+    Then run it a second time with blend_mode "multidiffusion", output_name
+    "emberwake_herald_md", and compare. Neither mode dominates: on this subject
+    stochastic gave a cleaner body while multidiffusion recovered detail
+    stochastic dropped. Say which you would ship and why, from the renders.
 
-8.  generate_garment with garment "hooded cloak with a deep pointed hood and a
+6.  generate_orbit_views on the step 2 image, output_name "emberwake_orbit".
+
+7.  generate_garment with garment "hooded cloak with a deep pointed hood and a
     long open front, heavy dark wool", body "emberwake_herald.glb", output_name
     "emberwake_herald_cloak".
 
-    A note on 7 and 8 specifically: both are individually working, but they are the
-    two heaviest stages and running everything in ONE long-lived process has been
-    observed to OOM them at exit -9 after the earlier stages have accumulated
-    memory. If either dies that way, re-run it on its own before calling it broken.
+8.  segment_mesh on "emberwake_herald.glb". Report the part count and whether the
+    parts correspond to the subject's distinct materials.
 
-    For 6, 7 and 8: if any of them fails, gather evidence before you classify it.
-    A VRAM refusal names its own numbers. Exit code -9 is SIGKILL — check
-    `journalctl -k --since "10 min ago" | grep -i "killed process"` to see whether
-    the kernel OOM killer took it, and at what RSS. A Python traceback is a
-    defect. Report which of those you actually observed; do not assume.
+    For 6, 7 and 8: if any fails, gather evidence before classifying it. A VRAM
+    refusal names its own numbers. Exit code -9 is SIGKILL — check
+      ssh big 'journalctl -k --since "20 min ago" | grep -i "killed process"'
+    to see whether the kernel OOM killer took it and at what RSS. A Python
+    traceback is a defect. Report which you actually observed; do not assume.
 
-9.  rig_model on "emberwake_herald.glb". Fits a canonical Mixamo skeleton and runs
-    the rigger twice internally, so expect 60-90 s. Report `canonical.core_bones`
-    (expect 27 for a character with no wings/tail/horns — a 23-bone Mixamo core
-    plus four tip bones: LeftHand_End, RightHand_End, LeftToe_End, RightToe_End,
-    which exist because Blender gives a CHILDLESS bone its parent's length, so
-    without them the hand and toe bones overshoot the mesh by roughly their own
-    length. More than 27 means appendage chains were found, which is correct on a
-    winged or tailed character),
-    `skeleton.zero_weight_vertices` (expect 0), and
-    `canonical.extra_chains`. Extra chains are wing/tail/horn bones outside the
-    mixamorig namespace; on this subject they usually come back EMPTY, which is a
-    known gap in the appendage classifier rather than a pass.
+    Note that `free` on big is misleading: its swap is ZRAM, a compressed block
+    device backed by the same physical RAM, so processes die around 12.7 GB while
+    it reports ~25 GB available. An OOM at 12-13 GB is that, not a leak.
 
-10. VERIFY HANDEDNESS. This is the bug that cost the most to find, and no tool
-    output reveals it — a rig can be perfectly self-consistent and still mirrored
-    against the convention every clip uses. With Blender:
+9.  rig_model on "emberwake_herald.glb". Expect 100-150 s. Report:
 
-      /home/ladvien/segvigen/.venv/bin/python -c "
-      import bpy
-      bpy.ops.wm.read_factory_settings(use_empty=True)
-      bpy.ops.import_scene.gltf(filepath='<the step 9 rigged glb>')
-      a=[o for o in bpy.context.scene.objects if o.type=='ARMATURE'][0]
-      M='mixamorig:'; R=lambda n: a.pose.bones[M+n].bone.matrix_local.translation
-      up=(R('Spine2')-R('Hips')).normalized()
-      f=((R('LeftToeBase')-R('LeftFoot'))+(R('RightToeBase')-R('RightFoot')))
-      f=(f-up*f.dot(up)).normalized(); lat=up.cross(f); mid=(R('Hips')+R('Spine2'))/2
-      print('LeftArm', (R('LeftArm')-mid).dot(lat), 'LeftUpLeg', (R('LeftUpLeg')-mid).dot(lat))
-      "
+      rigged_on            — must be host bmb, device mps, dtype float32. This
+                             box cannot rig at all; if this says anything else,
+                             say so loudly.
+      skeleton.joints      — expect 27 (a 23-bone Mixamo core plus four tip
+                             bones: LeftHand_End, RightHand_End, LeftToe_End,
+                             RightToe_End, which exist because Blender gives a
+                             CHILDLESS bone its parent's length, so without them
+                             the hand and toe bones overshoot the mesh by about
+                             their own length). More than 27 means appendage
+                             chains were found — correct on a winged or tailed
+                             character.
+      skeleton.rest_arm_laterality  — expect > 0.9. This is the T-pose check.
+                             Below 0.7 the tool emits a warning naming the cause
+                             as the reference image, and the rig will SKIN fine
+                             and ANIMATE badly.
+      skeleton.zero_weight_vertices and skeleton.unweighted_bones — both 0.
+      skeleton.warnings    — quote them all.
+      passes.rigged_at_proxy_resolution — true is normal at this mesh size.
 
-    BOTH numbers must be POSITIVE. That is the convention Mixamo and the UE5
-    Mannequin both use. Negative means the rig is mirrored, and arm animation will
-    invert while the legs look fine.
-
-11. list_animations with search "walk". Report how many clips total and how many
-    are usable. A clip is a (file, action) pair, so the count is much larger than
+10. list_animations with search "walk". Report how many clips total and how many
+    are usable. A clip is a (file, action) PAIR, so the count is much larger than
     the number of files.
 
-12. apply_animation twice, to prove the name map spans both conventions:
+11. apply_animation twice, to prove the name map spans both conventions:
       a) clip "mutant walking"                                  (Mixamo names)
       b) clip "/mnt/codex_fs/game_assets/animation/
          universal_animation_library_v1/Unreal-Godot/UAL1_Standard.glb"
@@ -164,101 +191,49 @@ THE STEPS
     as evidence of anything — it has moved by 170 degrees across fixes that
     changed nothing observable.
 
-    Then MEASURE THE GAIT on each output, and on the two source clips for
-    comparison:
+12. MEASURE THE GAIT on both outputs. The repo ships the measurement:
 
-      /home/ladvien/segvigen/.venv/bin/python -c "
-      import bpy
-      def norm(v):
-          m=sum(v)/len(v); c=[x-m for x in v]; g=sum(x*x for x in c)**0.5
-          return [x/g for x in c] if g>1e-9 else c
-      def corr(a,b):
-          x,y=norm(a),norm(b); return sum(p*q for p,q in zip(x,y))
-      def gait(path):
-          bpy.ops.wm.read_factory_settings(use_empty=True)
-          bpy.ops.import_scene.gltf(filepath=path)
-          sc=bpy.context.scene
-          a=[o for o in sc.objects if o.type=='ARMATURE'][0]
-          act=bpy.data.actions[0]
-          if a.animation_data is None: a.animation_data_create()
-          a.animation_data.action=act
-          if getattr(act,'slots',None): a.animation_data.action_slot=act.slots[0]
-          M='mixamorig:'; R=lambda n: a.pose.bones[M+n].bone.matrix_local.translation
-          up=(R('Spine2')-R('Hips')).normalized()
-          f=((R('LeftToeBase')-R('LeftFoot'))+(R('RightToeBase')-R('RightFoot')))
-          f=(f-up*f.dot(up)).normalized()
-          s,e=(int(round(v)) for v in act.frame_range)
-          t={'LeftHand':[], 'LeftFoot':[]}
-          for fr in range(s,e+1):
-              sc.frame_set(fr); bpy.context.view_layer.update()
-              h=a.pose.bones[M+'Hips'].matrix.translation
-              for n in t: t[n].append(float((a.pose.bones[M+n].matrix.translation-h).dot(f)))
-          return corr(t['LeftHand'], t['LeftFoot'])
-      print(gait('<animated glb>'))
-      "
+      ssh big '/home/ladvien/segvigen/.venv/bin/python \
+        /home/ladvien/trellis2_mcp/scripts/gait_report.py -- \
+        <animated glb> /tmp/gait_<name>'
 
-    This is left hand against left foot, measured relative to the hips and
-    projected on the character's OWN forward axis, derived from the toes. It must
-    be NEGATIVE: in a real walk the left arm opposes the left leg. Positive means
-    the arm swings with the same-side leg, which is a broken gait however healthy
-    the tool output looked. The source clips measure about -0.96; anything
-    negative and within ~0.3 of that is fine.
+    It prints a GAIT line and writes eight renders. Acceptance, against the
+    source clip's own +1.00 / -0.957 / +19.2 / 74.4:
 
-    ALSO REPORT THE MEAN HAND OFFSET, which the correlation above cannot see. It
-    subtracts the mean from both series before correlating, so hands parked
-    permanently behind the character still score a perfect -0.96. That exact defect
-    shipped once and was spotted by eye, not by measurement. Same import and same
-    `f` axis as above, then:
+      rest_arm_laterality      > 0.9     (a mirrored or A-posed rig fails here)
+      gait_corr_lhand_lfoot    < -0.85   NEGATIVE = contralateral = correct
+      hand_mean_offset_pct_leg POSITIVE  hands in front, like the source's
+      hand_swing_pct_leg       > 50      below ~30 means the clip became twist
 
-      leg = (R('LeftUpLeg') - R('LeftToeBase')).length
-      per frame: (pose LeftHand - pose Hips).dot(f) / leg * 100
-      report rest value, animated mean, and max-min swing
+    The offset term is not redundant with the correlation. `norm()` mean-centres
+    both series, so a character walking with its hands parked permanently BEHIND
+    its body still scores -0.96. That defect shipped once.
 
-    Run it on the retargeted output AND on the source clip, and compare:
-      * mean must have the SAME SIGN as the source's. Source ~ +19% of leg length
-        (hands carried in front); a negative mean means the hands trail behind and
-        the walk will look wrong however good the correlation is.
-      * swing should be within ~30% of the source's ~74%. Much less means the
-        clip's motion is being damped away.
+13. NOW LOOK AT IT. This step is not optional and it outranks step 12.
 
-    Do not substitute your own metric for this one. Measuring along a WORLD axis
-    instead of the character's own gives a number that flips sign depending on
-    which way the character happens to face, and it will mislead you.
+    gait_report.py already wrote /tmp/gait_<name>_front_0..3.png and
+    _side_0..3.png. Fetch them and actually view them. Check specifically:
 
-13. list_outputs and free_gpu.
+      - are the ARMS intact, or torn into spikes and ribbons? A rig can score
+        perfect gait and full swing while its arms shred — that exact case is why
+        this step exists. It is a skin-weight defect and no gait number sees it.
+      - does the skirt tear away from the body?
+      - do the feet plant, or skate/sink?
+      - does the mesh still carry its texture, and does brass read as metal
+        against cloth? PBR must survive rigging.
 
-IF YOU ALSO HAVE SHELL ACCESS
+    If something looks wrong, localise it before reporting: render the RAW mesh
+    and the RIGGED REST pose too. If those are clean and only the animated one is
+    broken, it is the weights, not generation and not the bind.
 
-14. If step 6 succeeded, split the mesh into per-part objects:
+14. list_outputs and free_gpu.
 
-      /home/ladvien/segvigen/.venv/bin/python \
-        /home/ladvien/trellis2_mcp/scripts/split_by_parts.py \
-        --mesh <asset dir>/asset.glb \
-        --labels <asset dir>/asset_face_labels.npy \
-        --out-dir <asset dir>
-
-15. Build the Blender scene and tell me the path:
-
-      /home/ladvien/segvigen/.venv/bin/python \
-        /home/ladvien/trellis2_mcp/scripts/assemble_blend.py \
-        --out /home/ladvien/trellis/output/emberwake_showcase.blend \
-        --item "1 generate_3d=<the step 4 glb>" \
-        --item "2 multi_image=<the step 5 glb>" \
-        --item "3 rig_model=<the step 9 rigged glb>" \
-        --item "4 walk=<the step 12a animated glb>"
-
-    It lays the stages out side by side, feet on the ground, labelled, with the
-    frame range set so the animated one plays on spacebar.
-
-WHAT TO GIVE ME
-
-  * a pass/fail table, one row per step, with elapsed time
-  * the handedness numbers from step 10 and the gait numbers from step 12, each
-    against the source clips
-  * for each failure: defect or machine limit, and the specific evidence — the
-    VRAM figures, the OOM-killer line, or the traceback. "Known issue" is not
-    evidence
-  * the .blend path from step 15
-  * anything a tool reported that contradicted its own documentation, and anything
-    where a tool reported success but the measurement disagreed
+15. REPORT. A pass/fail table over every tool called, then:
+      - the four gait numbers for both clips, against the acceptance values
+      - which multi-image blend mode you would ship, and why, from the renders
+      - every skeleton warning, quoted
+      - for each failure: the evidence you gathered and your classification
+        (machine limit / defect / bad input), and what you would check next
+      - anything that PASSED its numbers but looked wrong. That category has
+        historically contained the most important findings in this project.
 ```
