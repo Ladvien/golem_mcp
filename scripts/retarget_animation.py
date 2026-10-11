@@ -286,6 +286,9 @@ def main() -> int:
     hips = "mixamorig:Hips"
     root_src = by_target.get(hips)
     src_hips_rest = src.pose.bones[root_src].bone.matrix_local.translation if root_src else None
+    # The offset is applied to the REST head, not to the pose's current translation: the pose keeps
+    # the previous frame's location, so adding to it accumulated the displacement every frame.
+    tgt_hips_rest = tgt.pose.bones[hips].bone.matrix_local.translation.copy() if hips in tgt_bones else None
 
     for frame in range(start, end + 1):
         bpy.context.scene.frame_set(frame)
@@ -300,7 +303,7 @@ def main() -> int:
             loc = cur.translation.copy()
             if args.root_motion and t == hips and src_hips_rest is not None:
                 off = align @ (spb.matrix.translation - src_hips_rest)
-                loc = loc + off * height_ratio
+                loc = tgt_hips_rest + off * height_ratio
             tpb.matrix = Matrix.LocRotScale(loc, want, cur.to_scale())
             bpy.context.view_layer.update()
         for t in order:
