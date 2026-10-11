@@ -2,6 +2,7 @@
 """Retarget an animation clip onto a canonically-rigged character.
 
     retarget_animation.py --character rigged.glb --clip walk.fbx --out walking.glb
+    retarget_animation.py --character rigged.glb --clip walk.bvh --out walking.glb   # Kimodo (SOMA)
 
 WHY A RETARGET AND NOT A DIRECT APPLICATION
 -------------------------------------------
@@ -64,7 +65,25 @@ UE5_TO_CANON = {
     "foot_r": "mixamorig:RightFoot", "ball_r": "mixamorig:RightToeBase",
 }
 MIXAMO_TO_CANON = {n: n for n in set(UE5_TO_CANON.values())}
-MAPS = {"ue5": UE5_TO_CANON, "mixamo": MIXAMO_TO_CANON}
+# Kimodo's SOMA skeleton (somaskel77). Trap: SOMA `LeftLeg` is the THIGH and
+# `LeftShin` the shin, so a prefix-only map would bend the knee from the hip.
+# Neck2 and the fingers have no canonical counterpart and stay unmapped; world-space
+# deltas fold Neck2's rotation into Head, so nothing is lost.
+SOMA_TO_CANON = {
+    "Hips": "mixamorig:Hips",
+    "Spine1": "mixamorig:Spine", "Spine2": "mixamorig:Spine1", "Chest": "mixamorig:Spine2",
+    "Neck1": "mixamorig:Neck", "Head": "mixamorig:Head",
+    "LeftShoulder": "mixamorig:LeftShoulder", "LeftArm": "mixamorig:LeftArm",
+    "LeftForeArm": "mixamorig:LeftForeArm", "LeftHand": "mixamorig:LeftHand",
+    "RightShoulder": "mixamorig:RightShoulder", "RightArm": "mixamorig:RightArm",
+    "RightForeArm": "mixamorig:RightForeArm", "RightHand": "mixamorig:RightHand",
+    "LeftLeg": "mixamorig:LeftUpLeg", "LeftShin": "mixamorig:LeftLeg",
+    "LeftFoot": "mixamorig:LeftFoot", "LeftToeBase": "mixamorig:LeftToeBase",
+    "RightLeg": "mixamorig:RightUpLeg", "RightShin": "mixamorig:RightLeg",
+    "RightFoot": "mixamorig:RightFoot", "RightToeBase": "mixamorig:RightToeBase",
+}
+BVH_CENTIMETRES_TO_METRES = 0.01   # Kimodo writes BVH in centimetres
+MAPS = {"ue5": UE5_TO_CANON, "mixamo": MIXAMO_TO_CANON, "soma": SOMA_TO_CANON}
 
 
 def pick_map(source_bones, requested="auto"):
@@ -150,12 +169,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--character", required=True, help="canonically rigged .glb")
-    ap.add_argument("--clip", required=True, help=".fbx or .glb carrying the animation")
+    ap.add_argument("--clip", required=True, help=".fbx, .glb/.gltf or .bvh carrying the animation")
     ap.add_argument("--out", required=True)
     ap.add_argument("--action", default="",
                     help="which action, when a file bundles several (Quaternius UAL ships one "
                          "fbx per engine holding every clip). See --list-clips.")
-    ap.add_argument("--source-map", default="auto", choices=["auto", "ue5", "mixamo"])
+    ap.add_argument("--source-map", default="auto", choices=["auto", *MAPS])
     ap.add_argument("--root-motion", action="store_true",
                     help="carry hip translation, scaled by the height ratio (default: in place)")
     ap.add_argument("--list-clips", action="store_true", help="print the file's actions and exit")
@@ -184,8 +203,16 @@ def main() -> int:
 
     before_obj = set(bpy.context.scene.objects)
     before_act = set(bpy.data.actions)
-    loader = bpy.ops.import_scene.fbx if args.clip.lower().endswith(".fbx") else bpy.ops.import_scene.gltf
-    loader(filepath=args.clip)
+    suffix = Path(args.clip).suffix.lower()
+    if suffix == ".fbx":
+        bpy.ops.import_scene.fbx(filepath=args.clip)
+    elif suffix in (".glb", ".gltf"):
+        bpy.ops.import_scene.gltf(filepath=args.clip)
+    elif suffix == ".bvh":
+        bpy.ops.import_anim.bvh(filepath=args.clip, global_scale=BVH_CENTIMETRES_TO_METRES,
+                                update_scene_fps=True, update_scene_duration=True)
+    else:
+        raise SystemExit(f"unsupported clip type {suffix!r}: expected .fbx, .glb, .gltf or .bvh")
     src = next(o for o in bpy.context.scene.objects
                if o.type == "ARMATURE" and o not in before_obj)
     actions = [a for a in bpy.data.actions if a not in before_act]
@@ -272,7 +299,7 @@ def main() -> int:
             cur = tpb.matrix.copy()
             loc = cur.translation.copy()
             if args.root_motion and t == hips and src_hips_rest is not None:
-                off = spb.matrix.translation - src_hips_rest
+                off = align @ (spb.matrix.translation - src_hips_rest)
                 loc = loc + off * height_ratio
             tpb.matrix = Matrix.LocRotScale(loc, want, cur.to_scale())
             bpy.context.view_layer.update()
