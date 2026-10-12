@@ -24,10 +24,12 @@ import os
 import pkgutil
 import socket
 
+import anyio
 import yaml
 from mcp.server.transport_security import TransportSecuritySettings
 
 from blmcp.tools_helpers.blended_bridge import BlendedFastMCP, blended_instructions
+from blmcp.tools_helpers.golem_remote import GolemRemote
 
 # NOTE(@ideasman42): this was written to support LLAMA-C++'s Web UI,
 # which is one of the nicer ways to run this locally.
@@ -130,9 +132,18 @@ def main() -> int:
     with open(os.path.join(data_dir, "prompts.yml"), encoding="utf-8") as fh:
         prompts = yaml.safe_load(fh)
 
+    # The golem server on big: its instructions go into this server's, its
+    # tools are listed beside the Blender ones. With big unreachable the
+    # text is None and the server starts with the Blender tools only.
+    remote = GolemRemote()
+    remote_text = anyio.run(remote.instructions)
+
     mcp = BlendedFastMCP(
-        "blender-mcp",
-        instructions=blended_instructions(str(prompts["initial_instructions"])),
+        "golem",
+        instructions=blended_instructions(
+            str(prompts["initial_instructions"]), remote_text
+        ),
+        remote=remote,
     )
     # Exit once src/blended or blmcp changes while idle; a reconnecting client
     # restarts the server, which then lists the current tools and instructions.

@@ -353,7 +353,7 @@ class TestMCPServer(unittest.TestCase):
         """
         Checks that the server reports the expected public name.
         """
-        self.assertEqual(self._server_info.name, "blender-mcp")
+        self.assertEqual(self._server_info.name, "golem")
 
     # -----------------------------------------------------------------
     # Instructions.

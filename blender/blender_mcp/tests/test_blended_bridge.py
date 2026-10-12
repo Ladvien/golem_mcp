@@ -17,6 +17,7 @@ __all__ = ()
 
 import asyncio
 import base64
+import contextlib
 import importlib
 import io
 import json
@@ -38,6 +39,8 @@ from blmcp.tools_helpers import (
     blended_bridge_toolcode,
     toolcode_format_call,
 )
+from blmcp.tools_helpers.golem_remote import GolemRemote
+from mcp import types as mcp_types  # pylint: disable=import-error,no-name-in-module
 from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
 
 from blended.agent.outcome import ToolOutcome, outcome_to_json
@@ -239,7 +242,6 @@ class TestInstructionsHead(unittest.TestCase):
         self.assertIn(name, registered)
         self.assertIn(f"`{name}`", blended_bridge.MCP_INSTRUCTIONS_HEAD)
 
-
     def test_head_requires_the_blend_source_and_names_real_tools(self) -> None:
         # OT-50: an export without its .blend is not done. The rule names
         # the argument and the tool, and both must exist in the registry.
@@ -253,7 +255,6 @@ class TestInstructionsHead(unittest.TestCase):
         )
         self.assertIn("blend_path", exported.inputSchema["required"])
         self.assertIn("`blend_path`", head)
-
 
     def test_readme_states_the_measured_head_length(self) -> None:
         # The README said 1,823 characters while the head was 1,981.
@@ -784,6 +785,124 @@ class TestToolcodeReimport(unittest.TestCase):
         self.assertEqual(results[2], {"outcome": "from-a"})
 
 
+class _FakeRemote:
+    """Stands in for GolemRemote: no network, records what reaches it."""
+
+    def __init__(self, tools: list[mcp_types.Tool]) -> None:
+        self._tools = tools
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def list_tools(self) -> list[mcp_types.Tool]:
+        return self._tools
+
+    async def instructions(self) -> str | None:
+        return "remote instructions"
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, object]
+    ) -> mcp_types.CallToolResult:
+        self.calls.append((name, arguments))
+        return mcp_types.CallToolResult(
+            content=[mcp_types.TextContent(type="text", text="from big")]
+        )
+
+
+def _remote_tool(name: str, description: str = "remote") -> mcp_types.Tool:
+    return mcp_types.Tool(
+        name=name, description=description, inputSchema={"type": "object"}
+    )
+
+
+class TestGolemRemote(unittest.TestCase):
+    """
+    The golem server on big, served through this one: its tools are listed
+    beside the Blender tools and called without the Blender gates.
+    """
+
+    # pylint: disable=protected-access
+
+    def _server(self, remote: object) -> blended_bridge.BlendedFastMCP:
+        return blended_bridge.BlendedFastMCP("golem", instructions="x", remote=remote)
+
+    def test_the_tool_list_has_the_blender_tools_and_the_remote_ones(self) -> None:
+        remote = _FakeRemote([_remote_tool("generate_3d")])
+
+        names = [tool.name for tool in asyncio.run(self._server(remote).list_tools())]
+
+        self.assertIn("add_box", names)
+        self.assertIn("declare_plan", names)
+        self.assertIn("generate_3d", names)
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_a_remote_tool_named_like_a_local_one_is_not_served(self) -> None:
+        remote = _FakeRemote(
+            [_remote_tool("declare_plan", "the imposter"), _remote_tool("generate_3d")]
+        )
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            tools = asyncio.run(self._server(remote).list_tools())
+
+        (plan_tool,) = [tool for tool in tools if tool.name == "declare_plan"]
+        self.assertIn(plan_tool, blended_bridge.BLENDED_TOOLS)
+        self.assertNotEqual(plan_tool.description, "the imposter")
+        self.assertIn(
+            "golem remote tool declare_plan shadows a local tool; not served",
+            stderr.getvalue(),
+        )
+
+    def test_a_remote_call_needs_neither_a_plan_nor_a_live_blender(self) -> None:
+        def no_blender() -> None:
+            raise ConnectionRefusedError("no Blender is listening")
+
+        patcher = mock.patch.object(blended_bridge, "require_live_blender", no_blender)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        remote = _FakeRemote([_remote_tool("generate_3d")])
+        server = self._server(remote)
+        arguments = {"image_path": "/tmp/reference.png", "seed": 7}
+
+        async def run() -> object:
+            await server.list_tools()
+            return await server.call_tool("generate_3d", arguments)
+
+        result = asyncio.run(run())
+
+        self.assertEqual(remote.calls, [("generate_3d", arguments)])
+        self.assertEqual(result.content[0].text, "from big")
+        self.assertEqual(server._in_flight, 0)
+
+    def test_the_remote_instructions_follow_the_head(self) -> None:
+        text = blended_bridge.blended_instructions("upstream text", "remote text")
+
+        head_end = len(blended_bridge.MCP_INSTRUCTIONS_HEAD)
+        self.assertTrue(text.startswith(blended_bridge.MCP_INSTRUCTIONS_HEAD))
+        self.assertEqual(
+            text[head_end : head_end + len("\n\nremote text")], "\n\nremote text"
+        )
+        self.assertEqual(
+            blended_bridge.blended_instructions("upstream text"),
+            blended_bridge.blended_instructions("upstream text", None),
+        )
+
+    def test_an_unreachable_big_lists_nothing_and_fails_calls_readably(self) -> None:
+        # Port 9 (discard): nothing listens, the connection is refused at once.
+        url = "http://127.0.0.1:9/mcp"
+        remote = GolemRemote(url)
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            tools = asyncio.run(remote.list_tools())
+        result = asyncio.run(remote.call_tool("health_check", {}))
+
+        self.assertEqual(tools, [])
+        self.assertIn("golem remote unreachable at " + url, stderr.getvalue())
+        self.assertTrue(result.isError)
+        self.assertTrue(
+            result.content[0].text.startswith("golem on big is unreachable at " + url)
+        )
+
+
 class TestSuitesPresent(unittest.TestCase):
     """A splice to the end of this file once deleted two suites unnoticed."""
 
@@ -795,6 +914,7 @@ class TestSuitesPresent(unittest.TestCase):
         "TestSourceWatcher",
         "TestHandoff",
         "TestToolcodeReimport",
+        "TestGolemRemote",
         "TestSuitesPresent",
     )
 

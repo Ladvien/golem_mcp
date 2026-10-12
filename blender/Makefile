@@ -35,19 +35,22 @@ test-blender-app:
 		--python scripts/run_tests_in_blender.py -- $(ARGS)
 
 # The MCP server's unit layer (blender_mcp/ subtree + blended bridge):
-# no Blender required.
+# no Blender required. The golem server on big is pointed at a port nothing
+# listens on, so the tool lists these tests compare never depend on whether
+# big is up (TestGolemRemote covers the remote half with a fake).
+MCP_TEST_ENV = BLENDED_DISABLE_PLUGINS=1 GOLEM_REMOTE_URL=http://127.0.0.1:9/mcp
 test-mcp:
-	BLENDED_DISABLE_PLUGINS=1 $(PY) blender_mcp/tests/test_mcp_server.py && \
-		BLENDED_DISABLE_PLUGINS=1 $(PY) blender_mcp/tests/test_tool_listing.py && \
-		BLENDED_DISABLE_PLUGINS=1 $(PY) blender_mcp/tests/test_blended_bridge.py && \
-		BLENDED_DISABLE_PLUGINS=1 $(PY) blender_mcp/tests/test_rst_parse.py && \
-		BLENDED_DISABLE_PLUGINS=1 $(PY) blender_mcp/tests/test_rst_search.py
+	$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_mcp_server.py && \
+		$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_tool_listing.py && \
+		$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_blended_bridge.py && \
+		$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_rst_parse.py && \
+		$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_rst_search.py
 
 # The MCP server against a real background Blender: client -> server ->
 # socket -> add-on main-thread exec -> blended's dispatch_tool. Only the
 # background class runs: foreground and interactive need Weston (Linux).
 test-mcp-blender:
-	BLENDED_DISABLE_PLUGINS=1 BLENDER_BIN=$(BLENDER) BLENDER_MCP=$(CURDIR)/.venv/bin/blender-mcp \
+	$(MCP_TEST_ENV) BLENDER_BIN=$(BLENDER) BLENDER_MCP=$(CURDIR)/.venv/bin/blender-mcp \
 		$(PY) blender_mcp/tests/test_blender_mcp_with_blender.py TestBackgroundServer
 
 # The MCP bridge's viewport framing against Blender's own projection. It

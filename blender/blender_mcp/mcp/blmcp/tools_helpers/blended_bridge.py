@@ -96,6 +96,7 @@ from blmcp.tools_helpers import (
 )
 from blmcp.tools_helpers.blended_bridge_toolcode import Params
 from blmcp.tools_helpers.connection import send_code
+from blmcp.tools_helpers.golem_remote import GolemRemote
 from blmcp.tools_helpers.live_blender import (
     PAUSE_PREFIX,
     TOOLS_WITHOUT_BLENDER,
@@ -252,10 +253,17 @@ def _connection_error_in(error: BaseException) -> ConnectionError | None:
     return None
 
 
-def blended_instructions(upstream_instructions: str) -> str:
-    """The must-read head, blended's working agreement, then upstream's instructions."""
+def blended_instructions(
+    upstream_instructions: str, remote_instructions: str | None = None
+) -> str:
+    """
+    The must-read head, the remote golem server's instructions when it
+    answered, blended's working agreement, then upstream's instructions.
+    """
+    remote_section = "" if remote_instructions is None else f"\n\n{remote_instructions}"
     return (
-        f"{MCP_INSTRUCTIONS_HEAD}\n\n{build_system_prompt()}\n\n{upstream_instructions}"
+        f"{MCP_INSTRUCTIONS_HEAD}{remote_section}\n\n{build_system_prompt()}"
+        f"\n\n{upstream_instructions}"
     )
 
 
@@ -541,10 +549,18 @@ class BlendedSession:
 
 
 class BlendedFastMCP(FastMCP):  # type: ignore[misc]
-    """Upstream's FastMCP server with blended's tools served beside its own."""
+    """
+    Upstream's FastMCP server with blended's tools and the golem server's
+    tools (on big) served beside its own.
+    """
 
-    def __init__(self, name: str, instructions: str) -> None:
+    def __init__(
+        self, name: str, instructions: str, remote: GolemRemote | None = None
+    ) -> None:
         super().__init__(name, instructions=instructions)
+        # The golem server on big; its tools are served beside the local ones.
+        self._remote = remote or GolemRemote()
+        self._remote_names: frozenset[str] = frozenset()
         # The client that spawned this server; it spawns the next one too.
         self._parent_pid = os.getppid()
         self._blended = BlendedSession.resume(
@@ -574,12 +590,32 @@ class BlendedFastMCP(FastMCP):  # type: ignore[misc]
                     ", ".join(sorted(overlap))
                 )
             )
-        return [*upstream, *BLENDED_TOOLS]
+        remote = await self._remote.list_tools()
+        local_names = BLENDED_TOOL_NAMES.union(tool.name for tool in upstream)
+        served: list[types.Tool] = []
+        for tool in remote:
+            if tool.name in local_names:
+                print(
+                    "golem remote tool {:s} shadows a local tool; not served".format(
+                        tool.name
+                    ),
+                    file=sys.stderr,
+                )
+                continue
+            served.append(tool)
+        self._remote_names = frozenset(tool.name for tool in served)
+        return [*upstream, *BLENDED_TOOLS, *served]
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         with self._in_flight_lock:
             self._in_flight += 1
         try:
+            if name in self._remote_names:
+                # golem's tools run on big and never touch the Blender scene:
+                # no plan gate, no live-Blender probe. The in-flight count
+                # around this branch keeps --exit-on-source-change from
+                # exiting under a job that runs for minutes.
+                return await self._remote.call_tool(name, arguments)
             if name in BLENDED_TOOL_NAMES:
                 return await self._blended.call(name, arguments)
             if name not in TOOLS_WITHOUT_BLENDER:
