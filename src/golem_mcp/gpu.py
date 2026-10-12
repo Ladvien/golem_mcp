@@ -106,3 +106,26 @@ def gpu_status() -> str:
         return subprocess.run([str(GPU_TENANT), "status"], capture_output=True, text=True, timeout=30).stdout
     except (OSError, subprocess.TimeoutExpired) as e:
         return f"unavailable: {e}"
+
+
+def vram_free_bytes() -> float | None:
+    """Free VRAM on the card right now, or None when it cannot be read.
+
+    Read in a subprocess because this process must not import torch (nor hold a CUDA context). It is the same
+    reading `vram_gate` makes, taken without a lease, so a llama-swap model the lease would unload counts as used.
+    """
+    code = "import torch; print(torch.cuda.mem_get_info(0)[0] if torch.cuda.is_available() else -1)"
+    try:
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    lines = result.stdout.strip().splitlines()
+    if not lines:
+        return None
+    try:
+        free = float(lines[-1])
+    except ValueError:
+        return None
+    return free if free >= 0 else None

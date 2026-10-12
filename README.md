@@ -214,16 +214,10 @@ TRELLIS normalizes into a unit cube, so a generated human, a teacup and a
 cathedral all export about 1 metre. Anything reading a measurement in metres —
 garment conforming, physics, engine import — is silently wrong until it is scaled.
 
-`generate_3d` always reports `geometry.dimensions_m`, and `target_height_m` scales
-at export:
-
-```
-generate_3d(image="ref.png", target_height_m=1.75)   # adult human
-```
-
-The `.ply` Gaussian splat is always exported at normalized scale; only the `.glb`
-is scaled. `rig_model` reports `dimensions_m` too, since `use_transfer` inherits
-whatever scale the source mesh had.
+`generate_3d` and `generate_3d_multi_image` report `geometry.dimensions_m`, the
+bounding box of the `.glb` they shipped. There is no scaling parameter: scale
+downstream, in Blender or on engine import. `rig_model` reports `dimensions_m` too,
+since `use_transfer` inherits whatever scale the source mesh had.
 
 ### Texture: `render_resolution` is the real ceiling
 
@@ -396,8 +390,6 @@ is what `zero_weight_vertices` catches. Always compare a run with and without.
 - **`use_skeleton`** is the highest-quality path: rig once, fix the skeleton by hand
   in Blender, then re-skin against it. Skeleton errors propagate into skinning but
   not the reverse, and skinning is the part the model is genuinely good at.
-- **`target_height_m` does not affect rig quality.** SkinTokens renormalizes, so
-  scale is irrelevant to it — don't tune it hoping.
 - **Vertex count**: the training mixture spans ~1.3k–17k vertices. Note the shape
   encoder samples a fixed number of surface points, so raw count matters less for
   the *skeleton* than for skin decode and transfer. If you decimate to a proxy,

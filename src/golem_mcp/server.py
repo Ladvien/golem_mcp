@@ -20,8 +20,8 @@ from PIL import Image
 from pydantic import Field
 
 from golem_mcp.app import mcp
-from golem_mcp.gpu import gpu_status, run_gpu_job
-from golem_mcp.motion import motion_health
+from golem_mcp.gpu import gpu_status, run_gpu_job, vram_free_bytes
+from golem_mcp.motion import MOTION_VRAM_REQUIRED, motion_health
 from golem_mcp.paths import RETARGET_DRIVER, SCRIPTS, SEGVIGEN_PYTHON
 
 OUTPUT_DIR = Path(os.environ.get("TRELLIS_OUTPUT_DIR", "/home/ladvien/trellis/output"))
@@ -87,8 +87,8 @@ SEGVIGEN_REPO = Path(os.environ.get("SEGVIGEN_REPO", "/home/ladvien/segvigen/rep
 SEGVIGEN_DRIVER = SCRIPTS / "segvigen_segment.py"
 # Garment generation shares the SegviGen environment because that is where
 # TRELLIS.2 lives - it was installed as SegviGen's backbone and became runnable
-# once the SDPA attention backend landed. generate_3d still runs TRELLIS 1, which
-# cannot represent an open surface and would seal a garment shut.
+# once the SDPA attention backend landed. generate_3d also runs TRELLIS.2, but with
+# closed-surface postprocessing that would seal a garment shut.
 GARMENT_DRIVER = SCRIPTS / "trellis2_garment.py"
 CHARACTER_DRIVER = SCRIPTS / "trellis2_character.py"
 MULTI_IMAGE_DRIVER = SCRIPTS / "trellis2_multi_image.py"
@@ -260,9 +260,14 @@ def _decode_image(source: str) -> Image.Image:
         return Image.open(source).convert("RGBA")
     # Anything path-shaped that does not exist is a missing file, not base64.
     # Falling through would fail deep inside PIL with an unreadable message.
-    if "/" in source or len(source) < 256:
+    # Length, not "/", tells them apart: base64 holds "/" itself (a JPEG's starts with one).
+    if len(source) < 256:
         raise FileNotFoundError(f"Image file not found: {source}")
-    return Image.open(io.BytesIO(base64.b64decode(source))).convert("RGBA")
+    try:
+        raw = base64.b64decode("".join(source.split()), validate=True)
+    except ValueError:
+        raise FileNotFoundError(f"Image file not found (and not base64): {source[:200]}") from None
+    return Image.open(io.BytesIO(raw)).convert("RGBA")
 
 
 def _dims(extents) -> dict[str, float]:
@@ -297,7 +302,7 @@ def generate_3d(
     texture_size: Annotated[int, Field(description="Texture resolution in pixels", ge=512, le=4096)] = 2048,
     asset_type: Annotated[
         str,
-        Field(description="Which gen_ai folder to publish into: characters, props, or environments"),
+        Field(description="Which gen_ai folder to publish into: characters, props, environments or garments"),
     ] = "characters",
     source_prompt: Annotated[
         str,
@@ -405,6 +410,7 @@ def generate_3d(
             "published_to": published,
             "reference_image": str(source_png),
             "size_bytes": glb.stat().st_size,
+            "geometry": _glb_dimensions(glb),
             "elapsed_seconds": elapsed,
             "faces": report["topology"]["as_shipped"]["faces"],
             "materials": report["materials"],
@@ -465,7 +471,7 @@ def generate_3d_multi_image(
     texture_size: Annotated[int, Field(description="PBR texture resolution", ge=256, le=4096)] = 2048,
     asset_type: Annotated[
         str,
-        Field(description="Which gen_ai folder to publish into: characters, props, or environments"),
+        Field(description="Which gen_ai folder to publish into: characters, props, environments or garments"),
     ] = "characters",
     source_prompt: Annotated[
         str,
@@ -505,7 +511,19 @@ def generate_3d_multi_image(
                 "error": f"asset_type must be one of {', '.join(ASSET_TYPES)}, got '{asset_type}'",
             }
 
-        image_paths: list[str] = json.loads(images)
+        if not output_name:
+            output_name = f"trellis_multi_{int(time.time())}"
+
+        usage = (
+            "images must be a JSON array string of image paths or base64 strings, "
+            "e.g. '[\"/path/a.png\",\"/path/b.png\"]'"
+        )
+        try:
+            image_paths = json.loads(images)
+        except json.JSONDecodeError:
+            return {"success": False, "error": usage}
+        if not isinstance(image_paths, list) or not all(isinstance(p, str) for p in image_paths):
+            return {"success": False, "error": usage}
         if len(image_paths) < 2:
             return {
                 "success": False,
@@ -514,9 +532,25 @@ def generate_3d_multi_image(
                     "Use generate_3d for a single image."
                 ),
             }
-        missing = [p for p in image_paths if not os.path.isfile(p)]
+        # A base64 string or data: URL is written beside the other reference images so the driver, the view check
+        # and the published metadata all see a file.
+        resolved: list[str] = []
+        missing: list[str] = []
+        for i, entry in enumerate(image_paths):
+            if os.path.isfile(entry):
+                resolved.append(entry)
+                continue
+            try:
+                decoded = _decode_image(entry)
+            except FileNotFoundError:
+                missing.append(entry if len(entry) <= 200 else entry[:200] + "...")
+                continue
+            view_png = IMAGE_OUTPUT_DIR / f"{output_name}_view{i}.png"
+            decoded.save(view_png)
+            resolved.append(str(view_png))
         if missing:
             return {"success": False, "error": "image(s) not found: " + ", ".join(missing)}
+        image_paths = resolved
 
         # Check the views agree BEFORE spending ~70 s on a mesh and longer on a
         # rig. The generator reconciles disagreeing views into ONE surface: a front
@@ -533,9 +567,6 @@ def generate_3d_multi_image(
                 ),
                 "view_consistency": consistency,
             }
-
-        if not output_name:
-            output_name = f"trellis_multi_{int(time.time())}"
 
         started = time.time()
         _run_gpu_script(
@@ -619,6 +650,7 @@ def generate_3d_multi_image(
                 "vertices": welded["vertices"],
                 "components": welded["components"],
                 "boundary_edge_pct": welded["boundary_edge_pct"],
+                "dimensions_m": _glb_dimensions(glb)["dimensions_m"],
             },
             "materials": report["materials"],
             "next_step": f"rig_model(mesh='{output_name}.glb') to add a skeleton and skin weights",
@@ -1437,8 +1469,8 @@ def rig_model(
 
     The two TokenRig passes run on RIG_HOST (bmb), not on this box, whose
     ZRAM-backed memory OOM-kills the rigger. Every bpy stage around them stays
-    local. TRELLIS is no longer evicted for rigging, so a rig can overlap a
-    generate_3d rather than costing it a ~30s reload.
+    local. Rigging holds no GPU lease (TokenRig runs on bmb, the bpy stages on the CPU), so a rig can overlap
+    any GPU job.
 
     Output is always .glb. After importing to Blender, delete the
     `glTF_not_exported` node.
@@ -1967,8 +1999,8 @@ def generate_garment(
 
     Three stages: a product-shot image of the garment alone, TRELLIS.2 to turn it
     into an open-surface mesh, then placement and a cloth pass onto the target body.
-    TRELLIS.2 rather than this server's generate_3d, which runs TRELLIS 1 and
-    defaults fill_holes=True - either of which would seal the garment shut.
+    TRELLIS.2 through its own driver rather than generate_3d, whose closed-surface
+    postprocessing would seal the garment shut.
 
     Fails loudly rather than returning a bad garment: a mesh that comes back
     watertight, or with more than 5% of its air sealed inside, is rejected. Both
@@ -2391,7 +2423,11 @@ def apply_animation(
 
 @mcp.tool
 def health_check() -> dict[str, Any]:
-    """Check server readiness: the GPU lease state, the rigger, and the text-to-motion pipeline."""
+    """Check server readiness: the GPU lease state, the rigger, the text-to-motion pipeline, and free VRAM.
+
+    `gpu_tools` says which GPU tools fit in the VRAM free right now. It is read without a lease, so a loaded
+    llama-swap model (which the lease unloads) counts as used there; a resident outside gpu-tenant counts for good.
+    """
     try:
         try:
             _rig_preflight()
@@ -2403,9 +2439,21 @@ def health_check() -> dict[str, Any]:
         outputs = list(OUTPUT_DIR.glob("*"))
         recent = sorted(outputs, key=os.path.getmtime, reverse=True)[:10]
 
+        free = vram_free_bytes()
+        needs = {
+            "generate_3d": CHARACTER_VRAM_REQUIRED,
+            "generate_3d_multi_image": CHARACTER_VRAM_REQUIRED,
+            "segment_mesh": SEGVIGEN_VRAM_REQUIRED,
+            "generate_garment": GARMENT_VRAM_REQUIRED,
+            "generate_orbit_views": MVADAPTER_VRAM_REQUIRED,
+            "animate_mesh": MOTION_VRAM_REQUIRED,
+        }
+
         return {
             "status": "healthy" if rigging["installed"] and not motion["problems"] else "error",
             "gpu": gpu_status(),
+            "vram_free_gb": None if free is None else round(free / 1e9, 1),
+            "gpu_tools": {tool: None if free is None else free >= need for tool, need in needs.items()},
             "rigging": rigging,
             "motion": motion,
             "output_dir": str(OUTPUT_DIR),
@@ -2424,7 +2472,11 @@ def list_outputs(
     limit: Annotated[int, Field(description="Maximum number of outputs to list", ge=1, le=100)] = 20,
 ) -> dict[str, Any]:
     """List recently generated output files (3D, rigged 3D, and images)."""
-    all_outputs = list(OUTPUT_DIR.glob("*")) + list(IMAGE_OUTPUT_DIR.glob("*")) + list(RIG_OUTPUT_DIR.glob("*"))
+    all_outputs = [
+        p
+        for p in list(OUTPUT_DIR.glob("*")) + list(IMAGE_OUTPUT_DIR.glob("*")) + list(RIG_OUTPUT_DIR.glob("*"))
+        if p.is_file()
+    ]
     outputs = sorted(all_outputs, key=os.path.getmtime, reverse=True)[:limit]
     files = []
     for p in outputs:
@@ -2736,8 +2788,8 @@ def generate_views(
         str,
         Field(
             description=(
-                "Comma-separated subset of: front, back, left, right. Default is front+back - with FLUX.2 klein "
-                "the side views come back as front-facing three-quarters that duplicate the front."
+                "Comma-separated subset of: front, back, left, right. Default is front+back; side views depend on "
+                "the prompt (a T-pose prompt gave true profiles), so check them before use."
             )
         ),
     ] = "front,back",
