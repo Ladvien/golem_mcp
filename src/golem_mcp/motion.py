@@ -194,7 +194,9 @@ def _run_worker(job_json: Path, report: Path, job_dir: Path, stem: str, timeout:
     raise RuntimeError(f"worker failed (exit {proc.returncode})\n{_tail(log)}".rstrip())
 
 
-def _retarget(job_dir: Path, slug: str, index: int, bvh: str, root_motion: bool) -> tuple[Path, dict[str, Any]]:
+def _retarget(
+    job_dir: Path, slug: str, index: int, bvh: str, root_motion: bool, hip_bob: bool,
+) -> tuple[Path, dict[str, Any]]:
     out = job_dir / f"{slug}_{index:02d}.glb"
     report = job_dir / f"{slug}_{index:02d}_retarget.json"
     cmd = [
@@ -204,6 +206,8 @@ def _retarget(job_dir: Path, slug: str, index: int, bvh: str, root_motion: bool)
     ]
     if root_motion:
         cmd.append("--root-motion")
+    elif hip_bob:
+        cmd.append("--hip-bob")
     try:
         proc = subprocess.run(cmd, cwd=job_dir, capture_output=True, text=True, timeout=RETARGET_TIMEOUT_S)
     except subprocess.TimeoutExpired as e:
@@ -232,6 +236,7 @@ class _Request:
     transition_frames: int
     start_heading_deg: float
     root_motion: bool
+    hip_bob: bool
     timeout: int
     self_intersection: Literal["off", "score", "repair"]
     contour_limit_cm: float
@@ -299,11 +304,14 @@ def _attempt(
 
     samples = []
     for s in report["samples"]:
-        glb, rt = _retarget(job_dir, slug, s["index"], s["bvh"], request.root_motion)
+        glb, rt = _retarget(job_dir, slug, s["index"], s["bvh"], request.root_motion, request.hip_bob)
         samples.append({
             "index": s["index"], "animated_glb": str(glb), "bvh": s["bvh"], "npz": s["npz"],
             "frames": s["frames"], "bones_mapped": rt["bones_mapped"],
             "frame_alignment_deg": rt["frame_alignment_deg"],
+            "rest_correction_deg": rt["rest_correction_deg"],
+            "crossed_hand_frames": rt["crossed_hand_frames"],
+            "min_hand_separation_pct_hip_width": rt["min_hand_separation_pct_hip_width"],
         })
     _assess_all(samples, request)
 
@@ -315,7 +323,7 @@ def _attempt(
         "text_encoder": "LLM2Vec-Meta-Llama-3-8B-Instruct (Meta Llama 3 Community License)",
         "kimodo_commit": KIMODO_COMMIT,
         "segments": request.segments, "seed": seed, "diffusion_steps": request.diffusion_steps,
-        "num_samples": request.num_samples, "root_motion": request.root_motion,
+        "num_samples": request.num_samples, "root_motion": request.root_motion, "hip_bob": request.hip_bob,
         "text_cfg_weight": request.text_cfg_weight, "constraint_cfg_weight": request.constraint_cfg_weight,
         "transition_frames": request.transition_frames, "start_heading_deg": request.start_heading_deg,
         "root_path": request.root_path_job,
@@ -377,6 +385,9 @@ def animate_mesh(
                     "unscaled",
     )] = None,
     root_motion: Annotated[bool, Field(description="Carry hip translation (default: in place)")] = False,
+    hip_bob: Annotated[bool, Field(
+        description="In place but keeping the pelvis's vertical bob; ignored when root_motion is set",
+    )] = True,
     return_base64: Annotated[bool, Field(description="Also return each animated GLB as base64")] = False,
     self_intersection: Annotated[Literal["off", "score", "repair"], Field(
         description="Check every sample for its surface passing through itself (a hand through the torso, a knee "
@@ -423,7 +434,7 @@ def animate_mesh(
             segments=[s.model_dump() for s in segments], root_path_job=_root_path_job(root_path, segments),
             num_samples=num_samples, diffusion_steps=diffusion_steps, text_cfg_weight=text_cfg_weight,
             constraint_cfg_weight=constraint_cfg_weight, transition_frames=transition_frames,
-            start_heading_deg=start_heading_deg, root_motion=root_motion, timeout=timeout,
+            start_heading_deg=start_heading_deg, root_motion=root_motion, hip_bob=hip_bob, timeout=timeout,
             self_intersection=self_intersection, contour_limit_cm=contour_limit_cm,
             cloth_materials=list(cloth_materials),
         )

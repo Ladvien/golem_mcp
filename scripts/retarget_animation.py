@@ -16,10 +16,14 @@ So each bone is driven by the source's rest-relative DELTA rather than its raw
 local rotation:
 
     delta        = src_posed_world_rot * src_rest_world_rot^-1
-    target_world = delta * tgt_rest_world_rot
+    target_world = delta * rest_correction * tgt_rest_world_rot
 
-which is correct for any pair of rest poses, and is what makes one clip library
-drive characters this pipeline generated.
+The delta alone is only right when the two rest poses agree. A clip is authored on
+a T-pose and a generated character rests in an A-pose (arms ~29 degrees below
+horizontal), so the clip's "arm down by the side" carried the A-pose arm 29 degrees
+past vertical and across the body: the hands swapped sides. `rest_correction` turns
+each target limb onto the clip's rest direction first (see rest_corrections), which
+is what makes one clip library drive characters this pipeline generated.
 
 WHY A NAME MAP
 --------------
@@ -39,8 +43,8 @@ TWO TRAPS, BOTH MEASURED
     quaternion, which looks exactly like a broken rig.
   * Mixamo FBX keys location in CENTIMETRES. On a 1 m character that is a 100x
     root translation - measured mean vertex motion of 105 units, character gone
-    from the scene. Root motion is therefore scaled by the hips-height ratio (the target's rest hips height over the
-    source's, in each rig's own units), and off by default.
+    from the scene. Root motion is therefore scaled by the hips-height ratio (the target's rest hips height above its
+    toes over the source's, in each rig's own units), and off by default.
   * Root motion is turned by the YAW part of the body-frame alignment only. The alignment between the clip's body frame
     and ours also holds a pitch and roll (the SOMA skeleton's rest leans about 9 degrees about X from the mannequin's);
     turning hip translation by all of it leaked forward travel into height, so a walker sank 1 m in 8 s. Rotations keep
@@ -49,6 +53,7 @@ TWO TRAPS, BOTH MEASURED
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -169,6 +174,35 @@ def hierarchy_order(arm, names):
     return sorted(names, key=lambda n: depth[n])
 
 
+# Limb segments whose rest direction is matched between the clip's rig and ours, each as (bone, child bone).
+REST_CHAINS = (
+    ("mixamorig:LeftArm", "mixamorig:LeftForeArm"), ("mixamorig:LeftForeArm", "mixamorig:LeftHand"),
+    ("mixamorig:RightArm", "mixamorig:RightForeArm"), ("mixamorig:RightForeArm", "mixamorig:RightHand"),
+    ("mixamorig:LeftUpLeg", "mixamorig:LeftLeg"), ("mixamorig:LeftLeg", "mixamorig:LeftFoot"),
+    ("mixamorig:RightUpLeg", "mixamorig:RightLeg"), ("mixamorig:RightLeg", "mixamorig:RightFoot"),
+)
+
+
+def rest_corrections(src, tgt, by_target, align_q):
+    """Per target bone, the rotation that turns the target's rest limb onto the clip's rest limb.
+
+    A delta is posed*rest^-1 on the clip's rig. Applied to a target whose rest differs (an A-pose character
+    against a T-pose clip), every pose lands off by the rest difference: the clip's "arms down" carried a
+    29-degree A-pose arm past vertical and across the body. Directions are head -> child head, never bone
+    tails, which FBX and BVH imports guess.
+    """
+    corr = {}
+    for t, child in REST_CHAINS:
+        if t not in by_target or child not in by_target:
+            continue
+        tgt_dir = tgt.data.bones[child].head_local - tgt.data.bones[t].head_local
+        src_dir = align_q @ (src.data.bones[by_target[child]].head_local - src.data.bones[by_target[t]].head_local)
+        if tgt_dir.length < 1e-6 or src_dir.length < 1e-6:
+            continue
+        corr[t] = tgt_dir.normalized().rotation_difference(src_dir.normalized())
+    return corr
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -182,6 +216,8 @@ def main() -> int:
     ap.add_argument("--root-motion", action="store_true",
                     help="carry hip translation, scaled by the hips-height ratio and turned by the yaw part of the "
                          "body-frame alignment only (default: in place)")
+    ap.add_argument("--hip-bob", action="store_true",
+                    help="in place, but keep the pelvis's vertical motion; ignored with --root-motion")
     ap.add_argument("--list-clips", action="store_true", help="print the file's actions and exit")
     ap.add_argument("--report", help="write the JSON result here; Blender's own chatter makes "
                                      "stdout unsafe to parse")
@@ -268,13 +304,26 @@ def main() -> int:
     # Rotation taking the clip's body frame onto ours. Identity when the two rigs
     # already face the same way, which is why forge_warden retargeted correctly
     # while female_base_v5 did not.
-    align = body_frame(tgt, {t: t for _s, t in pairs}) @ body_frame(src, by_target).inverted()
+    tgt_frame = body_frame(tgt, {t: t for _s, t in pairs})
+    src_frame = body_frame(src, by_target)
+    align = tgt_frame @ src_frame.inverted()
     align_q = align.to_quaternion()
     align_inv = align_q.inverted()
 
+    # Rest-pose difference per limb, so a T-pose clip drives an A-pose character. A bone without its own entry
+    # (a hand, a foot) inherits its nearest corrected ancestor's, so it follows its forearm or shin rigidly.
+    corr = rest_corrections(src, tgt, by_target, align_q)
+    corr_all = {}
+    for _s, t in pairs:
+        b = tgt.data.bones[t]
+        while b is not None and b.name not in corr:
+            b = b.parent
+        corr_all[t] = corr[b.name] if b is not None else Quaternion((1.0, 0.0, 0.0, 0.0))
+
     # Root motion is turned by the alignment's YAW (its twist about armature Z) only, and scaled by the ratio of the
-    # two rigs' rest hips heights. The hips sit over the body's centre, so their height is the largest axis of the rest
-    # head, whichever way up a rig's armature space is (a BVH or glb is Z-up, a Mixamo FBX Y-up).
+    # two rigs' rest hips heights. A hips height is measured above the toes along the rig's own up, never from the
+    # armature origin: a generated character is centred on its origin (hips at z -0.06, toes at -0.49), so the
+    # origin-based height made the ratio 0.07 instead of 0.48 and shrank its root motion and bob fourteenfold.
     yaw_q = Quaternion((align_q.w, 0.0, 0.0, align_q.z))
     align_yaw = (yaw_q.normalized() if yaw_q.magnitude > 1e-9 else Quaternion((1.0, 0.0, 0.0, 0.0))).to_matrix()
 
@@ -285,12 +334,16 @@ def main() -> int:
     # the previous frame's location, so adding to it accumulated the displacement every frame.
     tgt_hips_rest = tgt.pose.bones[hips].bone.matrix_local.translation.copy() if hips in tgt_bones else None
 
-    def hips_height(head) -> float:
-        return max(abs(head.x), abs(head.y), abs(head.z))
+    def hips_height(arm, canon_to_own, up) -> float:
+        def head(n):
+            return arm.data.bones[canon_to_own[n]].head_local
+        toes = (head("mixamorig:LeftToeBase") + head("mixamorig:RightToeBase")) / 2
+        return (head(hips) - toes).dot(up)
 
     height_ratio = 1.0
-    if args.root_motion and src_hips_rest is not None and tgt_hips_rest is not None:
-        src_height, tgt_height = hips_height(src_hips_rest), hips_height(tgt_hips_rest)
+    if (args.root_motion or args.hip_bob) and src_hips_rest is not None and tgt_hips_rest is not None:
+        src_height = hips_height(src, by_target, src_frame.col[1].normalized())
+        tgt_height = hips_height(tgt, {t: t for _s, t in pairs}, tgt_frame.col[1].normalized())
         if src_height > 1e-6 and tgt_height > 1e-6:
             height_ratio = tgt_height / src_height
 
@@ -305,6 +358,10 @@ def main() -> int:
 
     source_action_name = act.name       # captured before the stale actions are freed
     start, end = (int(round(v)) for v in act.frame_range)
+    # In place with the bob: only the pelvis's travel along OUR up survives. The full alignment (not the yaw)
+    # maps it, so the clip's up lands on ours.
+    bob = args.hip_bob and not args.root_motion and src_hips_rest is not None and tgt_hips_rest is not None
+    up_t = tgt_frame.col[1].normalized()
 
     for frame in range(start, end + 1):
         bpy.context.scene.frame_set(frame)
@@ -314,18 +371,37 @@ def main() -> int:
             spb, tpb = src.pose.bones[s], tgt.pose.bones[t]
             delta = spb.matrix.to_quaternion() @ src_rest[s].inverted()
             delta = align_q @ delta @ align_inv          # into our body frame
-            want = delta @ tgt_rest[t]
+            want = delta @ corr_all[t] @ tgt_rest[t]
             cur = tpb.matrix.copy()
             loc = cur.translation.copy()
             if args.root_motion and t == hips and src_hips_rest is not None:
                 off = align_yaw @ (spb.matrix.translation - src_hips_rest)
                 loc = tgt_hips_rest + off * height_ratio
+            elif bob and t == hips:
+                off = align_q @ (spb.matrix.translation - src_hips_rest)
+                loc = tgt_hips_rest + up_t * (off.dot(up_t) * height_ratio)
             tpb.matrix = Matrix.LocRotScale(loc, want, cur.to_scale())
             bpy.context.view_layer.update()
         for t in order:
             tgt.pose.bones[t].keyframe_insert("rotation_quaternion", frame=frame)
-        if args.root_motion:
+        if args.root_motion or bob:
             tgt.pose.bones[hips].keyframe_insert("location", frame=frame)
+
+    # Hands crossing the body's midline: the visible symptom of a rest-pose mismatch. Left bones sit at +lat.
+    lat = tgt_frame.col[0]
+    crossed_hand_frames, min_hand_sep_pct = None, None
+    side_bones = ("mixamorig:LeftHand", "mixamorig:RightHand", "mixamorig:LeftUpLeg", "mixamorig:RightUpLeg")
+    if all(n in tgt.pose.bones for n in side_bones):
+        hip_w = (tgt.data.bones["mixamorig:LeftUpLeg"].head_local
+                 - tgt.data.bones["mixamorig:RightUpLeg"].head_local).dot(lat)
+        if abs(hip_w) >= 1e-6:
+            seps = []
+            for frame in range(start, end + 1):
+                bpy.context.scene.frame_set(frame)
+                seps.append((tgt.pose.bones["mixamorig:LeftHand"].head
+                             - tgt.pose.bones["mixamorig:RightHand"].head).dot(lat))
+            crossed_hand_frames = sum(1 for sep in seps if sep <= 0)
+            min_hand_sep_pct = round(100 * min(seps) / hip_w, 1)
 
     # Drop EVERYTHING the clip import brought in, plus its action. Removing only
     # the armature object left the source character's MESH in the scene - the
@@ -347,9 +423,12 @@ def main() -> int:
         "action": source_action_name, "source_convention": map_name,
         "bones_mapped": len(pairs), "frames": end - start + 1,
         "frame_alignment_deg": round(align_q.angle * 57.29578, 1),
-        "root_motion": args.root_motion, "height_ratio": round(height_ratio, 4),
-        "root_alignment": "yaw", "height_ratio_basis": "hips",
+        "root_motion": args.root_motion, "hip_bob": bool(bob), "height_ratio": round(height_ratio, 4),
+        "root_alignment": "yaw", "height_ratio_basis": "hips_above_toes",
         "unmapped_target_bones": sorted(tgt_bones - {t for _s, t in pairs}),
+        "rest_correction_deg": {t: round(math.degrees(q.angle), 1) for t, q in corr.items()},
+        "crossed_hand_frames": crossed_hand_frames,
+        "min_hand_separation_pct_hip_width": min_hand_sep_pct,
     }
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2) + "\n")

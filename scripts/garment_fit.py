@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Place a generated garment onto a target body, then drape it there.
+"""Place a generated garment onto a target body, push it out of the body, and skin it there.
 
 Run by the SegviGen venv (python 3.11) - it has both trimesh and bpy, and neither
 stage needs the GPU. Normally a subprocess of the MCP server's `generate_garment`.
@@ -20,8 +20,12 @@ One rule for every garment, no correspondence search and no ICP.
 
 DRAPING (bpy)
 -------------
-Shrinkwrap to evict penetrating vertices, then cloth to relax the result. Both run
-headless in bpy 4.5.9.
+Shrinkwrap to evict penetrating vertices, headless in bpy 4.5.9. There is no cloth
+pass: there was one, and it never reached the output. The export evaluated the
+unsimulated mesh (the shipped garment matched shrinkwrap alone to 0.15 mm on
+female_base_v5, 2026-10-12); the simulation itself diverged there (vertices 5 m out
+by frame 6); and on a dressed 1 m villager it ran 35-90 s a frame, so the fit outlived
+generate_garment's timeout and the tool failed with no fit report.
 
 The mode matters more than anything else here. `wrap_mode='OUTSIDE'` moves a vertex
 ONLY if it is inside the target, so it pushes the intersecting parts out and leaves
@@ -31,6 +35,12 @@ that took vertices-inside-the-body from 32.4% after placement to **0.0%**.
 `TARGET_PROJECT` was tried first and is wrong for this: it projects every vertex
 onto the surface, which collapses a corset flat against the skin, and because it
 pulls a nearly-coincident surface in both directions it still left 30.9% inside.
+
+SKINNING (bpy)
+--------------
+The fitted garment then takes the body's skin weights, interpolated over the nearest
+body face, and is bound to the body's armature, so `<name>_skinned.glb` follows any
+clip that drives the body. Nothing else in golem skins a mesh that is not a character.
 
 AXES
 ----
@@ -185,8 +195,8 @@ def penetration(garment, body, samples: int = 200_000):
     return float((outward < 0).mean())
 
 
-def drape(garment_path: Path, body_path: Path, out_path: Path, frames: int, thickness: float):
-    """Shrinkwrap then cloth, headless."""
+def drape(garment_path: Path, body_path: Path, out_path: Path, thickness: float):
+    """Shrinkwrap the garment out of the body, headless."""
     import bpy
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -198,8 +208,6 @@ def drape(garment_path: Path, body_path: Path, out_path: Path, frames: int, thic
     garment = [o for o in bpy.context.scene.objects if o.type == "MESH" and o.name not in before][0]
     garment.name = "garment"
 
-    body.modifiers.new("Collision", "COLLISION")
-
     # wrap_mode OUTSIDE moves a vertex ONLY if it is inside the target. That is the
     # whole trick: it evicts the penetrating vertices while leaving the rest of the
     # garment's shape alone. TARGET_PROJECT was tried first and is wrong here - it
@@ -210,30 +218,71 @@ def drape(garment_path: Path, body_path: Path, out_path: Path, frames: int, thic
     sw.target = body
     sw.wrap_method = "NEAREST_SURFACEPOINT"
     sw.wrap_mode = "OUTSIDE"
-    sw.offset = thickness            # hold the cloth off the skin
+    sw.offset = thickness            # hold the garment off the skin
     bpy.context.view_layer.objects.active = garment
     bpy.ops.object.modifier_apply(modifier="Shrinkwrap")
-
-    # Cloth then relaxes the stretch the eviction introduced. Gravity is zeroed:
-    # the garment is unpinned, and under gravity an unpinned corset simply slides
-    # off the body instead of settling on it.
-    cloth = garment.modifiers.new("Cloth", "CLOTH")
-    cloth.settings.effector_weights.gravity = 0.0
-    cloth.collision_settings.collision_quality = 5     # default 2 is too low here
-    cloth.collision_settings.distance_min = thickness
-    cloth.settings.quality = 8
-    scene = bpy.context.scene
-    scene.frame_start, scene.frame_end = 1, frames
-    for f in range(1, frames + 1):
-        scene.frame_set(f)
-
-    smooth = garment.modifiers.new("Smooth", "CORRECTIVE_SMOOTH")
-    smooth.factor = 0.5
-
     bpy.ops.object.select_all(action="DESELECT")
     garment.select_set(True)
     bpy.ops.export_scene.gltf(filepath=str(out_path), export_format="GLB",
                               use_selection=True, export_apply=True)
+
+
+def skin_to_body(garment_path: Path, body_path: Path, out_path: Path) -> dict:
+    """Weight the fitted garment from the body's own skin and bind it to the body's armature.
+
+    Each garment vertex takes the weights interpolated over the nearest body face, so the cloth follows the bones the
+    skin under it follows, and a clip that drives the body drives the garment: the bone names are the body's.
+    """
+    import bpy
+
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.ops.import_scene.gltf(filepath=str(body_path))
+    scene = bpy.context.scene
+    for coll in [c for c in bpy.data.collections if c.name.startswith("glTF_not_exported")]:
+        for o in list(coll.objects):
+            bpy.data.objects.remove(o, do_unlink=True)
+    arm = next((o for o in scene.objects if o.type == "ARMATURE"), None)
+    if arm is None:
+        return {"skinned_glb": None, "skin_warning": "body has no armature"}
+    body = next((o for o in scene.objects
+                 if o.type == "MESH" and any(m.type == "ARMATURE" for m in o.modifiers)), None)
+    if body is None:
+        return {"skinned_glb": None, "skin_warning": "body has an armature but no mesh skinned to it"}
+
+    before = set(scene.objects)
+    bpy.ops.import_scene.gltf(filepath=str(garment_path))
+    garment = next(o for o in scene.objects if o not in before and o.type == "MESH")
+    garment.name = "garment"
+
+    bpy.ops.object.select_all(action="DESELECT")
+    garment.select_set(True)
+    bpy.context.view_layer.objects.active = garment
+    dt = garment.modifiers.new("BodyWeights", "DATA_TRANSFER")
+    dt.object = body
+    dt.use_vert_data = True
+    dt.data_types_verts = {"VGROUP_WEIGHTS"}
+    dt.vert_mapping = "POLYINTERP_NEAREST"
+    dt.layers_vgroup_select_src = "ALL"
+    dt.layers_vgroup_select_dst = "NAME"
+    bpy.ops.object.datalayout_transfer(modifier=dt.name)
+    bpy.ops.object.modifier_apply(modifier=dt.name)
+    bpy.ops.object.vertex_group_limit_total(group_select_mode="ALL", limit=4)
+    bpy.ops.object.vertex_group_normalize_all(group_select_mode="ALL", lock_active=False)
+
+    world = garment.matrix_world.copy()
+    garment.parent = arm
+    garment.matrix_world = world
+    mod = garment.modifiers.new("Armature", "ARMATURE")
+    mod.object = arm
+
+    bpy.ops.object.select_all(action="DESELECT")
+    arm.select_set(True)
+    garment.select_set(True)
+    bpy.ops.export_scene.gltf(filepath=str(out_path), export_format="GLB", use_selection=True,
+                              export_skins=True, export_animations=False)
+
+    unweighted = sum(1 for v in garment.data.vertices if sum(g.weight for g in v.groups) < 0.01)
+    return {"skinned_glb": str(out_path), "unweighted_vertices": unweighted}
 
 
 def main() -> int:
@@ -245,8 +294,7 @@ def main() -> int:
     ap.add_argument("--anchor", default="torso", choices=sorted(ANCHORS))
     ap.add_argument("--ease", type=float, default=1.08, help="scale margin so cloth sits off the skin")
     ap.add_argument("--thickness", type=float, default=0.006, help="metres of standoff")
-    ap.add_argument("--frames", type=int, default=25)
-    ap.add_argument("--no-drape", action="store_true", help="place only; skip the cloth stage")
+    ap.add_argument("--no-drape", action="store_true", help="place only; skip the shrinkwrap stage")
     args = ap.parse_args()
 
     import trimesh
@@ -271,11 +319,14 @@ def main() -> int:
 
     if not args.no_drape:
         draped = out_dir / f"{args.name}.glb"
-        drape(placed, Path(args.body), draped, args.frames, args.thickness)
+        drape(placed, Path(args.body), draped, args.thickness)
         report["draped_glb"] = str(draped)
         d = trimesh.load(str(draped), force="mesh", process=False)
         report["penetration_after_drape"] = round(penetration(d, body), 4)
         report["draped_faces"] = int(len(d.faces))
+
+    fitted = Path(report.get("draped_glb") or placed)
+    report.update(skin_to_body(fitted, Path(args.body), out_dir / f"{args.name}_skinned.glb"))
 
     report_path = out_dir / f"{args.name}_fit.json"
     report_path.write_text(json.dumps(report, indent=2))

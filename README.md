@@ -505,10 +505,13 @@ generate_garment(garment="blackened leather armour corset with brass buckles",
 ```
 
 Produces a garment as **its own asset** — open-surface, textured, with an
-interior — then places and drapes it on the target body. Measured end to end at
-**300 s and 3.4 GB peak VRAM**; published to `gen_ai/garments/<name>/` as
+interior — then places it on the target body, pushes it out of the skin and skins it
+to the body's armature. Measured end to end at
+**300 s**; generation reported a 14.47 GB torch peak and needs 17 GB free; published to `gen_ai/garments/<name>/` as
 `asset.glb` (fitted), `asset_unfitted.glb` (as generated), `reference.png` and a
-`metadata.json` carrying the full provenance.
+`metadata.json` carrying the full provenance. `skinned_glb` (in the work directory) is
+the fitted garment with the body's armature and weights, so a clip that drives the body
+drives it too.
 
 ### Why this is not `segment_mesh`
 
@@ -554,10 +557,17 @@ T-pose body's widest slice at chest height is the **1.70 m arm span**, not the
 slices are rejected by width relative to the median.
 
 Draping is shrinkwrap `wrap_mode='OUTSIDE'` — which moves a vertex only if it is
-*inside* the body, evicting intersections without flattening the garment — then a
-cloth pass with gravity zeroed, because an unpinned corset under gravity slides
-off rather than settling. `TARGET_PROJECT` is wrong here: it projects every vertex
-onto the skin and still left 30.9% of them inside.
+*inside* the body, evicting intersections without flattening the garment.
+`TARGET_PROJECT` is wrong here: it projects every vertex onto the skin and still left
+30.9% of them inside. A cloth pass used to follow and never reached the output: the
+export evaluated the unsimulated mesh (the shipped garment matched shrinkwrap alone to
+0.15 mm), the simulation diverged on female_base_v5, and on a dressed 1 m villager it
+ran 35-90 s a frame until the fit outlived the tool's timeout.
+
+Skinning gives every garment vertex the body's weights interpolated over the nearest
+body face (`DATA_TRANSFER`, `POLYINTERP_NEAREST`), limited to 4 and normalised, and binds
+it to the body's armature. The body must be a rigged GLB for this; a static body gets
+`skinned_glb: null` and a `skin_warning`.
 
 ---
 
@@ -646,8 +656,9 @@ holds the card. The VRAM each job needs is a measured peak plus headroom:
 
 | Job | Needs |
 |---|---|
-| `generate_3d`, `generate_3d_multi_image` | 16 GB |
-| `generate_garment` | 6 GB |
+| `generate_3d` | 19 GB (OOM-killed in CuMesh simplify at 17.7 GB free; torch's 14.3 GB peak misses CuMesh) |
+| `generate_3d_multi_image` | 17 GB (passed at 17.7 GB free, 13.2 GB allocated) |
+| `generate_garment` | 17 GB (14.47 GB torch peak; OOM-ed loading at 11.3 GB free) |
 | `segment_mesh` | 18 GB |
 | `generate_orbit_views` | 19 GB |
 | `animate_mesh` | 2 GB (peak 1.33 GiB; the text encoder runs on the CPU) |

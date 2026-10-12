@@ -448,6 +448,16 @@ def mixamo_from_generated(rigged_glb, links=3):
         limb["Right"][1][0] = femur_mid + (head_r - femur_mid) * k
         femur_mid = (limb["Left"][1][0] + limb["Right"][1][0]) / 2
 
+    # Centre the femoral heads on the knees' lateral midpoint. The generated leg chains can start off-centre: the
+    # A-pose villager had hip heads at x -0.002 and -0.085 with its knees at +0.065 and -0.085, so one thigh ran
+    # diagonally and the pelvis sat over one leg.
+    knee_mid = (limb["Left"][1][1] + limb["Right"][1][1]) / 2
+    femur_recentre = float(knee_mid[lat_axis] - femur_mid[lat_axis])
+    for tag in ("Left", "Right"):
+        limb[tag][1][0] = np.asarray(limb[tag][1][0], float).copy()
+        limb[tag][1][0][lat_axis] += femur_recentre
+    femur_mid = (limb["Left"][1][0] + limb["Right"][1][0]) / 2
+
     for tag, arm_b in (("Left", arms[0]), ("Right", arms[1])):
         arm_line = longest_line(c, arm_b)
         t_sh = t_where(pos, arm_line, lambda q: abs(float(q[lat_axis]) - ctr),
@@ -493,10 +503,13 @@ def mixamo_from_generated(rigged_glb, links=3):
         add(f"mixamorig:{tag}Leg", f"mixamorig:{tag}UpLeg", g[1])
         add(f"mixamorig:{tag}Foot", f"mixamorig:{tag}Leg", g[2])
         add(f"mixamorig:{tag}ToeBase", f"mixamorig:{tag}Foot", g[3])
-        # The leg chain ends at the toe, so the tip is extrapolated along the foot.
+        # The leg chain ends at the toe, so the tip is extrapolated along the foot, levelled: a tip following a
+        # foot that points down into the ground ends below the floor.
         step = g[3] - g[2]
+        step = step - float(step @ up_v) * up_v
         nrm = float(np.linalg.norm(step))
-        step = step / nrm if nrm > 1e-9 else -up_v
+        fwd_n = float(np.linalg.norm(toe_v))
+        step = step / nrm if nrm > 1e-9 else (toe_v / fwd_n if fwd_n > 1e-9 else -up_v)
         add(f"mixamorig:{tag}Toe_End", f"mixamorig:{tag}ToeBase",
             g[3] + step * (TOE_TIP_FRAC * leg_len))
 
@@ -555,7 +568,8 @@ def mixamo_from_generated(rigged_glb, links=3):
     par = np.array([x[1] for x in spec], dtype=np.int32)
     joints = np.stack([x[2] for x in spec]).astype(np.float32)
     report = {"source_rig": rigged_glb, "generated_joints": int(len(parents)),
-              "spine_len": len(spine), "extras": [e[0] for e in extras]}
+              "spine_len": len(spine), "extras": [e[0] for e in extras],
+              "femur_recentre_m": round(femur_recentre, 4)}
     return names, par, joints, report
 
 
@@ -759,6 +773,14 @@ def cmd_fit(args):
 
     mesh = trimesh.load(args.mesh, force="mesh", process=False)
     names, parents, joints, gen_report = mixamo_from_generated(args.from_rig)
+    # No toe joint below the sole: weights follow joints, and a toe under the floor drags the shoe into it.
+    floor = float(np.asarray(mesh.vertices)[:, UP].min())
+    lifted = 0
+    for i, n in enumerate(names):
+        if (n.endswith("ToeBase") or n.endswith("Toe_End")) and float(joints[i][UP]) < floor + 0.005:
+            joints[i][UP] = floor + 0.005
+            lifted += 1
+    gen_report["toes_lifted"] = lifted
 
     skin = placeholder_skin(mesh.vertices, joints, parents)
     # Convert to Blender's axis convention before handing the data to bpy; the

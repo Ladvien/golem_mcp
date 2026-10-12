@@ -93,13 +93,15 @@ GARMENT_DRIVER = SCRIPTS / "trellis2_garment.py"
 CHARACTER_DRIVER = SCRIPTS / "trellis2_character.py"
 MULTI_IMAGE_DRIVER = SCRIPTS / "trellis2_multi_image.py"
 VIEW_CONSISTENCY_DRIVER = SCRIPTS / "view_consistency.py"
-# Measured 14.47 GB peak for a pipeline_type=512 character on a 3090, against the
-# 3.4 GB a garment costs - a character is remeshed and textured at 2048.
-CHARACTER_VRAM_REQUIRED = 16e9
+# generate_3d OOM-killed in CuMesh simplify with 17.7 GB free and passed with 20.3 GB free on the same image,
+# 2026-10-12; torch's peak counter (14.3 GB) misses CuMesh's own allocations.
+CHARACTER_VRAM_REQUIRED = 19e9
+# multi-image passed with 17.7 GB free, 2026-10-12, peak 13.2 GB allocated.
+MULTI_IMAGE_VRAM_REQUIRED = 17e9
 GARMENT_FIT_DRIVER = SCRIPTS / "garment_fit.py"
-# Measured 3.4 GB peak for TRELLIS.2 image-to-3D at pipeline_type=512, against the
-# 24 GB its README asks for. Sized to the measurement with headroom.
-GARMENT_VRAM_REQUIRED = 6e9
+# garment generation reported a 14.47 GB torch peak and OOM-ed while loading with 11.3 GB free, 2026-10-12;
+# context and non-torch allocations on top.
+GARMENT_VRAM_REQUIRED = 17e9
 SEGVIGEN_OUTPUT_DIR = Path(os.environ.get("SEGVIGEN_OUTPUT_DIR", str(OUTPUT_DIR / "segmentation")))
 # Measured at ~16.6 GB on a dressed character; the README's "24 GB" is boilerplate
 # inherited from TRELLIS.2.
@@ -583,7 +585,7 @@ def generate_3d_multi_image(
                 "--texture-size", str(texture_size),
             ],
             timeout, "MULTI_IMAGE_OK", "TRELLIS.2 multi-image generation",
-            note=f"generate_3d_multi_image {output_name}", need_bytes=CHARACTER_VRAM_REQUIRED,
+            note=f"generate_3d_multi_image {output_name}", need_bytes=MULTI_IMAGE_VRAM_REQUIRED,
         )
         elapsed = round(time.time() - started, 1)
 
@@ -768,20 +770,23 @@ def _rest_pose_check(gltf: dict, joints: list[int]) -> dict[str, Any]:
         T-pose asset   lat +0.95   gait -0.956   swing 55%
         A-pose asset   lat +0.41   gait -0.295   swing 23%
 
-    An arm hanging at the side is nearly parallel to the vertical axis a walk clip
-    rotates it about, so most of the clip becomes twist rather than swing. The
-    T-pose requirement was documented in the smoke test and the agent prompt and
-    enforced nowhere, so an arms-down reference silently produced a rig that
-    animates badly.
+    The cause was the retarget, not the pose: a clip's delta was applied to a rest
+    that differed from the clip's own, so an A-pose arm landed 29 degrees past where
+    the clip put it. retarget_animation.rest_corrections now turns each limb onto the
+    clip's rest first (apply_animation reports rest_correction_deg). Laterality is
+    still measured, because an arm resting against the torso is skinned against it.
 
-    Returns laterality in [-1, 1]: +1 is arms straight out, 0 is straight down.
+    Returns laterality in [-1, 1]: +1 is arms straight out, 0 is straight down, and
+    hip_midline_offset_pct_leg: how far the femoral heads' midpoint sits off the
+    knees', as a share of leg length. An off-centre pair runs one thigh diagonally.
     """
     import numpy as np
 
     names = {gltf["nodes"][j].get("name", ""): j for j in joints}
     need = ("mixamorig:Hips", "mixamorig:Spine2", "mixamorig:LeftShoulder",
             "mixamorig:LeftHand", "mixamorig:LeftFoot", "mixamorig:LeftToeBase",
-            "mixamorig:RightFoot", "mixamorig:RightToeBase")
+            "mixamorig:RightFoot", "mixamorig:RightToeBase",
+            "mixamorig:LeftUpLeg", "mixamorig:RightUpLeg", "mixamorig:LeftLeg", "mixamorig:RightLeg")
     if any(n not in names for n in need):
         return {}
 
@@ -798,7 +803,13 @@ def _rest_pose_check(gltf: dict, joints: list[int]) -> dict[str, Any]:
     fwd = unit(fwd - float(fwd @ up) * up)     # toes give forward; see retarget_animation
     lat = unit(np.cross(up, fwd))
     arm = unit(p["mixamorig:LeftHand"] - p["mixamorig:LeftShoulder"])
-    return {"rest_arm_laterality": round(float(arm @ lat), 3)}
+    leg_len = float(np.linalg.norm(p["mixamorig:LeftUpLeg"] - p["mixamorig:LeftFoot"]))
+    off = abs(float((((p["mixamorig:LeftUpLeg"] + p["mixamorig:RightUpLeg"])
+                      - (p["mixamorig:LeftLeg"] + p["mixamorig:RightLeg"])) / 2) @ lat))
+    return {
+        "rest_arm_laterality": round(float(arm @ lat), 3),
+        "hip_midline_offset_pct_leg": round(100 * off / leg_len, 1) if leg_len > 1e-9 else None,
+    }
 
 
 def _skeleton_report(path: Path) -> dict[str, Any]:
@@ -861,12 +872,16 @@ def _skeleton_report(path: Path) -> dict[str, Any]:
     if lat is not None and lat < 0.7:
         warnings.append(
             f"Rest arm laterality is {lat:+.2f}, where a T-pose reads near +1.00 and arms "
-            f"hanging at the sides read near 0. This rig will SKIN fine and ANIMATE badly: "
-            f"every Mixamo and UE5 clip is authored against a T-pose rest, and the retarget "
-            f"preserves the character's own rest offset. Measured on this pipeline, the same "
-            f"clip on an A-pose asset gave gait -0.30 and 23% arm swing against a T-pose "
-            f"asset's -0.96 and 55%. The cause is upstream, in the reference image: generate "
+            f"hanging at the sides read near 0. apply_animation turns each limb onto the clip's "
+            f"T-pose rest (rest_correction_deg), but an arm resting against the torso is skinned "
+            f"against it. The cause is upstream, in the reference image: generate "
             f"it 'full body, standing in a T-pose with both arms held straight out'."
+        )
+    hip_off = rest.get("hip_midline_offset_pct_leg")
+    if hip_off is not None and hip_off > 3:
+        warnings.append(
+            f"The hip joints sit {hip_off}% of leg length off the knees' midline, so one thigh runs "
+            f"diagonally and steps will look lopsided."
         )
     prim = gltf["meshes"][0]["primitives"][0]
     attrs = prim.get("attributes", {})
@@ -1985,7 +2000,7 @@ def generate_garment(
         Field(description="Where on the body it sits: torso, chest, waist, hips, legs or full"),
     ] = "torso",
     seed: Annotated[int, Field(description="Seed for the garment generation", ge=0)] = 0,
-    drape: Annotated[bool, Field(description="Run the cloth pass after placing")] = True,
+    drape: Annotated[bool, Field(description="Shrinkwrap the garment out of the body after placing")] = True,
     publish: Annotated[bool, Field(description="Publish the bundle to codex_fs")] = True,
     timeout: Annotated[int, Field(description="Hard limit per stage, seconds", ge=60, le=7200)] = 3600,
 ) -> dict[str, Any]:
@@ -1998,7 +2013,8 @@ def generate_garment(
     never follows a garment edge at all.
 
     Three stages: a product-shot image of the garment alone, TRELLIS.2 to turn it
-    into an open-surface mesh, then placement and a cloth pass onto the target body.
+    into an open-surface mesh, then placement and a shrinkwrap onto the target body,
+    and skinning to the body's armature (`skinned_glb`) when the body is rigged.
     TRELLIS.2 through its own driver rather than generate_3d, whose closed-surface
     postprocessing would seal the garment shut.
 
@@ -2083,6 +2099,12 @@ def generate_garment(
                 f"{penetration:.1%} of garment vertices are still inside the body. Check the "
                 "render before using it; raising --ease or the anchor band usually fixes it."
             )
+        if fit_report.get("skin_warning"):
+            warnings.append(f"The garment was not skinned: {fit_report['skin_warning']}.")
+        if fit_report.get("unweighted_vertices"):
+            warnings.append(
+                f"{fit_report['unweighted_vertices']} garment vertices took no weight from the body and will not move."
+            )
 
         metadata = {
             "asset_type": "garments", "tool": "TRELLIS.2", "garment": garment,
@@ -2108,6 +2130,7 @@ def generate_garment(
             "output_name": output_name,
             "garment_glb": garment_report["garment_glb"],
             "fitted_glb": fitted,
+            "skinned_glb": fit_report.get("skinned_glb"),
             "published_to": published,
             "reference_image": reference,
             "target_body": str(target),
@@ -2332,6 +2355,9 @@ def apply_animation(
         bool,
         Field(description="Carry hip translation, scaled by the height ratio. Off gives an in-place cycle"),
     ] = False,
+    hip_bob: Annotated[
+        bool, Field(description="In place but keeping the pelvis's vertical bob; ignored when root_motion is set"),
+    ] = True,
     timeout: Annotated[int, Field(description="Hard limit in seconds", ge=60, le=7200)] = 1800,
 ) -> dict[str, Any]:
     """Retarget an animation clip onto a canonically rigged character.
@@ -2382,6 +2408,8 @@ def apply_animation(
             argv += ["--action", clip_action]
         if root_motion:
             argv.append("--root-motion")
+        elif hip_bob:
+            argv.append("--hip-bob")
 
         started = time.time()
         _run_script(SEGVIGEN_PYTHON, RETARGET_DRIVER, argv, timeout, "RETARGET_OK", "Retarget")
@@ -2391,6 +2419,7 @@ def apply_animation(
             raise RuntimeError(f"Retarget reported success but wrote nothing to {target}")
 
         report = json.loads(report_path.read_text())
+        crossed = report["crossed_hand_frames"]
         published = _publish_animation(source, target, report, clip_name)
 
         return {
@@ -2409,12 +2438,20 @@ def apply_animation(
             "source_convention": report["source_convention"],
             "frame_alignment_deg": report["frame_alignment_deg"],
             "root_motion": root_motion,
+            "hip_bob": report["hip_bob"],
             "undriven_bones": report["unmapped_target_bones"],
             "character_bones": len(bones),
+            "rest_correction_deg": report["rest_correction_deg"],
+            "crossed_hand_frames": crossed,
+            "min_hand_separation_pct_hip_width": report["min_hand_separation_pct_hip_width"],
+            "warnings": [
+                f"hands cross the body's midline on {crossed} of {report['frames']} frames: the clip may genuinely "
+                "cross them (a clap, folded arms), otherwise the rig's rest pose is wrong"
+            ] if isinstance(crossed, int) and crossed > 0 else [],
             "note": (
                 "Undriven bones are the extra chains and are left at rest by design. "
-                "Root motion is off by default, giving an in-place cycle to drive from "
-                "a game engine's locomotion."
+                "Root motion is off by default, giving an in-place cycle that keeps its vertical bob "
+                "(hip_bob) to drive from a game engine's locomotion."
             ),
         }
     except Exception as e:
@@ -2442,7 +2479,7 @@ def health_check() -> dict[str, Any]:
         free = vram_free_bytes()
         needs = {
             "generate_3d": CHARACTER_VRAM_REQUIRED,
-            "generate_3d_multi_image": CHARACTER_VRAM_REQUIRED,
+            "generate_3d_multi_image": MULTI_IMAGE_VRAM_REQUIRED,
             "segment_mesh": SEGVIGEN_VRAM_REQUIRED,
             "generate_garment": GARMENT_VRAM_REQUIRED,
             "generate_orbit_views": MVADAPTER_VRAM_REQUIRED,

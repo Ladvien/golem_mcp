@@ -32,8 +32,8 @@ TWO SETTINGS THAT ARE NOT OPTIONAL
     explicitly overrides it to True, and that closes open boundaries.
   * `mesh.simplify()` BEFORE to_glb. Raw extraction measured 3.27M faces, and
     handing that to the exporter got the process killed by the kernel OOM killer.
-    The binding constraint is 32 GB of system RAM, not VRAM - this pipeline peaks
-    at only ~3.4 GB on the GPU. Both upstream entrypoints call simplify
+    The binding constraint is 32 GB of system RAM as much as VRAM: a 2026-10-12 run
+    reported a 14.47 GB torch peak on the GPU. Both upstream entrypoints call simplify
     (TRELLIS.2/example.py:26, SegviGen/inference_full.py:285).
 """
 
@@ -46,10 +46,6 @@ import time
 from pathlib import Path
 
 REPO = Path(os.environ.get("SEGVIGEN_REPO", "/home/ladvien/segvigen/repo"))
-
-# Measured at 3.4 GB peak on a 3090 at pipeline_type=512, against the README's
-# claimed 24 GB. Recorded so the MCP preflight is sized to reality.
-MEASURED_PEAK_VRAM_GB = 3.4
 
 # A garment you cannot put a body into is not a garment. Voxelize, flood-fill the
 # air from outside, and measure what fraction of the air is sealed in. Measured:
@@ -86,7 +82,7 @@ def enclosed_air_fraction(mesh, divisions: int = VOXEL_GRID_DIVISIONS) -> float:
 
 def do_render(glb: str, out: str) -> None:
     """Render a preview in a fresh process - bpy must not share one with torch's
-    ~3.4 GB CUDA context."""
+    CUDA context."""
     sys.path.insert(0, str(REPO / "data_toolkit"))
     from bpy_render import render_from_transforms
 

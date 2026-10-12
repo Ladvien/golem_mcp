@@ -85,7 +85,7 @@ THE STEPS
 
 1.  health_check. Report free VRAM, then:
       ssh big 'nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv'
-    to name anything already holding the card. Generation needs ~16 GB free.
+    to name anything already holding the card. Generation needs ~19 GB free.
 
     Also confirm the rigging host is reachable, because rigging does NOT run on
     big — it runs on bmb over ssh:
