@@ -39,8 +39,12 @@ TWO TRAPS, BOTH MEASURED
     quaternion, which looks exactly like a broken rig.
   * Mixamo FBX keys location in CENTIMETRES. On a 1 m character that is a 100x
     root translation - measured mean vertex motion of 105 units, character gone
-    from the scene. Root motion is therefore scaled by the height ratio, and off
-    by default.
+    from the scene. Root motion is therefore scaled by the hips-height ratio (the target's rest hips height over the
+    source's, in each rig's own units), and off by default.
+  * Root motion is turned by the YAW part of the body-frame alignment only. The alignment between the clip's body frame
+    and ours also holds a pitch and roll (the SOMA skeleton's rest leans about 9 degrees about X from the mannequin's);
+    turning hip translation by all of it leaked forward travel into height, so a walker sank 1 m in 8 s. Rotations keep
+    the full alignment: it conjugates them correctly.
 """
 
 import argparse
@@ -176,14 +180,15 @@ def main() -> int:
                          "fbx per engine holding every clip). See --list-clips.")
     ap.add_argument("--source-map", default="auto", choices=["auto", *MAPS])
     ap.add_argument("--root-motion", action="store_true",
-                    help="carry hip translation, scaled by the height ratio (default: in place)")
+                    help="carry hip translation, scaled by the hips-height ratio and turned by the yaw part of the "
+                         "body-frame alignment only (default: in place)")
     ap.add_argument("--list-clips", action="store_true", help="print the file's actions and exit")
     ap.add_argument("--report", help="write the JSON result here; Blender's own chatter makes "
                                      "stdout unsafe to parse")
     args = ap.parse_args()
 
     import bpy
-    from mathutils import Matrix
+    from mathutils import Matrix, Quaternion
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=args.character)
@@ -267,10 +272,27 @@ def main() -> int:
     align_q = align.to_quaternion()
     align_inv = align_q.inverted()
 
+    # Root motion is turned by the alignment's YAW (its twist about armature Z) only, and scaled by the ratio of the
+    # two rigs' rest hips heights. The hips sit over the body's centre, so their height is the largest axis of the rest
+    # head, whichever way up a rig's armature space is (a BVH or glb is Z-up, a Mixamo FBX Y-up).
+    yaw_q = Quaternion((align_q.w, 0.0, 0.0, align_q.z))
+    align_yaw = (yaw_q.normalized() if yaw_q.magnitude > 1e-9 else Quaternion((1.0, 0.0, 0.0, 0.0))).to_matrix()
+
+    hips = "mixamorig:Hips"
+    root_src = by_target.get(hips)
+    src_hips_rest = src.pose.bones[root_src].bone.matrix_local.translation if root_src else None
+    # The offset is applied to the REST head, not to the pose's current translation: the pose keeps
+    # the previous frame's location, so adding to it accumulated the displacement every frame.
+    tgt_hips_rest = tgt.pose.bones[hips].bone.matrix_local.translation.copy() if hips in tgt_bones else None
+
+    def hips_height(head) -> float:
+        return max(abs(head.x), abs(head.y), abs(head.z))
+
     height_ratio = 1.0
-    if args.root_motion:
-        sd, td = max(src.dimensions), max(mesh.dimensions)
-        height_ratio = (td / sd) if sd > 1e-6 else 1.0
+    if args.root_motion and src_hips_rest is not None and tgt_hips_rest is not None:
+        src_height, tgt_height = hips_height(src_hips_rest), hips_height(tgt_hips_rest)
+        if src_height > 1e-6 and tgt_height > 1e-6:
+            height_ratio = tgt_height / src_height
 
     for pb in tgt.pose.bones:
         pb.rotation_mode = "QUATERNION"
@@ -283,12 +305,6 @@ def main() -> int:
 
     source_action_name = act.name       # captured before the stale actions are freed
     start, end = (int(round(v)) for v in act.frame_range)
-    hips = "mixamorig:Hips"
-    root_src = by_target.get(hips)
-    src_hips_rest = src.pose.bones[root_src].bone.matrix_local.translation if root_src else None
-    # The offset is applied to the REST head, not to the pose's current translation: the pose keeps
-    # the previous frame's location, so adding to it accumulated the displacement every frame.
-    tgt_hips_rest = tgt.pose.bones[hips].bone.matrix_local.translation.copy() if hips in tgt_bones else None
 
     for frame in range(start, end + 1):
         bpy.context.scene.frame_set(frame)
@@ -302,7 +318,7 @@ def main() -> int:
             cur = tpb.matrix.copy()
             loc = cur.translation.copy()
             if args.root_motion and t == hips and src_hips_rest is not None:
-                off = align @ (spb.matrix.translation - src_hips_rest)
+                off = align_yaw @ (spb.matrix.translation - src_hips_rest)
                 loc = tgt_hips_rest + off * height_ratio
             tpb.matrix = Matrix.LocRotScale(loc, want, cur.to_scale())
             bpy.context.view_layer.update()
@@ -332,6 +348,7 @@ def main() -> int:
         "bones_mapped": len(pairs), "frames": end - start + 1,
         "frame_alignment_deg": round(align_q.angle * 57.29578, 1),
         "root_motion": args.root_motion, "height_ratio": round(height_ratio, 4),
+        "root_alignment": "yaw", "height_ratio_basis": "hips",
         "unmapped_target_bones": sorted(tgt_bones - {t for _s, t in pairs}),
     }
     if args.report:
