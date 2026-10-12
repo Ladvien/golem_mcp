@@ -47,6 +47,16 @@ rig_model(mesh="gargoyle.glb", num_beams=10)
 Relative names in `rig_model` resolve against the TRELLIS output dir, so no path
 plumbing is needed between the two stages.
 
+## Live Blender on the Mac (`blender/`)
+
+`blender/` is the former `Ladvien/blended`, imported with its history. It runs on the Mac beside an open Blender 5.2: a Blender add-on that execs code in the open session, the `blended` harness (ops, mesh analyzer, plan gate) that runs inside Blender's Python, and `blender-mcp`, the stdio server in front of both.
+
+`blender-mcp` is registered as `golem` and also proxies every tool of the server on big (`GOLEM_REMOTE_URL`, default `http://192.168.1.110:9786/mcp`), so a client sees the Blender tools and the tools above through one MCP. The golem calls run on big and never touch the Blender scene, so they skip the plan gate and need no open Blender. With big unreachable the server starts with the Blender tools only, and a golem call answers `golem on big is unreachable at <url>`.
+
+- Install: `cd blender && uv sync`, then `make install-mcp-addon` links the add-on into Blender's user extensions and enables it. Restart Blender once so it loads the linked add-on.
+- Tests: `make test-pure test-mcp` in `blender/` (`test-mcp` points the remote at a closed port, so it does not depend on big).
+- Big ignores `blender/`: the golem service and its wheel are built from `src/golem_mcp` only.
+
 ---
 
 ## Installation
@@ -637,15 +647,16 @@ everything not allowed, so the port is open to the LAN only:
 sudo ufw allow from 192.168.1.0/24 to any port 9786 proto tcp
 ```
 
+Clients on the Mac register the Mac front door (`blender/`, see [Live Blender on the Mac](#live-blender-on-the-mac-blender)) instead of the HTTP URL: it serves every tool above plus the Blender tools, and forwards the golem ones to big.
+
 | Client | Setup |
 |---|---|
-| Claude Code | `claude mcp add --scope user --transport http golem http://192.168.1.110:9786/mcp` |
-| omp | `~/.omp/agent/mcp.json`: `"golem": {"type": "http", "url": "http://192.168.1.110:9786/mcp", "timeout": 3600000}` |
-| opencode | `~/.config/opencode/opencode.json`, under `mcp`: `"golem": {"type": "remote", "url": "http://192.168.1.110:9786/mcp", "enabled": true}` |
-| Claude Desktop | `claude_desktop_config.json`, under `mcpServers`: `"golem": {"command": "npx", "args": ["-y", "mcp-remote", "http://192.168.1.110:9786/mcp", "--allow-http"]}` |
+| Claude Code | `claude mcp add --scope user golem -- /Users/ladvien/golem_mcp/blender/.venv/bin/blender-mcp` |
+| omp | `~/.omp/agent/mcp.json`: `"golem": {"type": "stdio", "command": "/Users/ladvien/golem_mcp/blender/.venv/bin/blender-mcp", "args": ["--exit-on-source-change"], "timeout": 3600000}` |
+| opencode | `~/.config/opencode/opencode.json`, under `mcp`: `"golem": {"type": "remote", "url": "http://192.168.1.110:9786/mcp", "enabled": true}` (the GPU tools only, straight to big) |
+| Claude Desktop | `claude_desktop_config.json`, under `mcpServers`: `"golem": {"command": "/Users/ladvien/golem_mcp/blender/.venv/bin/blender-mcp", "args": ["--no-exit-on-source-change"]}` |
 
-A call waits for the GPU queue (up to 20 minutes) and then runs, so give the client an
-hour-long tool timeout (omp's `timeout` is in milliseconds).
+A call waits for the GPU queue (up to 20 minutes) and then runs, so give the client an hour-long tool timeout (omp's `timeout` is in milliseconds).
 
 ---
 

@@ -1,6 +1,6 @@
 # blended
 
-A Blender-based harness for agentic modeling of game assets.
+blended is part of golem (`Ladvien/golem_mcp`, directory `blender/`); its MCP server is registered as `golem` and also serves big's golem tools.
 
 The agent's artifact is a **program** (`Parameters` + `Builder` Python
 modules), not a mesh. The harness's job is to make the environment tell
