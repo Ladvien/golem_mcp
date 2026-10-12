@@ -1,36 +1,43 @@
 [project]
-name = "trellis2-mcp"
-version = "0.1.0"
-description = "MCP server wrapping TRELLIS 3D asset generation"
-requires-python = ">=3.10"
+name = "golem-mcp"
+version = "0.5.0"
+description = "MCP server: image to 3D, rigging, segmentation, garments and text-to-motion, every GPU job under a gpu-tenant lease"
+requires-python = ">=3.11,<3.12"
 dependencies = [
-    "fastmcp>=3.0",
-    "uvicorn>=0.30",
-    "starlette>=0.40",
-    "pydantic>=2.0",
+    "fastmcp>=3.4,<4",
+    "pydantic>=2",
     "Pillow>=10.0",
-    "imageio>=2.30",
-    "imageio-ffmpeg>=0.5",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "trimesh>=4",
+    "torch>=2.4",
+    "skinclip @ git+https://github.com/Ladvien/skinclip.git@v0.1.2",
+    "kimodo @ git+https://github.com/nv-tlabs/kimodo.git@58e781898b3d7e328a676a75d3e338c45dce3ad9",
 ]
-
 [project.optional-dependencies]
-dev = [
-    "ruff>=0.8",
-    "mypy>=1.10",
-]
-
+dev = ["ruff>=0.8", "mypy>=1.10", "pytest>=8"]
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 [tool.ruff]
 line-length = 120
-target-version = "py310"
-
+target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 ignore_missing_imports = true
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+[tool.hatch.build.targets.wheel]
+packages = ["src/golem_mcp"]
+[tool.hatch.metadata]
+allow-direct-references = true

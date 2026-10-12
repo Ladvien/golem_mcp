@@ -1,0 +1,13 @@
+[Unit]
+Description=golem MCP server - image to 3D, rigging, segmentation, garments and text-to-motion
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ladvien/golem_mcp
+ExecStart=/home/ladvien/golem_mcp/.venv/bin/python -m golem_mcp
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
