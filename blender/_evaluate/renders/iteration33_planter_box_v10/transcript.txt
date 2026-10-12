@@ -1,0 +1,1037 @@
+--- thinking ---
+Let me build this planter box. I'll construct it using boxes and a boolean difference for the hollow interior and the drainage hole.
+
+Plan:
+- Outer box: 0.3 x 0.2 x 0.25
+- Inner cavity: subtract a box of 0.26 x 0.16 x 0.23 (walls 0.02 thick, floor 0.02 thick). Inner box positioned so walls are 0.02 on each side, floor 0.02 thick at bottom, open at top.
+
+Outer box: width 0.3 (X), depth 0.2 (Y), height 0.25 (Z). Base at z=0.
+
+Inner cavity: width 0.3 - 2*0.02 = 0.26, depth 0.2 - 2*0.02 = 0.16, height = 0.25 - 0.02 = 0.23 (floor thickness 0.02). Inner box base at z=0.02, so floor is 0.02 thick. Top of inner box at 0.02+0.23 = 0.25, open at top.
+
+Drainage hole: cylinder radius 0.015, through the floor. Floor is at z=0 to 0.02. Hole must go all the way through. Cylinder centered at x=0, y=0, from z=-0.01 to z=0.03 (extend beyond to ensure through).
+
+Let me build step by step.
+
+First create outer box, inner box, cylinder. Then boolean difference.
+
+Let me write the chunk.
+
+Actually let me do it in small steps. First create the outer box and inner cavity box and cylinder, then boolean.
+
+Let me just do it carefully in one or two chunks.
+
+Chunk 1: create outer box, inner box, cylinder, link them.
+
+Actually the ops add_box already creates and links? Let me check. The primitives create mesh objects. link_into_scene links. Let me check whether add_box links automatically. The convention says "Objects must be linked into the scene". Let me just link them.
+
+Let me write chunk1.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, add_cylinder, link_into_scene\n\n# Outer shell\nouter = add_box(\"PlanterBox\", width_m=0.3, depth_m=0.2, height_m=0.25, location_m=(0,0,0.125))\nlink_into_scene(outer)\n\n# Inner cavity (to be subtracted)\ninner = add_box(\"Cavity\", width_m=0.26, depth_m=0.16, height_m=0.23, location_m=(0,0,0.02+0.115))\nlink_into_scene(inner)\n\n# Drainage hole cutter\nhole = add_cylinder(\"DrainCutter\", radius_m=0.015, height_m=0.05, location_m=(0,0,-0.01))\nlink_into_scene(hole)\n\nprint(\"created\", outer.name, inner.name, hole.name)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+created PlanterBox Cavity DrainCutter
+
+--- thinking ---
+Now do boolean difference: subtract cavity and hole from outer.
+
+--- tool ---
+run_python({"source": "from blended.ops.booleans import boolean_difference\nimport bpy\n\nouter = bpy.data.objects[\"PlanterBox\"]\ncavity = bpy.data.objects[\"Cavity\"]\nhole = bpy.data.objects[\"DrainCutter\"]\n\nboolean_difference(outer, cavity)\nboolean_difference(outer, hole)\n\nprint(\"done booleans\")\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+done booleans
+
+--- tool ---
+run_python({"source": "from blended.ops.materials import assign_material\nimport bpy\n\nouter = bpy.data.objects[\"PlanterBox\"]\nassign_material(outer, \"PlanterWood\", base_color_rgb=(0.55, 0.35, 0.2), roughness=0.8)\n\n# clean up any leftover objects\nfor name in [\"Cavity\", \"DrainCutter\"]:\n    if name in bpy.data.objects:\n        bpy.data.objects.remove(bpy.data.objects[name], do_unlink=True)\n\nprint(\"scene objects:\", [o.name for o in bpy.context.scene.objects])\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+scene objects: ['PlanterBox']
+
+--- tool ---
+inspect_object({"object_name": "PlanterBox"})
+
+--- result ---
+GATE FAIL: 2 disconnected components (budget 1)
+{
+ "object_name": "PlanterBox",
+ "triangle_count": 24,
+ "non_manifold_edge_count": 0,
+ "boundary_edge_count": 0,
+ "zero_area_face_count": 0,
+ "non_finite_coordinate_count": 0,
+ "connected_component_count": 2,
+ "duplicate_vertex_pair_count": 0,
+ "self_intersecting_face_pair_count": 0,
+ "flipped_normal_triangle_count": 0,
+ "uv_layer_count": 0,
+ "uv_island_count": 0,
+ "uv_overlapping_face_pair_count": 0,
+ "uv_out_of_bounds_face_count": 0,
+ "uv_coverage_fraction": 0.0
+}
+
+--- thinking ---
+Triangle count 24 and 2 components. That's suspicious — 24 triangles is way too few for a box with a cavity. It seems the boolean didn't actually apply, or the object is still just the outer box (12 triangles) plus something.
+
+Wait, 24 triangles = 2 boxes? Actually the outer box is 12 triangles. 24 = 2 boxes. So the boolean difference didn't work — the cavity and hole are still separate? No, I removed them.
+
+Actually wait — the boolean_difference may not have applied the modifier. Let me check. The boolean ops might add a modifier but not apply it. Let me check the object's modifiers.
+
+Actually 24 triangles and 2 components suggests the outer box (12 tris) plus... hmm. Actually maybe the boolean modifier was added but not applied, so the mesh is still just the box (12 tris). But 24 tris?
+
+Let me investigate. Let me check modifiers and mesh state.
+
+--- tool ---
+run_python({"source": "import bpy\no = bpy.data.objects[\"PlanterBox\"]\nprint(\"modifiers:\", [m.name for m in o.modifiers])\nprint(\"tris:\", len(o.data.polygons))\nprint(\"verts:\", len(o.data.vertices))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+modifiers: []
+tris: 12
+verts: 16
+
+--- thinking ---
+The mesh has 12 triangles (just the outer box), no modifiers. So the boolean_difference didn't actually modify the mesh. But the gate reported 24 triangles and 2 components. That's odd.
+
+Wait, the gate reported 24 triangles. But the mesh has 12 polygons. Hmm, maybe the gate counts triangles (12 quads = 24 triangles). Yes! A box has 6 quads = 12 triangles. But 12 polygons... wait 6 faces = 6 quads = 12 triangles. But it says 12 polygons and 16 verts. A box has 8 verts, 6 faces. 16 verts and 12 faces = 2 boxes? No.
+
+Actually wait, 16 verts and 12 polygons. A single box = 8 verts, 6 faces. So 16 verts and 12 faces = 2 boxes merged? No, that's 2 separate boxes.
+
+Hmm, actually the boolean_difference consumed the cutter. But maybe it didn't apply. Let me check what boolean_difference actually does. Maybe it applies the modifier but the result... Actually the mesh shows 12 polygons, 16 verts. That's weird for a single box.
+
+Wait, maybe the boolean_difference DID do something but left the result as 2 components. Let me look more carefully. Actually 16 verts, 12 faces = 2 boxes (each 8 verts 6 faces). So the outer box is still there AND... no.
+
+Actually, let me reconsider. The boolean_difference might have applied and the result is the outer box minus cavity minus hole. But that would be a complex mesh with many triangles, not 12 faces.
+
+Let me check the actual geometry. The mesh has 12 polygons and 16 vertices. That's 2 boxes worth. But I removed Cavity and DrainCutter objects. Unless boolean_difference didn't consume them and they're still there but I removed them.
+
+Wait, actually maybe boolean_difference adds a modifier but doesn't apply it, and the "consumed" cutter is just removed. So the outer box is unchanged (12 tris = 6 quads... but it says 12 polygons).
+
+Hmm wait, 6 quads = 6 polygons, not 12. So 12 polygons means 2 boxes.
+
+Let me actually check the boolean_difference implementation.
+
+--- tool ---
+run_python({"source": "import inspect\nfrom blended.ops import booleans\nprint(inspect.getsource(booleans.boolean_difference))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+def boolean_difference(target_object, cutter_object, solver=BOOLEAN_SOLVER_DEFAULT):
+    """Subtract cutter from target; the cutter is consumed."""
+    _apply_boolean(target_object, cutter_object, "DIFFERENCE", solver)
+    return target_object
+
+--- tool ---
+run_python({"source": "import inspect\nfrom blended.ops import booleans\nprint(inspect.getsource(booleans._apply_boolean))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+def _apply_boolean(
+    target_object,
+    operand_object,
+    operation: str,
+    solver: str = BOOLEAN_SOLVER_DEFAULT,
+) -> None:
+    from blended.ops.modifiers import apply_all_modifiers
+    from blended.ops.primitives import remove_object_and_mesh
+
+    # Checked BEFORE anything mutates: a boolean that fails halfway has
+    # already eaten its operand.
+    _require_linked(target_object, "target")
+    _require_linked(operand_object, "operand")
+
+    boolean_modifier = target_object.modifiers.new(
+        name=f"Boolean_{operation}", type="BOOLEAN"
+    )
+    boolean_modifier.operation = operation
+    boolean_modifier.object = operand_object
+    boolean_modifier.solver = solver
+    apply_all_modifiers(target_object)
+    remove_object_and_mesh(operand_object.name)
+
+    from blended.ops.heal import weld_and_dissolve
+
+    weld_and_dissolve(target_object)
+
+--- thinking ---
+So boolean_difference applies the modifier and removes the operand. But my mesh still has 12 polygons and 16 verts. That means the boolean didn't actually subtract anything — the result is just the outer box.
+
+Wait, but 12 polygons and 16 verts. A box is 8 verts, 6 faces. So 12 faces and 16 verts is 2 boxes. Hmm.
+
+Actually wait — maybe the issue is that the cavity box and hole were NOT overlapping properly, or the boolean produced a result where the cavity subtraction didn't happen because... 
+
+Actually, let me reconsider. The gate reported 24 triangles and 2 components. 24 triangles = 12 quads. 2 components. So the mesh is 2 boxes.
+
+But I removed Cavity and DrainCutter. So where do 2 boxes come from?
+
+Oh wait — maybe the boolean_difference with the cavity worked partially, but actually let me just check the current state more carefully. The mesh has 12 polygons, 16 verts. Let me check if it's actually 2 boxes or something else.
+
+Actually, let me reconsider the whole thing. Maybe the problem is that when I created the boxes, they weren't actually linked properly, or the boolean modifier's object reference was stale.
+
+Actually, let me just check: is the current PlanterBox actually a hollow box or 2 boxes? Let me print vertex coordinates.
+
+--- tool ---
+run_python({"source": "import bpy\no = bpy.data.objects[\"PlanterBox\"]\nm = o.data\nfor v in m.vertices:\n    print(tuple(round(c,3) for c in v.co))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+(-0.15, -0.1, 0.125)
+(-0.13, -0.08, 0.135)
+(-0.15, -0.1, 0.375)
+(-0.13, -0.08, 0.365)
+(-0.15, 0.1, 0.125)
+(-0.13, 0.08, 0.135)
+(-0.15, 0.1, 0.375)
+(-0.13, 0.08, 0.365)
+(0.15, -0.1, 0.125)
+(0.13, -0.08, 0.135)
+(0.15, -0.1, 0.375)
+(0.13, -0.08, 0.365)
+(0.15, 0.1, 0.125)
+(0.13, 0.08, 0.135)
+(0.15, 0.1, 0.375)
+(0.13, 0.08, 0.365)
+
+--- thinking ---
+Interesting! The vertices show a box that goes from -0.15 to 0.15 in X, -0.1 to 0.1 in Y, but Z from 0.125 to 0.375. Wait, that's wrong. The outer box should be at z=0 to 0.25.
+
+Wait, the vertices are at z=0.125 and z=0.375. That's a box of height 0.25 centered at z=0.25. But I placed it at location (0,0,0.125), so it should be z=0 to 0.25.
+
+Hmm wait, actually the vertices show z=0.125 and 0.375. That means the box is centered at 0.25, not 0.125. 
+
+Oh! I see. The add_box location_m might be interpreted differently. Let me check. Actually wait, look at the X values: -0.15 and -0.13, 0.15 and 0.13. And Y: -0.1 and -0.08, 0.1 and 0.08.
+
+So there are TWO boxes here! One box from -0.15 to 0.15 (X), -0.1 to 0.1 (Y), and another box from -0.13 to 0.13 (X), -0.08 to 0.08 (Y).
+
+Wait no. Let me look again. The vertices are:
+- (-0.15, -0.1, 0.125) and (-0.13, -0.08, 0.135) — these are two different corners.
+
+So actually there are 16 vertices = 2 boxes. One box: corners at ±0.15, ±0.1 (the outer box). Another box: corners at ±0.13, ±0.08 (the inner cavity box).
+
+And Z: 0.125 and 0.375 for the outer, 0.135 and 0.365 for the inner.
+
+Wait, that's strange. The outer box should be at z=0 to 0.25 (location 0.125, height 0.25). But it's at 0.125 to 0.375.
+
+Hmm, actually wait. Let me reconsider. The add_box location_m=(0,0,0.125) with height 0.25. If location is the CENTER, then box spans 0.125-0.125=0 to 0.125+0.125=0.25. But the vertices show 0.125 to 0.375.
+
+So location_m is being interpreted as the BASE, not center? If location is base at z=0.125, then box spans 0.125 to 0.375. That matches!
+
+So add_box location_m is the base (bottom) location, not center. Let me verify with the cylinder convention: "base at location_m[2] (same convention...)". Yes! The cylinder doc says "base at location_m[2]". So location_m is the base.
+
+So my outer box: location (0,0,0.125) means base at z=0.125, top at 0.375. That's wrong — I wanted base at z=0.
+
+And the inner cavity: location (0,0,0.02+0.115=0.135), base at 0.135, top at 0.365. That's also wrong.
+
+So the boolean difference DID work — it subtracted the inner box from the outer box. But both boxes were positioned wrong (shifted up by their location).
+
+Wait, but the result shows 2 components and 16 verts. If the boolean worked, the result should be a single hollow box (1 component). But it shows 2 components.
+
+Actually wait, let me reconsider. The vertices listed are 16 verts. If the boolean difference worked, the outer box minus inner box would be a hollow shell with more vertices (the inner cavity walls). But here we see exactly 16 verts = 2 boxes.
+
+Hmm, actually the inner box (0.13, 0.08) is INSIDE the outer box (0.15, 0.1). So subtracting inner from outer should give a hollow box. But the result shows 2 components.
+
+Wait, actually maybe the boolean didn't work because... let me think. The inner box at z=0.135 to 0.365, outer at 0.125 to 0.375. The inner box is fully inside the outer box (0.13 < 0.15, 0.08 < 0.1, 0.135 > 0.125, 0.365 < 0.375). So subtracting should work.
+
+But the result is 2 components with 16 verts. That means the boolean difference did NOT actually subtract — the result is still 2 separate boxes (outer + inner), meaning the boolean modifier didn't apply correctly, OR the weld_and_dissolve merged them into... no.
+
+Actually wait. Let me reconsider. The 16 vertices are exactly the 8 verts of outer box + 8 verts of inner box. So the mesh contains BOTH boxes as separate geometry. This means the boolean difference FAILED to subtract, and instead the result is just... the outer box with the inner box still there?
+
+But I removed the Cavity object. Unless remove_object_and_mesh removed the object but the mesh data got merged somehow.
+
+Actually, let me reconsider. Maybe the boolean modifier's `object` reference was set, but when apply_all_modifiers ran, the operand object was already... no.
+
+Actually, let me step back. The key issue: the result has 2 components and 16 verts = 2 boxes. This is the classic "boolean didn't apply" or "boolean applied but produced disconnected result".
+
+Actually, wait — maybe the boolean DID apply but the result is wrong because the boxes were positioned such that... no, inner is fully inside outer.
+
+Let me just check: is the current mesh actually 2 boxes (outer + inner as separate shells)? The vertices confirm 2 boxes. So the boolean difference produced a result where the inner box is still a separate component.
+
+Hmm, actually this could be the EXACT solver issue. But more likely, let me reconsider the positioning.
+
+Actually, I think the real issue is simpler. Let me re-read: the vertices show outer box at z=0.125..0.375 and inner at 0.135..0.365. Both shifted up.
+
+Wait, but actually maybe the issue is that add_box's location is the CENTER, and I'm misreading. Let me check the add_box source.
+
+Actually, let me just check the add_box signature behavior directly.
+
+--- tool ---
+run_python({"source": "import inspect\nfrom blended.ops import primitives\nprint(inspect.getsource(primitives.add_box))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+def add_box(
+    name: str,
+    width_m: float,
+    depth_m: float,
+    height_m: float,
+    location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
+):
+    """Create a closed box mesh object of the given outer dimensions.
+
+    The box is centered on X/Y and sits with its base at location_m[2],
+    which matches the game-asset convention of feet/base at z=0.
+    """
+    import bmesh
+    import bpy
+
+    remove_object_and_mesh(name)
+    mesh_data = bpy.data.meshes.new(name)
+    box_object = bpy.data.objects.new(name, mesh_data)
+
+    working_mesh = bmesh.new()
+    try:
+        bmesh.ops.create_cube(working_mesh, size=1.0)
+        half_height_offset_m = height_m / 2.0
+        for vertex in working_mesh.verts:
+            vertex.co.x = vertex.co.x * width_m + location_m[0]
+            vertex.co.y = vertex.co.y * depth_m + location_m[1]
+            vertex.co.z = vertex.co.z * height_m + location_m[2] + half_height_offset_m
+        working_mesh.to_mesh(mesh_data)
+    finally:
+        working_mesh.free()
+
+    return box_object
+
+--- thinking ---
+So add_box: base at location_m[2]. The box is centered on X/Y at location_m[0], location_m[1]. So location_m[0] and [1] are the CENTER, but location_m[2] is the BASE.
+
+So my outer box: location (0,0,0.125) → base at z=0.125, top at 0.375. WRONG. I wanted base at z=0.
+
+I should use location_m=(0,0,0) for the outer box.
+
+Inner cavity: location (0,0,0.02+0.115=0.135) → base at 0.135, top at 0.365. I wanted base at 0.02, top at 0.25. So location_m[2] should be 0.02.
+
+So the fix: outer box location_m=(0,0,0), inner box location_m=(0,0,0.02).
+
+Now about the 2 components issue. The boolean difference produced 2 components. Why? Because the inner box was NOT fully inside the outer box — the inner box top was at 0.365, outer top at 0.375, so inner was inside. But actually the inner box base at 0.135 vs outer base 0.125, so inner was inside. So it should have subtracted fine.
+
+But wait, the result shows 2 components = 2 boxes. That means the boolean didn't subtract at all. Let me think about why.
+
+Actually, maybe the boolean DID work but produced a hollow box, and then... no, 16 verts = 2 boxes clearly.
+
+Hmm, wait. Let me reconsider. Actually maybe the issue is that the boolean modifier was applied but the result is the outer box with a hole, and the "2 components" is because the inner box is still there as a separate object that I didn't remove properly.
+
+Actually no — I removed Cavity and DrainCutter objects. But wait, in my cleanup I did `bpy.data.objects.remove(...)`. But the boolean_difference already calls remove_object_and_mesh on the operand. So after boolean_difference(outer, cavity), the Cavity object should be gone.
+
+But then in my cleanup I tried to remove Cavity again — but it was already gone, so the `if name in bpy.data.objects` check would be False.
+
+So the 2 components must be within the PlanterBox mesh itself. 16 verts = 2 boxes.
+
+Let me think about what happened. The boolean_difference(outer, cavity):
+1. Adds boolean modifier to outer with object=cavity, operation DIFFERENCE.
+2. apply_all_modifiers(outer) — applies the modifier.
+3. remove_object_and_mesh(cavity.name) — removes cavity.
+4. weld_and_dissolve(outer).
+
+If the boolean modifier applied correctly, outer would become a hollow box. But it shows 2 boxes.
+
+Wait, maybe the issue is that apply_all_modifiers didn't actually apply because of the matrix_world staleness issue mentioned in the traps! "matrix_world is stale until view_layer.update()".
+
+Actually, the boolean modifier uses the operand object's transform. If the operand (cavity) has a stale matrix_world... but cavity was created fresh with location set via vertex coordinates (not object.location), so its matrix_world is identity and its vertices are already in world position.
+
+Hmm wait, actually add_box sets vertex coordinates directly, and the object's location is (0,0,0) (identity). So the cavity object's matrix is identity, and its vertices are at the correct world positions.
+
+So the boolean should work. But it produced 2 components.
+
+Actually, wait. Let me reconsider. Maybe the boolean DID work, and the result is a hollow box, but then the SECOND boolean (hole) did something weird.
+
+Actually, let me just check the current state more carefully. The mesh has 16 verts. Let me look at what the actual faces are.
+
+Actually, I already see the vertices: 8 verts for outer box (at ±0.15, ±0.1, z 0.125/0.375) and 8 verts for inner box (at ±0.13, ±0.08, z 0.135/0.365).
+
+So the mesh literally contains 2 boxes. The boolean difference did NOT subtract the inner box.
+
+Why? Let me think about the EXACT solver. The inner box is fully inside the outer box. EXACT solver should handle this.
+
+Actually, wait — maybe the issue is that the boolean modifier's `object` field was set to the cavity object, but then when apply_all_modifiers ran, it needed the cavity object to still exist. It did exist at that point (removed after apply). So that's fine.
+
+Hmm, but actually there might be a subtle issue: the boolean modifier with EXACT solver and a fully-enclosed operand. Actually, subtracting a fully-enclosed box from another box should work fine.
+
+Let me just redo this cleanly with correct positions and see if it works. Let me also verify by checking the result.
+
+Actually, wait. Let me reconsider the 2-component result. Maybe the boolean DID work and produced a hollow box (1 component), but then the hole boolean (DrainCutter cylinder) did something. The cylinder was at location (0,0,-0.01) with height 0.05, so base at -0.01, top at 0.04. This cylinder is at the center, going through the floor.
+
+But wait, the floor of the (wrongly positioned) box is at z=0.125, not z=0. So the cylinder at z=-0.01 to 0.04 doesn't even touch the box floor at 0.125! So the hole boolean did nothing (cylinder completely below the box).
+
+So the hole boolean: cylinder at z=-0.01..0.04, box floor at 0.125. No overlap. So boolean difference with no overlap → result unchanged (or maybe produces weird result).
+
+Actually, subtracting a non-overlapping object: the result should be the target unchanged. But with EXACT solver, subtracting a completely disjoint object... might produce 2 components? No, it should just leave the target.
+
+Hmm, but actually the 2 components are the outer box AND inner box. So the cavity subtraction didn't work either.
+
+Let me just redo everything cleanly. Let me remove everything and start fresh with correct positions.
+
+Actually, let me reconsider whether the boolean actually applied. Let me check: after boolean_difference, the modifier list was empty (I checked "modifiers: []"). So apply_all_modifiers DID run and removed the modifier. But the result is 2 boxes.
+
+Wait, actually — maybe the problem is the order of operations in my code. Let me re-examine.
+
+Actually, I bet the issue is this: the boolean modifier was applied, but the EXACT solver, when subtracting a box that is FULLY INSIDE another box, produces a result. But actually the result should be a hollow box.
+
+Let me just redo it step by step and check after each boolean.
+
+Let me clean up and rebuild with correct positions.
+
+Correct positions:
+- Outer box: location_m=(0,0,0), width 0.3, depth 0.2, height 0.25. Base at z=0, top at 0.25.
+- Inner cavity: location_m=(0,0,0.02), width 0.26, depth 0.16, height 0.23. Base at 0.02, top at 0.25.
+- Drain hole: cylinder radius 0.015, location_m=(0,0,-0.01), height 0.05. Base at -0.01, top at 0.04. This goes through the floor (0 to 0.02).
+
+Let me rebuild.
+
+--- tool ---
+run_python({"source": "import bpy\n# clean slate\nfor o in list(bpy.data.objects):\n    bpy.data.objects.remove(o, do_unlink=True)\n\nfrom blended.ops.primitives import add_box, add_cylinder, link_into_scene\n\nouter = add_box(\"PlanterBox\", width_m=0.3, depth_m=0.2, height_m=0.25, location_m=(0,0,0))\nlink_into_scene(outer)\n\ninner = add_box(\"Cavity\", width_m=0.26, depth_m=0.16, height_m=0.23, location_m=(0,0,0.02))\nlink_into_scene(inner)\n\nhole = add_cylinder(\"DrainCutter\", radius_m=0.015, height_m=0.05, location_m=(0,0,-0.01))\nlink_into_scene(hole)\n\nprint(\"outer base z:\", min(v.co.z for v in outer.data.vertices))\nprint(\"inner base z:\", min(v.co.z for v in inner.data.vertices))\nprint(\"hole z range:\", min(v.co.z for v in hole.data.vertices), max(v.co.z for v in hole.data.vertices))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+outer base z: 0.0
+inner base z: 0.019999999552965164
+hole z range: -0.010000000707805157 0.03999999910593033
+
+--- thinking ---
+Now positions are correct. Let me do the boolean difference for cavity first, then check.
+
+--- tool ---
+run_python({"source": "from blended.ops.booleans import boolean_difference\nimport bpy\n\nouter = bpy.data.objects[\"PlanterBox\"]\ncavity = bpy.data.objects[\"Cavity\"]\nboolean_difference(outer, cavity)\n\nprint(\"after cavity subtract:\")\nprint(\"  verts:\", len(outer.data.vertices), \"polys:\", len(outer.data.polygons))\nprint(\"  objects:\", [o.name for o in bpy.context.scene.objects])\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+after cavity subtract:
+  verts: 16 polys: 12
+  objects: ['PlanterBox', 'DrainCutter']
+
+--- thinking ---
+Still 16 verts, 12 polys after subtracting the cavity. That means the boolean difference is NOT working — the result is still 2 boxes (outer + inner).
+
+Wait, but the Cavity object was removed (objects now shows only PlanterBox and DrainCutter). So the cavity object is gone, but its geometry is still in the PlanterBox mesh as a separate component.
+
+So the boolean difference produced a result where the inner box is still there as a separate shell. This means the boolean modifier applied but the EXACT solver failed to subtract, OR the modifier didn't actually apply.
+
+Let me check the actual vertices now.
+
+--- tool ---
+run_python({"source": "import bpy\no = bpy.data.objects[\"PlanterBox\"]\nfor v in o.data.vertices:\n    print(tuple(round(c,3) for c in v.co))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+(-0.15, -0.1, 0.0)
+(-0.13, -0.08, 0.02)
+(-0.15, -0.1, 0.25)
+(-0.13, -0.08, 0.25)
+(-0.15, 0.1, 0.0)
+(-0.13, 0.08, 0.02)
+(-0.15, 0.1, 0.25)
+(-0.13, 0.08, 0.25)
+(0.15, -0.1, 0.0)
+(0.13, -0.08, 0.02)
+(0.15, -0.1, 0.25)
+(0.13, -0.08, 0.25)
+(0.15, 0.1, 0.0)
+(0.13, 0.08, 0.02)
+(0.15, 0.1, 0.25)
+(0.13, 0.08, 0.25)
+
+--- thinking ---
+Now the vertices show:
+- Outer box: ±0.15, ±0.1, z=0 to 0.25 (8 verts)
+- Inner box: ±0.13, ±0.08, z=0.02 to 0.25 (8 verts)
+
+So the inner box is still there as a separate component. The boolean difference did NOT subtract it.
+
+The inner box top is at z=0.25, same as outer box top. The inner box base at 0.02, outer base at 0. So the inner box is fully inside the outer box (touching at the top face z=0.25).
+
+The EXACT solver should subtract this. But it's not working.
+
+Wait — the inner box top face is at z=0.25, which is COPLANAR with the outer box top face. This is the "exactly-coplanar faces are the EXACT solver's worst case" trap mentioned in conventions!
+
+Convention #6: "Parts that will be unioned must OVERLAP slightly first; booleans on exactly-coplanar faces are the EXACT solver's worst case."
+
+So the inner box top at z=0.25 is coplanar with the outer box top at z=0.25. This is causing the boolean to fail.
+
+I need to make the inner box extend slightly ABOVE the outer box top, so the cavity is open at the top. The inner box should go from z=0.02 to z=0.26 (slightly above 0.25), so the subtraction creates an open top.
+
+Actually, the cavity should be open at the top. So the inner box should extend above the outer box. Let me make the inner box height such that it extends above: base at 0.02, top at 0.26 (0.02 + 0.24). Or just make it taller.
+
+Let me set inner box height to 0.25 (base 0.02, top 0.27), extending 0.02 above the outer top. That ensures the top is open and no coplanar faces.
+
+Actually, let me make it clearly overlap: inner box base at 0.02, height 0.25 → top at 0.27. That's 0.02 above outer top.
+
+Let me redo. Remove everything and rebuild with the inner box extending above.
+
+Actually, I can just fix the inner box. But the boolean already consumed the cavity. Let me rebuild cleanly.
+
+Let me also reconsider the drain hole. The cylinder at z=-0.01 to 0.04 goes through the floor (0 to 0.02). That's fine, it extends below and above the floor, so it will create a through-hole. Good.
+
+Let me rebuild with inner box extending above thetop.
+
+--- tool ---
+run_python({"source": "import bpy\nfor o in list(bpy.data.objects):\n    bpy.data.objects.remove(o, do_unlink=True)\n\nfrom blended.ops.primitives import add_box, add_cylinder, link_into_scene\n\nouter = add_box(\"PlanterBox\", width_m=0.3, depth_m=0.2, height_m=0.25, location_m=(0,0,0))\nlink_into_scene(outer)\n\n# cavity extends ABOVE the top so the subtraction opens the top cleanly (no coplanar faces)\ninner = add_box(\"Cavity\", width_m=0.26, depth_m=0.16, height_m=0.25, location_m=(0,0,0.02))\nlink_into_scene(inner)\n\nhole = add_cylinder(\"DrainCutter\", radius_m=0.015, height_m=0.05, location_m=(0,0,-0.01))\nlink_into_scene(hole)\n\nprint(\"inner top z:\", max(v.co.z for v in inner.data.vertices))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+inner top z: 0.27000001072883606
+
+--- tool ---
+run_python({"source": "from blended.ops.booleans import boolean_difference\nimport bpy\n\nouter = bpy.data.objects[\"PlanterBox\"]\ncavity = bpy.data.objects[\"Cavity\"]\nboolean_difference(outer, cavity)\nprint(\"after cavity:\", len(outer.data.vertices), \"verts,\", len(outer.data.polygons), \"polys\")\n\nhole = bpy.data.objects[\"DrainCutter\"]\nboolean_difference(outer, hole)\nprint(\"after hole:\", len(outer.data.vertices), \"verts,\", len(outer.data.polygons), \"polys\")\nprint(\"objects:\", [o.name for o in bpy.context.scene.objects])\n"})
+
+--- result ---
+Executed OK in 0.02s.
+printed:
+after cavity: 16 verts, 12 polys
+after hole: 64 verts, 38 polys
+objects: ['PlanterBox']
+
+--- thinking ---
+Now after cavity subtract: still 16 verts, 12 polys. Hmm, that's still 2 boxes. Wait, but the inner box now extends above (top at 0.27). So it's not coplanar anymore.
+
+Wait, 16 verts 12 polys still = 2 boxes. So the cavity subtraction STILL didn't work?
+
+But after hole: 64 verts, 38 polys. So the hole subtraction DID work (added geometry).
+
+Hmm wait, let me reconsider. After cavity: 16 verts, 12 polys. That's 2 boxes. But the inner box top is at 0.27 now, so it's not coplanar.
+
+Wait, actually maybe the issue is different. Let me check the vertices after cavity subtraction.
+
+Actually wait, maybe the boolean DID work but the result is a hollow box with 16 verts? No, a hollow box (box with a cavity) would have more than 16 verts.
+
+Let me check the vertices after cavity subtraction.
+
+--- tool ---
+run_python({"source": "import bpy\no = bpy.data.objects[\"PlanterBox\"]\nfor v in o.data.vertices:\n    print(tuple(round(c,3) for c in v.co))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+(-0.15, -0.1, 0.0)
+(-0.13, -0.08, 0.02)
+(-0.15, -0.1, 0.25)
+(-0.15, 0.1, 0.0)
+(-0.13, 0.08, 0.02)
+(-0.15, 0.1, 0.25)
+(0.15, -0.1, 0.0)
+(0.13, -0.08, 0.02)
+(0.15, -0.1, 0.25)
+(0.15, 0.1, 0.0)
+(0.13, 0.08, 0.02)
+(0.15, 0.1, 0.25)
+(-0.13, -0.08, 0.25)
+(-0.13, 0.08, 0.25)
+(0.13, -0.08, 0.25)
+(0.13, 0.08, 0.25)
+(-0.011, 0.011, 0.0)
+(-0.007, 0.013, 0.0)
+(-0.004, 0.014, 0.0)
+(0.0, 0.015, 0.0)
+(0.007, 0.013, 0.0)
+(0.004, 0.014, 0.0)
+(0.013, 0.007, 0.0)
+(0.015, 0.0, 0.0)
+(0.014, -0.004, 0.0)
+(0.014, 0.004, 0.0)
+(0.013, -0.007, 0.0)
+(0.011, 0.011, 0.0)
+(-0.015, 0.0, 0.0)
+(-0.014, -0.004, 0.0)
+(-0.014, 0.004, 0.0)
+(-0.013, -0.007, 0.0)
+(-0.013, 0.007, 0.0)
+(-0.004, -0.014, 0.0)
+(-0.007, -0.013, 0.0)
+(0.004, -0.014, 0.0)
+(0.011, -0.011, 0.0)
+(0.007, -0.013, 0.0)
+(0.0, -0.015, 0.0)
+(-0.011, -0.011, 0.0)
+(-0.015, 0.0, 0.02)
+(-0.014, -0.004, 0.02)
+(-0.014, 0.004, 0.02)
+(-0.013, -0.007, 0.02)
+(-0.013, 0.007, 0.02)
+(-0.011, -0.011, 0.02)
+(-0.007, -0.013, 0.02)
+(0.0, -0.015, 0.02)
+(-0.004, -0.014, 0.02)
+(0.007, -0.013, 0.02)
+(0.011, -0.011, 0.02)
+(0.004, -0.014, 0.02)
+(-0.007, 0.013, 0.02)
+(-0.011, 0.011, 0.02)
+(0.004, 0.014, 0.02)
+(0.0, 0.015, 0.02)
+(-0.004, 0.014, 0.02)
+(0.011, 0.011, 0.02)
+(0.013, -0.007, 0.02)
+(0.015, 0.0, 0.02)
+(0.014, -0.004, 0.02)
+(0.014, 0.004, 0.02)
+(0.013, 0.007, 0.02)
+(0.007, 0.013, 0.02)
+
+--- thinking ---
+Now I see the final result (after both booleans). The mesh has:
+- Outer box vertices (8): ±0.15, ±0.1, z=0 and 0.25
+- Inner box vertices (8): ±0.13, ±0.08, z=0.02 and 0.25
+- Drain hole circle vertices at z=0 and z=0.02 (the cylinder wall)
+
+So the final result is: outer box + inner box (still separate!) + drain hole cylinder wall.
+
+Wait, this is confusing. The inner box is STILL there as a separate component. The boolean difference for the cavity did NOT subtract it.
+
+But the hole boolean DID work (it created the cylinder wall geometry).
+
+So why did the cavity boolean fail but the hole boolean succeed?
+
+The difference: the cavity box is FULLY ENCLOSED within the outer box (except it pokes out the top now). The hole cylinder pokes out the bottom.
+
+Hmm, actually wait. Let me reconsider. The cavity box: base at 0.02, top at 0.27. Outer box: base 0, top 0.25. So the cavity box pokes out the top (0.25 to 0.27) and is inside otherwise.
+
+The EXACT solver should subtract this. But it seems to have left the inner box as a separate component.
+
+Actually, wait. Let me reconsider what "16 verts, 12 polys" after cavity means. It means the cavity subtraction produced NO change (still 2 boxes). Then the hole subtraction added the cylinder geometry.
+
+So the cavity boolean is failing. Why?
+
+Hmm, let me think about the EXACT solver and a box that's mostly inside but pokes out the top. Actually, this should be a standard "open box" operation.
+
+Wait, maybe the issue is that the inner box and outer box share the top face region? No, inner top is at 0.27, outer top at 0.25.
+
+Actually, let me reconsider. Maybe the issue is that the boolean modifier's `object` reference needs the operand to be in the scene AND the depsgraph to be updated.
+
+Actually, let me look at the _apply_boolean more carefully. It sets boolean_modifier.object = operand_object. Then apply_all_modifiers. Then remove_object_and_mesh.
+
+The trap says: "matrix_world is stale until view_layer.update()". But the operand objects here have identity transforms (vertices are in world space directly), so matrix_world = identity, which is correct.
+
+Hmm, but wait — actually there might be a subtle issue. Let me check: does apply_all_modifiers call view_layer.update() first?
+
+Actually, let me step back and think about why the cavity boolean fails but hole works.
+
+Actually, maybe the cavity boolean DID work, but produced a result that's a hollow box, and then... no, the vertices clearly show the inner box still present.
+
+Wait, actually, let me look again. The inner box vertices are at ±0.13, ±0.08, z=0.02 and 0.25. These are present in the final mesh. So the inner box is still there.
+
+But actually, wait — maybe the issue is that the cavity boolean produced a hollow box correctly, but then the HOLE boolean somehow re-added the inner box? No, that doesn't make sense.
+
+Let me just check the state right after the cavity boolean (before hole). I already did: "after cavity: 16 verts, 12 polys". So the cavity boolean left 2 boxes.
+
+Let me investigate why. Let me try a minimal test: subtract a box from a box where the inner box pokes out the top.
+
+Actually, let me reconsider. Maybe the problem is the EXACT solver with a box that's fully inside (touching nothing) except poking out the top. Actually the inner box pokes out the top, so it's not fully inside.
+
+Hmm, wait. Let me reconsider the geometry. Actually, maybe the issue is that the inner box's top face (z=0.27) is ABOVE the outer box top (z=0.25), but the inner box's sides are all inside the outer box. So the inner box intersects the outer box's top face.
+
+The EXACT solver should handle this: subtract inner from outer = outer with a rectangular hole in the top, and the inner walls going down.
+
+Actually, this is a very standard operation. Let me check if maybe the boolean modifier isn't being applied at all for the cavity case.
+
+Wait, actually — I wonder if the issue is that apply_all_modifiers uses the depsgraph and the operand object's evaluated mesh. Let me check apply_all_modifiers source.
+
+--- tool ---
+run_python({"source": "import inspect\nfrom blended.ops import modifiers\nprint(inspect.getsource(modifiers.apply_all_modifiers))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+def apply_all_modifiers(blender_object) -> None:
+    """Bake the evaluated (post-modifier) mesh back into the object.
+
+    Uses the depsgraph rather than bpy.ops.object.modifier_apply, so it
+    needs no context override and works identically headless and live.
+    The object must already be linked into the scene, or the evaluated
+    copy will silently equal the stored mesh (see drift catalog).
+    """
+    import bpy
+
+    dependency_graph = bpy.context.evaluated_depsgraph_get()
+    evaluated_object = blender_object.evaluated_get(dependency_graph)
+    baked_mesh = bpy.data.meshes.new_from_object(
+        evaluated_object, depsgraph=dependency_graph
+    )
+    previous_mesh = blender_object.data
+    blender_object.data = baked_mesh
+    blender_object.modifiers.clear()
+    if previous_mesh.users == 0:
+        bpy.data.meshes.remove(previous_mesh)
+
+--- thinking ---
+The apply_all_modifiers uses evaluated_depsgraph_get. The trap says: "matrix_world is stale until view_layer.update()". 
+
+The boolean modifier uses the operand object's transform. When the boolean modifier is evaluated, it uses the operand's matrix_world. If the operand's matrix_world is stale (identity), but the operand's actual vertices are in world space (because add_box sets vertex coords directly), then... actually the operand's matrix_world IS identity, and its vertices ARE in world space. So that's consistent.
+
+Wait, but actually there might be a subtlety. The boolean modifier evaluates the operand's mesh in the operand's LOCAL space, then transforms by the operand's matrix_world. Since the operand's matrix_world is identity and its vertices are already in world space, this is correct.
+
+Hmm, so why does the cavity boolean fail?
+
+Let me actually test this more directly. Let me check if the boolean modifier is even being created and applied correctly.
+
+Actually, wait. Let me reconsider. Maybe the issue is that the cavity box, when it pokes out the top, the EXACT solver produces a result, but the result has the inner box as a separate component because... no.
+
+Actually, let me just try a different approach. Let me check what happens with a simpler test.
+
+Actually, let me reconsider the whole thing. Maybe the issue is that the boolean modifier's `object` field, when set, needs the operand to be evaluated. But actually, let me just check: is the cavity box actually being subtracted?
+
+Let me do a clean minimal test: create outer box and inner box (poking out top), apply boolean difference, and check.
+
+Actually, I already have the result. The cavity boolean left 2 boxes. Let me try to understand by checking if maybe the EXACT solver has an issue with the specific geometry.
+
+Actually, wait — let me reconsider. Maybe the problem is that the inner box and outer box have their top faces at DIFFERENT heights now (0.27 vs 0.25), but the inner box's SIDE faces are at ±0.13, ±0.08, which are strictly inside the outer box's ±0.15, ±0.1. And the inner box's bottom at 0.02 is above outer's 0.
+
+So the inner box is fully inside the outer box in X and Y, and pokes out the top in Z. This is a standard "hollow box" boolean.
+
+The EXACT solver should handle this. But it's leaving the inner box as a separate component.
+
+Hmm, wait. Actually, maybe the issue is that the boolean modifier is being applied but the result is WRONG because of the depsgraph evaluation. Let me check if the operand object is properly linked and evaluated.
+
+Actually, let me reconsider. The trap about matrix_world: "Setting object.location / .rotation_euler does NOT update matrix_world". But here I'm not setting object.location — add_box sets vertex coordinates directly, and the object location is (0,0,0).
+
+So the operand's matrix_world is identity, and its vertices are in world space. The boolean should work.
+
+Let me actually just try to debug by checking the boolean modifier evaluation directly.
+
+Actually, let me try a completely different, more robust approach: build the planter using bmesh directly, or use a different boolean strategy.
+
+Actually, wait. Let me reconsider. Let me check: is the cavity box actually being consumed/removed, and is the result really 2 boxes?
+
+After cavity boolean: 16 verts, 12 polys. The Cavity object was removed (objects showed only PlanterBox and DrainCutter). So the cavity's geometry is now part of PlanterBox as a separate component.
+
+This strongly suggests the boolean modifier did NOT subtract — it just... merged? No, it didn't merge either, because the result is 2 separate components.
+
+Actually, wait. Let me reconsider. Maybe the boolean modifier was applied, and the EXACT solver returned the outer box UNCHANGED (because it failed to compute), and then... no, the inner box is still there.
+
+Hmm, actually, let me reconsider. When apply_all_modifiers runs, it does `new_from_object(evaluated_object)`. The evaluated object includes the boolean modifier. If the boolean modifier's result is "outer box minus inner box", the evaluated mesh would be a hollow box.
+
+But the result is 2 boxes. So either:
+1. The boolean modifier didn't apply (evaluated = stored = outer box only, 8 verts), but then where did the inner box come from?
+2. The boolean modifier applied but produced 2 components.
+
+Wait, actually — maybe the issue is that the boolean modifier's `object` field was set to the cavity, but when apply_all_modifiers evaluated, the cavity object was... hmm.
+
+Actually, let me reconsider the sequence in _apply_boolean:
+1. boolean_modifier.object = operand_object (cavity)
+2. apply_all_modifiers(target) — this evaluates target with the boolean modifier, which references cavity.
+3. remove_object_and_mesh(cavity)
+
+So at step 2, cavity still exists. The boolean modifier should subtract cavity.
+
+But wait — maybe the issue is that the boolean modifier needs the operand to be in the SAME collection or something. Or maybe there's a depsgraph update needed between setting boolean_modifier.object and evaluating.
+
+Actually, the trap says: "matrix_world is stale until view_layer.update()". When I set boolean_modifier.object = cavity, the depsgraph needs to be updated for the boolean modifier to actually reference the cavity's evaluated geometry.
+
+But apply_all_modifiers calls `bpy.context.evaluated_depsgraph_get()` which should give an up-to-date depsgraph.
+
+Hmm, let me just try adding a view_layer.update() before the boolean, or try a different approach.
+
+Actually, let me step back and think about a more robust approach. Instead of debugging the boolean, let me just build the planter box using bmesh directly, which gives me full control.
+
+Actually, wait — let me first try a simpler fix: maybe the issue is that I need to call view_layer.update() after creating the objects and before the boolean.
+
+Actually, let me reconsider. The hole boolean DID work (it added cylinder geometry). So the boolean mechanism works. The difference between cavity and hole:
+
+- Cavity: box, fully inside (X/Y) and poking out top (Z).
+- Hole: cylinder, poking out bottom.
+
+Both should work. But cavity didn't.
+
+Wait, actually, let me reconsider. Maybe the cavity boolean DID work, but the result is a hollow box, and then the HOLE boolean somehow... no.
+
+Let me look at the final vertices again. The final mesh (after both booleans) has:
+- 8 outer box verts
+- 8 inner box verts (at ±0.13, ±0.08, z=0.02 and 0.25)
+- ~48 cylinder verts (drain hole wall at z=0 and 0.02)
+
+So the inner box is STILL there. The cavity boolean definitely didn't subtract.
+
+Let me check: is it possible that the cavity boolean modifier was created but the `object` reference was wrong?
+
+Actually, let me just re-examine by doing the cavity boolean in isolation with explicit debugging.
+
+Let me try: create outer + inner, set up boolean manually, update view layer, apply, and check.
+
+Actually, let me reconsider the EXACT solver behavior. The EXACT solver with a box fully inside another box (touching nothing) — actually, subtracting a fully-enclosed box from a box should give a hollow box. But maybe the EXACT solver has issues when the inner box's faces are parallel and close to the outer box's faces.
+
+Actually, the inner box is at ±0.13 vs outer ±0.15 (0.02 gap), ±0.08 vs ±0.1 (0.02 gap), 0.02 vs 0 (0.02 gap). So there's a 0.02 gap everywhere. That's fine.
+
+Hmm, let me just try the boolean with a view_layer.update() and see.
+
+Actually, let me try a completely different and more reliable approach: build the planter box using bmesh directly. This avoids all boolean issues.
+
+Actually, let me first try one more thing: maybe the issue is that the boolean modifier needs `bpy.context.view_layer.update()` after setting the object reference.
+
+Let me testmanually.
+
+--- tool ---
+run_python({"source": "import bpy\nfor o in list(bpy.data.objects):\n    bpy.data.objects.remove(o, do_unlink=True)\n\nfrom blended.ops.primitives import add_box, link_into_scene\n\nouter = add_box(\"Outer\", width_m=0.3, depth_m=0.2, height_m=0.25, location_m=(0,0,0))\nlink_into_scene(outer)\ninner = add_box(\"Inner\", width_m=0.26, depth_m=0.16, height_m=0.25, location_m=(0,0,0.02))\nlink_into_scene(inner)\n\nbpy.context.view_layer.update()\n\nmod = outer.modifiers.new(name=\"B\", type=\"BOOLEAN\")\nmod.operation = \"DIFFERENCE\"\nmod.object = inner\nmod.solver = \"EXACT\"\n\nbpy.context.view_layer.update()\n\ndg = bpy.context.evaluated_depsgraph_get()\nev = outer.evaluated_get(dg)\nprint(\"evaluated verts:\", len(ev.data.vertices), \"polys:\", len(ev.data.polygons))\n"})
+
+--- result ---
+Executed OK in 0.01s.
+printed:
+evaluated verts: 16 polys: 12
+
+--- thinking ---
+Even with view_layer.update(), the evaluated result is 16 verts, 12 polys = 2 boxes. So the EXACT boolean solver is NOT subtracting the inner box.
+
+This is strange. Let me check the evaluated mesh vertices to see what's happening.
+
+Actually, wait — 16 verts, 12 polys. That's 2 boxes. So the boolean modifier is producing 2 boxes as output. This means the EXACT solver is failing to subtract.
+
+Let me try the FAST solver instead of EXACT.
+
+Actually, let me reconsider. Maybe the issue is that the inner box pokes out the top, and the EXACT solver has trouble with the coplanar-ish situation.
+
+Actually, let me try with the inner box NOT poking out (fully inside) and see.
+
+Actually, let me try the FAST solver.
+
+--- tool ---
+run_python({"source": "import bpy\nouter = bpy.data.objects[\"Outer\"]\ninner = bpy.data.objects[\"Inner\"]\n\n# try FAST solver\nouter.modifiers.clear()\nmod = outer.modifiers.new(name=\"B\", type=\"BOOLEAN\")\nmod.operation = \"DIFFERENCE\"\nmod.object = inner\nmod.solver = \"FAST\"\nbpy.context.view_layer.update()\ndg = bpy.context.evaluated_depsgraph_get()\nev = outer.evaluated_get(dg)\nprint(\"FAST evaluated verts:\", len(ev.data.vertices), \"polys:\", len(ev.data.polygons))\n"})
+
+--- result ---
+FAILED: TypeError: bpy_struct: item.attr = val: enum "FAST" not found in ('FLOAT', 'EXACT', 'MANIFOLD')
+Traceback (most recent call last):
+  File "/Users/ladvien/blended/src/blended/run/executor.py", line 93, in run_source_in_process
+    exec(compiled, execution_namespace)  # noqa: S102 - the harness's job
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<chat>", line 10, in <module>
+TypeError: bpy_struct: item.attr = val: enum "FAST" not found in ('FLOAT', 'EXACT', 'MANIFOLD')
+
+
+--- thinking ---
+The solver options are 'FLOAT', 'EXACT', 'MANIFOLD'. Let me try MANIFOLD solver.
+
+--- tool ---
+run_python({"source": "import bpy\nouter = bpy.data.objects[\"Outer\"]\ninner = bpy.data.objects[\"Inner\"]\n\nouter.modifiers.clear()\nmod = outer.modifiers.new(name=\"B\", type=\"BOOLEAN\")\nmod.operation = \"DIFFERENCE\"\nmod.object = inner\nmod.solver = \"MANIFOLD\"\nbpy.context.view_layer.update()\ndg = bpy.context.evaluated_depsgraph_get()\nev = outer.evaluated_get(dg)\nprint(\"MANIFOLD evaluated verts:\", len(ev.data.vertices), \"polys:\", len(ev.data.polygons))\n"})
+
+--- result ---
+Executed OK in 0.01s.
+printed:
+MANIFOLD evaluated verts: 16 polys: 12
+
+--- thinking ---
+Still 16 verts, 12 polys. So even MANIFOLD solver doesn't subtract.
+
+Wait, this is very strange. Let me check the evaluated mesh vertices to understand what's happening.
+
+Actually, wait. Let me reconsider. Maybe the issue is that the inner box is NOT actually overlapping the outer box in a way that the boolean recognizes.
+
+Inner box: ±0.13, ±0.08, z=0.02 to 0.27.
+Outer box: ±0.15, ±0.1, z=0 to 0.25.
+
+The inner box is inside the outer box in X and Y, and overlaps in Z (0.02 to 0.25 overlap). So they DO overlap.
+
+Let me check the evaluated mesh vertices directly.
+
+--- tool ---
+run_python({"source": "import bpy\nouter = bpy.data.objects[\"Outer\"]\ndg = bpy.context.evaluated_depsgraph_get()\nev = outer.evaluated_get(dg)\nfor v in ev.data.vertices:\n    print(tuple(round(c,3) for c in v.co))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+(-0.15, -0.1, 0.0)
+(-0.13, -0.08, 0.02)
+(-0.15, -0.1, 0.25)
+(-0.13, -0.08, 0.25)
+(-0.15, 0.1, 0.0)
+(-0.13, 0.08, 0.02)
+(-0.15, 0.1, 0.25)
+(-0.13, 0.08, 0.25)
+(0.13, -0.08, 0.02)
+(0.15, -0.1, 0.0)
+(0.13, -0.08, 0.25)
+(0.15, -0.1, 0.25)
+(0.13, 0.08, 0.02)
+(0.15, 0.1, 0.0)
+(0.13, 0.08, 0.25)
+(0.15, 0.1, 0.25)
+
+--- thinking ---
+The evaluated mesh is still 2 boxes (outer + inner). The boolean modifier is NOT subtracting.
+
+This is bizarre. The boolean modifier with object=inner, operation=DIFFERENCE should subtract inner from outer.
+
+Wait, let me check if the modifier is actually being applied. Let me check the modifier's properties.
+
+Actually, wait — maybe the issue is that the boolean modifier's `object` field is being set, but there's something wrong with how the operand is referenced.
+
+Let me check themodifier state.
+
+--- tool ---
+run_python({"source": "import bpy\nouter = bpy.data.objects[\"Outer\"]\nfor m in outer.modifiers:\n    print(\"mod:\", m.name, m.type, \"op:\", m.operation, \"obj:\", m.object, \"solver:\", m.solver)\nprint(\"inner location:\", bpy.data.objects[\"Inner\"].location)\nprint(\"inner matrix_world:\")\nprint(bpy.data.objects[\"Inner\"].matrix_world)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+mod: B BOOLEAN op: DIFFERENCE obj: <bpy_struct, Object("Inner") at 0x8e81a2408> solver: MANIFOLD
+inner location: <Vector (0.0000, 0.0000, 0.0000)>
+inner matrix_world:
+<Matrix 4x4 (1.0000, 0.0000, 0.0000, 0.0000)
+            (0.0000, 1.0000, 0.0000, 0.0000)
+            (0.0000, 0.0000, 1.0000, 0.0000)
+            (0.0000, 0.0000, 0.0000, 1.0000)>
+
+--- thinking ---
+The modifier is set up correctly: operation DIFFERENCE, object Inner, solver MANIFOLD. Inner's matrix_world is identity.
+
+But the evaluated result is still 2 boxes. This is very strange.
+
+Wait, let me check the Inner object's actual mesh. Maybe the Inner box's vertices are NOT where I think they are.
+
+Actually, I already printed inner's vertices earlier: ±0.13, ±0.08, z=0.02 to 0.27. And outer: ±0.15, ±0.1, z=0 to 0.25.
+
+So inner is inside outer (in X/Y) and overlaps in Z. The boolean should subtract.
+
+Hmm, wait. Let me reconsider. Maybe the issue is that the boolean modifier, when the operand is a box that's fully inside (in X/Y) but pokes out the top, the result is... actually, let me think about what "outer minus inner" should be.
+
+Outer box: solid box 0.3 x 0.2 x 0.25.
+Inner box: solid box 0.26 x 0.16 x 0.25, positioned at z=0.02 to 0.27.
+
+Outer minus inner = the outer box with a rectangular hole going from the top down to z=0.02, leaving a 0.02 floor and 0.02 walls.
+
+This should be a valid boolean. The result should be a hollow box (open top).
+
+But the evaluated result is 2 boxes. So the boolean is literally not doing anything.
+
+Wait, let me check if maybe there's an issue with the boolean modifier not being evaluated because of some caching. Let me try forcing a re-evaluation.
+
+Actually, let me try a totally different test: subtract a SMALL box that's clearly inside, and see if it works.
+
+Actually, wait. Let me reconsider. Maybe the issue is that the boolean modifier's `object` needs to be set BEFORE the modifier is added, or there's some ordering issue.
+
+Actually, let me try the simplest possible test: two overlapping boxes, subtract one fromthe other.
+
+--- tool ---
+run_python({"source": "import bpy\nfor o in list(bpy.data.objects):\n    bpy.data.objects.remove(o, do_unlink=True)\n\nfrom blended.ops.primitives import add_box, link_into_scene\n\na = add_box(\"A\", width_m=1.0, depth_m=1.0, height_m=1.0, location_m=(0,0,0))\nlink_into_scene(a)\nb = add_box(\"B\", width_m=0.5, depth_m=0.5, height_m=0.5, location_m=(0,0,0.25))\nlink_into_scene(b)\n\nbpy.context.view_layer.update()\nmod = a.modifiers.new(name=\"B\", type=\"BOOLEAN\")\nmod.operation = \"DIFFERENCE\"\nmod.object = b\nmod.solver = \"EXACT\"\nbpy.context.view_layer.update()\ndg = bpy.context.evaluated_depsgraph_get()\nev = a.evaluated_get(dg)\nprint(\"verts:\", len(ev.data.vertices), \"polys:\", len(ev.data.polygons))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+verts: 16 polys: 12
+
+--- thinking ---
+Even a simple test: box A (1x1x1) minus box B (0.5x0.5x0.5 at z=0.25 to 0.75) gives 16 verts, 12 polys = 2 boxes. So the boolean is NOT working at all in this environment!
+
+Wait, this is a fundamental issue. The boolean modifier is not being evaluated correctly.
+
+Hmm, wait. Let me reconsider. Maybe the issue is that `evaluated_get` is returning the stored mesh, not the evaluated mesh, because of the "empty scene / evaluated_get on unlinked object" trap.
+
+But I DID link the objects. Let me check len(scene.objects).
+
+Actually, wait — the trap says: "If bpy.context.scene.objects is empty the depsgraph has no instances". Let me check if the objects are actually in the scene.
+
+Actually, I used link_into_scene. Let me verify.
+
+--- tool ---
+run_python({"source": "import bpy\nprint(\"scene objects:\", [o.name for o in bpy.context.scene.objects])\nprint(\"collection objects:\", [o.name for o in bpy.context.scene.collection.objects])\na = bpy.data.objects[\"A\"]\nprint(\"A in scene:\", a.name in [o.name for o in bpy.context.scene.objects])\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+scene objects: ['A', 'B']
+collection objects: ['A', 'B']
+A in scene: True
+
+--- thinking ---
+Objects are in the scene. But the boolean modifier is not being evaluated.
+
+Wait, let me check the evaluated mesh more carefully. Maybe the evaluated mesh IS different but I'm reading it wrong.
+
+Actually, let me check: does the evaluated object have the boolean modifier applied? Let me check the evaluated object's modifiers and data.
+
+Actually, let me try a different approach to get the evaluated mesh. Maybe `new_from_object` works differently.
+
+Actually, wait. Let me reconsider. The evaluated result is 16 verts, 12 polys. Box A is 8 verts, 6 polys. Box B is 8 verts, 6 polys. So 16 verts, 12 polys = A + B (both boxes, no subtraction).
+
+So the boolean modifier is literally not subtracting. The evaluated mesh is just A's mesh (with B's mesh somehow included? No, A's mesh is 8 verts).
+
+Wait, actually, 16 verts = A (8) + B (8). So the evaluated mesh contains BOTH A and B. That's weird for a boolean difference.
+
+Hmm, actually, maybe the boolean modifier is producing a result where A and B are both present as separate components. This would happen if the boolean operation "failed" and returned the union of inputs, or if the modifier is somehow doing a UNION.
+
+Wait, let me check the operation. I set mod.operation = "DIFFERENCE". Let me verify it's actually DIFFERENCE.
+
+Actually, I already printed it earlier: "op: DIFFERENCE". So it's DIFFERENCE.
+
+Hmm. Let me try checking the evaluated mesh vertices to see if it's really A+B.
+
+Actually, let me try a completely different approach. Let me check if maybe the issue is that `evaluated_get` needs the depsgraph to be updated differently.
+
+Actually, wait — let me reconsider. Maybe the boolean modifier IS working, but the result of "A minus B" where B is fully inside A (B at z=0.25 to 0.75, A at 0 to 1) is a hollow box, which would have MORE than 16 verts.
+
+But I'm getting 16 verts = 2 boxes. So the boolean is NOT working.
+
+Let me try using bpy.ops to apply the boolean, or try a different evaluation method.
+
+Actually, let me check the Blender version and whether there's something specific about boolean modifiers in this version.
+
+Actually, wait — let me reconsider. Maybe the issue is that the boolean modifier's `object` field, when set via `mod.object = b`, doesn't actually register in the depsgraph until some update.
+
+Let me try setting the object and then checking mod.object again, and also try `mod.object = b` with explicit re-evaluation.
+
+Actually, I already confirmed mod.object is set correctly. And I called view_layer.update().
+
+Hmm, let me try a different evaluation approach: use `bpy.context.evaluated_depsgraph_get()` and then check if the boolean is in the evaluated object's modifiers.
+
+Actually, let me try the most direct thing: use bpy.ops.object.modifier_apply with a context override, or just check what the boolean actually produces.
+
+Wait, actually — let me reconsider. Maybe the problem is that in this Blender version, the boolean modifier needs the operand to be evaluated via a specific mechanism.
+
+Let me try: instead of `mod.object = b`, check if there's a different way.
+
+Actually, let me just try to apply the modifier using bpy.ops and see if that works.
+
+Actually, let me step back. The blended.ops.booleans.boolean_difference is the SANCTIONED way to do booleans. It uses apply_all_modifiers which uses new_from_object. And the hole boolean DID work (it added cylinder geometry).
+
+Wait, did the hole boolean actually work? Let me reconsider. After the hole boolean, the mesh had 64 verts, 38 polys. The cylinder has 24 segments (default), so 24 verts at top + 24 at bottom = 48 verts, plus caps. Actually the cylinder cutter was consumed.
+
+Hmm wait, actually let me reconsider whether the hole boolean "worked" or just merged the cylinder in.
+
+Actually, the final mesh (after both booleans) had:
+- 8 outer box verts
+- 8 inner box verts
+- ~48 cylinder verts
+
+So the hole boolean ADDED the cylinder geometry (as a separate component or merged). But it didn't subtract either!
+
+Wait, actually, let me reconsider. The cylinder at z=-0.01 to 0.04, radius 0.015, at center. The outer box floor is at z=0. So the cylinder pokes through the floor (z=0 to 0.04 is inside the box, z=-0.01 to 0 is below).
+
+If the boolean difference worked, the result would be the box with a cylindrical hole through the floor. The cylinder wall would be part of the box's floor.
+
+But the final mesh shows the cylinder as a SEPARATE component (the cylinder wall vertices at z=0 and z=0.02 are separate from the box).
+
+Actually wait, let me look at the final vertices again. The cylinder vertices at z=0 and z=0.02 form a cylinder wall. If the boolean worked, these would be the walls of the hole in the floor.
+
+Hmm, this is getting confusing. Let me just carefully test the boolean in isolation and understand what's happening.
+
+Let me check: does the boolean modifier actually produce ANY change? Let me compare A's mesh before and after adding the boolean modifier.
+
+Actually, I realize I should check whether the boolean modifier is even being evaluated. Let me check the evaluated object's data directly vs the stored data.
+
+Let me doa clean test.
+
+--- tool ---
+run_python({"source": "import bpy\na = bpy.data.objects[\"A\"]\nb = bpy.data.objects[\"B\"]\nprint(\"A stored verts:\", len(a.data.vertices))\nprint(\"B stored verts:\", len(b.data.vertices))\n\n# check evaluated\ndg = bpy.context.evaluated_depsgraph_get()\nev = a.evaluated_get(dg)\nprint(\"A evaluated verts:\", len(ev.data.vertices))\nprint(\"A evaluated modifiers:\", [m.name for m in ev.modifiers])\n\n# check the boolean modifier is on A\nprint(\"A modifiers:\", [(m.name, m.type, m.operation, m.object.name if m.object else None) for m in a.modifiers])\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+A stored verts: 8
+B stored verts: 8
+A evaluated verts: 16
+A evaluated modifiers: ['B']
+A modifiers: [('B', 'BOOLEAN', 'DIFFERENCE', 'B')]
+
+--- answer ---
+Stopped after 24 tool calls in one turn (budget 24) without reaching an answer. Tell me how to narrow this.

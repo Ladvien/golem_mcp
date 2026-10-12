@@ -1,0 +1,15 @@
+{
+  "blender_series": "5.2",
+  "brief": "three_leg_stool",
+  "captured_at": "2026-09-06T02:34:43.169905+00:00",
+  "iteration": 59,
+  "prompt_identity": "v11:d90e5ee9e59d",
+  "revision": 11,
+  "view_sha256": {
+    "bottom": "074e1c9b4ca0984ff27f897edfc5fe20b88d706f7deda0cf756e6560b81859fb",
+    "front": "2978fcd6e4a5fb29c7821b4288eff70d047c232d38bc061ad6be6050f447ca7c",
+    "right": "57b190ec4702f2096c0c93b553bcc9f34564048dd609e5b22bb0dc3dd77eefba",
+    "three_quarter": "1322d12606c58a84b957e74759b065f90772d66763512ae90c469baaca66d630",
+    "top": "c5607734c3599d234f7ff28c91f9288fc58e2d8d3816b29d1efdac7a879cf641"
+  }
+}

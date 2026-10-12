@@ -1,0 +1,218 @@
+# blended
+
+A Blender-based harness for agentic modeling of game assets.
+
+The agent's artifact is a **program** (`Parameters` + `Builder` Python
+modules), not a mesh. The harness's job is to make the environment tell
+the truth: structured tracebacks with known-API-drift fixes attached, a
+mesh analyzer as the hard acceptance gate, and multi-view captures for
+inspection. Rendered critique advises; the analyzer decides.
+
+## One call
+
+```python
+from blended.builders import BarrelBuilder, BarrelParameters
+from blended.harness import HarnessSettings, run_builder
+
+result = run_builder(
+    BarrelBuilder(BarrelParameters()),
+    HarnessSettings(
+        export_glb_path="out/barrel.glb",
+        export_blend_path="out/barrel.blend",  # required with export_glb_path
+    ),
+)
+print(result.summary())  # execute -> gate -> contact sheet -> verified export + .blend
+```
+
+`run_chunk(source, object_name, fix_source=...)` is the same loop for
+agent-written code: tracebacks come back annotated with known API-drift
+fixes, retries are capped at 2, and every attempt lands in the session
+log. Failures still produce a contact sheet — a failure you cannot
+review is a failure you will repeat.
+
+## Layout
+
+```
+src/blended/
+  harness.py     run_chunk / run_builder - the one-call loop
+  stages.py      the one stage vocabulary (execute, locate, gate, export, done)
+  task.py        the 3-round agent task loop with agent-shaped failure feedback
+  manifest.py    the capability manifest, generated from live code
+  viewport_follow.py  frames what a scene-changing MCP call touched in the 3D viewport
+  version.py     Blender series pin (5.2) + skew assertion
+  reset.py       wipe to a canonical empty scene, with the wipe ASSERTED
+  drift/         API drift catalog — grows with every instructive traceback
+  ops/           reusable construction vocabulary: the data API, with bpy.ops only in
+                 uv and rigging, each wrapped once; motion.py (skinned-motion ops)
+                 over the skinclip package
+  builders/      Parameters + Builder pairs (crate, barrel, pallet)
+  analyze/       the mesh analyzer (the hard gate) + pair checks + metamorphic relations
+  capture/       front/right/top/three-quarter renders, contact sheets, reference photos
+  run/           executor, retry loop, JSONL session log
+  ingest/        GLB import + bounded cleanup (the generated-mesh lane)
+  export/        glTF export with welded round-trip verification
+  evaluate/      briefs, acceptance, examiner, iteration log, mistake memory,
+                 reproducibility digest, the 3DCodeBench bridge
+  agent/         AgentSession (model lanes, plan gate, caps), TOOL_SCHEMAS and
+                 dispatch_tool, prompts and their revisions
+blender_mcp/     Blender Lab's MCP server (vendored subtree) extended to serve the
+                 tool surface; its add-on and unit tests
+scripts/         entry points: converge, replay, calibrate, pin, 3DCodeBench sweep
+tests/pure/      no Blender required, runs anywhere
+tests/blender/   requires `import bpy` (pip wheel or Blender's Python)
+tests/bench_scripts/  the bench scripts' tests (numpy, scipy, trimesh, Pillow),
+                 run by `make test-bench-scripts`
+tests/gui/       the viewport-framing check, run by `make test-viewport-gui`
+docs/            specification, roadmap, plans, research
+```
+
+## Chat (Claude Code over MCP)
+
+The agent is Claude Code driving Blender through the `blended` MCP
+server: Blender Lab's `blender_mcp` (GPL-3.0-or-later, vendored as a git
+subtree at `blender_mcp/`) extended to serve blended's full tool surface
+(`TOOL_SCHEMAS`) through `dispatch_tool`, with the plan gate and a
+schema-2 `logs/mcp-*.jsonl` per session.
+
+```sh
+make install-mcp-addon         # once: symlink the `mcp` extension into Blender,
+                               # enable it, allow online access (its socket needs it)
+open -a Blender                # the add-on listens on localhost:9876
+claude                         # in this directory; .mcp.json registers
+                               # .venv/bin/blender-mcp as server `blended`
+```
+
+`.mcp.json` and `.omp/mcp.json` name this machine's absolute path
+(`/Users/ladvien/blended/.venv/bin/blender-mcp`); a checkout elsewhere must
+edit both files before the server starts.
+
+The add-on executes any code sent to localhost:9876.
+
+**What the agent is told.** Claude Code delivers only the first 2,048
+characters of an MCP server's instructions (measured 2026-10-07: blended
+sends 24,721). So the instructions open with a must-read head
+(`MCP_INSTRUCTIONS_HEAD`, 2,047 characters of the 2,048 allowed; it was
+1,981 before OT-50 added the rule that every export ships its .blend) that condenses
+working-agreement revision 10; the full text follows it. A test fails
+when the active revision moves, so the head gets reviewed along with it.
+
+**The user's view.** After every scene-changing blended call, the server
+frames the objects that call touched in every 3D viewport. Their result
+ends with a `viewport:` line saying what was framed, or why nothing was:
+background Blender, no 3D viewport, or nothing in the scene yet. An
+object made by `add_box` is framed once `link_into_scene` puts it in the
+scene. Framing moves the view's pivot and distance; a viewport in camera
+view is switched to perspective first. Selection, the active object, the
+mode and the view rotation stay as they were.
+`make test-viewport-gui` checks the result against Blender's own
+projection in a GUI Blender; a window opens for a few seconds.
+
+**Source edits.** Edits under `src/blended` take effect on the next call
+without restarting Blender: Blender purges and re-imports `blended` when
+the call's source fingerprint changes. What the server loaded at start
+stays until the server restarts: tools, descriptions, parameters,
+defaults, plan gating (`reads_only`), the outcome wire format, any
+`blmcp` edit, and the instructions. Until then the server lists tools,
+gates calls and parses outcomes with that start-time code while Blender
+runs the edited code.
+
+Restarting on a source edit is opt-in: `--exit-on-source-change`, stdio
+only. It is right only for a client that restarts a server that exits.
+omp does, and `.omp/mcp.json` gives it its own `blended` entry with the
+flag. Measured: omp spawned that entry, not the one in `.mcp.json`. The
+server exits once the sources have held still for 2 s, no call is in
+flight, and the last response has had 2 s to drain. Before exiting, it
+leaves the declared plan and the session-log name in
+`logs/mcp-handoff-<client pid>.json`. The client's next server consumes
+that file, keeps the plan, and appends to the same log. A handoff older
+than 60 s, or a malformed one, is refused on stderr.
+
+Claude Code (`.mcp.json`) and Claude Desktop
+(`~/Library/Application Support/Claude/claude_desktop_config.json`, entry
+`blended`) run without the watcher, because neither restarts a stdio
+server that exits. After an edit to anything loaded at start, run `/mcp`
+in Claude Code, or quit and reopen Desktop (⌘Q). Add-on edits
+(`blender_mcp/addon`) still need a Blender restart. `.omp/mcp.json` also
+disables any same-named `blender` server that omp would import from
+another tool's config (e.g. `uvx blender-mcp` in `~/.claude.json`),
+since it would talk to the same port.
+
+## Skinned motion (skinclip)
+
+`blended.ops.motion` checks and repairs skinned animation: whether a clip passes its
+character through itself (`clip_self_intersection_report`), the body capsules of a humanoid
+rig (`body_capsules_report`), a limb repair (`repair_limb_penetration`) and a baked ring of
+skirt bone chains (`bake_cloth_chains`). The numerics are the numpy-only package
+[skinclip](https://github.com/Ladvien/skinclip), pinned by tag in `pyproject.toml`
+(`[tool.uv.sources]`) and installed by `uv sync` into `.venv`. skinclip declares no numpy on
+purpose: Blender's bundled numpy serves it, and a numpy wheel in `.venv` would shadow
+Blender's (the venv's site-packages come first on Blender's `sys.path`), so keep numpy out of
+`.venv`. The op modules import skinclip inside op bodies, so the facade, the MCP server and
+`tests/pure` import with no numpy. The ops read the armature's active action and need a UE5 or
+Mixamo humanoid for capsules and repair; `docs/2026-09-10-specification-and-requirements.md`
+OPS-26 and OPS-27 state what they refuse.
+
+## Op plugins
+
+An installed distribution can add ops to the facade without a change here:
+declare an entry point in the `blended.ops` group naming a module whose
+`__all__` lists its op functions (`blended.plugins`).
+
+```toml
+[project.entry-points."blended.ops"]
+my_ops = "my_package.ops"
+```
+
+Plugin ops follow the core ops, satisfy the same contract
+(`blended.ops._contract`), and reach the tool schemas, the plan gate and
+`search_ops` through `facade_ops()`. A name that collides with an existing
+op is refused at import. A plugin must be a package installed into the
+`blended` venv, so its entry point is discoverable from Blender
+(`uv pip install --python .venv/bin/python -e path/to/plugin`): the MCP
+server hands Blender the package's source directory, and a source change
+re-imports the plugin together with `blended`. `uv sync` removes a plugin
+installed this way; run the install again after it. The test suite sets
+`BLENDED_DISABLE_PLUGINS=1`, because the pinned tool-schema fingerprint
+describes the core set.
+
+## Run
+
+```sh
+make test-pure                 # any machine
+make test-blender-app          # build → analyze → render, inside the
+                               # installed Blender 5.2 (its own Python
+                               # 3.13, bundled numpy, no pip)
+make test-mcp                  # the MCP server's unit layer (no Blender)
+make test-mcp-blender          # MCP client -> server -> real background
+                               # Blender -> blended's dispatch_tool
+make test-viewport-gui         # viewport framing in a GUI Blender (opens
+                               # a window for a few seconds)
+make test-bench-scripts        # tests/bench_scripts in a throwaway env with
+                               # numpy, scipy, trimesh and Pillow (never in
+                               # .venv; downloads wheels on first run)
+make test                      # pure + Blender app + bench scripts + MCP unit; the gate
+make test-repro ARGS="--builder barrel"
+                               # build twice in two fresh Blenders under
+                               # different PYTHONHASHSEED; identical
+                               # semantic digests or exit 1
+```
+
+`make test-blender` runs the same Blender-tier suite against a
+pip-installed `bpy` wheel instead. It needs a venv whose Python matches
+the wheel's (Blender 5.2 is cp313; this repo's `.venv` is 3.11, so
+`pip install bpy` there cannot produce 5.2), and a bare run with no
+wheel collects nothing and exits 5 — which is not a pass.
+
+The remaining targets (`converge`, `converge-local`, `converge-auto`, `replay`,
+`calibrate-eye`, `calibrate-visual-gate`, `pin-golden-views`, `pin`,
+`mine-ops`, `bench-3dcode`, `chat-e2e`, `photo-to-model`, `provider-smoke`)
+are listed with what each proves in
+`docs/2026-09-10-specification-and-requirements.md` §2.4.
+
+## Read
+
+- `docs/2026-08-21-harness-roadmap.md` — the staged plan and design commitments.
+- `docs/research/2026-08-20-agentic-blender-game-asset-harness-research.md` — the evidence.
+- `docs/2026-09-10-specification-and-requirements.md` — what the system is and must do, with evidence per requirement.
+- `BACKLOG.md` / `BACKLOG_DONE.md` — open and closed work on the agent's tool surface.
+- `docs/2026-10-02-mcp-viewport-head-restart-plan.md` — why the MCP server frames, leads with a head, restarts only on request, and hands off its plan.

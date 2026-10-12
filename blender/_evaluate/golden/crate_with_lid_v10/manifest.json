@@ -1,0 +1,15 @@
+{
+  "blender_series": "5.2",
+  "brief": "crate_with_lid",
+  "captured_at": "2026-08-22T23:28:02.890064+00:00",
+  "iteration": 51,
+  "prompt_identity": "v10:b6627b38f4c1",
+  "revision": 10,
+  "view_sha256": {
+    "bottom": "a117f95d5f9975c50d32daae9fea74340bd229b08b65e718e45533f6188e5f4a",
+    "front": "f9e8a15b28ab9f40e8859c551d49de76ab69e324238fcc9927915c07b8132646",
+    "right": "f87edf2211190c7a89b0d77d05cf524400609b7391e2d8de0041f5e41db6876f",
+    "three_quarter": "f59ed2bfa9074eee41f2ab69bea3dec5fd0ea0954c1b75e9ef26431ab031a773",
+    "top": "354b3233c91f732cff6a2e707892ef3cb5c47230764b7502601ec7df8eae028d"
+  }
+}

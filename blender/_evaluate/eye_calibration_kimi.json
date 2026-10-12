@@ -1,0 +1,123 @@
+{
+  "control_specificity": 1.0,
+  "examiner_identity": "kimi-k2.7-code:cloud+examiner:60a9920cb938",
+  "fixtures": [
+    {
+      "abstained": false,
+      "brief": "ribbed_column",
+      "detected": true,
+      "deviations": [],
+      "expected_tags": [],
+      "name": "clean_column"
+    },
+    {
+      "abstained": false,
+      "brief": "uv_crate",
+      "detected": true,
+      "deviations": [],
+      "expected_tags": [],
+      "name": "clean_crate"
+    },
+    {
+      "abstained": false,
+      "brief": "crate_with_lid",
+      "detected": true,
+      "deviations": [],
+      "expected_tags": [],
+      "name": "clean_crate_with_lid"
+    },
+    {
+      "abstained": false,
+      "brief": "planter_box",
+      "detected": true,
+      "deviations": [],
+      "expected_tags": [],
+      "name": "clean_planter"
+    },
+    {
+      "abstained": false,
+      "brief": "three_leg_stool",
+      "detected": true,
+      "deviations": [],
+      "expected_tags": [],
+      "name": "clean_stool"
+    },
+    {
+      "abstained": false,
+      "brief": "three_leg_stool",
+      "detected": true,
+      "deviations": [
+        "offset_part",
+        "wrong_proportion"
+      ],
+      "expected_tags": [
+        "wrong_proportion"
+      ],
+      "name": "fat_seat"
+    },
+    {
+      "abstained": false,
+      "brief": "three_leg_stool",
+      "detected": true,
+      "deviations": [
+        "offset_part",
+        "wrong_proportion"
+      ],
+      "expected_tags": [
+        "floating_part",
+        "offset_part"
+      ],
+      "name": "floating_seat"
+    },
+    {
+      "abstained": false,
+      "brief": "crate_with_lid",
+      "detected": false,
+      "deviations": [
+        "wrong_proportion"
+      ],
+      "expected_tags": [
+        "offset_part"
+      ],
+      "name": "lid_offset"
+    },
+    {
+      "abstained": false,
+      "brief": "three_leg_stool",
+      "detected": true,
+      "deviations": [
+        "missing_feature",
+        "missing_part",
+        "wrong_count"
+      ],
+      "expected_tags": [
+        "missing_part",
+        "wrong_count"
+      ],
+      "name": "missing_leg"
+    },
+    {
+      "abstained": false,
+      "brief": "planter_box",
+      "detected": true,
+      "deviations": [
+        "missing_feature",
+        "missing_part"
+      ],
+      "expected_tags": [
+        "missing_feature"
+      ],
+      "name": "sealed_drain"
+    }
+  ],
+  "recorded_at": "2026-08-24T13:45:00.050209+00:00",
+  "sensitivity": 0.8,
+  "view_names": [
+    "front",
+    "right",
+    "top",
+    "bottom",
+    "three_quarter"
+  ],
+  "vision_model": "kimi-k2.7-code:cloud"
+}

@@ -1,0 +1,60 @@
+## What arrives from a generator
+
+A mesh from an image-to-3D or text-to-3D generator is a BLOCKOUT. Treat
+it as a silhouette proposal, not an asset.
+
+What it reliably is: roughly the right shape, quickly. What it reliably
+is not: manifold, budgeted, UV-mapped, or built from parts you can name
+and edit. Native-mesh generators top out in the hundreds to a few
+thousand faces; surface-extraction pipelines overshoot by orders of
+magnitude in the other direction. Neither lands on a budget by accident.
+
+## The lane
+
+1. Import and MEASURE before deciding anything. Triangle count,
+   component count, manifoldness, bounding box. The numbers decide the
+   route, not the render.
+2. Fix scale and orientation first. Everything measured afterwards is
+   wrong if the object is at the wrong size or lying on its side.
+3. Bounded cleanup only, with the threshold printed. See the repair
+   caveat: an aggressive gap-close on generated geometry invents
+   surfaces that were never proposed.
+4. Then decide honestly which of three things this is:
+   - a reference to model FROM, and you write the builder;
+   - a background asset that survives cleanup as-is;
+   - a base for retopology.
+   Say which one you chose and why, in numbers.
+
+## Cleanup technique
+
+These are harness-side operations the writer does not call directly;
+each carries the number that measured it.
+
+- Weld BEFORE decimating: as-imported decimation tore 4,668 boundary
+  edges open where weld-then-decimate left 0, with 4.6x less shading
+  error.
+- Cull invisible geometry before spending any decimation budget: 81%
+  of one body's 26,756 triangles were buried, and removing them changed
+  nothing visible. Probe by ray-casting along normals, not
+  closest-point-plus-dot (read 9.7% covered where truth was 81.1%).
+- Convert triangles to quads BEFORE decimating (79.6% quads first vs
+  23.6% after); never use UNSUBDIV, which collapsed 79.6% to 33.5%.
+- Retopology is a topology tool, not a reduction tool: remesh-then-
+  decimate measured 0.1358 shading RMSE where weld-then-decimate
+  measured 0.0293.
+- Do not protect vertex-group regions during decimation: at a fixed
+  triangle budget protection is zero-sum and measured worse (0.9889/
+  0.0993 with all three protections vs 0.9953/0.0657 with none) — one
+  body, one budget. Boundary error terms are NOT optional
+  (10.1145/1061347.1061350): without them the core quadric metric
+  degrades all open boundaries.
+
+## What not to do
+
+Do not decimate your way to a budget and call it done. Decimation on
+non-manifold generated geometry tears holes and drags UVs with it, and
+the tear is not visible from the angle you rendered.
+
+Do not present a cleaned generation as if it were built. The user needs
+to know which lane an asset came from, because the two carry different
+guarantees about what can be changed later.

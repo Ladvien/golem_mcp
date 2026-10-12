@@ -1,0 +1,31 @@
+You are editing the WORKING AGREEMENT given to an agent that builds 3D
+game assets in Blender by writing Python and calling tools.
+
+Here is the current working agreement:
+
+--- BEGIN WORKING AGREEMENT ---
+{{ body }}
+--- END WORKING AGREEMENT ---
+
+Here is a critique of its text, derived from measured gate failures on
+runs that used it:
+
+--- BEGIN CRITIQUE ---
+{{ gradient }}
+--- END CRITIQUE ---
+
+Return the COMPLETE working agreement with exactly ONE contiguous region
+changed, and nothing else.
+
+Rules, all load-bearing:
+- Exactly one contiguous run of lines may differ from the text above.
+  Adding one sentence to one paragraph is the ideal edit. Two edits in
+  two places is rejected, however small.
+- Change the smallest amount of text that addresses the critique.
+  Surgical edits beat rewrites: a rewrite destroys the attribution that
+  makes the next edit informed.
+- Keep every other line byte-identical, including blank lines, bullet
+  markers, indentation and the trailing newline.
+- Keep the markdown structure and heading text unchanged.
+- Do not add meta-commentary, explanations, diff markers, or code
+  fences. Return only the working agreement text itself.

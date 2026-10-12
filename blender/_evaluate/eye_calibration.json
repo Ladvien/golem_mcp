@@ -1,0 +1,284 @@
+{
+  "control_specificity": 1.0,
+  "cross_run_control_specificity": 0.75,
+  "cross_run_controls": [
+    {
+      "abstained": false,
+      "brief": "ribbed_column",
+      "candidate_iteration": 63,
+      "clean": true,
+      "deviations": [],
+      "name": "cross_run_column",
+      "reference_revision": 11,
+      "view_tags": [
+        [
+          "front",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "right",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "top",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "bottom",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "three_quarter",
+          [
+            "no_deviation"
+          ]
+        ]
+      ]
+    },
+    {
+      "abstained": false,
+      "brief": "uv_crate",
+      "candidate_iteration": 65,
+      "clean": true,
+      "deviations": [],
+      "name": "cross_run_crate",
+      "reference_revision": 11,
+      "view_tags": [
+        [
+          "front",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "right",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "top",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "bottom",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "three_quarter",
+          [
+            "no_deviation"
+          ]
+        ]
+      ]
+    },
+    {
+      "abstained": false,
+      "brief": "planter_box",
+      "candidate_iteration": 62,
+      "clean": true,
+      "deviations": [],
+      "name": "cross_run_planter",
+      "reference_revision": 11,
+      "view_tags": [
+        [
+          "front",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "right",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "top",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "bottom",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "three_quarter",
+          [
+            "no_deviation"
+          ]
+        ]
+      ]
+    },
+    {
+      "abstained": false,
+      "brief": "three_leg_stool",
+      "candidate_iteration": 64,
+      "clean": false,
+      "deviations": [
+        "intersecting_parts",
+        "surface_artifact"
+      ],
+      "name": "cross_run_stool",
+      "reference_revision": 11,
+      "view_tags": [
+        [
+          "front",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "right",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "top",
+          [
+            "no_deviation"
+          ]
+        ],
+        [
+          "bottom",
+          [
+            "surface_artifact"
+          ]
+        ],
+        [
+          "three_quarter",
+          [
+            "intersecting_parts"
+          ]
+        ]
+      ]
+    }
+  ],
+  "examiner_identity": "claude-code:sonnet+examiner:4bc67293e36c",
+  "fixtures": [
+    {
+      "abstained": false,
+      "brief": "ribbed_column",
+      "detected": true,
+      "deviations": [],
+      "expected_tags": [],
+      "measured_property_reports": [],
+      "name": "clean_column"
+    },
+    {
+      "abstained": false,
+      "brief": "uv_crate",
+      "detected": true,
+      "deviations": [],
+      "expected_tags": [],
+      "measured_property_reports": [],
+      "name": "clean_crate"
+    },
+    {
+      "abstained": false,
+      "brief": "crate_with_lid",
+      "detected": true,
+      "deviations": [],
+      "expected_tags": [],
+      "measured_property_reports": [],
+      "name": "clean_crate_with_lid"
+    },
+    {
+      "abstained": false,
+      "brief": "planter_box",
+      "detected": true,
+      "deviations": [],
+      "expected_tags": [],
+      "measured_property_reports": [],
+      "name": "clean_planter"
+    },
+    {
+      "abstained": false,
+      "brief": "three_leg_stool",
+      "detected": true,
+      "deviations": [],
+      "expected_tags": [],
+      "measured_property_reports": [],
+      "name": "clean_stool"
+    },
+    {
+      "abstained": false,
+      "brief": "three_leg_stool",
+      "detected": false,
+      "deviations": [],
+      "expected_tags": [
+        "floating_part",
+        "offset_part"
+      ],
+      "measured_property_reports": [],
+      "name": "floating_seat"
+    },
+    {
+      "abstained": false,
+      "brief": "crate_with_lid",
+      "detected": true,
+      "deviations": [
+        "offset_part",
+        "surface_artifact"
+      ],
+      "expected_tags": [
+        "offset_part"
+      ],
+      "measured_property_reports": [],
+      "name": "lid_offset"
+    },
+    {
+      "abstained": false,
+      "brief": "three_leg_stool",
+      "detected": true,
+      "deviations": [
+        "missing_part"
+      ],
+      "expected_tags": [
+        "missing_part",
+        "wrong_count"
+      ],
+      "measured_property_reports": [],
+      "name": "missing_leg"
+    },
+    {
+      "abstained": false,
+      "brief": "planter_box",
+      "detected": true,
+      "deviations": [
+        "missing_feature"
+      ],
+      "expected_tags": [
+        "missing_feature"
+      ],
+      "measured_property_reports": [],
+      "name": "sealed_drain"
+    }
+  ],
+  "recorded_at": "2026-09-06T05:57:28.145231+00:00",
+  "sensitivity": 0.75,
+  "view_names": [
+    "front",
+    "right",
+    "top",
+    "bottom",
+    "three_quarter"
+  ],
+  "vision_model": "claude-code:sonnet"
+}

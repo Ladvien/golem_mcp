@@ -1,0 +1,150 @@
+--- tool ---
+declare_plan({"steps": ["Build CrateBody as hollow open-top box via boolean difference (outer 0.5x0.5x0.4, wall 0.02m)", "Build CrateLid as solid slab 0.5x0.5x0.06 resting on the crate rim", "Assign materials to both objects", "Gate-check and inspect both objects", "Render both to verify fit and look"]})
+
+--- result ---
+Plan declared:
+  1. Build CrateBody as hollow open-top box via boolean difference (outer 0.5x0.5x0.4, wall 0.02m)
+  2. Build CrateLid as solid slab 0.5x0.5x0.06 resting on the crate rim
+  3. Assign materials to both objects
+  4. Gate-check and inspect both objects
+  5. Render both to verify fit and look
+
+--- plan ---
+{"steps": ["Build CrateBody as hollow open-top box via boolean difference (outer 0.5x0.5x0.4, wall 0.02m)", "Build CrateLid as solid slab 0.5x0.5x0.06 resting on the crate rim", "Assign materials to both objects", "Gate-check and inspect both objects", "Render both to verify fit and look"], "current_step": 0}
+
+--- tool ---
+run_python({"plan_step": 1, "source": "from blended.ops import add_box, link_into_scene, boolean_difference, assign_material\n\nOUTER_XY_M = 0.5\nOUTER_HEIGHT_M = 0.4\nWALL_THICKNESS_M = 0.02\nCUTTER_TOP_OVERSHOOT_M = 0.05  # ensures the cutter exits the top cleanly, keeping the lid opening truly open\n\nouter = add_box('CrateBody', OUTER_XY_M, OUTER_XY_M, OUTER_HEIGHT_M, location_m=(0,0,0))\nlink_into_scene(outer)\n\ninner_xy_m = OUTER_XY_M - 2*WALL_THICKNESS_M\ninner_height_m = (OUTER_HEIGHT_M - WALL_THICKNESS_M) + CUTTER_TOP_OVERSHOOT_M\ncutter = add_box('CrateBody_cutter', inner_xy_m, inner_xy_m, inner_height_m, location_m=(0,0,WALL_THICKNESS_M))\nlink_into_scene(cutter)\n\nboolean_difference(outer, cutter)\nassign_material(outer, 'CrateBodyMat', base_color_rgb=(0.45,0.28,0.14), roughness=0.8)\nprint('CrateBody built')\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+CrateBody built
+
+--- step ---
+1
+
+--- tool ---
+run_python({"plan_step": 2, "source": "from blended.ops import add_box, link_into_scene, assign_material\n\nOUTER_XY_M = 0.5\nCRATE_HEIGHT_M = 0.4\nLID_THICKNESS_M = 0.06\n\nlid = add_box('CrateLid', OUTER_XY_M, OUTER_XY_M, LID_THICKNESS_M, location_m=(0,0,CRATE_HEIGHT_M))\nlink_into_scene(lid)\nassign_material(lid, 'CrateLidMat', base_color_rgb=(0.55,0.35,0.18), roughness=0.8)\nprint('CrateLid built, resting at z=', CRATE_HEIGHT_M)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+CrateLid built, resting at z= 0.4
+
+--- step ---
+2
+
+--- tool ---
+inspect_object({"object_name": "CrateBody", "plan_step": 4})
+
+--- result ---
+GATE PASS
+{
+ "object_name": "CrateBody",
+ "triangle_count": 28,
+ "non_manifold_edge_count": 0,
+ "boundary_edge_count": 0,
+ "zero_area_face_count": 0,
+ "non_finite_coordinate_count": 0,
+ "connected_component_count": 1,
+ "duplicate_vertex_pair_count": 0,
+ "self_intersecting_face_pair_count": 0,
+ "flipped_normal_triangle_count": 0,
+ "uv_layer_count": 0,
+ "uv_island_count": 0,
+ "uv_overlapping_face_pair_count": 0,
+ "uv_out_of_bounds_face_count": 0,
+ "uv_coverage_fraction": 0.0,
+ "inverted_facet_count": 0
+}
+
+--- step ---
+4
+
+--- tool ---
+inspect_object({"object_name": "CrateLid", "plan_step": 4})
+
+--- result ---
+GATE PASS
+{
+ "object_name": "CrateLid",
+ "triangle_count": 12,
+ "non_manifold_edge_count": 0,
+ "boundary_edge_count": 0,
+ "zero_area_face_count": 0,
+ "non_finite_coordinate_count": 0,
+ "connected_component_count": 1,
+ "duplicate_vertex_pair_count": 0,
+ "self_intersecting_face_pair_count": 0,
+ "flipped_normal_triangle_count": 0,
+ "uv_layer_count": 0,
+ "uv_island_count": 0,
+ "uv_overlapping_face_pair_count": 0,
+ "uv_out_of_bounds_face_count": 0,
+ "uv_coverage_fraction": 0.0,
+ "inverted_facet_count": 0
+}
+
+--- step ---
+4
+
+--- tool ---
+render_views({"object_name": "CrateBody", "plan_step": 5, "look_for": "Is this a hollow open-top crate with visible wall thickness, sitting flat on the ground?"})
+
+--- result ---
+Rendered CrateBody (solid). Look at the attached contact sheet.
+
+--- step ---
+5
+
+--- render ---
+_evaluate/renders/iteration52_crate_with_lid_v10/agent/CrateBody_sheet.png
+
+--- tool ---
+render_views({"object_name": "CrateLid", "plan_step": 5, "look_for": "Is this a flat slab positioned above the ground at the height of a crate rim (around 0.4m)?"})
+
+--- result ---
+Rendered CrateLid (solid). Look at the attached contact sheet.
+
+--- step ---
+5
+
+--- render ---
+_evaluate/renders/iteration52_crate_with_lid_v10/agent/CrateLid_sheet.png
+
+--- tool ---
+run_python({"plan_step": 4, "source": "import bpy\nfrom mathutils import Vector\n\nbpy.context.view_layer.update()\n\ndef world_bounds(obj):\n    mat = obj.matrix_world\n    corners = [mat @ Vector(c) for c in obj.bound_box]\n    xs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\n    return (min(xs),max(xs)), (min(ys),max(ys)), (min(zs),max(zs))\n\nbody = bpy.data.objects['CrateBody']\nlid = bpy.data.objects['CrateLid']\n\nbx, by, bz = world_bounds(body)\nlx, ly, lz = world_bounds(lid)\n\nprint('CrateBody X:', bx, 'Y:', by, 'Z:', bz)\nprint('CrateLid  X:', lx, 'Y:', ly, 'Z:', lz)\nprint('CrateBody bottom z (should be 0):', bz[0])\nprint('CrateBody rim top z (should be 0.4):', bz[1])\nprint('CrateLid bottom z (should equal rim top):', lz[0])\nprint('CrateLid top z (should be rim + 0.06):', lz[1])\nprint('CrateLid X extent (should be 0.5, centered -0.25..0.25):', lx)\nprint('CrateLid Y extent (should be 0.5, centered -0.25..0.25):', ly)\n\nmesh_objs = [o.name for o in bpy.context.scene.objects if o.type == 'MESH']\nprint('Mesh objects in scene:', mesh_objs)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+CrateBody X: (-0.25, 0.25) Y: (-0.25, 0.25) Z: (0.0, 0.4000000059604645)
+CrateLid  X: (-0.25, 0.25) Y: (-0.25, 0.25) Z: (0.4000000059604645, 0.46000000834465027)
+CrateBody bottom z (should be 0): 0.0
+CrateBody rim top z (should be 0.4): 0.4000000059604645
+CrateLid bottom z (should equal rim top): 0.4000000059604645
+CrateLid top z (should be rim + 0.06): 0.46000000834465027
+CrateLid X extent (should be 0.5, centered -0.25..0.25): (-0.25, 0.25)
+CrateLid Y extent (should be 0.5, centered -0.25..0.25): (-0.25, 0.25)
+Mesh objects in scene: ['CrateBody', 'CrateLid']
+
+--- step ---
+4
+
+--- answer ---
+Both objects check out cleanly:
+
+**CrateBody**
+- 28 triangles, 1 component, manifold, no self-intersections/flipped normals — gate PASS
+- Outer footprint 0.5m × 0.5m (X: -0.25..0.25, Y: -0.25..0.25), sitting flush on the ground (bottom z=0.0), rim at z=0.4 — matches 0.4m tall spec with 0.02m walls
+- Material assigned (CrateBodyMat)
+
+**CrateLid**
+- 12 triangles, 1 component, manifold — gate PASS
+- Same 0.5m × 0.5m footprint, exactly centered (no overhang)
+- Bottom face at z=0.4 (flush with the rim top, not floating or sunk), top at z=0.46 — a true 0.06m slab resting on the rim
+- Material assigned (CrateLidMat)
+
+Scene contains only the two requested mesh objects: `CrateBody` and `CrateLid`.
+
+The renders confirm the crate reads as a hollow open-top box with visible wall thickness and the lid as a flat slab sized to match, sitting right at rim height. Everything asked for is built and verified — let me know if you'd like adjustments (e.g., a different wood tone, a lip/rabbet on the lid, or handles).

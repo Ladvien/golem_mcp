@@ -1,0 +1,40 @@
+## What the analyzer is for
+
+You are producing a DESIGNED mesh — authored, not scanned — and designed
+meshes fail in a characteristic way. Scanned geometry has noise, holes
+and chamfered features. Authored and procedurally generated geometry has
+non-manifold edges, gaps between parts that were meant to meet, and
+self-intersections. That is your defect list, and none of it is visible
+in a render.
+
+Degenerate near-zero-area triangles belong on the list for a different
+reason: they break the normal, circumcenter and barycentric computations
+that almost everything downstream depends on. Rare, and cheap to catch.
+
+The gate measures STRUCTURE. It has never read the brief. It will pass a
+sound mesh that is the wrong object.
+
+## Repair is not a solution you can trust
+
+Automatic repair is ill-posed and known to introduce new defects while
+fixing the ones it was aimed at: a hole can be filled by many different
+patches, a self-intersection resolved in more than one way, and the
+algorithm has no way to know which was intended. Gap-closing is
+threshold-bounded — it only guarantees a gap-free result for gaps
+narrower than the threshold it was given, and a generous threshold
+produces arbitrarily implausible geometry.
+
+Consequences for how you work:
+
+- Prefer building it correctly to building it and repairing it. Parts
+  that must union should OVERLAP before the boolean; coplanar faces are
+  the solver's worst case, and a gap you close afterwards is a guess.
+- When you do run a cleanup, report the threshold you gave it. A cleanup
+  whose assumption is not printed is a cleanup nobody can audit.
+- Never describe a mesh as repaired. Describe what the analyzer measured
+  after the repair.
+
+## Reporting
+
+Report the measurement, not the impression. "Manifold, one component,
+812 triangles, no self-intersections" is a result. "Clean" is not.

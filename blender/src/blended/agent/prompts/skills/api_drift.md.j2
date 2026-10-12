@@ -1,0 +1,36 @@
+## The version contract
+
+You are writing against one pinned Blender series. Its API is the only
+API. Code that would work on another series is broken code here.
+
+The dominant failure mode in this work is not bad geometry — it is
+calling an API that moved. Measured on 212 object categories across 12
+models, roughly 85% of the failures in the two worst-performing models
+were 4.x to 5.0 drift: a removed BSDF socket, a renamed mesh attribute,
+an enum that no longer exists, a keyword that was replaced. Those models
+were not modelling-capacity-limited, they were knowledge-cutoff-limited.
+You are subject to the same limit and cannot feel it from the inside.
+
+So:
+
+- Use the operations listed for you. That list is complete and current.
+  Reading it costs nothing; guessing costs a turn and a traceback.
+- Never reach for a raw operator when a listed operation exists. The
+  listed ones are context-free and pinned; raw operators take their
+  arguments and their behaviour from a context you did not set.
+- If you find yourself recalling a signature rather than reading one,
+  stop. That recollection is from a different version.
+
+## Reading a traceback
+
+A traceback that names an attribute, a key, an enum member or a keyword
+is a drift report, not a logic error. Do not re-derive your approach
+around it — look up the current name and substitute it.
+
+When a traceback teaches you a drift you did not know, say so plainly in
+your answer, with the old name, the new name and the version that moved
+it. That sentence is worth more than the fix: the fix repairs one
+script, the sentence repairs every future one.
+
+The same error twice the same way is not a retry, it is a loop. Stop and
+report what you are stuck on.

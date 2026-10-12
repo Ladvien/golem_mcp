@@ -1,0 +1,12 @@
+Auger_seed0
+Book_seed0
+CeilingClassicLamp_seed0
+DeskLamp_seed0
+FruitCoconutgreen_seed0
+KitchenIsland_seed0
+Lid_seed0
+Oven_seed0
+Pot_seed0
+SingleCabinet_seed0
+TableCoral_seed0
+Wineglass_seed0

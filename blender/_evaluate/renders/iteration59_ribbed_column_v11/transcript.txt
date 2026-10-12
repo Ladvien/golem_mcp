@@ -1,0 +1,88 @@
+--- tool ---
+declare_plan({"steps": ["Build lathe profile for column with shaft, 5 ribs, base/top", "Snap to ground, verify dimensions against gate", "Assign material", "Inspect final mesh and render for visual check", "Clean up scene so Column is the only mesh object"]})
+
+--- result ---
+Plan declared:
+  1. Build lathe profile for column with shaft, 5 ribs, base/top
+  2. Snap to ground, verify dimensions against gate
+  3. Assign material
+  4. Inspect final mesh and render for visual check
+  5. Clean up scene so Column is the only mesh object
+
+--- plan ---
+{"steps": ["Build lathe profile for column with shaft, 5 ribs, base/top", "Snap to ground, verify dimensions against gate", "Assign material", "Inspect final mesh and render for visual check", "Clean up scene so Column is the only mesh object"], "current_step": 0}
+
+--- tool ---
+run_python({"plan_step": 1, "object_name": "Column", "source": "from blended.ops.lathe import add_lathe\nfrom blended.ops.primitives import link_into_scene\nfrom blended.ops.transforms import snap_base_to_ground\n\n# --- Named constants (all reasons documented) ---\nSHAFT_RADIUS_M = 0.08          # 0.16 m shaft diameter / 2\nRIB_RADIUS_M = 0.10            # 0.2 m full column diameter / 2 (ribs stand proud, full diameter)\nCOLUMN_HEIGHT_M = 1.0\nRIB_CENTERS_Z_M = (0.1, 0.3, 0.5, 0.7, 0.9)\nRIB_THICKNESS_M = 0.03         # each rib's vertical extent\nRIB_HALF_THICKNESS_M = RIB_THICKNESS_M / 2.0\nSEGMENT_COUNT = 24              # radial segments: reads round, keeps triangle budget < 1200\n\ndef build_profile():\n    profile = [(0.0, 0.0), (SHAFT_RADIUS_M, 0.0)]  # bottom cap fan + base edge\n    for zc in RIB_CENTERS_Z_M:\n        z_lo = zc - RIB_HALF_THICKNESS_M\n        z_hi = zc + RIB_HALF_THICKNESS_M\n        profile.append((SHAFT_RADIUS_M, z_lo))   # shaft up to just below rib\n        profile.append((RIB_RADIUS_M, z_lo))     # shoulder out to rib radius (sharp step)\n        profile.append((RIB_RADIUS_M, z_hi))     # rib outer cylindrical face (flat top)\n        profile.append((SHAFT_RADIUS_M, z_hi))   # shoulder back in to shaft\n    profile.append((SHAFT_RADIUS_M, COLUMN_HEIGHT_M))  # top edge shaft\n    profile.append((0.0, COLUMN_HEIGHT_M))              # top cap fan\n    return profile\n\nprofile = build_profile()\nprint(\"profile point count:\", len(profile))\n\ncol = add_lathe(name=\"Column\", profile=profile, segment_count=SEGMENT_COUNT)\nlink_into_scene(col)\nlowest_z = snap_base_to_ground(col)\nprint(\"lowest_z after snap:\", lowest_z)\n"})
+
+--- result ---
+FAILED at execute: <no object>
+  execute: 1 attempt(s), FAILED in 0.01s: ValueError: Profile radii must be positive; poles are added automatically.
+  printed:
+profile point count: 24
+
+--- step ---
+1
+
+--- tool ---
+run_python({"plan_step": 1, "object_name": "Column", "source": "from blended.ops.lathe import add_lathe\nfrom blended.ops.primitives import link_into_scene\nfrom blended.ops.transforms import snap_base_to_ground\n\n# --- Named constants (all reasons documented) ---\nSHAFT_RADIUS_M = 0.08          # 0.16 m shaft diameter / 2\nRIB_RADIUS_M = 0.10            # 0.2 m full column diameter / 2 (ribs stand proud, full diameter)\nCOLUMN_HEIGHT_M = 1.0\nRIB_CENTERS_Z_M = (0.1, 0.3, 0.5, 0.7, 0.9)\nRIB_THICKNESS_M = 0.03         # each rib's vertical extent\nRIB_HALF_THICKNESS_M = RIB_THICKNESS_M / 2.0\nSEGMENT_COUNT = 24              # radial segments: reads round, keeps triangle budget < 1200\n\ndef build_profile():\n    # Poles (radius 0) are added automatically by add_lathe; do not include them.\n    profile = [(SHAFT_RADIUS_M, 0.0)]   # base edge of shaft\n    for zc in RIB_CENTERS_Z_M:\n        z_lo = zc - RIB_HALF_THICKNESS_M\n        z_hi = zc + RIB_HALF_THICKNESS_M\n        profile.append((SHAFT_RADIUS_M, z_lo))   # shaft up to just below rib\n        profile.append((RIB_RADIUS_M, z_lo))     # shoulder out to rib radius (sharp step)\n        profile.append((RIB_RADIUS_M, z_hi))     # rib outer cylindrical face (flat top)\n        profile.append((SHAFT_RADIUS_M, z_hi))   # shoulder back in to shaft\n    profile.append((SHAFT_RADIUS_M, COLUMN_HEIGHT_M))  # top edge of shaft\n    return profile\n\nprofile = build_profile()\nprint(\"profile point count:\", len(profile))\n\ncol = add_lathe(name=\"Column\", profile=profile, segment_count=SEGMENT_COUNT)\nlink_into_scene(col)\nlowest_z = snap_base_to_ground(col)\nprint(\"lowest_z after snap:\", lowest_z)\n"})
+
+--- result ---
+OK: Column
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+profile point count: 22
+lowest_z after snap: -0.0
+  gate: PASS (1056 tris, 1 components)
+  sheet: _evaluate/renders/iteration59_ribbed_column_v11/agent/Column_sheet.png
+
+--- step ---
+1
+
+--- render ---
+_evaluate/renders/iteration59_ribbed_column_v11/agent/Column_sheet.png
+
+--- tool ---
+run_python({"plan_step": 2, "object_name": "Column", "source": "import bpy\nfrom mathutils import Vector\nbpy.context.view_layer.update()\ncol = bpy.data.objects[\"Column\"]\ncorners = [col.matrix_world @ Vector(c) for c in col.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world extents x:\", max(xs)-min(xs))\nprint(\"world extents y:\", max(ys)-min(ys))\nprint(\"world extents z:\", max(zs)-min(zs), \"min z:\", min(zs))\n"})
+
+--- result ---
+OK: Column
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+world extents x: 0.20000000298023224
+world extents y: 0.20000000298023224
+world extents z: 1.0 min z: 0.0
+  gate: PASS (1056 tris, 1 components)
+  sheet: _evaluate/renders/iteration59_ribbed_column_v11/agent/Column_sheet.png
+
+--- step ---
+2
+
+--- render ---
+_evaluate/renders/iteration59_ribbed_column_v11/agent/Column_sheet.png
+
+--- tool ---
+list_scene({})
+
+--- result ---
+Column: 1056 tris, 0.200 x 0.200 x 1.000 m
+
+--- tool ---
+run_python({"plan_step": 3, "object_name": "Column", "source": "import bpy\nfrom blended.ops.materials import assign_material\n\ncol = bpy.data.objects[\"Column\"]\nCOLUMN_COLOR_RGB = (0.75, 0.72, 0.65)  # neutral stone/wood tone\nCOLUMN_ROUGHNESS = 0.6\nassign_material(col, name=\"ColumnMaterial\", base_color_rgb=COLUMN_COLOR_RGB, roughness=COLUMN_ROUGHNESS)\nprint(\"material slots:\", [s.material.name if s.material else None for s in col.material_slots])\n"})
+
+--- result ---
+OK: Column
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+material slots: ['ColumnMaterial']
+  gate: PASS (1056 tris, 1 components)
+  sheet: _evaluate/renders/iteration59_ribbed_column_v11/agent/Column_sheet.png
+
+--- step ---
+3
+
+--- render ---
+_evaluate/renders/iteration59_ribbed_column_v11/agent/Column_sheet.png
+
+--- answer ---
+Placeholder

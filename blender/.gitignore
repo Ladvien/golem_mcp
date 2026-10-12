@@ -1,0 +1,38 @@
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Virtualenv
+.venv/
+
+# Scratch dumping ground
+_to_delete/
+
+# Convergence-loop evidence. The iteration log, the verdicts and the
+# signed-off golden snapshots ARE committed — the golden tests replay
+# from the log, so it is source, not output. The per-iteration renders
+# and exports are not: 30 MB of PNG that `make replay ITERATION=n`
+# regenerates from the log on demand. Transcripts and the exact system
+# prompt each run saw stay, because they are provenance and they are text.
+_evaluate/renders/**/*.png
+_evaluate/renders/**/*.glb
+
+# Local-model run artifacts (regenerable, large)
+outputs/
+
+# Editor/tool caches
+.serena/
+logs/*
+# Default scratch output of the harness, examples and agent render tools
+# (src/blended/harness.py DEFAULT_OUTPUT_DIRECTORY, src/blended/agent/tools.py).
+_renders/

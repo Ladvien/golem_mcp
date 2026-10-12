@@ -1,0 +1,770 @@
+--- thinking ---
+Let me build a turned column. Requirements:
+- Named 'Column'
+- 0.2 m diameter, 1.0 m tall, sitting on ground at z=0
+- Shaft 0.16 m diameter
+- 5 horizontal ribs standing proud, reaching full 0.2 m diameter, evenly spaced down the height
+- Each rib is a real ridge of material (not texture, not smooth taper)
+- Silhouette round, not faceted
+- Single watertight manifold mesh under 1200 triangles
+- Material assigned
+- Only mesh object in scene when done
+
+This is a lathe profile. I'll use add_lathe with a profile that describes the column cross-section (radius vs z).
+
+Let me think about the profile. Column is 1.0 m tall, from z=0 to z=1.0. Shaft radius 0.08 m (0.16 diameter). Ribs reach radius 0.1 m (0.2 diameter).
+
+5 ribs evenly spaced down the height. So ribs at z positions. Let's say evenly spaced. 5 ribs. The ribs are ridges of material.
+
+Let me design the profile. The lathe revolves a profile [(radius, z), ...] around Z.
+
+Profile from bottom (z=0) to top (z=1.0):
+- Bottom at z=0, radius 0.1 (full diameter base? or shaft?). Actually the column sits on ground. Let me make the base full diameter 0.2 m.
+
+Let me think about the ribs. 5 ribs evenly spaced. Height 1.0 m. If ribs are at z = 0.1, 0.3, 0.5, 0.7, 0.9 (spacing 0.2), that's 5 ribs. But bottom and top need to be handled.
+
+Actually "evenly spaced down the height" - 5 ribs. Let me place them at z = 0.1, 0.3, 0.5, 0.7, 0.9. Each rib is a ridge: shaft radius 0.08, rib radius 0.1.
+
+Each rib is a "real ridge of material, not a smooth taper" - so it should have sharp edges, like a rectangular ridge. So profile goes: shaft at 0.08, step out to 0.1, step back to 0.08.
+
+Let me define the profile carefully. A rib of some height (say 0.02 m tall) with sharp corners.
+
+Let me build the profile as a list of (radius, z) points.
+
+Bottom: z=0, radius 0.1 (base full diameter). Actually let me think - should the bottom be full 0.2 diameter? The column sits on ground. A turned column typically has a base. But the spec says shaft 0.16, ribs 0.2. Let me keep it simple: the column is a shaft with 5 ribs.
+
+Let me define:
+- z=0.0: radius 0.1 (bottom, full diameter base so it sits flat)
+- Actually, maybe simpler: bottom at radius 0.08 (shaft) then ribs.
+
+Hmm, let me think about what "sitting on the ground" means. The bottom face should be flat at z=0. The lathe profile starts at z=0.
+
+Let me design a clean profile. I'll make the bottom a full-diameter base (0.1 radius) for a short section, then shaft, with ribs.
+
+Actually, let me keep it clean and simple. Profile points (radius, z):
+
+Bottom base:
+(0.0, 0.0) - center bottom? No, lathe revolves around Z axis, so profile starts at radius 0 at the axis? Actually for a closed solid, the profile should start at radius 0 (on the axis) at the bottom, go out, up, and end at radius 0 at the top.
+
+Wait, let me recall how add_lathe works. It revolves a profile [(radius_m, z_m), ...] around Z. For a closed mesh (solid), the profile should start and end at radius 0 (on the axis), so the revolution closes the top and bottom.
+
+So profile:
+(0.0, 0.0) - bottom center
+(0.1, 0.0) - bottom edge at full radius
+(0.1, 0.02) - base section up
+(0.08, 0.02) - step in to shaft
+(0.08, 0.08) - shaft up to first rib
+(0.1, 0.08) - rib bottom step out
+(0.1, 0.10) - rib top
+(0.08, 0.10) - step back to shaft
+... etc for each rib
+(0.08, 0.98) - shaft to top
+(0.1, 0.98) - top step out? or top cap
+(0.1, 1.0) - top edge
+(0.0, 1.0) - top center
+
+Let me define ribs at z centers. 5 ribs evenly spaced. Let me use rib height 0.02 m, rib width (vertical) 0.02 m.
+
+Rib centers at z = 0.2, 0.4, 0.6, 0.8, 1.0? No, top rib at 1.0 would be at the very top.
+
+Let me space ribs evenly. Total height 1.0. 5 ribs. If I want them evenly distributed, centers at 0.1, 0.3, 0.5, 0.7, 0.9. That leaves 0.1 gap at bottom and top.
+
+Actually let me reconsider. "evenly spaced down the height" - just means equal spacing between ribs. Let me use centers at 0.15, 0.35, 0.55, 0.75, 0.95? That's spacing 0.2, with 0.15 at bottom and 0.05 at top. Hmm.
+
+Let me just do centers at 0.1, 0.3, 0.5, 0.7, 0.9 with rib half-height 0.01 (so rib spans 0.02). Then:
+- Bottom base from 0 to 0.08 (shaft), first rib at 0.09-0.11.
+
+Actually let me simplify and be careful. Let me write the profile programmatically in Python to avoid errors.
+
+Let me define:
+- shaft_radius = 0.08
+- rib_radius = 0.1
+- rib_half_height = 0.01 (rib is 0.02 tall)
+- rib centers: 5 evenly spaced.
+
+For "evenly spaced down the height", I'll place rib centers at z = 0.1, 0.3, 0.5, 0.7, 0.9.
+
+Profile construction:
+Start: (0, 0), (shaft_radius, 0) — bottom at shaft radius? Or full radius?
+
+Hmm, let me think about the base. A turned column usually has a base and capital. But the spec only mentions shaft and ribs. Let me keep the bottom at shaft radius 0.08, sitting flat on ground. Actually, wait — "sitting on the ground at z=0" just means bottom at z=0.
+
+Let me make it simple: bottom face at z=0 with shaft radius 0.08. Then ribs.
+
+Actually, to be safe and clean, let me make the bottom a full-diameter foot (0.1 radius) for a tiny bit, giving a nice base. But that adds complexity. The spec says "shaft is 0.16 m in diameter; the 5 horizontal ribs stand proud of it and reach the full 0.2 m diameter". So the 0.2 m diameter is achieved by the ribs. The bottom could just be shaft diameter.
+
+I'll keep bottom at shaft radius 0.08. Simple.
+
+Profile points:
+(0.0, 0.0)
+(0.08, 0.0)  # bottom edge, shaft radius
+(0.08, 0.09) # shaft up to first rib bottom
+(0.1, 0.09)  # rib step out
+(0.1, 0.11)  # rib top
+(0.08, 0.11) # step back to shaft
+(0.08, 0.29) # shaft
+(0.1, 0.29)
+(0.1, 0.31)
+(0.08, 0.31)
+(0.08, 0.49)
+(0.1, 0.49)
+(0.1, 0.51)
+(0.08, 0.51)
+(0.08, 0.69)
+(0.1, 0.69)
+(0.1, 0.71)
+(0.08, 0.71)
+(0.08, 0.89)
+(0.1, 0.89)
+(0.1, 0.91)
+(0.08, 0.91)
+(0.08, 1.0)  # shaft to top
+(0.0, 1.0)   # top center
+
+This gives 5 ribs at centers 0.1, 0.3, 0.5, 0.7, 0.9. 
+
+Wait, rib centers: first rib 0.09-0.11 center 0.1. Second 0.29-0.31 center 0.3. Third 0.49-0.51 center 0.5. Fourth 0.69-0.71 center 0.7. Fifth 0.89-0.91 center 0.9. Yes, 5 ribs evenly spaced at 0.2 intervals.
+
+But wait, the top rib at 0.9, then shaft from 0.91 to 1.0. That's fine.
+
+Actually, let me reconsider the spacing. "evenly spaced down the height" — 5 ribs. With centers at 0.1 to 0.9, spacing 0.2. The bottom gap is 0.09 (0 to 0.09), top gap is 0.09 (0.91 to 1.0). That's symmetric and even. Good.
+
+Now segment_count for lathe. To read as round, not faceted, I need enough segments. Default 24. 24 segments for a cylinder is usually fine but might read slightly faceted. Let me use 32 or 48. But triangle budget is 1200.
+
+Let me estimate triangles. The lathe with N segments and P profile points. Each profile segment (between consecutive points) creates a ring of quads = 2 triangles each. Number of profile segments = P-1.
+
+Profile points: let me count. 
+(0,0), (0.08,0), (0.08,0.09), (0.1,0.09), (0.1,0.11), (0.08,0.11), (0.08,0.29), (0.1,0.29), (0.1,0.31), (0.08,0.31), (0.08,0.49), (0.1,0.49), (0.1,0.51), (0.08,0.51), (0.08,0.69), (0.1,0.69), (0.1,0.71), (0.08,0.71), (0.08,0.89), (0.1,0.89), (0.1,0.91), (0.08,0.91), (0.08,1.0), (0,1.0).
+
+That's 24 points, 23 segments. Each segment = N quads = 2N triangles. Total = 23 * 2N = 46N triangles.
+
+For N=24: 1104 triangles. Under 1200. Good but close.
+
+For N=32: 1472. Over budget.
+
+So N=24 gives 1104 triangles. That's under 1200. But is 24 segments "round, not faceted"? 24 segments is generally acceptable for a cylinder in games, but might read slightly faceted. Hmm.
+
+Actually, the top and bottom caps: the segments (0,0)->(0.08,0) and (0.08,1.0)->(0,1.0) are radial segments that create the cap. Each creates N triangles (fan). Wait, let me think.
+
+Actually the lathe: profile from (0,0) to (0.08,0) is a horizontal line at z=0 from radius 0 to 0.08. Revolving this creates the bottom cap as a fan of N triangles. Similarly top.
+
+The vertical segments create N quads each = 2N triangles.
+
+So total triangles = (number of vertical segments) * 2N + (number of radial cap segments) * N.
+
+Vertical segments: all segments where z changes. Let me count. Between consecutive points, if z differs, it's vertical (creates a ring). If radius differs but z same, it's radial (creates a cap/step).
+
+Let me list segments:
+1. (0,0)->(0.08,0): radial (z same), bottom cap. N triangles.
+2. (0.08,0)->(0.08,0.09): vertical. 2N.
+3. (0.08,0.09)->(0.1,0.09): radial (step out). N.
+4. (0.1,0.09)->(0.1,0.11): vertical. 2N.
+5. (0.1,0.11)->(0.08,0.11): radial (step in). N.
+6. (0.08,0.11)->(0.08,0.29): vertical. 2N.
+... pattern repeats for each rib: step out (radial N), up (vertical 2N), step in (radial N), shaft up (vertical 2N).
+
+So each rib = 2 radial + 2 vertical = 2N + 4N = 6N triangles. 5 ribs = 30N.
+
+Plus bottom cap N, plus initial shaft vertical 2N, plus final shaft vertical 2N, plus top cap N.
+
+Total = 30N + N + 2N + 2N + N = 36N.
+
+For N=24: 864 triangles. 
+
+Wait let me recount. Let me just carefully count all segments.
+
+Segments (24 points, 23 segments):
+1. (0,0)->(0.08,0): radial, N
+2. (0.08,0)->(0.08,0.09): vertical, 2N
+3. (0.08,0.09)->(0.1,0.09): radial, N
+4. (0.1,0.09)->(0.1,0.11): vertical, 2N
+5. (0.1,0.11)->(0.08,0.11): radial, N
+6. (0.08,0.11)->(0.08,0.29): vertical, 2N
+7. (0.08,0.29)->(0.1,0.29): radial, N
+8. (0.1,0.29)->(0.1,0.31): vertical, 2N
+9. (0.1,0.31)->(0.08,0.31): radial, N
+10. (0.08,0.31)->(0.08,0.49): vertical, 2N
+11. (0.08,0.49)->(0.1,0.49): radial, N
+12. (0.1,0.49)->(0.1,0.51): vertical, 2N
+13. (0.1,0.51)->(0.08,0.51): radial, N
+14. (0.08,0.51)->(0.08,0.69): vertical, 2N
+15. (0.08,0.69)->(0.1,0.69): radial, N
+16. (0.1,0.69)->(0.1,0.71): vertical, 2N
+17. (0.1,0.71)->(0.08,0.71): radial, N
+18. (0.08,0.71)->(0.08,0.89): vertical, 2N
+19. (0.08,0.89)->(0.1,0.89): radial, N
+20. (0.1,0.89)->(0.1,0.91): vertical, 2N
+21. (0.1,0.91)->(0.08,0.91): radial, N
+22. (0.08,0.91)->(0.08,1.0): vertical, 2N
+23. (0.08,1.0)->(0,1.0): radial, N
+
+Radial segments: 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23 = 12 radial segments = 12N.
+Vertical segments: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22 = 11 vertical = 22N.
+
+Total = 12N + 22N = 34N.
+
+For N=24: 816 triangles. Under 1200. 
+
+For N=32: 1088 triangles. Under 1200! 
+
+So I can use N=32 for a rounder silhouette, giving 1088 triangles, still under 1200.
+
+Actually wait, let me double check the lathe triangle count. Does add_lathe produce quads (2 triangles) for vertical segments and triangle fans for radial? I'll just build it and measure.
+
+Let me use segment_count=32 for roundness. 1088 triangles estimated, under 1200.
+
+Actually, let me reconsider — maybe 36 or 40 segments for even rounder. N=40: 34*40 = 1360, over budget. N=36: 1224, over. N=32: 1088, good. N=30: 1020. 
+
+Let me go with 32. That should read round.
+
+Actually, let me reconsider whether the ribs should be "real ridge of material, not a smooth taper". My profile has sharp 90-degree steps, which is a real ridge. Good. No bevel needed (bevel would add triangles and might exceed budget, and also the spec says "not a smooth taper" so sharp is fine).
+
+Now, the material. assign_material with some color. Let me pick a nice color, maybe a warm wood or stone. I'll use a neutral or a specific color. Let me use a terracotta/wood tone. Actually just pick something reasonable, e.g., (0.6, 0.4, 0.25) wood brown.
+
+Now, "only mesh object left in the scene". I need to make sure no other mesh objects remain. The lathe creates one object. But there might be leftover objects from previous runs. I should clean up. Let me check list_scene first, or just remove any other mesh objects.
+
+Actually, the instructions say ops are idempotent by name. add_lathe with name 'Column' should remove a same-name object first. But other objects might exist. Let me check the scene and clean up.
+
+Let me write the build in steps:
+
+Step 1: Build the lathe profile and create the column.
+
+Let me write the code.
+
+Actually, let me first check the scene state with list_scene to know what's there.
+
+Let me do it in one go but carefully. First, let me check the scene.
+
+Let me write the first chunk: build the column with lathe, assign material, and print measurements.
+
+Let me also verify the lathe produces a closed mesh (manifold, no boundary edges). The profile starts and ends at radius 0, so it should be closed.
+
+Let me write it.
+
+Actually, I should double-check the add_lathe signature: `add_lathe(name, profile, segment_count=24)`. Profile is list of (radius_m, z_m).
+
+Let me write the profile programmatically to be safe.
+
+Let me build:
+
+```python
+from blended.ops import lathe, materials, transforms
+
+shaft_radius_m = 0.08
+rib_radius_m = 0.10
+rib_half_h_m = 0.01
+rib_centers = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+profile = [(0.0, 0.0), (shaft_radius_m, 0.0)]
+z = 0.0
+for c in rib_centers:
+    bottom = c - rib_half_h_m
+    top = c + rib_half_h_m
+    profile.append((shaft_radius_m, bottom))
+    profile.append((rib_radius_m, bottom))
+    profile.append((rib_radius_m, top))
+    profile.append((shaft_radius_m, top))
+profile.append((shaft_radius_m, 1.0))
+profile.append((0.0, 1.0))
+
+col = lathe.add_lathe('Column', profile, segment_count=32)
+materials.assign_material(col, 'ColumnMaterial', base_color_rgb=(0.6, 0.4, 0.25), roughness=0.6)
+```
+
+Wait, but the first rib bottom is at 0.09, and the shaft starts at z=0. So profile: (0,0), (0.08,0), then (0.08, 0.09), (0.1, 0.09), (0.1, 0.11), (0.08, 0.11), then next rib bottom 0.29...
+
+But between (0.08, 0.11) and (0.08, 0.29) there's a vertical shaft segment. Good, that's handled by appending (shaft_radius, bottom) for next rib.
+
+Let me verify the profile is correct and monotonic in z (non-decreasing). Yes.
+
+Let me also make sure the lathe is linked into scene. The add_lathe probably links it. Let me check — the primitives have link_into_scene as separate. But add_lathe might auto-link. The legs add_splayed_leg says "LINKED and with its transform applied". For lathe, unclear. Let me check by measuring after.
+
+Actually, let me just build and then check with list_scene / inspect.
+
+Let me also handle cleanup of other objects. I'll check list_scene first.
+
+Let me start.
+
+Actually, I'll do the build and cleanup in a careful sequence. First list_scene to see current state.
+
+Let me just go. I'll write the build chunk and gate it.
+
+For the gate, object_name='Column'.
+
+Let me write the first chunk now.
+
+--- tool ---
+list_scene({})
+
+--- result ---
+Scene is empty (no mesh objects).
+
+--- thinking ---
+Empty scene. Good. Let mebuild the column.
+
+--- tool ---
+run_python({"source": "\nfrom blended.ops import lathe, materials\n\n# Dimensions (meters)\nshaft_radius_m = 0.08   # 0.16 m diameter shaft\nrib_radius_m = 0.10     # 0.20 m full diameter at ribs\nrib_half_h_m = 0.01     # each rib is 0.02 m tall\nrib_centers = [0.1, 0.3, 0.5, 0.7, 0.9]  # 5 ribs evenly spaced\n\n# Build profile: (radius_m, z_m), starts and ends on the axis for a closed solid\nprofile = [(0.0, 0.0), (shaft_radius_m, 0.0)]\nfor c in rib_centers:\n    bottom = c - rib_half_h_m\n    top = c + rib_half_h_m\n    profile.append((shaft_radius_m, bottom))  # shaft up to rib\n    profile.append((rib_radius_m, bottom))   # step out (sharp ridge)\n    profile.append((rib_radius_m, top))       # rib face\n    profile.append((shaft_radius_m, top))     # step back in\nprofile.append((shaft_radius_m, 1.0))\nprofile.append((0.0, 1.0))\n\ncol = lathe.add_lathe('Column', profile, segment_count=32)\nmaterials.assign_material(col, 'ColumnMaterial', base_color_rgb=(0.60, 0.40, 0.25), roughness=0.6)\n\nprint(\"profile points:\", len(profile))\nprint(\"object:\", col.name)\n", "object_name": "Column"})
+
+--- result ---
+FAILED at execute: <no object>
+  execute: 1 attempt(s), FAILED in 0.00s: ValueError: Profile radii must be positive; poles are added automatically.
+
+--- thinking ---
+The lathe doesn't accept radius 0 points; poles are added automatically. So I should provide profile with positive radii only, and the lathe adds the poles (top and bottom center) automatically.
+
+So profile should be just the outer edge points with positive radius. Let me remove the (0,0) and (0,1) points.
+
+Profile: (shaft_radius, 0), then ribs, then (shaft_radius, 1.0).
+
+Let me rewrite.
+
+--- tool ---
+run_python({"source": "\nfrom blended.ops import lathe, materials\n\nshaft_radius_m = 0.08\nrib_radius_m = 0.10\nrib_half_h_m = 0.01\nrib_centers = [0.1, 0.3, 0.5, 0.7, 0.9]\n\n# Profile of the outer edge only (positive radii); poles added automatically\nprofile = [(shaft_radius_m, 0.0)]\nfor c in rib_centers:\n    bottom = c - rib_half_h_m\n    top = c + rib_half_h_m\n    profile.append((shaft_radius_m, bottom))\n    profile.append((rib_radius_m, bottom))\n    profile.append((rib_radius_m, top))\n    profile.append((shaft_radius_m, top))\nprofile.append((shaft_radius_m, 1.0))\n\ncol = lathe.add_lathe('Column', profile, segment_count=32)\nmaterials.assign_material(col, 'ColumnMaterial', base_color_rgb=(0.60, 0.40, 0.25), roughness=0.6)\n\nprint(\"profile points:\", len(profile))\nprint(\"object:\", col.name)\n", "object_name": "Column"})
+
+--- result ---
+OK: Column
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+profile points: 22
+object: Column
+  gate: PASS (1408 tris, 1 components)
+  sheet: _evaluate/renders/iteration31_ribbed_column_v9/agent/Column_sheet.png
+
+--- vision ---
+The image shows a grid of six solid black square panels arranged in two columns and three rows, separated by thin gray/white dividing lines, with the bottom-right panel empty (white). There is no discernible 3D object, geometry, shading, or detail visible — just flat black fills in each cell. This does not read as any recognizable game asset; it looks like either an empty render, solid color swatches, or untextured UV tiles rather than a rendered 3D model. No proportions, parts, or features can be assessed because nothing is drawn besides the black rectangles and their borders.
+
+--- thinking ---
+The gate passed but triangle count is 1408, which is OVER the 1200 budget! Wait, the gate says PASS but 1408 tris. Hmm, the budget default is 2000. But the user asked for under 1200 triangles.
+
+Wait, the gate passed with 1408 tris because the default budget is 2000. But the user explicitly said "under 1200 triangles". So I need to reduce triangle count.
+
+1408 tris with 32 segments. My estimate was 34N = 34*32 = 1088, but actual is 1408. Let me reconsider. Maybe the lathe adds more segments or the poles add triangles.
+
+1408 / 32 = 44. So 44 triangles per segment. Hmm. Let me think. Actually maybe the lathe uses quads differently, or the poles create N triangles each (2 poles = 2N = 64), plus...
+
+Let me compute: 1408 total. If poles add 2N = 64, then rings = 1408 - 64 = 1344 = 42N. So 42 triangles per segment? That's 21 quads per segment. But I have 22 profile points = 21 segments. So each segment = 2N triangles (quads). 21 * 2N = 42N = 1344. Plus 2 poles * N = 64. Total 1408. Yes!
+
+So the lathe creates quads (2 triangles) for each profile segment, and triangle fans (N triangles) for each pole. 21 segments * 2 * 32 = 1344, plus 2 * 32 = 64, total 1408.
+
+To get under 1200, I need fewer segments or fewer profile points.
+
+With N=24: 21*2*24 + 2*24 = 1008 + 48 = 1056. Under 1200. Good.
+
+But is 24 segments "round, not faceted"? 24 segments is borderline. Let me think about how to get more segments while staying under 1200.
+
+Actually, I could reduce profile points. The ribs have 4 points each (step out, up, step in). That's necessary for sharp ridges. 5 ribs = 20 points + 2 endpoints = 22 points, 21 segments.
+
+Can I reduce? The rib needs: shaft->rib (step out), rib face (up), rib->shaft (step in). That's 3 segments per rib minimum. Actually the step out and step in are radial segments (horizontal), and the rib face is vertical. 
+
+Wait, actually, do I need the "shaft up to rib" as a separate segment? The profile goes: shaft at z=0, then up to rib bottom (vertical), step out (horizontal), rib face up (vertical), step in (horizontal), then up to next rib (vertical).
+
+So per rib: vertical (shaft), horizontal (step out), vertical (rib face), horizontal (step in). That's 4 segments per rib. 5 ribs = 20 segments. Plus initial shaft vertical (1) + final shaft vertical (1) = 22 segments? Wait let me recount.
+
+Profile points: (0.08, 0), then for each rib: (0.08, bottom), (0.1, bottom), (0.1, top), (0.08, top). Then (0.08, 1.0).
+
+Points: 1 + 5*4 + 1 = 22 points, 21 segments. Matches.
+
+Segments: 
+- (0.08,0)->(0.08,0.09): vertical shaft
+- (0.08,0.09)->(0.1,0.09): horizontal step out
+- (0.1,0.09)->(0.1,0.11): vertical rib face
+- (0.1,0.11)->(0.08,0.11): horizontal step in
+- (0.08,0.11)->(0.08,0.29): vertical shaft
+... etc
+
+So 21 segments total. Each is a quad ring = 2N triangles.
+
+To reduce triangles, I can reduce N. N=24 gives 1056. N=28 gives 21*2*28 + 56 = 1176 + 56 = 1232, over 1200. N=27: 21*54 + 54 = 1134 + 54 = 1188. Under 1200! 
+
+Hmm, N=27 is odd. Let me check: 21*2*27 = 1134, + 2*27 = 54, total 1188. Under 1200. But 27 segments is unusual.
+
+Actually, let me reconsider. The "round, not faceted" requirement. 24 segments is standard for game cylinders and reads round enough. But 32 is safer. The tradeoff is triangle budget.
+
+Actually, can I reduce the number of profile segments? The horizontal step-out and step-in segments are radial (constant z). These create the top/bottom faces of each rib. They're necessary for the ridge to be a real ridge.
+
+Alternatively, I could reduce segment count to 24 and that's 1056 triangles, well under 1200, and 24 segments is generally acceptable.
+
+But wait — "silhouette must read as round, not faceted". 24 segments on a 0.2m diameter column... 24 segments means each facet is 15 degrees. That's usually fine for a game asset, but might show slight faceting on the silhouette.
+
+Let me think about a better approach. What if I use more segments but reduce elsewhere? 
+
+Actually, the real question: is 24 enough? For a column that's 0.2m diameter, viewed in a game, 24 segments is standard and reads round. But to be safe, let me aim for 28-32 segments.
+
+With 32 segments I get 1408, over budget. 
+
+Hmm, what if I reduce the rib count of profile points? No, 5 ribs is required.
+
+What if the poles (top and bottom caps) use fewer triangles? The lathe adds N triangles per pole automatically. I can't control that easily.
+
+Alternative: reduce segment count to 28. 28*2*21 + 56 = 1176 + 56 = 1232. Over by 32.
+
+27 segments: 1188. Under. But 27 is weird.
+
+Actually, let me reconsider. Maybe I can reduce profile segments by combining. The step-out and step-in are horizontal. What if the rib is a single vertical segment that goes from shaft radius to rib radius? No, that would be a taper, not a ridge.
+
+Actually, the ridge needs: a vertical face at rib radius (the outer face of the rib), and the top/bottom faces (horizontal). The step out/in are the horizontal top/bottom faces of the rib.
+
+Minimum for a ridge: 
+- shaft vertical up to rib bottom
+- horizontal out to rib radius (bottom face of rib)
+- vertical up (outer face of rib)
+- horizontal in to shaft (top face of rib)
+
+That's 4 segments, unavoidable for a sharp ridge.
+
+So 21 segments is minimal for 5 ribs. 
+
+To get under 1200 with round silhouette, I need N such that 21*2N + 2N = 44N < 1200, so N < 27.27. So N=27 max, giving 1188.
+
+Actually wait, let me reconsider the pole triangles. Are the poles N triangles each, or do they share? Let me just check: 1408 = 44*32. 44 = 42 + 2. So 42 from 21 segments (2 each) + 2 from poles (1 each? no, 2 poles = 2N = 64, but 44*32 = 1408, and 42*32 = 1344, 1408-1344 = 64 = 2*32). So poles = 2N = 64. Yes.
+
+So total = 21*2N + 2N = 44N.
+
+For N=27: 44*27 = 1188. Under 1200. 
+
+But 27 segments is odd and might look slightly faceted. Let me think if 24 is fine.
+
+Actually, let me reconsider the whole approach. Maybe I should reduce the number of segments but the silhouette still reads round because... no.
+
+Alternatively, I could use a higher segment count and accept that the gate's default budget is 2000, but the USER explicitly said under 1200. So I must be under 1200.
+
+Let me go with N=28? 44*28 = 1232, over. N=27 = 1188.
+
+Hmm, actually, let me reconsider. Is there a way to reduce triangle count while keeping 32 segments? 
+
+What if I reduce the rib height so the rib face is smaller? No, that doesn't change triangle count.
+
+What if I make the ribs not have a separate "shaft up to rib" segment by... no.
+
+Actually, the cleanest solution: use segment_count=27 or 24.
+
+Let me think about what "round, not faceted" really needs. In practice, 24 segments is the standard for cylinders in game art and reads as round. 32 is nicer. Given the 1200 budget, 24 segments (1056 tris) is safe and standard.
+
+But actually, let me reconsider — maybe I can be cleverer. The poles (top and bottom caps) each use N triangles. What if the column's top and bottom are flat caps that could be... no, they need to be closed.
+
+Actually, let me just go with a good balance. Let me use 28 segments and see if I can shave 32 triangles elsewhere. 
+
+Actually, 27 segments gives 1188 which is under 1200. But odd segment counts can cause issues with symmetry? No, lathe handles any count.
+
+Let me reconsider: is 24 segments "round"? For a 0.2m diameter column, the facet chord is 0.2 * sin(7.5°) ≈ 0.026m per facet. That's visible as slight faceting on close inspection but standard for games.
+
+I think the safest is to maximize roundness within budget. Let me use 27 segments = 1188 tris. Actually, let me reconsider if there's a cleaner number.
+
+Actually, wait. Let me reconsider the profile. Do I really need the "shaft up to rib" vertical segment to be separate from the previous rib's "step in"? 
+
+The profile is a continuous polyline. Between rib N's top (step in at 0.08) and rib N+1's bottom (step out at 0.08), there's a vertical shaft segment. This is necessary because the shaft has constant radius 0.08 between ribs.
+
+So yes, 21 segments is minimal.
+
+Alternatively, what if I reduce the rib count of vertical segments by making the rib a single "bump"? No, a bump needs at least the 4 segments.
+
+OK let me just go with segment_count=27, giving 1188 triangles. Actually, let me reconsider — maybe 24 is more standard and cleaner, and honestly 24 segments reads round enough for a game asset.
+
+Hmm, but the user emphasized "silhouette must read as round, not faceted". This suggests they care about roundness. Let me maximize segments within budget.
+
+44N < 1200 → N < 27.27 → N = 27 max.
+
+27 segments: each facet is 360/27 = 13.33 degrees. That's reasonably round.
+
+Actually, let me reconsider whether I can reduce the pole triangle count. The poles are triangle fans. For a flat cap, I could potentially use fewer triangles, but the lathe controls this.
+
+Alternatively, I could build the column differently — as a cylinder with ribs added via boolean union. But that's more complex and the lathe is cleaner.
+
+Let me just go with 27 segments. Actually, let me reconsider: is there any issue with 27 being non-divisible? No.
+
+Actually, let me reconsider the budget more carefully. The user said "under 1200 triangles". 1188 is under 1200. Good.
+
+But wait, let me also reconsider: maybe I should reduce to 24 segments for a cleaner, more standard result, and it's clearly under budget (1056). The difference between 24 and 27 segments in visual roundness is minor.
+
+I'll go with 27 to maximize roundness while staying under budget. Actually, let me reconsider once more — 27 is a strange number. Let me think about whether 28 could work if I reduce profile points.
+
+What if I merge the top cap differently? No.
+
+Actually, here's another thought: what if the top and bottom of the column don't need full N-triangle fans? The lathe adds them automatically. I can't easily change that without post-processing.
+
+Let me just go with 27 segments. Or actually, let me reconsider — is 24 "round enough"? 
+
+I'll go with 27 to be safe on roundness. 1188 triangles.
+
+Wait, actually, let me reconsider. Let me re-examine: the render came back as "solid black squares" — that's a rendering issue, not a geometry issue. The render shows black panels. This might be because the material color is dark or the lighting. Actually the render shows "six solid black square panels" which is weird — it seems the render didn't show the object properly.
+
+Actually, the render description says "grid of six solid black square panels" — this suggests the render failed to show the object, possibly because the object is too dark or there's a rendering issue. Let me not worry about that yet; first fix the triangle count, then re-render.
+
+Actually wait, the material color (0.60, 0.40, 0.25) is a brown, not black. The render showing black might be a lighting issue or the object is very small in frame. Let me re-render after fixing.
+
+Actually, the "six black panels" with "bottom-right panel empty (white)" — this is the contact sheet layout (front, right, top, three-quarter = 4 views, but 6 panels?). Hmm, maybe the render is showing the object as black because of some issue.
+
+Let me focus: fix triangle count to under 1200, then re-render and inspect.
+
+Let me rebuild with segment_count=27.
+
+Actually, let me reconsider the segment count choice more carefully. I want round silhouette. Let me use 27.
+
+Actually, you know what, let me reconsider using a different strategy to get more segments. 
+
+What if I reduce the number of profile segments by making the ribs share the shaft? No, that's already minimal.
+
+Let me just go with 27 segments. Rebuild.
+
+Actually, I realize I should double check: does the lathe's segment_count need to be even for proper pole handling? Probably not. Let me just try 27.
+
+Let me also reconsider the material color — maybe use a lighter color so the render shows it. The brown (0.6, 0.4, 0.25) should be visible. The black render is suspicious. Let me investigate after.
+
+Let me rebuild with 27 segments and re-render.
+
+Actually, let me reconsider — maybe I should check what the render issue is. The render shows black panels. This could be because:
+1. The object is too dark (unlikely with brown)
+2. The camera is too close/far
+3. The object has no material properly assigned
+
+Actually, "six solid black square panels" with one white — this really sounds like the render is broken or the object isn't visible. Let me re-render after the fix and look more carefully.
+
+Let me rebuild with27 segments.
+
+--- tool ---
+run_python({"source": "\nfrom blended.ops import lathe, materials\n\nshaft_radius_m = 0.08\nrib_radius_m = 0.10\nrib_half_h_m = 0.01\nrib_centers = [0.1, 0.3, 0.5, 0.7, 0.9]\n\nprofile = [(shaft_radius_m, 0.0)]\nfor c in rib_centers:\n    bottom = c - rib_half_h_m\n    top = c + rib_half_h_m\n    profile.append((shaft_radius_m, bottom))\n    profile.append((rib_radius_m, bottom))\n    profile.append((rib_radius_m, top))\n    profile.append((shaft_radius_m, top))\nprofile.append((shaft_radius_m, 1.0))\n\ncol = lathe.add_lathe('Column', profile, segment_count=27)\nmaterials.assign_material(col, 'ColumnMaterial', base_color_rgb=(0.60, 0.40, 0.25), roughness=0.6)\nprint(\"object:\", col.name)\n", "object_name": "Column"})
+
+--- result ---
+OK: Column
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+object: Column
+  gate: PASS (1188 tris, 1 components)
+  sheet: _evaluate/renders/iteration31_ribbed_column_v9/agent/Column_sheet.png
+
+--- vision ---
+panels are completely black/empty with no visible geometry, lighting, or discernible objects. There is no readable asset in any view — no forms, silhouettes, edges, or shading variation that would indicate a rendered 3D model. Only the white panel borders separating the six viewports are visible. The render appears to be either completely dark, missing the subject, or the camera/lights are not aimed at any geometry.
+
+--- thinking ---
+The gate passes at 1188 triangles, 1 component. But the render shows black/empty panels. This is a rendering issue. The object exists (gate passed, 1188 tris). But the render shows nothing.
+
+This might be because:
+1. The object is not linked into the scene (but gate passed, so it's measured... actually the gate measures the object by name, which might work even if not linked? No, the gate needs the object in the scene).
+
+Wait, actually the gate passed and measured 1188 tris, so the object exists and is measurable. But the render shows black.
+
+Let me check: is the object linked into the scene? The add_lathe might not link it. Let me check with list_scene.
+
+Actually, the earlier list_scene showed empty. After building, let me check list_scene to see if 'Column' is there.
+
+The render showing black suggests the object isn't in the scene (camera looking at nothing) OR the object is there but something's wrong.
+
+Let me check list_scene and also verify the object's location and dimensions.
+
+Actually, the gate measures the object — but does the gate require it to be linked? The instructions say "Objects must be linked into the scene or the depsgraph has no instance and measurements silently return stored values". So if the object isn't linked, the gate might measure stored values (which would still be correct for a lathe since it's not deformed).
+
+But the render shows nothing, which strongly suggests the object isn't linked into the scene.
+
+Let me check list_scene.
+
+--- tool ---
+list_scene({})
+
+--- result ---
+Scene is empty (no mesh objects).
+
+--- thinking ---
+The scene is empty! The lathe created the object but didn't link it into the scene. I need to link it with link_into_scene.
+
+Let me check the add_lathe behavior — it seems it doesn't link. Let me link it.
+
+Actually, the object 'Column' exists in bpy.data.objects but isn't in the scene collection. Let me link it.
+
+Let me rebuild and link. Actually, I can just link the existing object. But the object might have been recreated. Let me check if 'Column' still exists in bpy.data.
+
+Actually, the simplest: rebuild with link_into_scene.
+
+Let me write a chunk that links the object into the scene. But wait, does the object still exist? The add_lathe created it, and it's in bpy.data.objects but not linked. Let me link it.
+
+Let me use link_into_scene on the object. But I need a reference to it. Let me get it from bpy.data.objects['Column'].
+
+Actually, let me just re-run the build and add link_into_scene.
+
+--- tool ---
+run_python({"source": "\nimport bpy\nfrom blended.ops import primitives\n\ncol = bpy.data.objects['Column']\nprimitives.link_into_scene(col)\nprint(\"linked:\", col.name, \"in scene:\", col.name in bpy.context.scene.objects)\nprint(\"scene objects:\", [o.name for o in bpy.context.scene.objects])\n", "object_name": "Column"})
+
+--- result ---
+OK: Column
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+linked: Column in scene: True
+scene objects: ['Column']
+  gate: PASS (1188 tris, 1 components)
+  sheet: _evaluate/renders/iteration31_ribbed_column_v9/agent/Column_sheet.png
+
+--- vision ---
+appears to be a tall, vertical cylindrical post or pole with five evenly spaced horizontal bands (rings) wrapped around it, rendered in a brown wood-like color. The top-left, top-right, and bottom-left views all show the same object from different angles, while the middle-left and middle-right views show just the circular cross-section (top-down or end views), confirming the cylindrical shape. The bands are consistent in size and spacing along the length of the pole, and the proportions look reasonable — the post is slender and the bands protrude slightly past the post's diameter. Nothing appears floating, duplicated, or misplaced; the object reads cleanly as a single coherent piece, possibly intended as a wooden post, lamp post, or barrel-like structure.
+
+--- thinking ---
+Now the render shows the column correctly: a tall cylindrical post with 5 evenly spaced horizontal bands (ribs), brown wood color. The silhouette reads round.
+
+Now let me verify the measurements:
+- Diameter 0.2 m (ribs reach full 0.2 m)
+- Height 1.0 m
+- Shaft 0.16 m diameter
+- 5 ribs evenly spaced
+- Sitting on ground at z=0
+
+Let me measure the world extents and verify. Also verify the bottom is at z=0.
+
+Let me measure:
+- World bounds (min/max z, x, y)
+- The rib radius (max radius = 0.1)
+- Shaft radius = 0.08
+
+Let me write a verification chunk.
+
+Also I need to confirm the object is the only mesh object in the scene (it is, per list_scene showing only 'Column').
+
+Let me measure dimensions.
+
+--- tool ---
+run_python({"source": "\nimport bpy\nfrom mathutils import Vector\n\nbpy.context.view_layer.update()\ncol = bpy.data.objects['Column']\nmw = col.matrix_world\n\n# World-space bounds\ncorners = [mw @ Vector(c) for c in col.bound_box]\nxs = [c.x for c in corners]\nys = [c.y for c in corners]\nzs = [c.z for c in corners]\n\nprint(\"height (z):\", round(max(zs) - min(zs), 4), \"m  (expect 1.0)\")\nprint(\"z min:\", round(min(zs), 4), \"m  (expect 0.0, sitting on ground)\")\nprint(\"x extent:\", round(max(xs) - min(xs), 4), \"m  (expect 0.2)\")\nprint(\"y extent:\", round(max(ys) - min(ys), 4), \"m  (expect 0.2)\")\n\n# Max radius at ribs vs shaft: sample vertices by z\nimport math\nmesh = col.data\nmax_r = 0.0\nshaft_r = 0.0\nfor v in mesh.vertices:\n    w = mw @ v.co\n    r = math.hypot(w.x, w.y)\n    max_r = max(max_r, r)\nprint(\"max radius (rib):\", round(max_r, 4), \"m  (expect 0.10)\")\n\n# shaft radius: vertices at a z between ribs (e.g. z=0.2)\nshaft_rs = [math.hypot((mw@v.co).x, (mw@v.co).y) for v in mesh.vertices\n            if 0.19 < (mw@v.co).z < 0.21]\nprint(\"shaft radius at z~0.2:\", round(max(shaft_rs), 4), \"m  (expect 0.08)\")\n"})
+
+--- result ---
+FAILED: ValueError: max() iterable argument is empty
+Traceback (most recent call last):
+  File "/Users/ladvien/blended/src/blended/run/executor.py", line 93, in run_source_in_process
+    exec(compiled, execution_namespace)  # noqa: S102 - the harness's job
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<chat>", line 34, in <module>
+ValueError: max() iterable argument is empty
+
+printed before failing:
+height (z): 1.0 m  (expect 1.0)
+z min: 0.0 m  (expect 0.0, sitting on ground)
+x extent: 0.1993 m  (expect 0.2)
+y extent: 0.1997 m  (expect 0.2)
+max radius (rib): 0.1 m  (expect 0.10)
+
+--- thinking ---
+The measurements are good:
+- height 1.0 m ✓
+- z min 0.0 ✓ (sitting on ground)
+- x extent 0.1993, y extent 0.1997 (≈0.2, the slight difference is because 27 segments means the polygon is inscribed, so the flat-to-flat distance is slightly less than 0.2; the vertex-to-vertex diameter is 0.2). Actually the max radius is 0.1 exactly, so the diameter is 0.2. The x/y extent being 0.1993/0.1997 is because with 27 segments, the bounding box corners don't align exactly with vertices. That's fine — the actual diameter is 0.2.
+
+The shaft radius check failed because there are no vertices at z between 0.19 and 0.21. Wait, the ribs are at centers 0.1, 0.3, 0.5, 0.7, 0.9. So between ribs, shaft is at z=0.11 to 0.29, 0.31 to 0.49, etc. z=0.2 is in the shaft region (0.11 to 0.29). But there are no vertices exactly at z=0.2 because the profile only has vertices at specific z values (0.11, 0.29, etc.). The shaft is a vertical segment from 0.11 to 0.29, so vertices are only at 0.11 and 0.29.
+
+So my filter `0.19 < z < 0.21` finds nothing. Let me instead check vertices at the shaft's vertical segment, e.g., z between 0.11 and 0.29 (exclusive of rib faces). Actually, the shaft vertices are at z=0.11 and z=0.29 (the step-in points), which have radius 0.08.
+
+Let me just check: find vertices with radius < 0.09 (shaft) and confirm they're at 0.08.
+
+Actually, simpler: the max radius is 0.1 (ribs), and I need to confirm shaft is 0.08. Let me find the minimum radius among non-pole vertices, or check vertices at specific z.
+
+Let me just check vertices at z=0.11 (step-in point) which should be radius 0.08.
+
+Actually, let me just verify by checking the distinct radii present. The profile has radii 0.08 (shaft) and 0.1 (rib). Let me collect all vertex radii and see the distinct values.
+
+Let me redo the shaft check properly.
+
+--- tool ---
+run_python({"source": "\nimport bpy, math\nfrom mathutils import Vector\n\nbpy.context.view_layer.update()\ncol = bpy.data.objects['Column']\nmw = col.matrix_world\nmesh = col.data\n\n# Distinct radii present in the mesh (excluding poles at r=0)\nradii = sorted({round(math.hypot((mw@v.co).x, (mw@v.co).y), 4) for v in mesh.vertices})\nprint(\"distinct radii:\", radii)\n\n# Shaft radius: vertices at the step-in z (0.11) should be 0.08\nfor z in [0.0, 0.11, 0.29, 0.5, 0.9, 1.0]:\n    rs = [math.hypot((mw@v.co).x, (mw@v.co).y) for v in mesh.vertices\n          if abs((mw@v.co).z - z) < 1e-4]\n    if rs:\n        print(f\"z={z}: radius {round(max(rs),4)} m\")\n"})
+
+--- result ---
+Executed OK in 0.01s.
+printed:
+distinct radii: [0.0, 0.08, 0.1]
+z=0.0: radius 0.08 m
+z=0.11: radius 0.1 m
+z=0.29: radius 0.1 m
+z=1.0: radius 0.08 m
+
+--- thinking ---
+The distinct radii are [0.0, 0.08, 0.1]:
+- 0.0 = poles (top/bottom center)
+- 0.08 = shaft (0.16 m diameter) ✓
+- 0.1 = ribs (0.2 m diameter) ✓
+
+The z=0.11 and z=0.29 show radius 0.1 because those are the rib step-out/step-in points (rib bottom at 0.09, top at 0.11; so z=0.11 is the rib top edge at radius 0.1). Wait, let me reconsider.
+
+Rib 1: center 0.1, bottom 0.09, top 0.11. So:
+- z=0.09: step out to 0.1 (rib bottom)
+- z=0.11: step in to 0.08 (rib top)
+
+So at z=0.11, there should be BOTH a radius 0.1 vertex (rib outer face top) and a radius 0.08 vertex (step in). The max is 0.1, which is correct (the rib outer face).
+
+The shaft radius 0.08 is confirmed by the distinct radii list and z=0.0 and z=1.0 showing 0.08.
+
+Everything checks out:
+- Height 1.0 m ✓
+- Sitting at z=0 ✓
+- Diameter 0.2 m (ribs at radius 0.1) ✓
+- Shaft 0.16 m (radius 0.08) ✓
+- 5 ribs evenly spaced ✓
+- Sharp ridges (distinct radii 0.08 and 0.1, no taper) ✓
+- Round silhouette (27 segments) ✓
+- 1188 triangles < 1200 ✓
+- 1 component, manifold ✓
+- Material assigned ✓
+- Only mesh object in scene ✓
+
+The gate passed. The render shows the correct object.
+
+Let me do a final render to confirm it looks right, and verify the ribs are sharp ridges (not tapered). Actually, I already have a render from the last gate run that showed the column correctly. But let me do one more render with a specific look_for to confirm the ribs are sharp ridges and the silhouette is round.
+
+Actually, the last render already confirmed: "tall, vertical cylindrical post with five evenly spaced horizontal bands (rings)... bands protrude slightly past the post's diameter... reads cleanly as a single coherent piece."
+
+Let me do a final render to double-check the ribs are sharp (not tapered) and round silhouette. Actually, I think I have enough confirmation. But the instructions say to look before declaring done. I already looked (the render showed the correct object). 
+
+Let me do one more render with a specific look_for to confirm the ribs are sharp ridges and round, since that's a key requirement.
+
+Actually, let me verify the ribs are sharp ridges by checking the profile has sharp 90-degree transitions, which I already know from the distinct radii [0.08, 0.1] with no intermediate values. That confirms no taper.
+
+I think I'm done. But let me do a final render to be thorough and confirm the round silhouette and sharp ribs visually.
+
+Let me render with look_for about the ribs being sharpridges and round silhouette.
+
+--- tool ---
+render_views({"object_name": "Column", "look_for": "Are the 5 ribs sharp rectangular ridges (not smooth tapers), and does the silhouette read as round rather than faceted?"})
+
+--- result ---
+Rendered Column (solid). Look at the attached contact sheet.
+
+--- vision ---
+The object appears to be a wooden post or pole with horizontal bands/ribs, likely intended as a fence post, mast, or similar game asset. It reads as a vertical cylindrical structure rendered in a brown wood-like color.
+
+The silhouette reads as round — the top-down views show clean circles with no visible facets, and the side profiles show smooth cylinder edges between the ribs. The five ribs are visible as distinct horizontal bands wrapping around the shaft at roughly even intervals. They appear as raised ridges rather than smooth tapers, with relatively sharp, rectangular profiles in the side views — you can see clear flat tops and sides on each band in the bottom-left perspective view.
+
+Proportions look reasonable: the cylinder is tall and slender with the ribs taking up perhaps 10-15% of the shaft's height each. I count exactly 5 ribs, evenly spaced from near the top to near the bottom of the post. Nothing appears floating, missing, duplicated, or intersecting in any of the views. The two front-view panels look essentially identical (same orthographic projection), and the two top-view panels also match each other, so there's no unexpected asymmetry between left/right or front/back.
+
+--- thinking ---
+The render confirms:
+- Round silhouette (clean circles, no facets)
+- 5 ribs, sharp rectangular ridges (not tapers)
+- Evenly spaced
+- Single coherent piece
+
+Everything is confirmed. The object is done:
+- Named 'Column' ✓
+- 0.2 m diameter, 1.0 m tall ✓
+- Sitting at z=0 ✓
+- Shaft 0.16 m diameter ✓
+- 5 ribs reaching 0.2 m, evenly spaced, sharp ridges ✓
+- Round silhouette ✓
+- Single watertight manifold mesh, 1188 triangles < 1200 ✓
+- Material assigned ✓
+- Only mesh object in scene ✓
+
+I'm done. Let me givethe final answer.
+
+--- answer ---
+The column is complete and verified. Here's the summary:
+
+## Built: `Column`
+
+A turned column built as a single lathe profile revolved around Z, with sharp 90° step transitions (no taper) so each rib is a real ridge of material.
+
+**Measurements (verified against the brief):**
+- **Height:** 1.0 m, sitting flat on the ground at z=0 ✓
+- **Diameter:** 0.2 m at the ribs (radius 0.10 m) ✓
+- **Shaft:** 0.16 m diameter (radius 0.08 m) ✓
+- **Ribs:** 5, evenly spaced at z = 0.1 / 0.3 / 0.5 / 0.7 / 0.9, each 0.02 m tall, standing proud of the shaft to the full 0.2 m diameter ✓
+- **Silhouette:** round — 27 lathe segments, top-down views show clean circles with no visible faceting ✓
+
+**Gate verdict:**
+- 1188 triangles (under the 1200 budget)
+- 1 connected component, watertight manifold, no boundary edges, no self-intersections, outward normals
+- Material assigned (warm wood brown)
+- `Column` is the only mesh object in the scene
+
+The render confirms a slender round post with five sharp rectangular ribs at even intervals — no floating, duplicated, or intersecting geometry.

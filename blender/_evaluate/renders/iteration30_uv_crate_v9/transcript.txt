@@ -1,0 +1,1799 @@
+--- thinking ---
+Let me build this crate. A 0.5m cube, beveled 0.02m, unwrapped with no overlaps, no out-of-bounds faces, under 12 islands, one material, single watertight manifold mesh under 2000 triangles, only mesh object in scene.
+
+Let me start by building the box and beveling it.
+
+Plan:
+1. add_box 0.5 x 0.5 x 0.5 at z=0.25 (so base at z=0).
+2. add_bevel 0.02m.
+3. apply_all_modifiers.
+4. assign_material.
+5. unwrap_uvs (ANGLE_BASED).
+6. Check gate.
+
+Let me do it step by step. First build the box.
+
+Actually let me think about the bevel. A box beveled 0.02m on all edges. The bevel modifier bevels all edges. With width 0.02 and a few segments.
+
+Let me writethe first chunk.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, link_into_scene\n\n# 0.5 m cube, base at z=0 -> center at z=0.25\ncrate = add_box(\"Crate\", width_m=0.5, depth_m=0.5, height_m=0.5, location_m=(0.0, 0.0, 0.25))\nlink_into_scene(crate)\nprint(\"box created\", crate.name)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+box created Crate
+
+--- thinking ---
+Now bevel.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.modifiers import add_bevel, apply_all_modifiers\n\ncrate = bpy.data.objects[\"Crate\"]\nadd_bevel(crate, width_m=0.02, segment_count=3)\napply_all_modifiers(crate)\nprint(\"beveled and applied\")\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+beveled and applied
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.materials import assign_material\nfrom blended.ops.uv import unwrap_uvs\n\ncrate = bpy.data.objects[\"Crate\"]\nassign_material(crate, \"CrateWood\", base_color_rgb=(0.72, 0.35, 0.22), roughness=0.8)\n\n# clear any pre-existing UVs so unwrap is a pure function of geometry\nif crate.data.uv_layers:\n    for uv in list(crate.data.uv_layers):\n        crate.data.uv_layers.remove(uv)\n\nreport = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(\"unwrap report:\", report)\n"})
+
+--- result ---
+Executed OK in 0.01s.
+printed:
+Warning: Unwrap failed to solve 1 of 1 island(s), edge seams may need to be added
+unwrap report: UnwrapReport(method='ANGLE_BASED', island_count=98, overlapping_face_pair_count=0, coverage_fraction=0.7885223866258811)
+
+--- thinking ---
+The unwrap produced 98 islands, which is way over 12. The problem is that the beveled cube has no seams, so ANGLE_BASED unwrap treats it as one big island but fails to solve, splitting into many islands.
+
+I need to add seams to create a proper seam-and-unwrap layout. A cube unwrap typically uses seams along edges to unfold into a cross shape (6 faces + bevel strips).
+
+Actually, the beveled cube is more complex. Let me think about how to get under 12 islands.
+
+A standard cube unwrap: mark seams so it unfolds into a cross (6 faces connected). With bevels, the bevel strips connect the faces.
+
+Let me think. The beveled cube has 6 flat faces, 12 bevel strips (one per edge), and 8 corner patches (one per vertex, where 3 bevels meet).
+
+Actually with a bevel of 0.02 on a 0.5 cube, the bevel modifier creates beveled edges. The corner where 3 edges meet creates a triangular-ish patch.
+
+To get a clean unwrap under 12 islands, I should mark seams strategically. The classic approach: mark seams along a set of edges so the mesh unfolds flat.
+
+Let me think about the topology. A beveled cube: each face is a square (0.46 x 0.46 roughly, since 0.02 bevel on each side). Each edge has a bevel strip. Each corner has a small patch.
+
+Actually, let me reconsider. Maybe a simpler approach: mark seams to create a cross layout.
+
+The standard cube unwrap: choose one face as center, mark seams around it so it unfolds. For a cube, you mark seams along 7 edges (a spanning tree of the dual graph), leaving a cross shape.
+
+For the beveled cube, the bevel strips complicate things. Let me think about what seams to mark.
+
+Actually, let me approach this more carefully. Let me first inspect the mesh topology to understand it.
+
+Let me count vertices/edges/faces and understand the structure.
+
+Actually, a simpler idea: I can mark seams programmatically. The beveled cube's faces can be classified by their normal direction. The 6 main faces have normals along ±X, ±Y, ±Z. The bevel strips have normals at 45° between two axes. The corner patches have normals at ~35° between three axes.
+
+To unfold into a cross, I want to mark seams along edges that separate the "top" face from the sides, etc.
+
+Let me think of the classic cube cross unwrap. Take the cube, mark seams so that:
+- The top face stays connected to the front face
+- The front face connects to left, right, bottom
+- etc.
+
+Actually the standard cross: center face, with 4 faces attached around it, and the 6th face attached to one of those.
+
+For a beveled cube, the bevel strips are the "edges" between faces. So the cross would be: center face + its 4 bevel strips + 4 side faces + their bevel strips + top face + its bevel strips + corner patches.
+
+This is getting complicated. Let me think about a cleaner strategy.
+
+Alternative: Instead of trying to mark seams on the beveled cube, I could mark seams based on a simple rule and let ANGLE_BASED do the rest.
+
+Actually, the key insight: ANGLE_BASED unwrap failed to solve because the beveled cube is a closed surface (sphere-like topology) with no seams. A closed surface can't be unwrapped without seams. So I need seams.
+
+Let me mark seams along a set of edges that cut the surface open into a disk.
+
+The simplest: mark seams along the edges of the bevel strips that form a "belt" around the cube. Actually, let me think of the classic approach for a cube:
+
+Mark seams on the 4 vertical edges of the cube (the edges connecting top and bottom faces). This cuts the cube into: top face + bottom face + 4 side faces connected in a ring... no wait.
+
+Hmm, let me think again. A cube has 12 edges. To unfold it flat, mark seams along 7 edges (a spanning tree of the dual graph has 5 edges connecting 6 faces, so 12-5=7 seams).
+
+For the beveled cube, the dual graph is more complex.
+
+Let me take a step back and think about what gives a clean result.
+
+Actually, maybe I should just mark seams and check the island count, iterating.
+
+Let me first understand the mesh. Let me print face normals grouped.
+
+Actually, let me think about a robust approach: mark seams on edges where the two adjacent faces have significantly different normals in a way that defines a cut.
+
+Simpler plan: I'll mark seams to create a "box cross" unwrap. The idea:
+
+1. Identify the 6 main faces (normal aligned with axes).
+2. Mark seams around the perimeter of the top face (so top face is a separate island, or connected via one edge).
+
+Actually, let me just try a concrete seam strategy and measure.
+
+Strategy: Mark seams on all edges that are "vertical" (parallel to Z axis) — i.e., the 4 vertical edges of the cube. But with bevels, the vertical edges are replaced by bevel strips.
+
+Hmm wait. Let me reconsider the bevel topology. When you bevel a cube with the bevel modifier, each original edge becomes a bevel strip (a quad strip), and each original vertex becomes a corner patch.
+
+So the beveled cube has:
+- 6 faces (slightly smaller squares)
+- 12 bevel strips (one per original edge)
+- 8 corner patches (one per original vertex)
+
+Total faces: 6 + 12 + 8 = 26 faces (before segment subdivision). With 3 segments, the bevel strips get subdivided.
+
+For a clean unwrap, I want to mark seams so the whole thing unfolds into a cross.
+
+Let me think of the cross layout for a beveled cube. Actually, this is essentially like unwrapping a rounded box.
+
+Let me try a different, more reliable approach: mark seams along a "belt" that goes around the cube horizontally, splitting it into top and bottom halves, plus a vertical seam.
+
+Actually, the cleanest for a box: 
+
+The classic "box unwrap" (like a cardboard box unfolded) has the 6 faces in a cross. The bevels would be attached to the faces.
+
+Let me just try marking seams and iterate. First, let me understand the geometry by examining it.
+
+Let me write code to classify faces by normal and see the structure.
+
+--- tool ---
+run_python({"source": "import bpy, math\nfrom mathutils import Vector\n\ncrate = bpy.data.objects[\"Crate\"]\nme = crate.data\nprint(\"verts\", len(me.vertices), \"edges\", len(me.edges), \"faces\", len(me.polygons))\n\n# classify faces by normal direction\nfrom collections import Counter\nc = Counter()\nfor p in me.polygons:\n    n = p.normal\n    # round to nearest axis-ish\n    key = tuple(round(v, 2) for v in n)\n    c[key] += 1\nfor k, v in sorted(c.items(), key=lambda x: -x[1]):\n    print(k, v)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+[157 earlier characters dropped]
+0.22, -0.69) 1
+(-0.58, -0.58, -0.58) 1
+(-0.26, -0.93, 0.26) 1
+(-0.22, -0.69, 0.69) 1
+(-0.26, -0.26, 0.93) 1
+(-0.69, -0.22, 0.69) 1
+(-0.93, -0.26, 0.26) 1
+(-0.69, -0.69, 0.22) 1
+(-0.58, -0.58, 0.58) 1
+(-0.26, 0.26, -0.93) 1
+(-0.69, 0.22, -0.69) 1
+(-0.93, 0.26, -0.26) 1
+(-0.69, 0.69, -0.22) 1
+(-0.26, 0.93, -0.26) 1
+(-0.22, 0.69, -0.69) 1
+(-0.58, 0.58, -0.58) 1
+(-0.26, 0.26, 0.93) 1
+(-0.22, 0.69, 0.69) 1
+(-0.26, 0.93, 0.26) 1
+(-0.69, 0.69, 0.22) 1
+(-0.93, 0.26, 0.26) 1
+(-0.69, 0.22, 0.69) 1
+(-0.58, 0.58, 0.58) 1
+(0.26, -0.26, -0.93) 1
+(0.69, -0.22, -0.69) 1
+(0.93, -0.26, -0.26) 1
+(0.69, -0.69, -0.22) 1
+(0.26, -0.93, -0.26) 1
+(0.22, -0.69, -0.69) 1
+(0.58, -0.58, -0.58) 1
+(0.26, -0.26, 0.93) 1
+(0.22, -0.69, 0.69) 1
+(0.26, -0.93, 0.26) 1
+(0.69, -0.69, 0.22) 1
+(0.93, -0.26, 0.26) 1
+(0.69, -0.22, 0.69) 1
+(0.58, -0.58, 0.58) 1
+(0.26, 0.26, -0.93) 1
+(0.22, 0.69, -0.69) 1
+(0.26, 0.93, -0.26) 1
+(0.69, 0.69, -0.22) 1
+(0.93, 0.26, -0.26) 1
+(0.69, 0.22, -0.69) 1
+(0.58, 0.58, -0.58) 1
+(0.26, 0.26, 0.93) 1
+(0.69, 0.22, 0.69) 1
+(0.93, 0.26, 0.26) 1
+(0.69, 0.69, 0.22) 1
+(0.26, 0.93, 0.26) 1
+(0.22, 0.69, 0.69) 1
+(0.58, 0.58, 0.58) 1
+(-0.26, 0.0, -0.97) 1
+(-0.71, 0.0, -0.71) 1
+(-0.97, 0.0, -0.26) 1
+(-0.26, -0.97, 0.0) 1
+(-0.71, -0.71, 0.0) 1
+(-0.97, -0.26, 0.0) 1
+(-0.26, 0.0, 0.97) 1
+(-0.71, 0.0, 0.71) 1
+(-0.97, 0.0, 0.26) 1
+(-0.26, 0.97, 0.0) 1
+(-0.71, 0.71, 0.0) 1
+(-0.97, 0.26, 0.0) 1
+(0.0, 0.26, -0.97) 1
+(0.0, 0.71, -0.71) 1
+(0.0, 0.97, -0.26) 1
+(0.0, 0.26, 0.97) 1
+(0.0, 0.71, 0.71) 1
+(0.0, 0.97, 0.26) 1
+(0.97, 0.26, 0.0) 1
+(0.71, 0.71, 0.0) 1
+(0.26, 0.97, 0.0) 1
+(0.26, 0.0, -0.97) 1
+(0.71, 0.0, -0.71) 1
+(0.97, 0.0, -0.26) 1
+(0.26, 0.0, 0.97) 1
+(0.71, 0.0, 0.71) 1
+(0.97, 0.0, 0.26) 1
+(0.26, -0.97, 0.0) 1
+(0.71, -0.71, 0.0) 1
+(0.97, -0.26, 0.0) 1
+(0.0, -0.26, -0.97) 1
+(0.0, -0.71, -0.71) 1
+(0.0, -0.97, -0.26) 1
+(0.0, -0.26, 0.97) 1
+(0.0, -0.71, 0.71) 1
+(0.0, -0.97, 0.26) 1
+(0.0, 0.0, -1.0) 1
+(-1.0, -0.0, 0.0) 1
+(0.0, -1.0, 0.0) 1
+(0.0, -0.0, 1.0) 1
+(0.0, 1.0, 0.0) 1
+(1.0, -0.0, 0.0) 1
+
+--- thinking ---
+The bevel with 3 segments creates a lot of faces. The 6 main faces have normals (0,0,±1), (±1,0,0), (0,±1,0). The bevel strips have normals at 45° (like (0.71, 0.71, 0)), and corner patches at ~35° (like (0.58, 0.58, 0.58)).
+
+This is a complex mesh. To get under 12 islands, I need a smart seam layout.
+
+Let me think about the classic approach for a beveled/rounded box unwrap. 
+
+Actually, the cleanest approach: mark seams along a "cross" pattern. Think of the box as having 6 faces. The bevel strips connect adjacent faces. The corner patches connect 3 bevel strips.
+
+A good seam layout for a rounded box: 
+
+Think of it like a cardboard box. Cut along edges to unfold. The bevels are like the rounded corners.
+
+Let me think of the simplest cut that opens the surface into a disk:
+
+1. Cut around the top face perimeter (separating top from the 4 side bevels). This makes the top face + its bevels a "lid".
+2. Cut one vertical seam down one corner.
+
+Actually, let me think about what "under 12 islands" means and what a reasonable layout is.
+
+A reasonable box unwrap: 
+- Top face + top bevels (connected) = 1 island
+- Bottom face + bottom bevels = 1 island
+- 4 side faces + side bevels connected in a ring = 1 island (if we cut the ring at one corner)
+
+That's 3 islands. But the corner patches need to go somewhere.
+
+Hmm, actually the corner patches are where 3 bevel strips meet. Each corner patch connects to 3 bevel strips.
+
+Let me think more carefully. Actually, let me reconsider — maybe I'm overcomplicating. Let me think about what seams to mark to get a clean cross.
+
+Alternative approach: Use a simpler bevel. Actually the requirement is bevel 0.02m, which I've done with 3 segments. I could reduce segments to 1 to simplify, but 3 segments gives smoother bevel. Actually segment count doesn't matter much for the unwrap island count if I mark seams correctly.
+
+Let me think about the seam strategy concretely.
+
+The beveled cube can be thought of as a rounded box. The standard unwrap for a rounded box (like a die with rounded edges):
+
+Mark seams along the edges that form a "cross" on the surface. Specifically:
+
+For a cube, the cross unwrap: pick the top face as center. Mark seams along:
+- The 4 edges of the top face (so top face is isolated... no, that makes top a separate island).
+
+Let me recall the actual standard cube unwrap. The "cross" or "T" layout:
+
+Faces: Top, Bottom, Front, Back, Left, Right.
+
+Seams: mark the edges so that when cut, the cube unfolds into a cross:
+- Front is center
+- Top attached to front's top edge
+- Bottom attached to front's bottom edge
+- Left attached to front's left edge
+- Right attached to front's right edge
+- Back attached to... one of them (e.g., right's right edge)
+
+Seams needed: the edges NOT in this spanning tree. The spanning tree edges: front-top, front-bottom, front-left, front-right, right-back. That's 5 edges. The other 7 edges are seams.
+
+For the beveled cube, each "edge" of the cube is now a bevel strip, and each "vertex" is a corner patch. So the spanning tree needs to go through bevel strips and corner patches.
+
+This is getting complicated. Let me think of a simpler, more robust approach.
+
+Simpler idea: mark seams on ALL edges that are "sharp" in a specific way, then check island count, and if too many, unmark some.
+
+Actually, let me think about the goal differently. I want a clean unwrap with few islands. The key is to mark seams along a set of edges that form a single closed loop (or a few loops) that cut the sphere-topology surface into a disk.
+
+For a rounded box, a natural cut: 
+- A horizontal "belt" seam around the middle (separating top half from bottom half), PLUS
+- A vertical seam connecting the belt to itself.
+
+Actually, the simplest reliable approach for a box: mark seams to create the classic "box cross" where the 6 faces unfold.
+
+Let me just try: mark seams on edges based on a geometric rule, then measure.
+
+Let me define the seam rule. I'll mark an edge as a seam if it's a "vertical" edge of the cube (both endpoints have the same X and Y, differing in Z) — but with bevels, the vertical edges are bevel strips.
+
+Hmm. Let me think about the actual edge structure.
+
+Actually, let me take yet another approach. Let me identify the 6 main faces and mark seams around specific faces.
+
+Let me think about the cross layout more concretely for the beveled cube:
+
+I'll designate:
+- Front face (+Y) as center
+- Top face (+Z) attached via top bevel strip
+- Bottom face (-Z) attached via bottom bevel strip
+- Left face (-X) attached via left bevel strip
+- Right face (+X) attached via right bevel strip
+- Back face (-Y) attached via... the right bevel strip's back, or via a corner.
+
+The corner patches: each corner connects 3 bevel strips. In the cross, each corner patch needs to be attached to one of its 3 bevel strips and cut from the other 2.
+
+This is doable but intricate. Let me write code that:
+
+1. Classifies faces: main faces (6), bevel strips (12), corner patches (8).
+2. Marks seams to create the cross.
+
+Actually, maybe there's a much simpler approach. Let me reconsider.
+
+The ANGLE_BASED unwrap failed with "failed to solve 1 of 1 island" and produced 98 islands. This is because there were no seams, so it tried to unwrap a closed surface.
+
+If I add a minimal set of seams (just enough to cut the surface open), ANGLE_BASED should produce a clean result with few islands.
+
+The minimal cut for a sphere is one seam loop. For a box, I need to cut along edges to make it a disk.
+
+Let me try the simplest thing: mark seams along a "belt" around the cube. 
+
+Actually, let me think about what a "belt" means for a beveled cube. A horizontal belt at mid-height would cut through the 4 side faces and 4 vertical bevel strips. That would separate top from bottom but leave each as a "cap" (still closed-ish, like a hemisphere).
+
+Hmm, a hemisphere cap still can't unwrap without more seams.
+
+Let me think about the classic box unwrap seams precisely and just implement it.
+
+For a plain cube, the cross unwrap seams are 7 edges. Let me figure out which.
+
+Cube vertices: 8 corners. Faces: 6.
+
+Cross layout (standard Blender "cube unwrap" via smart project or manual):
+Actually, the standard result of marking seams on a cube to get a cross:
+
+Let me define faces by normal:
+- +Z top, -Z bottom, +Y front, -Y back, +X right, -X left.
+
+Cross: 
+```
+        [top]
+[left][front][right][back]
+        [bottom]
+```
+Wait, that's a T-shape actually. The standard cross is:
+```
+        [top]
+[left][front][right]
+        [bottom]
+        [back]
+```
+Hmm, there are different conventions. The point is 6 faces connected in a tree.
+
+Seams = edges not in the tree. Tree edges (5): front-top, front-bottom, front-left, front-right, and one more to connect back (e.g., right-back or bottom-back).
+
+So seams = 12 - 5 = 7 edges.
+
+For the beveled cube, I need to extend this tree through bevel strips and corner patches.
+
+Let me just carefully implement. I'll write code to:
+
+1. Find the 6 main faces by normal (dominant axis).
+2. Find bevel strips (normal has exactly 2 nonzero components, roughly equal magnitude).
+3. Find corner patches (normal has 3 nonzero components).
+
+Then mark seams.
+
+Actually, this is getting really involved. Let me consider a totally different, simpler and more robust approach:
+
+**Use a different unwrap that handles this well.** But the requirement says "a real seam-and-unwrap layout, not one island per face" and "under 12 islands". 
+
+Actually, wait — maybe I should reconsider the bevel. What if I use segment_count=1 for the bevel? That gives a simpler mesh: 6 faces + 12 bevel strips (each a single quad) + 8 corner patches (each a single triangle). Total 26 faces. That's simpler to unwrap.
+
+But actually the island count is what matters, not face count. With proper seams, even 3-segment bevel gives few islands.
+
+Let me think about the cleanest seam strategy and just implement it carefully.
+
+Actually, here's a clean idea. Let me mark seams along the edges of the bevel strips that are "outer" edges of the main faces. 
+
+Hmm, let me think about the structure precisely.
+
+A beveled cube (bevel modifier, 3 segments):
+- 6 main faces, each a square of size (0.5 - 2*0.02) = 0.46.
+- Each main face is surrounded by 4 bevel strips (one per edge).
+- Each bevel strip is a quad strip with 3 segments (so 3 quads along its length).
+- Each corner has a corner patch (a triangle fan or quad) connecting 3 bevel strips.
+
+The bevel strips: 12 of them. Each connects two main faces. Each bevel strip's two long edges connect to the two main faces, and its two short ends connect to corner patches.
+
+Corner patches: 8 of them, each connecting 3 bevel strips.
+
+So the adjacency: main face <-> bevel strip <-> corner patch.
+
+For the cross unwrap, I want to cut along certain bevel strips and corner patches.
+
+Let me define the cross. I'll use this layout (like a cardboard box):
+
+Center = front face (+Y).
+Attached to front:
+- top (+Z) via the top-front bevel strip
+- bottom (-Z) via bottom-front bevel strip
+- left (-X) via left-front bevel strip
+- right (+X) via right-front bevel strip
+- back (-Y) via... the right-back bevel strip, connected through the right face? Or directly.
+
+Hmm, back face is opposite front. To connect back to the cross, I go front -> right -> back, or front -> top -> back, etc.
+
+Let me use: front -> right -> back. So:
+- right face attached to front via right-front bevel strip
+- back face attached to right via right-back bevel strip
+
+Tree edges (in terms of bevel strips connecting main faces):
+1. front-top bevel
+2. front-bottom bevel
+3. front-left bevel
+4. front-right bevel
+5. right-back bevel
+
+That's 5 bevel strips connecting 6 main faces (a spanning tree). The other 7 bevel strips are "cut" (seams).
+
+Now corner patches: 8 corners. Each corner connects 3 bevel strips. In the tree, I need each corner patch attached to exactly one bevel strip (so it doesn't create cycles), and cut from the other 2.
+
+This is getting complicated but let me just carefully mark seams and measure, iterating.
+
+Actually, let me step back and think about whether there's a simpler mental model.
+
+Alternative simpler approach: **mark seams on all edges where the dihedral angle is "sharp"** — but bevels make everything smooth-ish.
+
+OK here's another thought. What if I just mark seams along a specific set of edges and let ANGLE_BASED figure out the islands, then check the count?
+
+Let me try the simplest possible seam set first and see what happens:
+
+Mark seams on all edges of the 4 "vertical" bevel strips (the bevel strips that run vertically, i.e., the ones at the 4 vertical edges of the cube). Plus mark seams to separate top and bottom.
+
+Actually, let me just try a concrete approach and iterate based on measurements.
+
+Let me think about the "belt" approach concretely:
+
+1. Mark a horizontal belt seam: cut the cube into top and bottom halves. The belt goes around at z=0.25 (mid height), cutting through the 4 side faces and 4 vertical bevel strips.
+
+2. Mark a vertical seam on the top half and bottom half to open each cap.
+
+Hmm, this gives more islands.
+
+Let me just go with the cross approach and implement it carefully. I'll write helper code.
+
+Actually, you know what, let me reconsider the whole thing. Let me think about what's the MINIMUM number of islands and a clean approach.
+
+The cleanest, most standard result: a box unwrap with 6 main faces in a cross, bevels attached. This could be as few as 1 island if everything is connected in a tree (the cross is a single connected tree = 1 island!).
+
+Wait, actually a cross unwrap of a cube is a SINGLE island (all 6 faces connected). So the beveled cube could also be a single island if I mark seams correctly to make it a disk.
+
+So the goal "under 12 islands" is very achievable — I could even get 1 island.
+
+Let me aim for a clean cross = 1 island (or a few).
+
+Let me implement the cross seam marking carefully.
+
+Plan:
+1. Identify main faces by normal (6 faces).
+2. Identify bevel strips (12) and corner patches (8).
+3. Build adjacency: which bevel strips connect which main faces, which corner patches connect which bevel strips.
+4. Mark seams to create a spanning tree (cross).
+
+Let me first understand the mesh structure by examining edges and their adjacent faces.
+
+Actually, let me write code to identify faces and their neighbors, then figure out the structure.
+
+Let me classify faces:
+- main face: normal has one component = ±1 (within tolerance), others ~0.
+- bevel strip: normal has two components ~±0.707, one ~0.
+- corner patch: normal has three components ~±0.577.
+
+Let me write this classification and build the adjacency graph.
+
+Actually, let me simplify by using a different strategy entirely. 
+
+**Strategy: mark seams on edges based on face normal classification.**
+
+For the cross unwrap, the seams are:
+- All edges between two bevel strips that should be cut (i.e., the 7 "cut" bevel strips' long edges... no).
+
+Ugh, let me just carefully think about the dual graph.
+
+Dual graph nodes: 6 main faces (M), 12 bevel strips (B), 8 corner patches (C).
+
+Edges in dual graph:
+- M-B: each main face adjacent to 4 bevel strips (its 4 edges). 6*4 = 24, but each bevel strip is shared by 2 main faces, so 12 bevel strips * 2 = 24 M-B edges. ✓
+- B-C: each bevel strip adjacent to 2 corner patches (its 2 ends). 12*2 = 24, each corner patch shared by 3 bevel strips, 8*3 = 24. ✓
+
+Total dual edges: 24 + 24 = 48. Total nodes: 6+12+8 = 26. 
+
+A spanning tree has 25 edges. So seams = 48 - 25 = 23 edges to cut.
+
+Wait, that's a lot of seams. But the result is 1 island.
+
+Hmm, but actually I don't need a full spanning tree necessarily. I could have a few islands (up to 12). Fewer seams needed.
+
+Actually, let me reconsider. The requirement is "under 12 islands". A clean cross unwrap would be 1 island. But maybe a simpler seam set gives a few islands.
+
+Let me think about what's natural. A cardboard box unfolded is 1 connected piece (cross). So 1 island is natural and clean.
+
+But marking 23 seams precisely is error-prone. Let me think if there's a simpler seam set that gives a small number of islands.
+
+Alternative: mark seams to separate the 6 main faces into a cross, and let the bevel strips and corner patches follow.
+
+Actually, here's a cleaner idea. Let me think of the beveled cube as: 6 main faces, and the bevels form a "frame" around them.
+
+Simplest clean approach: 
+
+Mark seams along the edges of the main faces. Specifically, mark the 4 edges of each main face EXCEPT the ones that should stay connected.
+
+Hmm wait, but the main faces don't directly touch each other — they're separated by bevel strips. So the "edges" of a main face connect to bevel strips, not other main faces.
+
+Let me reconsider. The cross unwrap for a beveled cube:
+
+I want to cut along 7 of the 12 bevel strips (the "edges" of the cube that are cut), and cut the corner patches appropriately.
+
+Let me define which bevel strips to cut. The 12 bevel strips correspond to the 12 edges of the cube. Each bevel strip is identified by which two axes it's "between" and its sign. E.g., the bevel strip at the top-front edge is between +Z and +Y, at +X... no wait.
+
+Let me name bevel strips by the two main faces they connect:
+- top-front (+Z, +Y)
+- top-back (+Z, -Y)
+- top-left (+Z, -X)
+- top-right (+Z, +X)
+- bottom-front (-Z, +Y)
+- bottom-back (-Z, -Y)
+- bottom-left (-Z, -X)
+- bottom-right (-Z, +X)
+- front-left (+Y, -X)
+- front-right (+Y, +X)
+- back-left (-Y, -X)
+- back-right (-Y, +X)
+
+12 strips. ✓
+
+Cross tree (connect 6 faces with 5 strips):
+- front-top
+- front-bottom
+- front-left
+- front-right
+- right-back
+
+Cut the other 7 strips:
+- top-back, top-left, top-right, bottom-back, bottom-left, bottom-right, back-left
+
+Wait let me recount. 12 strips, 5 in tree, 7 cut. ✓
+
+Now corner patches. 8 corners, each at a vertex of the cube. Each corner connects 3 bevel strips.
+
+Corners (by the 3 faces meeting):
+- top-front-left (+Z,+Y,-X)
+- top-front-right (+Z,+Y,+X)
+- top-back-left (+Z,-Y,-X)
+- top-back-right (+Z,-Y,+X)
+- bottom-front-left (-Z,+Y,-X)
+- bottom-front-right (-Z,+Y,+X)
+- bottom-back-left (-Z,-Y,-X)
+- bottom-back-right (-Z,-Y,+X)
+
+Each corner patch connects to 3 bevel strips. In the tree, each corner patch should be attached to exactly 1 bevel strip (to avoid cycles) and cut from the other 2.
+
+For a corner patch, the 3 bevel strips it connects are the 3 edges meeting at that corner. E.g., top-front-left corner connects: top-front, top-left, front-left strips.
+
+In my tree, which of these 3 are "in tree" (not cut)?
+- top-front: in tree ✓
+- top-left: cut ✗
+- front-left: in tree ✓
+
+So the corner patch top-front-left connects to 2 in-tree strips (top-front and front-left). To avoid a cycle, I need to cut the corner patch from one of them, keeping it attached to the other.
+
+This is getting complicated. Each corner patch needs exactly 1 attachment.
+
+Let me think about it as: I want the final unwrap to be a single disk. The corner patches are the "vertices" of the cube. In the cross, each corner patch should be attached to exactly one bevel strip.
+
+Let me assign each corner patch to one of its 3 bevel strips, preferring in-tree strips, and cut the other 2 connections.
+
+Actually, this is a lot of careful work. Let me just write code to do it programmatically and measure.
+
+Let me write a comprehensive script:
+
+1. Classify faces into main (M), strip (B), corner (C) by normal.
+2. Build edge->faces adjacency.
+3. For each edge, determine the two faces it connects.
+4. Mark seams based on rules.
+
+Actually, let me simplify by using a different, more robust method: mark seams based on the face normals and positions, using a clear geometric rule.
+
+Hmm, let me think about an even simpler approach that's known to work well:
+
+**Mark seams on all edges that are "convex corners" of the original cube** — but bevels remove those.
+
+OK let me just go with careful implementation. Let me write code to:
+
+1. Classify faces.
+2. Build the dual graph (face adjacency via shared edges).
+3. Mark seams to create a cross.
+
+Let me first get the face classification and adjacency working, then decide seams.
+
+Let me write a chunk to classify faces and print the adjacency structure.
+
+Actually, I realize I should think about whether the corner patches are triangles or quads. With bevel modifier on a cube, the corners become... let me check. A cube corner has 3 edges meeting. Beveling creates a triangular patch at each corner (3-sided). With 3 segments, the corner patch might be a triangle or a small fan.
+
+Let me just inspect. Let me classify faces and count.
+
+Let me write the classificationcode.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\ncrate = bpy.data.objects[\"Crate\"]\nme = crate.data\n\n# classify faces by normal: main (1 axis), strip (2 axes), corner (3 axes)\ndef classify(n):\n    n = Vector(n)\n    comps = sorted((abs(c) for c in n), reverse=True)\n    if comps[0] > 0.9:\n        return \"main\"\n    if comps[1] > 0.4:\n        return \"strip\"\n    return \"corner\"\n\nfrom collections import Counter\nc = Counter()\nfor p in me.polygons:\n    c[classify(p.normal)] += 1\nprint(\"face classes:\", dict(c))\n\n# build edge -> faces map\nedge_faces = {}\nfor p in me.polygons:\n    for ek in p.edge_keys:\n        edge_faces.setdefault(ek, []).append(p.index)\n\n# adjacency between face classes\nadj = Counter()\nfor ek, faces in edge_faces.items():\n    if len(faces) == 2:\n        a, b = faces\n        ca, cb = classify(me.polygons[a].normal), classify(me.polygons[b].normal)\n        adj[(ca, cb)] += 1\nfor k, v in sorted(adj.items()):\n    print(k, v)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+face classes: {'main': 54, 'strip': 44}
+('main', 'main') 72
+('main', 'strip') 44
+('strip', 'main') 28
+('strip', 'strip') 48
+
+--- thinking ---
+Interesting. The classification is off. There are 54 "main" and 44 "strip" faces, no "corner". And there are main-main edges (72), which shouldn't happen for a beveled cube.
+
+Wait, the issue is my classification. The bevel with 3 segments: the bevel strips are subdivided into 3 segments along their length, and the corner patches are subdivided too.
+
+Actually, let me reconsider. The bevel modifier with 3 segments on a cube: each edge becomes a bevel strip with 3 segments (3 quads). Each corner becomes a patch.
+
+But my classification shows 54 "main" faces. That's way more than 6. So the "main" faces are being subdivided? No...
+
+Wait, actually the issue might be that the bevel modifier with 3 segments also subdivides the main faces? No, it shouldn't.
+
+Hmm, let me reconsider. Actually, maybe the bevel modifier's "segments" creates a more complex topology. Let me look at the actual face normals more carefully.
+
+Actually wait, looking at the earlier output, I saw normals like (0.0, 0.0, -1.0), (1.0, 0.0, 0.0), etc. — those are the 6 main faces. And (0.71, 0.71, 0.0) type — bevel strips. And (0.58, 0.58, 0.58) type — corner patches.
+
+But there were also normals like (0.26, 0.0, -0.97), (0.0, 0.26, -0.97), (0.0, 0.0, -1.0)... 
+
+Wait, (0.26, 0.0, -0.97) — this is a face with normal mostly -Z but tilted. This suggests the bevel strips are subdivided and some sub-faces have normals close to the main axis.
+
+Actually, I think the issue is that with 3 segments, the bevel creates a smooth-ish transition, and the corner patches are subdivided into multiple faces with varying normals.
+
+Let me look more carefully. The total face count: let me check.
+
+Actually, let me reconsider my classification. The problem: with 3 segments, the bevel strip near a corner has faces whose normals are close to the main face normal (like (0.26, 0.0, -0.97) which is mostly -Z).
+
+So my classification is wrong. Let me use a better classification based on position or a different threshold.
+
+Actually, let me step back. The total number of faces matters. Let me count total faces and think about the structure differently.
+
+Let me reconsider: maybe I should reduce the bevel to 1 segment to simplify, OR use a cleaner classification.
+
+Actually, the real question is: how do I mark seams to get a clean unwrap?
+
+Let me think about this differently. Instead of classifying faces, let me use a geometric approach to mark seams.
+
+The cleanest approach for a box: mark seams along the "edges" of the box. The box has 12 edges. Each edge is now a bevel strip. To unfold into a cross, I cut along 7 of the 12 edges (bevel strips).
+
+But actually, let me reconsider using a simpler and very reliable method:
+
+**Mark seams on edges based on their position/direction.**
+
+The 12 edges of the cube are at specific positions. The 4 vertical edges are at (x=±0.25, y=±0.25, z varies). The 4 horizontal edges in X direction, 4 in Y direction.
+
+Hmm, but with bevels, the "edges" are now bevel strips (regions), not single edges.
+
+Let me think about the actual mesh edges. The beveled cube has edges:
+- The boundary edges of the 6 main faces (each main face is a square with 4 edges, but these edges are shared with bevel strips).
+- The edges within bevel strips (segment divisions).
+- The edges of corner patches.
+
+To mark seams for a cross unwrap, I need to mark the edges that "cut" the surface.
+
+Let me think about the cross unwrap for a beveled cube in terms of the ORIGINAL cube's edges:
+
+The original cube has 12 edges. After beveling, each edge is a bevel strip. To unfold the beveled cube into a cross, I cut along 7 of the 12 bevel strips (cutting them lengthwise, i.e., marking seams along the center line of the strip? No...).
+
+Hmm wait. Let me think again. When you cut a beveled cube to unfold it, you cut along the bevel strips. A bevel strip connects two main faces. To "cut" along that edge, you mark seams along the strip's length, splitting it into two halves (one attached to each main face).
+
+Actually no. Let me think about the dual graph again, but correctly.
+
+The beveled cube's faces:
+- 6 main faces (squares)
+- 12 bevel strips (each a quad strip, subdivided into 3 segments = 3 quads each, so 36 quads)
+- 8 corner patches (each subdivided)
+
+Total faces = 6 + 36 + (corner patches). 
+
+From my classification, I got 54 "main" + 44 "strip" = 98 faces total. So 98 faces.
+
+6 main + 36 strip quads = 42. Remaining 56 = corner patches? That's 7 per corner, which seems like a lot.
+
+Hmm, actually with 3 segments, the corner patch is a triangle fan with 3 segments, giving 3 triangles? Or more.
+
+Let me just directly inspect the mesh structure more carefully. Let me look at the actual geometry.
+
+Actually, let me step back and reconsider my whole approach. This is getting complicated. Let me think about what's the simplest reliable way to get a clean unwrap.
+
+Option A: Reduce bevel segments to 1. This gives a simpler mesh: 6 main faces + 12 bevel strips (single quads) + 8 corner patches (single triangles) = 26 faces. Much easier to reason about and mark seams.
+
+But wait, does the requirement care about bevel smoothness? "edges beveled 0.02m" — just needs a 0.02m bevel. 1 segment is fine (it's a chamfer essentially). Actually a 1-segment bevel is a chamfer (flat 45° cut), which is a valid "bevel".
+
+Actually, let me reconsider. A bevel with 1 segment on a cube gives a chamfered cube. That's clean and simple. 26 faces. Triangle count would be low.
+
+But actually, let me reconsider whether 3 segments is needed. The requirement just says "beveled 0.02m". A chamfer (1 segment) is a bevel. But a smoother bevel (3 segments) looks nicer. Either is acceptable.
+
+For simplicity and clean unwrap, let me use 1 segment. Actually, let me reconsider — with 1 segment, the corner patches are single triangles, and the bevel strips are single quads. The cross unwrap would be very clean.
+
+Actually, let me reconsider even more. Let me think about what gives the cleanest result with the least risk.
+
+Let me go with a cleaner approach: rebuild with 1-segment bevel, then mark seams carefully.
+
+Actually, wait. Let me reconsider the seam marking for a 1-segment beveled cube (chamfered cube).
+
+Chamfered cube faces:
+- 6 main faces (squares, 0.46 x 0.46)
+- 12 bevel strips (quads, 0.46 long x 0.028 wide)
+- 8 corner patches (triangles)
+
+For the cross unwrap, I mark seams to cut along 7 of the 12 bevel strips, and cut corner patches appropriately.
+
+Let me define the cross:
+- Front (+Y) center
+- Top (+Z) via top-front strip
+- Bottom (-Z) via bottom-front strip
+- Left (-X) via front-left strip
+- Right (+X) via front-right strip
+- Back (-Y) via right-back strip
+
+Cut strips: top-back, top-left, top-right, bottom-back, bottom-left, bottom-right, back-left.
+
+Corner patches (8), each connects 3 strips. Assign each to one strip.
+
+Corners and their 3 strips:
+1. top-front-left: top-front, top-left, front-left → attach to top-front (in tree)
+2. top-front-right: top-front, top-right, front-right → attach to top-front
+3. top-back-left: top-back, top-left, back-left → all cut! Need to attach to one. Attach to top-back? But top-back is cut. Hmm.
+
+Wait, this is the issue. A corner patch whose 3 strips are all "cut" would be isolated. Let me reconsider.
+
+Actually, let me reconsider the tree. The corner patches need to be attached to the tree. Let me think about which strips are "in tree" vs "cut" and make sure every corner patch has at least one in-tree strip.
+
+In-tree strips: top-front, bottom-front, front-left, front-right, right-back.
+
+Corners:
+1. top-front-left: strips top-front(in), top-left(cut), front-left(in) → 2 in-tree, attach to one, cut other.
+2. top-front-right: top-front(in), top-right(cut), front-right(in) → 2 in-tree.
+3. top-back-left: top-back(cut), top-left(cut), back-left(cut) → 0 in-tree! Problem.
+4. top-back-right: top-back(cut), top-right(cut), right-back(in) → 1 in-tree.
+5. bottom-front-left: bottom-front(in), bottom-left(cut), front-left(in) → 2 in-tree.
+6. bottom-front-right: bottom-front(in), bottom-right(cut), front-right(in) → 2 in-tree.
+7. bottom-back-left: bottom-back(cut), bottom-left(cut), back-left(cut) → 0 in-tree! Problem.
+8. bottom-back-right: bottom-back(cut), bottom-right(cut), right-back(in) → 1 in-tree.
+
+So corners 3 and 7 (top-back-left and bottom-back-left) have all 3 strips cut. They'd be isolated islands.
+
+To fix, I need to change the tree so every corner has at least one in-tree strip. 
+
+Alternative tree: instead of right-back, use top-back or bottom-back to connect back face.
+
+Let me reconsider. The back face (-Y) needs to connect to the tree. Options: top-back, bottom-back, left-back (back-left), right-back.
+
+If I use top-back instead of right-back:
+In-tree: top-front, bottom-front, front-left, front-right, top-back.
+
+Corners:
+1. top-front-left: top-front(in), top-left(cut), front-left(in) → ok
+2. top-front-right: top-front(in), top-right(cut), front-right(in) → ok
+3. top-back-left: top-back(in), top-left(cut), back-left(cut) → 1 in-tree ✓
+4. top-back-right: top-back(in), top-right(cut), right-back(cut) → 1 in-tree ✓
+5. bottom-front-left: bottom-front(in), bottom-left(cut), front-left(in) → ok
+6. bottom-front-right: bottom-front(in), bottom-right(cut), front-right(in) → ok
+7. bottom-back-left: bottom-back(cut), bottom-left(cut), back-left(cut) → 0 in-tree! Problem.
+8. bottom-back-right: bottom-back(cut), bottom-right(cut), right-back(cut) → 0 in-tree! Problem.
+
+Now corners 7 and 8 are isolated. Hmm.
+
+The issue: the back-bottom corners. The back face connects via top-back, so the bottom-back corners (bottom-back-left, bottom-back-right) have strips: bottom-back(cut), bottom-left(cut), back-left(cut) and bottom-back(cut), bottom-right(cut), right-back(cut). All cut.
+
+So I need bottom-back to also be in-tree, OR connect back via bottom-back.
+
+This is the fundamental issue: a cube's 8 corners each need at least one in-tree edge. The spanning tree of the cube's 6 faces (dual graph) has 5 edges. The 8 corners each have 3 edges. 
+
+For a corner to be "attached", at least one of its 3 edges must be in the tree. 
+
+The cube's 8 corners, 12 edges. A spanning tree of faces uses 5 edges. Can 5 edges cover all 8 corners (each corner touching at least one tree edge)?
+
+Each tree edge touches 2 corners. 5 edges touch at most 10 corner-incidences, but corners can share. We need all 8 corners covered. 5 edges = 10 endpoints, need to cover 8 corners. Possible if 2 corners are shared (each tree edge's 2 endpoints are distinct corners, so 5 edges = 10 distinct corner-incidences, but a corner can be incident to multiple tree edges).
+
+Actually, we need each of 8 corners to be incident to ≥1 tree edge. 5 tree edges, each incident to 2 corners = 10 incidences. To cover 8 corners, we need 10 ≥ 8, and 2 corners get 2 tree edges each. This is possible.
+
+But my tree (top-front, bottom-front, front-left, front-right, top-back) — let me check which corners are covered:
+
+- top-front: corners top-front-left, top-front-right
+- bottom-front: bottom-front-left, bottom-front-right
+- front-left: top-front-left, bottom-front-left
+- front-right: top-front-right, bottom-front-right
+- top-back: top-back-left, top-back-right
+
+Covered corners: top-front-left, top-front-right, bottom-front-left, bottom-front-right, top-back-left, top-back-right. That's 6 corners. Missing: bottom-back-left, bottom-back-right.
+
+So I need to replace one tree edge to cover the bottom-back corners. Replace top-back with bottom-back:
+
+Tree: top-front, bottom-front, front-left, front-right, bottom-back.
+
+Covered:
+- top-front: top-front-left, top-front-right
+- bottom-front: bottom-front-left, bottom-front-right
+- front-left: top-front-left, bottom-front-left
+- front-right: top-front-right, bottom-front-right
+- bottom-back: bottom-back-left, bottom-back-right
+
+Covered: top-front-left, top-front-right, bottom-front-left, bottom-front-right, bottom-back-left, bottom-back-right. Still missing top-back-left, top-back-right!
+
+Argh. The issue is the back face connects via ONE edge, so the back face's other 3 edges are cut, leaving 2 back corners uncovered.
+
+The fundamental issue: the back face (-Y) has 4 corners: top-back-left, top-back-right, bottom-back-left, bottom-back-right. It connects to the tree via 1 edge (say top-back). That edge covers top-back-left and top-back-right. But bottom-back-left and bottom-back-right are only covered by bottom-back (cut), back-left (cut), right-back (cut).
+
+So those 2 corners are isolated. They'd become separate islands (or get attached to the back face via... no, the back face connects to them via bottom-back strip which is cut).
+
+Hmm wait, let me reconsider. The corner patch bottom-back-left connects to 3 strips: bottom-back, bottom-left, back-left. If all 3 are cut, the corner patch is isolated (its own island).
+
+So with a simple cross, 2 corner patches become isolated islands. That's not ideal but might be acceptable (still under 12 islands).
+
+Actually, wait. Let me reconsider. Maybe I'm overcomplicating. Let me reconsider what "cut" means for a bevel strip.
+
+When I mark a seam along a bevel strip, I'm cutting the strip lengthwise, splitting it into two halves. Each half stays attached to its main face. So a "cut" strip becomes 2 separate pieces (one per main face).
+
+Similarly, a corner patch: if I cut all 3 of its edges, it becomes isolated. If I cut 2 and keep 1, it stays attached to the 1 strip.
+
+So the corner patches at the "back-bottom" corners would be isolated if I cut all their strips.
+
+To avoid isolated corner patches, I could:
+1. Not cut the corner patch from its strips (keep it attached to one strip), but then that strip is "cut" lengthwise and the corner patch attaches to one half.
+
+This is getting complicated. Let me reconsider.
+
+Actually, maybe the cleanest approach is to NOT aim for 1 island, but aim for a small number of islands (like 3-6), which is totally fine ("under 12 islands").
+
+Let me think about a simpler seam strategy that gives a clean result with a few islands:
+
+**Strategy: "box cross" with 6 main faces, bevels attached, accepting a few islands.**
+
+Actually, let me reconsider the whole thing. Let me think about what a game artist would actually do.
+
+A game artist unwrapping a crate (box) would:
+1. Mark seams along the edges to unfold it into a cross (or a few pieces).
+2. The bevels would be part of the faces.
+
+For a beveled box, the natural unwrap is:
+- 6 faces, each with its bevels, unfolded into a cross.
+
+The bevels on the "cut" edges get split between the two adjacent faces.
+
+Let me think about the result: a cross with 6 faces. Each face has its 4 bevel strips (or half-strips on cut edges) and 4 corner patches (or partial).
+
+Actually, let me simplify my life. Let me use a concrete, well-defined seam rule and just measure the result, iterating.
+
+**Concrete plan:**
+
+1. Rebuild with 1-segment bevel (chamfer) for simplicity. Actually, let me keep 3 segments but handle it. Hmm.
+
+Actually, let me reconsider. Let me just try marking seams with a specific rule and see the island count, then adjust.
+
+Let me define the seam rule for the cross:
+
+Mark seams on edges that are "cut". The cut edges are:
+- The 7 cut bevel strips: cut them lengthwise (mark seam on the strip's center line? No, the strip is a region, not a line).
+
+Hmm, I keep confusing myself. Let me think about the actual mesh edges.
+
+A bevel strip (1 segment) is a single quad. Its 4 edges:
+- 2 long edges: connect to the 2 main faces.
+- 2 short edges: connect to 2 corner patches.
+
+To "cut" this strip (separate the 2 main faces), I mark seams on... the strip itself needs to be split. But a single quad can't be split by marking its edges as seams — seams are on edges, and marking an edge as seam separates the two faces sharing that edge.
+
+Wait, I think I'm misunderstanding. Let me reconsider.
+
+Seams are marked on EDGES. An edge is shared by 2 faces. Marking it as a seam means the UV unwrap will cut along that edge (the 2 faces get separate UVs along that edge).
+
+So to "cut" a bevel strip lengthwise, I'd need to mark a seam along the strip's center line — but there's no edge there (the strip is a single quad with no center edge).
+
+Hmm. So the bevel strip is a single quad connecting 2 main faces. To separate the 2 main faces, I need to cut the strip. But the strip is a single quad — I can't cut it in half without adding an edge.
+
+Wait, but actually, the strip's 2 long edges connect to the 2 main faces. If I mark those 2 long edges as seams, then the strip is separated from BOTH main faces, making the strip its own island.
+
+That's not what I want either.
+
+Let me reconsider. For a chamfered cube (1-segment bevel), the bevel strip is a single quad. To unfold into a cross, I need to decide: does the strip stay with one main face or the other, or split?
+
+If the strip is a single quad, it can't be split. So it stays whole with one main face (or becomes its own island).
+
+So the cross unwrap of a chamfered cube: each bevel strip is a single quad that must be assigned to one of its 2 main faces (or be its own island).
+
+This means: for the 7 "cut" edges, the bevel strip stays attached to one main face and is cut from the other. So I mark a seam on ONE of the strip's 2 long edges (the one connecting to the face it should detach from).
+
+OK so let me reconsider the seam marking:
+
+For each bevel strip, I decide which main face it stays with. Mark a seam on the long edge connecting to the OTHER main face.
+
+For corner patches, each connects to 3 strips. Decide which strip it stays with, mark seams on the other 2 connections.
+
+This is a clean, well-defined process. Let me implement it.
+
+But first, let me decide: 1 segment or 3 segments?
+
+With 3 segments, the bevel strip is 3 quads (subdivided along length), and the corner patch is subdivided. The seam marking is the same in principle (mark seams on the long edges of the strip), but the strip has internal edges (segment divisions) that don't need seams.
+
+Actually, with 3 segments, the bevel strip is 3 quads in a row. Its 2 long edges (connecting to main faces) are each split into 3 edges (one per segment). I'd mark all 3 sub-edges of the "detach" long edge as seams.
+
+This is doable but more bookkeeping. Let me go with 1 segment for simplicity and cleanliness. A chamfer is a perfectly valid bevel.
+
+Actually, wait — let me reconsider. Does 1 segment look OK? A 0.02m chamfer on a 0.5m cube is a subtle 45° cut. It looks fine for a crate. And it's much simpler.
+
+Actually, let me reconsider once more. The requirement says "beveled 0.02m". A chamfer (1 segment) is technically a bevel with 1 segment. It's fine.
+
+But actually, let me reconsider whether I even need to rebuild. I already have a 3-segment bevel applied. I could just work with it. But the 3-segment bevel has 98 faces and complex corner patches, making seam marking harder.
+
+Let me rebuild with 1 segment for cleanliness. Actually, let me reconsider — is there value in 3 segments? A smoother bevel catches light better. But for a crate, a chamfer is fine and even more "crate-like" (crates have chamfered edges).
+
+Decision: rebuild with 1-segment bevel (chamfer). Simpler, cleaner, and I can mark seams precisely.
+
+Actually, wait. Let me reconsider the corner patches with 1 segment. A chamfered cube corner: 3 bevel strips meet at a corner, and there's a triangular patch. Let me verify by building and inspecting.
+
+Let me rebuild with 1 segment and inspect the structure.
+
+Actually, let me reconsider the whole approach once more, because I want to be efficient.
+
+Let me rebuild with 1-segment bevel, then:
+1. Classify faces: main (6), strip (12), corner (8).
+2. Build adjacency.
+3. Mark seams for cross unwrap.
+4. Unwrap, measure.
+
+Let me do it. First rebuild.
+
+Actually, I realize I should also reconsider: maybe I can just mark seams on the existing 3-segment mesh using a geometric rule that doesn't require precise face classification.
+
+Geometric seam rule for cross unwrap:
+- Mark seams on edges that lie on the "cut" planes.
+
+Hmm, let me think. The cross unwrap cuts along 7 edges of the cube. Each cut edge is a bevel strip. To cut it, I mark seams on the strip's long edge on one side.
+
+Actually, let me just go with the rebuild + 1 segment approach. It's cleaner.
+
+Let me rebuild.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.primitives import add_box, link_into_scene\nfrom blended.ops.modifiers import add_bevel, apply_all_modifiers\nfrom blended.ops.materials import assign_material\n\n# rebuild clean with 1-segment bevel (chamfer) for a clean seam layout\nbpy.data.objects.remove(bpy.data.objects[\"Crate\"], do_unlink=True)\n\ncrate = add_box(\"Crate\", width_m=0.5, depth_m=0.5, height_m=0.5, location_m=(0.0, 0.0, 0.25))\nlink_into_scene(crate)\nadd_bevel(crate, width_m=0.02, segment_count=1)\napply_all_modifiers(crate)\nassign_material(crate, \"CrateWood\", base_color_rgb=(0.72, 0.35, 0.22), roughness=0.8)\n\nme = crate.data\nprint(\"verts\", len(me.vertices), \"edges\", len(me.edges), \"faces\", len(me.polygons))\n\n# classify faces\nfrom mathutils import Vector\nfrom collections import Counter\ndef classify(n):\n    n = Vector(n)\n    comps = sorted((abs(c) for c in n), reverse=True)\n    if comps[0] > 0.9:\n        return \"main\"\n    if comps[1] > 0.4:\n        return \"strip\"\n    return \"corner\"\nc = Counter(classify(p.normal) for p in me.polygons)\nprint(\"classes:\", dict(c))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+verts 24 edges 48 faces 26
+classes: {'strip': 20, 'main': 6}
+
+--- thinking ---
+Now I have 26 faces: 6 main, 20 strip. But I expected 12 strips + 8 corners = 20. So the "corner" classification isn't catching the corner patches — they're being classified as "strip" because their normals have 2 significant components? 
+
+Wait, a corner patch of a chamfered cube: the corner is where 3 bevel strips meet. The corner patch normal should be (0.577, 0.577, 0.577) type (3 components). But my classification says comps[1] > 0.4 → "strip". For (0.577, 0.577, 0.577), comps[1] = 0.577 > 0.4, so it's classified as "strip".
+
+So my classification is wrong. The corner patches have normals with 3 equal components, and comps[1] = 0.577 > 0.4, so they're "strip".
+
+Let me fix: corner = all 3 components significant (comps[2] > 0.4).
+
+Let me re-examine. Actually, let me just look at the actualnormals.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\nfrom collections import Counter\n\ncrate = bpy.data.objects[\"Crate\"]\nme = crate.data\n\ndef classify(n):\n    n = Vector(n)\n    comps = sorted((abs(c) for c in n), reverse=True)\n    if comps[0] > 0.9:\n        return \"main\"\n    if comps[2] > 0.4:\n        return \"corner\"\n    return \"strip\"\n\nc = Counter(classify(p.normal) for p in me.polygons)\nprint(\"classes:\", dict(c))\n\n# print normals of corner faces\nfor p in me.polygons:\n    if classify(p.normal) == \"corner\":\n        print(\"corner\", p.index, tuple(round(v,2) for v in p.normal), \"verts\", len(p.vertices))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+classes: {'corner': 8, 'strip': 12, 'main': 6}
+corner 0 (-0.58, -0.58, -0.58) verts 3
+corner 1 (-0.58, -0.58, 0.58) verts 3
+corner 2 (-0.58, 0.58, -0.58) verts 3
+corner 3 (-0.58, 0.58, 0.58) verts 3
+corner 4 (0.58, -0.58, -0.58) verts 3
+corner 5 (0.58, -0.58, 0.58) verts 3
+corner 6 (0.58, 0.58, -0.58) verts 3
+corner 7 (0.58, 0.58, 0.58) verts 3
+
+--- thinking ---
+Now I have a clean structure:
+- 6 main faces (squares)
+- 12 bevel strips (quads)
+- 8 corner patches (triangles)
+
+Total 26 faces. 
+
+Now let me build the adjacency and mark seams for a cross unwrap.
+
+Let me build:
+1. Face classification with indices.
+2. Edge -> faces adjacency.
+3. For each main face, identify its normal direction (which axis, which sign).
+4. For each strip, identify which 2 main faces it connects.
+5. For each corner, identify which 3 strips it connects.
+
+Then mark seams.
+
+Let me define the cross layout. I'll use a clear convention.
+
+Main faces by normal:
+- +Z top, -Z bottom, +Y front, -Y back, +X right, -X left.
+
+Cross tree (connect 6 faces with 5 strips):
+- front-top (+Y, +Z)
+- front-bottom (+Y, -Z)
+- front-left (+Y, -X)
+- front-right (+Y, +X)
+- top-back (+Z, -Y)  [connect back via top]
+
+Wait, I need to handle the corner isolation issue. Let me reconsider.
+
+Actually, let me reconsider the corner patch handling. Each corner patch (triangle) connects to 3 strips. In the cross, I want each corner patch attached to exactly one strip (or face), and cut from the other 2.
+
+But actually, let me reconsider whether corner patches need to be "attached" or can be their own islands.
+
+The requirement is "under 12 islands". If I have 6 main faces + 12 strips + 8 corners = 26 faces, and I want a clean cross, the ideal is 1 island (everything connected in a tree).
+
+But the corner isolation issue means some corners might be isolated.
+
+Let me think about the cleanest approach that gives a small number of islands.
+
+Actually, let me reconsider. Let me think about what a "real seam-and-unwrap layout" for a crate looks like. A crate is typically unwrapped as a cross (like a cardboard box unfolded). The 6 faces in a cross, with bevels attached.
+
+The cleanest result: 1 island (the whole cross connected).
+
+To get 1 island, I need a spanning tree of the dual graph (26 faces, 25 tree edges, 23 cut edges).
+
+Let me carefully construct the spanning tree.
+
+Dual graph:
+- 6 main faces (M)
+- 12 strips (B), each connecting 2 main faces
+- 8 corners (C), each connecting 3 strips
+
+Edges:
+- M-B: 24 (each main face has 4 strips, each strip shared by 2 mains)
+- B-C: 24 (each strip has 2 corners, each corner shared by 3 strips)
+
+Total 48 edges, 26 nodes, spanning tree = 25 edges, cut = 23 edges.
+
+To build the spanning tree, I need to choose which edges to keep (not seam) and which to cut (seam).
+
+Let me think of it as: 
+1. Choose 5 strips to connect the 6 main faces (spanning tree of the M-B graph restricted to mains).
+2. Choose which strips each corner attaches to.
+
+Actually, let me think of the full spanning tree construction:
+
+The 6 main faces need 5 strips to connect them (tree). The 12 strips: 5 are "in tree" (connect mains), 7 are "cut" (each cut strip stays attached to ONE main face).
+
+Wait, but a "cut" strip still needs to be attached to something (one of its 2 main faces), otherwise it's isolated.
+
+Let me reconsider. Every strip connects 2 main faces. In the final unwrap:
+- "In-tree" strip: connects 2 main faces, both attached (no seam on either long edge).
+- "Cut" strip: attached to 1 main face, seam on the other long edge.
+
+So every strip is attached to at least 1 main face. Good, no isolated strips.
+
+Every corner connects 3 strips. In the final unwrap:
+- Corner attached to 1 strip (seam on the other 2 connections), OR
+- Corner attached to 2 strips (seam on 1 connection), OR
+- Corner attached to 3 strips (no seam).
+
+To avoid cycles, each corner should attach to exactly 1 strip (since corners are "leaves" in a sense... actually corners connect 3 strips, and if a corner attaches to 2+ strips, it creates a cycle through those strips).
+
+Wait, let me think. The dual graph: corner C connects to strips B1, B2, B3. If C is attached to B1 and B2 (no seams on C-B1 and C-B2), then there's a path B1 - C - B2. If B1 and B2 are already connected elsewhere, this creates a cycle.
+
+To keep it a tree (1 island), each corner should attach to exactly 1 strip.
+
+So: 8 corners, each attaches to 1 strip. 8 attachments. Each strip can have 0, 1, or 2 corners attached.
+
+Now, the strips: 12 strips, each connects 2 mains. 5 strips are "in-tree" (connect 2 mains). 7 strips are "cut" (connect 1 main).
+
+For the whole thing to be 1 connected tree:
+- 6 mains + 5 in-tree strips = 11 nodes connected (tree of 6 mains via 5 strips).
+- 7 cut strips: each attaches to 1 main (7 attachments).
+- 8 corners: each attaches to 1 strip (8 attachments).
+
+Total nodes: 6 + 12 + 8 = 26. Total tree edges: 5 (main-main via strips) + 7 (cut strip to main) + 8 (corner to strip) = 20. But spanning tree needs 25 edges!
+
+Wait, I'm double counting. Let me recount.
+
+The dual graph has 26 nodes. A spanning tree has 25 edges.
+
+Edges in dual graph: 48 (24 M-B + 24 B-C).
+
+If I keep 25 edges (no seam) and cut 23 (seam), I get 1 island.
+
+Let me recount my "keep" edges:
+- 5 in-tree strips: each connects 2 mains, so 2 M-B edges each = 10 M-B edges kept.
+- 7 cut strips: each connects 1 main, so 1 M-B edge kept = 7 M-B edges kept.
+- Total M-B kept: 17. But there are 24 M-B edges total. So 24 - 17 = 7 M-B edges cut (seams). ✓ (the 7 cut strips each have 1 seam on their detached main).
+
+- 8 corners: each attaches to 1 strip = 8 B-C edges kept.
+- Total B-C kept: 8. Total B-C edges: 24. So 16 B-C edges cut (seams). ✓ (each corner has 2 seams on its 2 detached strips).
+
+Total kept: 17 + 8 = 25. ✓ Total cut: 7 + 16 = 23. ✓
+
+So the spanning tree has 25 edges, giving 1 island. 
+
+Now I need to make sure the tree is actually connected (no isolated components). Let me verify the connectivity.
+
+The 6 mains connected via 5 in-tree strips (a tree). ✓
+The 7 cut strips each attach to a main. ✓
+The 8 corners each attach to a strip. ✓
+
+But wait — is every strip attached to the main tree? The 5 in-tree strips are in the main tree. The 7 cut strips each attach to 1 main (which is in the main tree). So all 12 strips are connected. ✓
+
+And every corner attaches to 1 strip (which is connected). ✓
+
+So the whole thing is 1 connected tree = 1 island. 
+
+Now I need to:
+1. Choose 5 in-tree strips (spanning tree of 6 mains).
+2. For each of the 7 cut strips, choose which main it stays with.
+3. For each of the 8 corners, choose which strip it attaches to.
+
+Let me define this concretely.
+
+Main faces (by normal):
+- top: +Z
+- bottom: -Z
+- front: +Y
+- back: -Y
+- right: +X
+- left: -X
+
+Strips (by the 2 mains they connect):
+- top-front, top-back, top-left, top-right
+- bottom-front, bottom-back, bottom-left, bottom-right
+- front-left, front-right, back-left, back-right
+
+In-tree strips (5): top-front, bottom-front, front-left, front-right, top-back.
+
+This connects: front-top, front-bottom, front-left, front-right, top-back. So front connects to top, bottom, left, right. Back connects to top. All 6 connected. ✓
+
+Cut strips (7): top-left, top-right, bottom-back, bottom-left, bottom-right, back-left, back-right.
+
+For each cut strip, choose which main it stays with:
+- top-left: stays with top (or left). Let me say stays with top.
+- top-right: stays with top.
+- bottom-back: stays with bottom.
+- bottom-left: stays with bottom.
+- bottom-right: stays with bottom.
+- back-left: stays with back.
+- back-right: stays with back.
+
+Hmm wait, but I need to think about corners too. Let me list corners and their 3 strips, and assign each corner to 1 strip.
+
+Corners (by 3 mains meeting):
+1. top-front-left: strips top-front, top-left, front-left
+2. top-front-right: top-front, top-right, front-right
+3. top-back-left: top-back, top-left, back-left
+4. top-back-right: top-back, top-right, back-right
+5. bottom-front-left: bottom-front, bottom-left, front-left
+6. bottom-front-right: bottom-front, bottom-right, front-right
+7. bottom-back-left: bottom-back, bottom-left, back-left
+8. bottom-back-right: bottom-back, bottom-right, back-right
+
+Assign each corner to 1 strip (prefer in-tree strips, but any strip works as long as it's connected):
+
+1. top-front-left → top-front (in-tree) ✓
+2. top-front-right → top-front (in-tree) ✓
+3. top-back-left → top-back (in-tree) ✓
+4. top-back-right → top-back (in-tree) ✓
+5. bottom-front-left → bottom-front (in-tree) ✓
+6. bottom-front-right → bottom-front (in-tree) ✓
+7. bottom-back-left → bottom-back (cut, stays with bottom) ✓
+8. bottom-back-right → bottom-back (cut, stays with bottom) ✓
+
+All corners assigned to a connected strip. ✓
+
+Now, the seams to mark:
+
+For each cut strip, mark a seam on the long edge connecting to the main it DETACHES from:
+- top-left stays with top → seam on edge to left.
+- top-right stays with top → seam on edge to right.
+- bottom-back stays with bottom → seam on edge to back.
+- bottom-left stays with bottom → seam on edge to left.
+- bottom-right stays with bottom → seam on edge to right.
+- back-left stays with back → seam on edge to left.
+- back-right stays with back → seam on edge to right.
+
+For each corner, mark seams on the 2 connections to strips it does NOT attach to:
+- corner 1 (top-front-left) attaches to top-front → seams on edges to top-left and front-left.
+- corner 2 → seams to top-right, front-right.
+- corner 3 → seams to top-left, back-left.
+- corner 4 → seams to top-right, back-right.
+- corner 5 → seams to bottom-left, front-left.
+- corner 6 → seams to bottom-right, front-right.
+- corner 7 → seams to bottom-back... wait, corner 7 attaches to bottom-back, so seams to bottom-left and back-left.
+- corner 8 → seams to bottom-right, back-right.
+
+This is a well-defined seam set. Let me implement it programmatically.
+
+Actually, implementing this precisely requires identifying which strip is which (by the 2 mains it connects) and which corner is which (by the 3 strips it connects). Let me write code to:
+
+1. Identify main faces by normal → map to (axis, sign).
+2. Identify strips by the 2 mains they connect.
+3. Identify corners by the 3 strips they connect.
+4. Mark seams.
+
+Let me write this carefully.
+
+First, let me build the adjacency and identify everything.
+
+Let me write a comprehensive script. I'll identify:
+- main faces: normal dominant axis and sign.
+- For each strip, the 2 main faces it's adjacent to (via shared edges).
+- For each corner, the 3 strips it's adjacent to.
+
+Then mark seams.
+
+Let me write helper to get face neighbors via edges.
+
+Let me code it up.
+
+Actually, let me think about how to identify a strip's 2 main faces. A strip is a quad. Its 2 long edges connect to 2 main faces. So I look at the strip's edges, find the faces on the other side, and those should be 2 main faces.
+
+Similarly, a corner (triangle) has 3 edges, each connecting to a strip.
+
+Let me build edge->faces and then for each face, find neighbors.
+
+Let me write the full script now.
+
+For marking seams, I'll use bpy mesh edge.use_seam = True.
+
+Let me define the mapping from main face normal to a name, and build everything.
+
+Let me write it step by step. First, identify faces and buildadjacency.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\ncrate = bpy.data.objects[\"Crate\"]\nme = crate.data\n\ndef classify(n):\n    n = Vector(n)\n    comps = sorted((abs(c) for c in n), reverse=True)\n    if comps[0] > 0.9:\n        return \"main\"\n    if comps[2] > 0.4:\n        return \"corner\"\n    return \"strip\"\n\n# name main faces by dominant axis+sign\ndef main_name(n):\n    n = Vector(n)\n    ax = max(range(3), key=lambda i: abs(n[i]))\n    sign = \"+\" if n[ax] > 0 else \"-\"\n    return \"XYZ\"[ax] + sign\n\n# edge -> faces\nedge_faces = {}\nfor p in me.polygons:\n    for ek in p.edge_keys:\n        edge_faces.setdefault(ek, []).append(p.index)\n\ndef neighbors(pi):\n    out = []\n    for ek in me.polygons[pi].edge_keys:\n        for q in edge_faces[ek]:\n            if q != pi:\n                out.append(q)\n    return out\n\nmains = {}   # name -> face index\nstrips = []  # face indices\ncorners = [] # face indices\nfor p in me.polygons:\n    c = classify(p.normal)\n    if c == \"main\":\n        mains[main_name(p.normal)] = p.index\n    elif c == \"strip\":\n        strips.append(p.index)\n    else:\n        corners.append(p.index)\n\nprint(\"mains:\", mains)\nprint(\"strips:\", strips)\nprint(\"corners:\", corners)\n\n# identify each strip by its 2 main faces\nstrip_mains = {}\nfor s in strips:\n    ns = [q for q in neighbors(s) if q in mains.values()]\n    names = tuple(sorted(main_name(me.polygons[q].normal) for q in ns))\n    strip_mains[s] = names\n    print(\"strip\", s, \"->\", names)\n\n# identify each corner by its 3 strips\ncorner_strips = {}\nfor c in corners:\n    ns = [q for q in neighbors(c) if q in strips]\n    corner_strips[c] = ns\n    print(\"corner\", c, \"-> strips\", ns)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+mains: {'Z-': 20, 'X-': 21, 'Y-': 22, 'Z+': 23, 'Y+': 24, 'X+': 25}
+strips: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+corners: [0, 1, 2, 3, 4, 5, 6, 7]
+strip 8 -> ('X-', 'Z-')
+strip 9 -> ('X-', 'Y-')
+strip 10 -> ('X-', 'Z+')
+strip 11 -> ('X-', 'Y+')
+strip 12 -> ('Y+', 'Z-')
+strip 13 -> ('Y+', 'Z+')
+strip 14 -> ('X+', 'Y+')
+strip 15 -> ('X+', 'Z-')
+strip 16 -> ('X+', 'Z+')
+strip 17 -> ('X+', 'Y-')
+strip 18 -> ('Y-', 'Z-')
+strip 19 -> ('Y-', 'Z+')
+corner 0 -> strips [18, 9, 8]
+corner 1 -> strips [19, 10, 9]
+corner 2 -> strips [8, 11, 12]
+corner 3 -> strips [13, 11, 10]
+corner 4 -> strips [15, 17, 18]
+corner 5 -> strips [19, 17, 16]
+corner 6 -> strips [12, 14, 15]
+corner 7 -> strips [16, 14, 13]
+
+--- thinking ---
+Now I have the full structure. Let me map everything.
+
+Main faces:
+- Z- (bottom) = 20
+- X- (left) = 21
+- Y- (back) = 22
+- Z+ (top) = 23
+- Y+ (front) = 24
+- X+ (right) = 25
+
+Strips (by 2 mains):
+- 8: X-, Z- (left-bottom)
+- 9: X-, Y- (left-back)
+- 10: X-, Z+ (left-top)
+- 11: X-, Y+ (left-front)
+- 12: Y+, Z- (front-bottom)
+- 13: Y+, Z+ (front-top)
+- 14: X+, Y+ (right-front)
+- 15: X+, Z- (right-bottom)
+- 16: X+, Z+ (right-top)
+- 17: X+, Y- (right-back)
+- 18: Y-, Z- (back-bottom)
+- 19: Y-, Z+ (back-top)
+
+Corners (by 3 strips):
+- 0: [18, 9, 8] = back-bottom, left-back, left-bottom → corner at X-, Y-, Z- (left-back-bottom)
+- 1: [19, 10, 9] = back-top, left-top, left-back → X-, Y-, Z+ (left-back-top)
+- 2: [8, 11, 12] = left-bottom, left-front, front-bottom → X-, Y+, Z- (left-front-bottom)
+- 3: [13, 11, 10] = front-top, left-front, left-top → X-, Y+, Z+ (left-front-top)
+- 4: [15, 17, 18] = right-bottom, right-back, back-bottom → X+, Y-, Z- (right-back-bottom)
+- 5: [19, 17, 16] = back-top, right-back, right-top → X+, Y-, Z+ (right-back-top)
+- 6: [12, 14, 15] = front-bottom, right-front, right-bottom → X+, Y+, Z- (right-front-bottom)
+- 7: [16, 14, 13] = right-top, right-front, front-top → X+, Y+, Z+ (right-front-top)
+
+Now let me define the cross layout.
+
+Main faces: top=Z+, bottom=Z-, front=Y+, back=Y-, right=X+, left=X-.
+
+In-tree strips (5): connect the 6 mains in a tree.
+- front-top: Y+, Z+ = strip 13
+- front-bottom: Y+, Z- = strip 12
+- front-left: Y+, X- = strip 11
+- front-right: Y+, X+ = strip 14
+- top-back: Z+, Y- = strip 19
+
+So in-tree strips: 13, 12, 11, 14, 19.
+
+Cut strips (7): 8, 9, 10, 15, 16, 17, 18.
+
+For each cut strip, choose which main it stays with:
+- 8 (left-bottom, X-Z-): stays with bottom (Z-). Seam on edge to left (X-).
+- 9 (left-back, X-Y-): stays with back (Y-). Seam on edge to left (X-).
+- 10 (left-top, X-Z+): stays with top (Z+). Seam on edge to left (X-).
+- 15 (right-bottom, X+Z-): stays with bottom (Z-). Seam on edge to right (X+).
+- 16 (right-top, X+Z+): stays with top (Z+). Seam on edge to right (X+).
+- 17 (right-back, X+Y-): stays with back (Y-). Seam on edge to right (X+).
+- 18 (back-bottom, Y-Z-): stays with bottom (Z-). Seam on edge to back (Y-).
+
+Corners, assign each to 1 strip:
+- 0 (X-Y-Z-): strips 18, 9, 8. Attach to 18 (back-bottom, stays with bottom). Seams to 9, 8.
+- 1 (X-Y-Z+): strips 19, 10, 9. Attach to 19 (top-back, in-tree). Seams to 10, 9.
+- 2 (X-Y+Z-): strips 8, 11, 12. Attach to 12 (front-bottom, in-tree). Seams to 8, 11.
+- 3 (X-Y+Z+): strips 13, 11, 10. Attach to 13 (front-top, in-tree). Seams to 11, 10.
+- 4 (X+Y-Z-): strips 15, 17, 18. Attach to 18 (back-bottom). Seams to 15, 17.
+- 5 (X+Y-Z+): strips 19, 17, 16. Attach to 19 (top-back). Seams to 17, 16.
+- 6 (X+Y+Z-): strips 12, 14, 15. Attach to 12 (front-bottom). Seams to 14, 15.
+- 7 (X+Y+Z+): strips 16, 14, 13. Attach to 13 (front-top). Seams to 16, 14.
+
+Wait, let me double check corner assignments make everything connected.
+
+Corner 0 attaches to strip 18 (back-bottom, stays with bottom Z-). Bottom is in-tree (via front-bottom strip 12). ✓
+Corner 1 attaches to 19 (top-back, in-tree). ✓
+Corner 2 attaches to 12 (front-bottom, in-tree). ✓
+Corner 3 attaches to 13 (front-top, in-tree). ✓
+Corner 4 attaches to 18 (back-bottom, stays with bottom). ✓
+Corner 5 attaches to 19 (top-back, in-tree). ✓
+Corner 6 attaches to 12 (front-bottom, in-tree). ✓
+Corner 7 attaches to 13 (front-top, in-tree). ✓
+
+All corners attached to connected strips. ✓
+
+Now let me also verify the cut strips are all connected:
+- 8 stays with bottom (Z-, in-tree via 12). ✓
+- 9 stays with back (Y-, in-tree via 19). ✓
+- 10 stays with top (Z+, in-tree via 13). ✓
+- 15 stays with bottom. ✓
+- 16 stays with top. ✓
+- 17 stays with back. ✓
+- 18 stays with bottom. ✓
+
+All connected. ✓
+
+So the full seam set:
+
+Seams on M-B edges (cut strips detaching from one main):
+- strip 8: seam on edge to left (X-, face 21)
+- strip 9: seam on edge to left (X-, face 21)
+- strip 10: seam on edge to left (X-, face 21)
+- strip 15: seam on edge to right (X+, face 25)
+- strip 16: seam on edge to right (X+, face 25)
+- strip 17: seam on edge to right (X+, face 25)
+- strip 18: seam on edge to back (Y-, face 22)
+
+Seams on B-C edges (corners detaching from 2 strips):
+- corner 0: seams to strips 9, 8
+- corner 1: seams to strips 10, 9
+- corner 2: seams to strips 8, 11
+- corner 3: seams to strips 11, 10
+- corner 4: seams to strips 15, 17
+- corner 5: seams to strips 17, 16
+- corner 6: seams to strips 14, 15
+- corner 7: seams to strips 16, 14
+
+Total seams: 7 (M-B) + 16 (B-C) = 23. ✓
+
+Now let me implement this. I need to mark seams on specific edges.
+
+For each seam, I need to find the edge shared by the two faces and mark it.
+
+Let me write a helper: mark_seam(face_a, face_b) that finds the shared edge and marks it.
+
+Let me implement the full seam marking.
+
+Actually, let me write it as a data-driven approach:
+
+1. Define in-tree strips and cut strips with their "stay" main.
+2. Define corner attachments.
+3. Mark seams.
+
+Let me write the code.
+
+For marking seams, I need to find the shared edge between two faces. I have edge_faces map. For a pair of faces (a, b), find the edge key that's in both.
+
+Let me write:
+
+```python
+def shared_edge(a, b):
+    ea = set(me.polygons[a].edge_keys)
+    eb = set(me.polygons[b].edge_keys)
+    common = ea & eb
+    assert len(common) == 1
+    return common.pop()
+
+def mark_seam(a, b):
+    ek = shared_edge(a, b)
+    # find the edge index
+    for e in me.edges:
+        if e.key == ek:
+            e.use_seam = True
+            return
+```
+
+Actually, me.edges have .key attribute? Let me check. In Blender, bmesh edges have .key, but mesh edges (me.edges) have .vertices. Let me use me.edges[i].vertices to get the key.
+
+Actually, edge_keys are tuples (v1, v2) with v1 < v2. me.edges[i].vertices gives (v1, v2). So I can compare.
+
+Let me write a helper that builds a map from edge key to edge index.
+
+Let me write the full script now.
+
+Let me define the data:
+
+```python
+# main face indices
+M = {name: idx}
+bottom = M['Z-']  # 20
+left = M['X-']    # 21
+back = M['Y-']    # 22
+top = M['Z+']     # 23
+front = M['Y+']   # 24
+right = M['X+']   # 25
+```
+
+Strips by name:
+```python
+strip = {
+  'left-bottom': 8, 'left-back': 9, 'left-top': 10, 'left-front': 11,
+  'front-bottom': 12, 'front-top': 13, 'right-front': 14, 'right-bottom': 15,
+  'right-top': 16, 'right-back': 17, 'back-bottom': 18, 'back-top': 19,
+}
+```
+
+Cut strips with stay main:
+```python
+cut_strips = {
+  8: left,   # left-bottom stays with bottom, seam to left
+  9: left,   # left-back stays with back, seam to left
+  10: left,  # left-top stays with top, seam to left
+  15: right, # right-bottom stays with bottom, seam to right
+  16: right, # right-top stays with top, seam to right
+  17: right, # right-back stays with back, seam to right
+  18: back,  # back-bottom stays with bottom, seam to back
+}
+```
+
+Wait, I need to be careful. The "stay" main is the one it stays WITH, and the seam is on the edge to the OTHER main.
+
+- strip 8 (left-bottom): stays with bottom (Z-), seam to left (X-). So cut_strips[8] = left (the main to detach from).
+
+Let me define cut_strips as {strip: detach_main}:
+- 8: detach from left (X-)
+- 9: detach from left (X-)
+- 10: detach from left (X-)
+- 15: detach from right (X+)
+- 16: detach from right (X+)
+- 17: detach from right (X+)
+- 18: detach from back (Y-)
+
+Corner attachments (corner: attach_strip), and seams to the other 2 strips:
+- 0: attach 18, seams to 9, 8
+- 1: attach 19, seams to 10, 9
+- 2: attach 12, seams to 8, 11
+- 3: attach 13, seams to 11, 10
+- 4: attach 18, seams to 15, 17
+- 5: attach 19, seams to 17, 16
+- 6: attach 12, seams to 14, 15
+- 7: attach 13, seams to 16, 14
+
+Let me write the full script and mark all seams, then unwrap and measure.
+
+Let me write it all in one chunk.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\ncrate = bpy.data.objects[\"Crate\"]\nme = crate.data\n\n# face indices (from previous inspection)\nM = {'Z-': 20, 'X-': 21, 'Y-': 22, 'Z+': 23, 'Y+': 24, 'X+': 25}\nbottom, left, back, top, front, right = M['Z-'], M['X-'], M['Y-'], M['Z+'], M['Y+'], M['X+']\n\n# edge key -> edge index\nedge_index = {}\nfor i, e in enumerate(me.edges):\n    edge_index[tuple(sorted(e.vertices))] = i\n\ndef shared_edge(a, b):\n    ea = set(me.polygons[a].edge_keys)\n    eb = set(me.polygons[b].edge_keys)\n    common = ea & eb\n    assert len(common) == 1, f\"{a},{b} share {len(common)} edges\"\n    return common.pop()\n\ndef mark_seam(a, b):\n    ek = shared_edge(a, b)\n    me.edges[edge_index[ek]].use_seam = True\n\n# --- cut strips: detach from one main face ---\ncut_strips = {\n    8: left,    # left-bottom  stays with bottom, seam to left\n    9: left,    # left-back    stays with back,   seam to left\n    10: left,   # left-top     stays with top,    seam to left\n    15: right,  # right-bottom stays with bottom, seam to right\n    16: right,  # right-top    stays with top,    seam to right\n    17: right,  # right-back   stays with back,   seam to right\n    18: back,   # back-bottom  stays with bottom, seam to back\n}\nfor s, detach in cut_strips.items():\n    mark_seam(s, detach)\n\n# --- corners: attach to one strip, seam to the other two ---\ncorner_seams = {\n    0: [9, 8],\n    1: [10, 9],\n    2: [8, 11],\n    3: [11, 10],\n    4: [15, 17],\n    5: [17, 16],\n    6: [14, 15],\n    7: [16, 14],\n}\nfor c, detach_strips in corner_seams.items():\n    for s in detach_strips:\n        mark_seam(c, s)\n\nn_seams = sum(1 for e in me.edges if e.use_seam)\nprint(\"seams marked:\", n_seams)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+seams marked: 23
+
+--- thinking ---
+23 seams marked. Now let me unwrap and measure.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.uv import unwrap_uvs\n\ncrate = bpy.data.objects[\"Crate\"]\n# clear existing UVs so unwrap is pure\nif crate.data.uv_layers:\n    for uv in list(crate.data.uv_layers):\n        crate.data.uv_layers.remove(uv)\n\nreport = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(\"unwrap report:\", report)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+unwrap report: UnwrapReport(method='ANGLE_BASED', island_count=1, overlapping_face_pair_count=0, coverage_fraction=0.3742173749586403)
+
+--- thinking ---
+1 island, 0 overlaps. Coverage 37% — that's a bit low but acceptable (a cross layout has empty space). Actually 37% coverage is fine for a cross unwrap.
+
+Now let me run the gate to check everything.
+
+--- tool ---
+run_python({"source": "import bpy\ncrate = bpy.data.objects[\"Crate\"]\nprint(\"objects in scene:\", [o.name for o in bpy.context.scene.objects])\nprint(\"material slots:\", [s.name if s else None for s in crate.data.materials])\n", "object_name": "Crate"})
+
+--- result ---
+OK: Crate
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+objects in scene: ['Crate']
+material slots: ['CrateWood']
+  gate: PASS (44 tris, 1 components)
+  sheet: _evaluate/renders/iteration30_uv_crate_v9/agent/Crate_sheet.png
+
+--- vision ---
+asset renders as a plain brown cube with very subtle edge bevels, visible clearly in the perspective view at the bottom-left showing the top and two side faces. It reads as a generic brown block rather than a detailed chest or crate — there are no lid lines, plank seams, handles, hinges, bands, or any surface details that would identify it as a specific container.
+
+The four orthographic views (top-left, top-right, middle-left, middle-right) all appear nearly identical, each showing a flat brown square face; this suggests either the views are duplicates of the same face or the object is so uniform that every side looks the same. Proportions look balanced — it's a roughly equal-sided cube with no face appearing stretched or compressed.
+
+Nothing is floating, intersecting, or duplicated in terms of separate objects — it's a single solid mass. The only concern is that it's quite minimal: if a crate or chest was intended, the defining features (lid, planks, hardware) are entirely missing, and the asset currently reads as just a plain wooden block.
+
+--- thinking ---
+The gate passed: 44 triangles, 1 component, manifold, etc. The render shows a plain brown cube with subtle bevels.
+
+The user asked for a "solid wooden crate" that is 0.5m on each side, beveled 0.02m, unwrapped, one material, single watertight manifold mesh under 2000 triangles, only mesh object in scene.
+
+The user did NOT ask for lid lines, planks, handles, hinges, etc. They asked for a "solid wooden crate" which is essentially a box. The vision model is noting it's minimal, but that's actually what was asked — a solid crate (box) with beveled edges.
+
+Wait, let me re-read the brief: "Build a solid wooden crate named 'Crate'. It is 0.5 m on each side (X, Y and Z), sitting on the ground at z=0, with its edges beveled 0.02 m."
+
+So it's a solid box (crate) with beveled edges. No lid, no planks, no hardware requested. The vision model's concern about "no lid lines, plank seams" is not part of the brief. The brief is clear: a solid crate = a box.
+
+So the asset is correct. Let me verify the measurements:
+- 0.5m on each side ✓ (I built 0.5 x 0.5 x 0.5)
+- sitting on ground at z=0 ✓ (center at z=0.25)
+- beveled 0.02m ✓
+- unwrapped, no overlaps, no out-of-bounds, under 12 islands (1 island) ✓
+- one material ✓
+- single watertight manifold mesh under 2000 triangles (44 tris) ✓
+- only mesh object in scene ✓
+
+Let me verify the dimensions and the bevel and the UV out-of-bounds check. The gate report should include UV out-of-bounds and island count. Let me check the full gate report.
+
+Actually, the gate passed and reported "44 tris, 1 components". But I want to verify:
+1. UV out-of-bounds faces = 0
+2. UV island count = 1 (under 12)
+3. Dimensions are 0.5m each
+4. Base at z=0
+
+Let me do a final verification of measurements and UV bounds. The gate report fields include uv_out_of_bounds_face_count and uv_island_count. The gate passed, but let me confirm the specific UV requirements are met (the gate's default might not check UV out-of-bounds since require_uv_layer defaults to False).
+
+Actually, the brief explicitly requires: "no overlapping faces and no faces outside the 0-1 UV square, in under 12 islands". So I need to verify these specifically, not just rely on the gate (which may not check UV by default).
+
+Let me check the UV bounds and island count explicitly.
+
+The unwrap report said island_count=1, overlapping_face_pair_count=0. But I need to check out-of-bounds faces.
+
+Let me verify UV coordinates are within0-1.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\ncrate = bpy.data.objects[\"Crate\"]\nme = crate.data\n\n# verify dimensions (world extents)\nbpy.context.view_layer.update()\ncorners = [crate.matrix_world @ Vector(c) for c in crate.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world extents X:\", round(max(xs)-min(xs),4), \"Y:\", round(max(ys)-min(ys),4), \"Z:\", round(max(zs)-min(zs),4))\nprint(\"base z (min):\", round(min(zs),4))\n\n# verify UV bounds\nuv = me.uv_layers.active.data\nmin_u = min(v.uv.x for v in uv); max_u = max(v.uv.x for v in uv)\nmin_v = min(v.uv.y for v in uv); max_v = max(v.uv.y for v in uv)\nprint(\"UV range u:\", round(min_u,4), \"..\", round(max_u,4), \" v:\", round(min_v,4), \"..\", round(max_v,4))\n\n# count out-of-bounds faces\noob = 0\nfor p in me.polygons:\n    for li in p.loop_indices:\n        u, v = uv[li].uv\n        if u < 0 or u > 1 or v < 0 or v > 1:\n            oob += 1\n            break\nprint(\"out-of-bounds faces:\", oob)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world extents X: 0.5 Y: 0.5 Z: 0.5
+base z (min): 0.25
+UV range u: 0.0002 .. 0.7354  v: 0.0002 .. 0.9998
+out-of-bounds faces: 0
+
+--- thinking ---
+Wait, "base z (min): 0.25" — that's wrong! The base should be at z=0.
+
+Wait, let me look. The bound_box is in local coordinates. The box was created at location (0,0,0.25), but then I applied the bevel modifier. Did apply_all_modifiers also apply the transform? No, apply_all_modifiers only applies modifiers, not the object transform.
+
+Wait, but actually the issue is: the box was created with location (0,0,0.25). The bound_box is local, so min z = -0.25 (local), and matrix_world translates by 0.25, giving world min z = 0.
+
+But the output says "base z (min): 0.25". That means min(zs) = 0.25, which means the local bound_box min z is 0, and matrix_world has no translation (identity).
+
+Hmm wait. Let me reconsider. When I created the box with add_box at location (0,0,0.25), the box's local geometry is centered at origin (local z from -0.25 to 0.25), and the object location is (0,0,0.25).
+
+But then I did apply_all_modifiers (bevel). That applies the bevel modifier but does NOT apply the object transform. So the object should still be at location (0,0,0.25).
+
+But wait, the output says min z = 0.25. That means the world min z is 0.25, which would mean the box is floating 0.25 above the ground!
+
+Wait, let me reconsider. Actually, maybe add_box creates the box with its base at location_m[2]? Let me check the add_box signature: "Create a closed box mesh object of the given outer dimensions." and location_m default (0,0,0).
+
+Hmm, the convention note says: "add_cylinder ... base at location_m[2] (same convention...". So add_box might also have base at location_m[2]? Let me check.
+
+Actually, the note for add_cylinder says "base at location_m[2] (same convention" — suggesting add_box also has base at location_m[2].
+
+So add_box with location (0,0,0.25) creates a box whose BASE is at z=0.25, meaning the box spans z=0.25 to z=0.75. That's wrong! I wanted base at z=0.
+
+Wait, but let me check. Actually, let me reconsider. The world extents show Z: 0.5 (correct height), and base z min = 0.25.
+
+So the box is currently sitting with its base at z=0.25, floating 0.25 above the ground. That's WRONG. The brief says "sitting on the ground at z=0".
+
+Wait, but actually let me reconsider. Let me check what add_box does with location. Let me look at the actual geometry.
+
+Actually, the world extents show min z = 0.25. So the box base is at 0.25, not 0. This is a bug in my build.
+
+Wait, but actually, let me reconsider. When I first created the box, I used location (0,0,0.25) assuming the box is centered at that location (so base at 0). But if add_box uses "base at location_m[2]" convention, then the box base is at 0.25.
+
+Let me check the add_box behavior. The cylinder note says "base at location_m[2] (same convention" — this strongly implies add_box also has base at location_m[2].
+
+So I should have created the box at location (0,0,0) to have base at z=0.
+
+Let me verify by checking the actual geometry. The world min z is 0.25, so the box is floating.
+
+Actually wait, let me reconsider. Let me check: is the box centered at origin in local coords, or is its base at origin?
+
+The bound_box min z in local coords: if the box is centered at local origin, min z = -0.25. If base at local origin, min z = 0.
+
+The output "base z (min): 0.25" is the WORLD min z. If local min z = 0 (base at local origin) and object location z = 0.25, then world min z = 0.25.
+
+So the box has base at local origin (z=0 to 0.5 locally), and object location z=0.25, giving world z from 0.25 to 0.75.
+
+So the box is floating 0.25 above ground. I need to fix this: move it down so base is at z=0.
+
+Actually, the simplest fix: use snap_base_to_ground, or move_object_to (0,0,0).
+
+Wait, but actually, let me reconsider. The brief says "sitting on the ground at z=0". So base at z=0.
+
+Let me use snap_base_to_ground to move it down. Or move_object_to(crate, (0,0,0)).
+
+Actually, since the box base is at local z=0, I should set object location to (0,0,0) so world base is at z=0.
+
+Let me use move_object_to(crate, (0,0,0)).
+
+Wait, but actually, let me reconsider whether add_box centers or bases. Let me just check the local bound_box.
+
+Actually, the cleanest fix is snap_base_to_ground which moves the object so its lowest point is at z=0. Let me use that.
+
+But wait — I need to be careful. snap_base_to_ground moves the object. But the UVs are already unwrapped and the seams are marked. Moving the object (translation) doesn't affect UVs or seams. So it's safe.
+
+Actually, let me reconsider. Let me just verify the current state and fix the z position.
+
+Let me use snap_base_to_ground.
+
+Actually, let me reconsider the whole thing. The gate passed, but the base is at z=0.25, not z=0. This is a real bug that the gate doesn't catch (the gate measures structure, not position).
+
+Let me fix it with snap_base_to_ground.
+
+Actually, let me check: does snap_base_to_ground exist and what does it do? From the ops list: "snap_base_to_ground(blender_object) -> float: Move the object so its lowest point sits exactly at z=0."
+
+Yes. Let me use it.
+
+But wait, I should double-check my understanding of add_box. Let me verify the local geometry first, then fix.
+
+Actually, let me just fix it directly. The world min z is 0.25, so I need to move down by 0.25. snap_base_to_ground will do exactly that.
+
+Let me apply snap_base_to_ground and re-verify.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.transforms import snap_base_to_ground\n\ncrate = bpy.data.objects[\"Crate\"]\nsnap_base_to_ground(crate)\n\nbpy.context.view_layer.update()\nfrom mathutils import Vector\ncorners = [crate.matrix_world @ Vector(c) for c in crate.bound_box]\nzs = [c.z for c in corners]\nprint(\"base z (min) after snap:\", round(min(zs),4), \"top z:\", round(max(zs),4))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+base z (min) after snap: 0.0 top z: 0.5
+
+--- thinking ---
+Now the base is at z=0 and top at z=0.5. 
+
+Let me re-run the gate to confirm everything still passes, and do a final render to verify.
+
+Actually, the gate already passed. But I moved the object, which doesn't change topology. Let me do a final gate check and render.
+
+Let me run the gate and render in parallel... actually, render_views and run_python gate can be done. Let me do a final gate check with the object_name, and a render.
+
+Actually, let me just do a final render to confirm it looks right, and confirm the gate still passes.
+
+Let me run the gate (inspect) and render together.
+
+--- tool ---
+inspect_object({"object_name": "Crate"})
+
+--- result ---
+GATE PASS
+{
+ "object_name": "Crate",
+ "triangle_count": 44,
+ "non_manifold_edge_count": 0,
+ "boundary_edge_count": 0,
+ "zero_area_face_count": 0,
+ "non_finite_coordinate_count": 0,
+ "connected_component_count": 1,
+ "duplicate_vertex_pair_count": 0,
+ "self_intersecting_face_pair_count": 0,
+ "flipped_normal_triangle_count": 0,
+ "uv_layer_count": 1,
+ "uv_island_count": 1,
+ "uv_overlapping_face_pair_count": 0,
+ "uv_out_of_bounds_face_count": 0,
+ "uv_coverage_fraction": 0.3742173749586403
+}
+
+--- tool ---
+render_views({"object_name": "Crate", "look_for": "Is the crate sitting flat on the ground at z=0 with beveled edges, and does it look like a clean solid wooden box?"})
+
+--- result ---
+Rendered Crate (solid). Look at the attached contact sheet.
+
+--- vision ---
+The render shows a single cube/box from multiple viewpoints. The four orthographic side views (top two rows) all show essentially the same square silhouette with slightly rounded corners from beveled edges, while the bottom-left perspective view reveals a clean three-faced box with clearly chamfered/beveled edges along every visible edge where the top and two side faces meet. The object reads as a solid, uniform brown block — proportions look cube-like (roughly equal width/height/depth), nothing is floating, duplicated, or missing, and in the perspective view it appears to be sitting flat on a ground plane with its bottom face resting on the floor. There is no wood-grain texture or plank detail visible — it's a single solid-colored mass — so if the intent was a slatted/wooden crate specifically, the surface treatment reads as plain rather than wooden, though the geometric form itself (flat base, beveled edges, solid box) matches the description.
+
+--- thinking ---
+Everything passes:
+- 44 triangles (under 2000)
+- 1 component (single watertight manifold mesh)
+- 0 non-manifold edges, 0 boundary edges, 0 self-intersections, 0 flipped normals
+- 1 UV layer, 1 island (under 12), 0 overlapping faces, 0 out-of-bounds faces
+- 1 material
+- Only mesh object in scene
+- 0.5m on each side, base at z=0, beveled 0.02m
+
+The render confirms it's a clean solid box with beveled edges sitting flat on the ground.
+
+The vision model notes it's "plain" without wood grain/planks, but the brief only asked for a "solid wooden crate" = a solid box with beveled edges. No lid, planks, or hardware was requested. The material is assigned (wood-colored base color). This matches the brief.
+
+The task is complete. Let me give the final answer.
+
+Actually, let me double check the bevel is 0.02m. I set width_m=0.02 in add_bevel. The bevel modifier with width 0.02. That's correct.
+
+Let me also confirm the material is assigned (1 material). The gate doesn't check material count, but I verified earlier "material slots: ['CrateWood']".
+
+Everything is done. Let me write the final answer.
+
+Final measurements:
+- 0.5m × 0.5m × 0.5m cube
+- base at z=0, top at z=0.5
+- bevel 0.02m on all edges
+- 44 triangles
+- 1 connected component, watertight manifold
+- 1 UV island, 0 overlaps, 0 out-of-bounds faces
+- 1 material (CrateWood)
+- only mesh object in scene
+
+Done.
+
+--- answer ---
+The crate is complete and verified. Here's the final report:
+
+**What I built** — a solid wooden crate (`Crate`): a 0.5 m × 0.5 m × 0.5 m cube with all 12 edges beveled 0.02 m, sitting flat on the ground (base at z=0, top at z=0.5).
+
+**Measurements (verified after the last operation):**
+- World extents: 0.5 m on X, Y, and Z
+- Base at z=0.0, top at z=0.5
+- 44 triangles (budget 2000)
+- 1 connected component, 0 non-manifold edges, 0 boundary edges, 0 self-intersections, 0 flipped normals — a single watertight manifold mesh
+
+**UV layout** — a real seam-and-unwrap cross layout (23 seams marked along the bevel strips and corner patches so the whole box unfolds as one connected piece):
+- 1 UV island (requirement: under 12)
+- 0 overlapping faces
+- 0 faces outside the 0–1 UV square
+
+**Materials & scene** — one material (`CrateWood`, wood-toned base color) assigned; `Crate` is the only mesh object left in the scene.
+
+**Gate verdict: PASS.**
+
+One note for your call: the brief specified a *solid* crate, so I built a clean beveled box with no lid, plank seams, or hardware. If you'd like it to read more explicitly as a wooden crate (plank lines, corner bands, a lid seam), that's a quick follow-up — just say the word and I'll add those details.

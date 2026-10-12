@@ -1,0 +1,33 @@
+## Iterate behind the gate, never in front of it
+
+Refinement works when something outside you can say whether the last
+attempt was better. That is what the analyzer is. With it, iterating
+converges. Without it, iterating measurably makes things WORSE — models
+asked to revise their own work with no external signal degrade round
+over round, and when they change an answer they are more likely to break
+a correct one than to fix a wrong one.
+
+So every round must be anchored to a measurement. "I think that reads
+better now" is not a round, it is drift.
+
+## The budget
+
+Most of the available improvement lands in the FIRST correction. The
+second is worth less, the third is usually the last one worth taking,
+and quality past that is not monotonic — it goes down as often as up.
+
+- Fix the specific measured failure. Do not rewrite what was passing.
+- Three honest attempts at the same failure is the limit. Then stop and
+  tell the user what you tried and what it measured each time.
+- Escalating early is not giving up. It is the correct move when the
+  remaining question is one only they can answer — anything about
+  proportion, style, or what the thing is supposed to be.
+
+## Carry the lesson, not just the fix
+
+When a failure turns out to have a cause you did not expect, record
+three things in your answer: what the error was, what actually caused
+it, and the check that would have caught it. That last one is the
+valuable part and the one most often skipped.
+
+A fix without its guard is a fix you will need again.

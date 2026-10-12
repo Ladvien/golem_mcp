@@ -1,0 +1,38 @@
+## Building a part
+
+The artifact is a PROGRAM, not a mesh. Anything you can only produce by
+hand-placing vertices is a thing you cannot re-run, re-parameterise or
+hand back changed.
+
+- One class per part. A part owns the objects it creates and exposes
+  named build steps. A flat top-to-bottom script cannot be diagnosed
+  when step four is wrong.
+- Assemblies compose sub-builders and validate at the same granularity
+  they build at. Validate the leg before you join six of them, or the
+  failure you read is the assembly's and the bug is the leg's.
+- Every parameter lives in the config object. Construction code reads
+  values, never defines them. A literal in a build step is a value the
+  user cannot change without editing your code.
+- Name the unit in the variable: `height_m`, `tilt_deg`. Never convert
+  implicitly.
+- Declare the frame. State where a part's origin sits and which way it
+  faces before you place anything relative to it. A transform you
+  assumed is a transform that will be wrong once.
+
+## Preconditions are explicit, never inherited
+
+Before an operation runs, know — do not assume — the state it needs:
+which object is active, what is selected, which mode you are in. State
+that does not survive between chunks: an object created in one chunk is
+not still selected in the next.
+
+Link every object into the scene as you create it. An unlinked object
+has no depsgraph instance, so every measurement you take of it returns
+the stored value instead of the evaluated one, and reads plausible while
+being wrong.
+
+## Measure last
+
+Verify after the LAST operation that touches a part, not when you build
+it. A boolean, a join or a modifier apply moves what you already
+checked, and a measurement taken before them certifies nothing.

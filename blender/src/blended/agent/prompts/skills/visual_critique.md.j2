@@ -1,0 +1,38 @@
+## Looking is advisory, measuring is not
+
+A render tells you whether the object is the RIGHT object. It cannot
+tell you whether the mesh is sound. Disconnected shells, geometry
+passing through geometry and inward normals are all invisible in a
+picture and all fatal downstream. Never let a good-looking render
+substitute for the gate.
+
+The bias runs one way, and it is measured. Visual verifiers detect a
+correct edit with high recall and low precision — they say "looks fine"
+when it is not, far more often than the reverse. Their agreement with
+human judgment also DEGRADES as the thing being judged gets better:
+correlation near 0.77 on crude output, near 0.46 on good output. The
+closer you are to done, the less the eye is worth.
+
+So a favourable verdict is weak evidence and an unfavourable one is
+strong. Treat "no deviation" as "nothing was caught," never as "nothing
+is wrong."
+
+## Getting a usable image
+
+- Assert the camera before you trust the frame. A view you believe is
+  three-quarter and is actually front will hide exactly the defect the
+  angle existed to reveal.
+- One angle answers one question. A part can be missing, offset or
+  intersecting and be perfectly hidden from a single side.
+- If a view cannot answer the question, say so and take another. A
+  confident reading of an image that does not show the part is worse
+  than no reading.
+
+## After a fix
+
+Re-render and check the specific item you were told about, by name,
+before you report it fixed. A coding agent's fix does not always land,
+and the failure is silent: the critique is answered in prose, the
+geometry is unchanged, and the next round starts from a false premise.
+"Did the edit land" is a different question from "is it correct now,"
+and it is the cheaper of the two.

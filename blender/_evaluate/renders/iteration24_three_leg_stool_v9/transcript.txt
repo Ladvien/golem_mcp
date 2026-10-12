@@ -1,0 +1,1365 @@
+--- thinking ---
+Let me start by understanding the task. I need to build a three-legged wooden stool named 'Stool'.
+
+Specs:
+- Round seat: 0.32 m diameter (0.16 m radius), 0.04 m thick
+- Total height 0.45 m, feet on ground at z=0
+- 3 legs splay outward as they descend
+- Each foot touches ground on circle of radius 0.14 m from central axis
+- Legs evenly spaced, first on +X axis
+- No central post, no skirt
+- Single watertight manifold mesh under 2000 triangles
+- Material assigned
+- Only mesh object left in scene
+
+I have `splayed_leg_ring` and `SplayedLegSpec` available. Let me look at the spec.
+
+SplayedLegSpec:
+- foot_radius_m: float
+- foot_bearing_deg: float
+- top_radius_m: float
+- top_z_m: float
+- leg_radius_m: float
+- segment_count: int = 12
+- sole_clearance_margin_m: float = 0.005
+
+So a splayed leg: top at radius `top_radius_m` at height `top_z_m`, foot at radius `foot_radius_m` at bearing `foot_bearing_deg`, leg thickness `leg_radius_m`.
+
+For the stool:
+- Seat radius 0.16 m, thickness 0.04 m. Seat bottom at z = 0.45 - 0.04 = 0.41 m.
+- Legs: top at some radius under the seat, top_z at seat bottom (0.41 m). Foot at radius 0.14 m, at z=0.
+
+The legs need to attach to the seat. The top of the leg should be under the seat. Let me think about top_radius_m — where the leg meets the seat. The seat is 0.16 m radius. Legs should attach near the edge but inside. Let's say top_radius_m = 0.12 m (inside the seat so it overlaps for union).
+
+Actually, let me think about the geometry. The leg is a cylinder-ish shape from top (at top_radius, top_z) to foot (at foot_radius, z=0). The leg needs to overlap the seat so the boolean union makes a watertight solid.
+
+Let me set:
+- top_radius_m = 0.12 m (under the seat, seat radius 0.16)
+- top_z_m = 0.41 m (seat bottom)
+- foot_radius_m = 0.14 m
+- foot_bearing_deg = 0 (first leg on +X)
+- leg_radius_m = 0.02 m (2cm thick leg)
+- segment_count = 12
+
+The leg top at z=0.41, seat bottom at 0.41. The leg top should overlap into the seat. Actually the leg top is at top_z_m = 0.41 which is exactly the seat bottom. For union to be watertight, the leg top needs to penetrate the seat. Let me set top_z_m slightly higher, like 0.42, so it overlaps into the seat (seat spans 0.41 to 0.45).
+
+Actually, let me think about how splayed_leg works. The leg is a tapered cylinder from top to foot. The top is at (top_radius, top_z) and foot at (foot_radius, 0). The leg is a solid cylinder of radius leg_radius_m.
+
+For a watertight union, the leg top must overlap the seat. So top_z_m should be > 0.41 (into the seat). Let me set top_z_m = 0.43 or so. Actually the leg top center at radius top_radius_m, and the leg has radius leg_radius_m, so the leg top surface is a circle of radius leg_radius_m around the point (top_radius, 0, top_z) in the leg's local frame.
+
+Hmm, let me just build it and check.
+
+Let me plan the build:
+
+1. Create seat: cylinder radius 0.16, height 0.04, at z so bottom at 0.41. add_cylinder base at location_m[2]. So location z = 0.41.
+
+2. Create legs: splayed_leg_ring with count 3, first_bearing_deg=0.
+
+3. Union legs into seat (or union all into one object).
+
+4. Assign material.
+
+5. Check gate.
+
+Let me first check the exact signatures and understand splayed_leg_ring.
+
+Let me look at the ops. I'll search for splayed leg to confirm.
+
+Actually the signatures are given. Let me just write the code.
+
+Let me think about the leg spec more carefully. The leg needs to be a solid that connects the seat to the ground. The top of the leg is under the seat, the foot is on the ground.
+
+top_radius_m: the radial distance of the leg top from the central axis. This should be less than seat radius (0.16) so the leg is under the seat. Let's use 0.12.
+
+top_z_m: height of leg top. Should overlap seat. Seat bottom at 0.41. Set top_z_m = 0.42 (1cm into seat).
+
+foot_radius_m = 0.14 (given).
+
+foot_bearing_deg = 0 (first leg on +X).
+
+leg_radius_m = 0.02.
+
+segment_count = 12.
+
+sole_clearance_margin_m = 0.005.
+
+Let me write the first chunk to build the seat and legs, then inspect.
+
+Actually, let me be careful about the order. Let me first build everything, then union.
+
+Let me write:
+
+```python
+from blended.ops.primitives import add_cylinder, link_into_scene
+from blended.ops.legs import splayed_leg_ring, SplayedLegSpec
+from blended.ops.booleans import boolean_union
+from blended.ops.materials import assign_material
+
+SEAT_RADIUS_M = 0.16
+SEAT_THICKNESS_M = 0.04
+TOTAL_HEIGHT_M = 0.45
+FOOT_RADIUS_M = 0.14
+LEG_RADIUS_M = 0.02
+LEG_TOP_RADIUS_M = 0.12
+LEG_TOP_Z_M = 0.42  # overlaps into seat (seat bottom at 0.41)
+
+seat = add_cylinder("Stool", SEAT_RADIUS_M, SEAT_THICKNESS_M, segment_count=32, location_m=(0,0, TOTAL_HEIGHT_M - SEAT_THICKNESS_M))
+link_into_scene(seat)
+
+spec = SplayedLegSpec(
+    foot_radius_m=FOOT_RADIUS_M,
+    foot_bearing_deg=0.0,
+    top_radius_m=LEG_TOP_RADIUS_M,
+    top_z_m=LEG_TOP_Z_M,
+    leg_radius_m=LEG_RADIUS_M,
+    segment_count=12,
+    sole_clearance_margin_m=0.005,
+)
+
+legs = splayed_leg_ring("Leg", 3, spec, first_bearing_deg=0.0)
+for leg in legs:
+    boolean_union(seat, leg)
+
+assign_material(seat, "Wood", base_color_rgb=(0.6, 0.4, 0.25), roughness=0.7)
+```
+
+Wait, but I need to check: does splayed_leg_ring link the legs into the scene? The doc says add_splayed_leg builds one leg "LINKED and with its transform applied". splayed_leg_ring returns list of legs.
+
+Also, the seat is named "Stool" and legs named "Leg". After union, legs are consumed into seat. Good.
+
+But wait — the legs need to be linked into the scene for the boolean to work? Actually boolean_union works on objects. The legs are linked (per add_splayed_leg doc). Let me just try.
+
+Let me also think about whether the leg top overlaps the seat. The leg top is a circle of radius leg_radius_m (0.02) centered at (top_radius=0.12, 0, top_z=0.42) in the leg's local frame. Actually the leg is oriented along the splay direction. The top center is at radial distance 0.12 from axis at height 0.42. The leg is a cylinder from top to foot.
+
+The seat is a cylinder radius 0.16, from z=0.41 to 0.45. The leg top at radius 0.12, height 0.42 — that's inside the seat (radius 0.12 < 0.16, z 0.42 within 0.41-0.45). The leg top circle of radius 0.02 around that point: extends from radius 0.10 to 0.14, all within seat radius 0.16. And z around 0.42. So it overlaps the seat. Good.
+
+But actually, the leg is a cylinder whose axis goes from top to foot. The top face is perpendicular to the axis (splayed), so it's a slanted circle. The top of the leg penetrates the seat. For a clean union, the leg top should be fully inside the seat. The top face at radius 0.12, height 0.42, tilted. The tilt angle: foot at radius 0.14, top at 0.12, height difference 0.42. So the leg leans slightly inward going up (top radius 0.12 < foot radius 0.14). Actually "splay outward as they descend" means foot is further out than top. So top radius 0.12 < foot 0.14. Good.
+
+The leg top face is tilted. Its highest point might be above 0.42. Let me not overthink; I'll build and check with render + gate.
+
+Actually, one concern: the leg top at z=0.42 with a tilt — the top face is a circle of radius 0.02 tilted. The tilt angle is small (atan(0.02/0.42) ≈ 2.7 degrees). So the top face extends about 0.02*sin(2.7°) ≈ 0.001 m above/below 0.42. Fine, still within seat (0.41-0.45).
+
+Let me also make sure the seat is thick enough and the leg top is well inside. top_z = 0.42, seat spans 0.41-0.45, so leg top is 0.01 above seat bottom and 0.03 below seat top. Good overlap.
+
+Let me write the first chunk and run it, gating on "Stool".
+
+Actually, let me first check the scene is empty and understand splayed_leg_ring behavior. Let me just do a first build.
+
+Let me also consider triangle budget. Seat cylinder 32 segments: 32*2 (top/bottom) + 32*2 (side quads = 64 triangles) = 64 + 64 = 128 triangles. Legs: 12 segments each, 3 legs. Each leg cylinder: 12*2 top/bottom + 12*2 side = 24 + 24 = 48 triangles. 3 legs = 144. Total ~272. Well under 2000. Good.
+
+Let me write it.
+
+Actually, I want to double check the splayed_leg_ring signature and SplayedLegSpec fields. They're given in the system prompt. Let me trust them.
+
+Let me write the buildchunk.
+
+--- tool ---
+run_python({"source": "\nfrom blended.ops.primitives import add_cylinder, link_into_scene\nfrom blended.ops.legs import splayed_leg_ring, SplayedLegSpec\nfrom blended.ops.booleans import boolean_union\nfrom blended.ops.materials import assign_material\n\nSEAT_RADIUS_M = 0.16\nSEAT_THICKNESS_M = 0.04\nTOTAL_HEIGHT_M = 0.45\nFOOT_RADIUS_M = 0.14\nLEG_RADIUS_M = 0.02\nLEG_TOP_RADIUS_M = 0.12\nLEG_TOP_Z_M = 0.42  # overlaps into seat (seat bottom at 0.41)\n\nseat = add_cylinder(\"Stool\", SEAT_RADIUS_M, SEAT_THICKNESS_M,\n                    segment_count=32,\n                    location_m=(0, 0, TOTAL_HEIGHT_M - SEAT_THICKNESS_M))\nlink_into_scene(seat)\n\nspec = SplayedLegSpec(\n    foot_radius_m=FOOT_RADIUS_M,\n    foot_bearing_deg=0.0,\n    top_radius_m=LEG_TOP_RADIUS_M,\n    top_z_m=LEG_TOP_Z_M,\n    leg_radius_m=LEG_RADIUS_M,\n    segment_count=12,\n    sole_clearance_margin_m=0.005,\n)\n\nlegs = splayed_leg_ring(\"Leg\", 3, spec, first_bearing_deg=0.0)\nprint(\"legs created:\", len(legs))\nfor leg in legs:\n    boolean_union(seat, leg)\n\nassign_material(seat, \"Wood\", base_color_rgb=(0.6, 0.4, 0.25), roughness=0.7)\nprint(\"done\")\n", "object_name": "Stool"})
+
+--- result ---
+OK: Stool
+  execute: 1 attempt(s), ok in 0.03s (Blender 5.2.0 LTS)
+  printed:
+legs created: 3
+done
+  gate: PASS (274 tris, 1 components)
+  sheet: _evaluate/renders/iteration24_three_leg_stool_v9/agent/Stool_sheet.png
+
+--- vision ---
+This is a three-legged wooden stool with a circular seat, shown across five views (front, side, top, bottom, and a perspective angle; the bottom-right panel is blank). The seat is a flat, round disc rendered in a medium brown wood tone, and three cylindrical legs extend downward from its underside at roughly even intervals, visible as three attachment points in the bottom view. Proportions look reasonable — the legs are noticeably long compared to the seat's thickness, giving the stool a somewhat tall/lanky silhouette in the side and front views, but the pieces are aligned sensibly with no visible gaps, floating parts, or intersections. The front view correctly shows three legs (not four), confirming the tripod design is consistent across all angles.
+
+--- thinking ---
+The gate passed. Now let me verify the measurements and look at the render more carefully. Let me check the actual dimensions and foot positions.
+
+Let me verify:
+- Seat diameter 0.32 m
+- Total height 0.45 m
+- Feet at radius 0.14 m
+- First leg on +X axis
+
+Let me measure the world extents and footpositions.
+
+--- tool ---
+run_python({"source": "\nimport bpy\nfrom mathutils import Vector\n\nobj = bpy.data.objects[\"Stool\"]\nbpy.context.view_layer.update()\n\n# World extents\ncorners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world X extent:\", max(xs)-min(xs))\nprint(\"world Y extent:\", max(ys)-min(ys))\nprint(\"world Z extent:\", max(zs)-min(zs))\nprint(\"min z (should be 0):\", min(zs))\nprint(\"max z (should be 0.45):\", max(zs))\n\n# Foot positions: lowest vertices\nmesh = obj.data\nimport bmesh\nbm = bmesh.new()\nbm.from_mesh(mesh)\nbm.verts.ensure_lookup_table()\nlow = [v for v in bm.verts if abs(v.co.z) < 1e-4]\nprint(\"num verts at z~0:\", len(low))\nfor v in low:\n    w = obj.matrix_world @ v.co\n    print(\"  foot vert: r=%.4f  bearing=%.1f deg\" % ( (w.x**2+w.y**2)**0.5, __import__('math').degrees(__import__('math').atan2(w.y, w.x)) ))\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world X extent: 0.321168914437294
+world Y extent: 0.3199999928474426
+world Z extent: 0.47597395442426205
+min z (should be 0): -0.025973966345191002
+max z (should be 0.45): 0.44999998807907104
+num verts at z~0: 0
+
+--- thinking ---
+There's a problem. The min z is -0.026, not 0. And max z is 0.45 (correct). The world Z extent is 0.476, not 0.45.
+
+The feet are below z=0! The legs extend below the ground. This is because the splayed leg's foot is at z=0 but the leg is a cylinder with radius leg_radius_m, and the foot face is tilted (splayed), so the lowest point of the tilted foot face dips below z=0.
+
+Actually wait, the foot is at foot_radius_m=0.14, and the leg is tilted. The foot face is perpendicular to the leg axis, which is tilted. So the foot face is a slanted circle, and its lowest point dips below z=0.
+
+The `trim_soles_flat` operation exists to cut everything below z=0 away, so feet present faces not edges. I should use that.
+
+Actually, let me think. The spec has `sole_clearance_margin_m = 0.005`. Maybe the leg is built with the foot slightly above z=0 and then trimmed? Let me check what trim_soles_flat does: "Cut everything below z=0 away, so feet present faces not edges."
+
+So the workflow is: build legs, then trim_soles_flat to make flat feet at z=0.
+
+But wait, the legs are already unioned into the seat. I need to trim the feet before or after union? trim_soles_flat takes a blender_object and span_m. Let me check its signature: `trim_soles_flat(blender_object, span_m, cutter_depth_m=0.1)`.
+
+span_m is probably the span of the feet (diameter of the foot circle) so the cutter covers all feet. foot radius 0.14, so span = 0.28 + some margin. Actually span_m might be the full span across. Let me use span_m = 0.3 or so.
+
+Actually, let me reconsider. The issue is the foot face is tilted and dips below z=0. The min z is -0.026. That's a significant dip — 2.6 cm below ground. That's because the leg is tilted and the foot face is a circle of radius 0.02 tilted at some angle.
+
+Wait, actually the tilt angle: foot at radius 0.14, top at radius 0.12, height 0.42. The leg leans inward going up. The angle from vertical: atan((0.14-0.12)/0.42) = atan(0.02/0.42) = 2.7 degrees. So the foot face is tilted 2.7 degrees from horizontal. The foot face circle radius 0.02, tilted 2.7°, dips 0.02*sin(2.7°) = 0.00094 m below. That's only 1mm, not 2.6cm.
+
+So the -0.026 dip is not from the tilt. Something else. Let me think.
+
+Actually, maybe the leg's foot is placed such that the foot CENTER is at z=0, but the leg is a cylinder whose axis passes through foot center at z=0 and top center at z=0.42. The foot face is perpendicular to the axis. The lowest point of the foot face is at z = -leg_radius * sin(tilt) relative to foot center... that's still small.
+
+Hmm, -0.026 is large. Let me reconsider. Maybe the leg is built differently. Let me actually inspect the leg geometry before union.
+
+Actually, wait — maybe the issue is that the leg's foot is a full cylinder and the "foot" point (foot_radius, foot_bearing) is the CENTER of the foot face, but the leg extends BELOW that because... no.
+
+Let me actually check: maybe the leg is built as a cylinder from top to foot, but the foot face is at z=0 and the leg extends downward past z=0? No.
+
+Actually, let me reconsider the -0.026. The leg radius is 0.02. If the foot face is tilted, the dip is small. But -0.026 is bigger than the leg radius 0.02. So something is off.
+
+Wait, maybe the leg is a tapered shape (cone-like) from top radius to foot radius? No, leg_radius_m is the thickness.
+
+Let me just inspect the leg directly. Let me build a single leg and measure its bounds.
+
+Actually, let me reconsider. Maybe the splayed leg is built with the foot at z=0 but the leg is a cylinder that's LONGER than the distance, extending past the foot point. Or maybe the foot face is at z=0 but tilted so the "low" side dips.
+
+Actually -0.026... Let me compute. If the leg axis goes from (0.12, 0, 0.42) to (0.14, 0, 0), the axis length is sqrt(0.02^2 + 0.42^2) = 0.4205. The leg is a cylinder of radius 0.02 along this axis. The foot end is at the foot point (0.14, 0, 0). The foot face is perpendicular to the axis. The lowest point of the foot face: the axis direction is (0.02, 0, -0.42)/0.4205 = (0.0476, 0, -0.9989). The foot face normal is along the axis. The foot face is a circle of radius 0.02 in the plane perpendicular to the axis. The lowest point of this circle is at the foot center minus 0.02 in the "down" direction... 
+
+The down direction projected: the circle lies in a plane perpendicular to axis. The lowest point of the circle is where the circle's tangent is horizontal. The vertical component of the circle's radius: the circle is tilted by angle θ = 2.7° from horizontal. The lowest point dips by 0.02 * sin(θ) = 0.02 * 0.0476 = 0.00095 m. So ~1mm. Not 2.6cm.
+
+So -0.026 must come from something else. Let me actually inspect.
+
+Actually, maybe the leg is built as a tapered cylinder where the foot is WIDER. Or maybe the leg extends below the foot point because the cylinder is built from top_z to 0 but with some overhang.
+
+Let me just inspect a single leg.
+
+--- tool ---
+run_python({"source": "\nimport bpy\nfrom blended.ops.legs import add_splayed_leg, SplayedLegSpec\nfrom blended.ops.primitives import link_into_scene\n\nspec = SplayedLegSpec(\n    foot_radius_m=0.14,\n    foot_bearing_deg=0.0,\n    top_radius_m=0.12,\n    top_z_m=0.42,\n    leg_radius_m=0.02,\n    segment_count=12,\n    sole_clearance_margin_m=0.005,\n)\nleg = add_splayed_leg(\"ProbeLeg\", spec)\nlink_into_scene(leg)\nbpy.context.view_layer.update()\n\nfrom mathutils import Vector\ncorners = [leg.matrix_world @ Vector(c) for c in leg.bound_box]\nzs = [c.z for c in corners]\nprint(\"leg min z:\", min(zs), \"max z:\", max(zs))\nprint(\"leg bounds z:\", min(zs), max(zs))\n\n# find lowest vertex\nimport bmesh\nbm = bmesh.new()\nbm.from_mesh(leg.data)\nbm.verts.ensure_lookup_table()\nlowest = min(bm.verts, key=lambda v: v.co.z)\nprint(\"lowest vert local z:\", lowest.co.z, \"co:\", tuple(round(x,4) for x in lowest.co))\nbm.free()\n"})
+
+--- result ---
+FAILED: RuntimeError: Error: Object 'ProbeLeg' already in collection 'Scene Collection'
+
+Traceback (most recent call last):
+  File "/Users/ladvien/blended/src/blended/run/executor.py", line 93, in run_source_in_process
+    exec(compiled, execution_namespace)  # noqa: S102 - the harness's job
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<chat>", line 16, in <module>
+  File "/Users/ladvien/blended/src/blended/ops/primitives.py", line 61, in link_into_scene
+    bpy.context.scene.collection.objects.link(blender_object)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+RuntimeError: Error: Object 'ProbeLeg' already in collection 'Scene Collection'
+
+
+
+--- thinking ---
+The add_splayed_leg already links the object. So I don't need link_into_scene. Letme remove that.
+
+--- tool ---
+run_python({"source": "\nimport bpy\nfrom blended.ops.legs import add_splayed_leg, SplayedLegSpec\n\nspec = SplayedLegSpec(\n    foot_radius_m=0.14,\n    foot_bearing_deg=0.0,\n    top_radius_m=0.12,\n    top_z_m=0.42,\n    leg_radius_m=0.02,\n    segment_count=12,\n    sole_clearance_margin_m=0.005,\n)\nleg = add_splayed_leg(\"ProbeLeg\", spec)\nbpy.context.view_layer.update()\n\nfrom mathutils import Vector\ncorners = [leg.matrix_world @ Vector(c) for c in leg.bound_box]\nzs = [c.z for c in corners]\nprint(\"leg min z:\", min(zs), \"max z:\", max(zs))\n\nimport bmesh\nbm = bmesh.new()\nbm.from_mesh(leg.data)\nbm.verts.ensure_lookup_table()\nlowest = min(bm.verts, key=lambda v: v.co.z)\nprint(\"lowest vert local z:\", lowest.co.z, \"co:\", tuple(round(x,4) for x in lowest.co))\n# also highest\nhighest = max(bm.verts, key=lambda v: v.co.z)\nprint(\"highest vert local z:\", highest.co.z, \"co:\", tuple(round(x,4) for x in highest.co))\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+leg min z: -0.025973966345191002 max z: 0.42092299461364746
+lowest vert local z: -0.025973966345191002 co: (0.1212, 0.0, -0.026)
+highest vert local z: 0.42092299461364746 co: (0.14, 0.0, 0.4209)
+
+--- thinking ---
+So the leg's lowest vertex is at (0.1212, 0, -0.026). The foot is at radius 0.14, but the lowest point is at radius 0.1212, z=-0.026.
+
+So the leg extends below z=0 by 0.026 m. This is because the leg is a cylinder whose axis goes from top (0.12, 0, 0.42) to foot (0.14, 0, 0), but the cylinder is built with the foot face perpendicular to the axis, and the foot face is a circle of radius 0.02. The lowest point of the foot face circle is at the foot center (0.14, 0, 0) minus the radius in the down direction.
+
+Wait, but the lowest point is at radius 0.1212, not 0.14. And z=-0.026.
+
+The axis direction: from top (0.12,0,0.42) to foot (0.14,0,0): direction (0.02, 0, -0.42), length 0.4205. Unit: (0.0476, 0, -0.9989).
+
+The foot face is a circle of radius 0.02 centered at (0.14, 0, 0), in the plane perpendicular to the axis. The lowest point of this circle: the circle's points are foot_center + 0.02 * (cos φ * u + sin φ * v) where u, v are perpendicular to axis.
+
+The vertical (z) component of the circle: the circle is tilted. The lowest point has z = 0 - 0.02 * (vertical component of the tilt). The tilt angle from horizontal is θ where the axis makes angle with vertical. The axis is mostly vertical (0.9989 vertical). The foot face is perpendicular to axis, so it's tilted by 2.7° from horizontal.
+
+The lowest point of the tilted circle: z = -0.02 * sin(2.7°) = -0.02 * 0.0476 = -0.00095. That's -0.001, not -0.026.
+
+But we measured -0.026. So the leg is NOT a simple cylinder from top to foot. The leg must be built differently — perhaps the leg is a tapered shape, or the leg extends beyond the foot point.
+
+Actually, wait. Let me reconsider. The lowest vertex is at (0.1212, 0, -0.026). The foot center is at (0.14, 0, 0). The distance from foot center to lowest vertex: sqrt((0.14-0.1212)^2 + 0.026^2) = sqrt(0.000353 + 0.000676) = sqrt(0.001029) = 0.0321. That's bigger than leg_radius 0.02.
+
+Hmm. So the leg is not a simple cylinder. Maybe the leg is a tapered cone from top radius to foot radius? No, leg_radius_m is 0.02.
+
+Actually, maybe the leg is built as a cylinder but the "foot" is at the BOTTOM of the leg, and the leg extends from top_z down to some point BELOW the foot. Or maybe the leg is built with the foot face at z=0 but the leg is a cone/taper.
+
+Actually, let me reconsider. The highest vertex is at (0.14, 0, 0.4209). That's at radius 0.14, z=0.42. But the top should be at radius 0.12, z=0.42. So the highest vertex is at radius 0.14, not 0.12.
+
+Wait, that's confusing. The top_radius_m=0.12, top_z_m=0.42. But the highest vertex is at (0.14, 0, 0.4209).
+
+Hmm, so maybe the leg is built as a tapered cylinder where the top is at radius 0.12 and foot at radius 0.14, but the leg_radius_m=0.02 is the radius of the leg at... some point.
+
+Actually, let me reconsider the whole thing. Maybe the leg is a tapered cylinder (frustum) from top (radius leg_radius at top_radius) to foot (radius leg_radius at foot_radius). The top face is a circle of radius 0.02 centered at (0.12, 0, 0.42), tilted. The foot face is a circle of radius 0.02 centered at (0.14, 0, 0), tilted.
+
+The highest vertex at (0.14, 0, 0.4209): this is the top face circle. The top face is centered at (0.12, 0, 0.42), radius 0.02, tilted. The highest point of the top face circle: (0.12 + 0.02*cos, 0, 0.42 + 0.02*sin). The tilt: the top face is perpendicular to axis. The axis direction is (0.02, 0, -0.42)/0.4205 = (0.0476, 0, -0.9989). The top face normal is along the axis (pointing up-ish). The top face circle's highest point is at top_center + 0.02 * (direction of max z in the face plane).
+
+The face plane is perpendicular to axis. The direction in the face plane with max z: it's the projection of +z onto the face plane, normalized. The +z direction projected onto face plane: +z - (axis·+z)*axis = (0,0,1) - (-0.9989)*(0.0476,0,-0.9989) = (0,0,1) - (-0.0476, 0, 0.9978) = (0.0476, 0, 0.0022). Normalize: ~(0.999, 0, 0.046). So the highest point of the top face is at top_center + 0.02*(0.999, 0, 0.046) = (0.12+0.02, 0, 0.42+0.0009) = (0.14, 0, 0.4209). Yes! That matches.
+
+So the top face highest point is at radius 0.14, z=0.4209. And the foot face lowest point: foot_center + 0.02*(direction of min z in face plane). The min z direction in face plane: -z projected: (0,0,-1) - (axis·(-z))*axis = (0,0,-1) - (0.9989)*(0.0476,0,-0.9989) = (0,0,-1) - (0.0476,0,-0.9978) = (-0.0476, 0, -0.0022). Normalize ~(-0.999, 0, -0.046). So lowest point = (0.14 - 0.02, 0, 0 - 0.0009) = (0.12, 0, -0.0009).
+
+But we measured lowest at (0.1212, 0, -0.026). That doesn't match -0.0009.
+
+So the leg is NOT a simple cylinder. The lowest point is at -0.026, which is much lower.
+
+Hmm wait, maybe the leg is a tapered cone where the foot is WIDER than the top. Let me reconsider. Actually maybe the leg is built as a cone/frustum where the radius at the foot is larger.
+
+Actually, let me reconsider the meaning of the parameters. Maybe:
+- top_radius_m: the radius of the leg at the top (thickness at top)
+- foot_radius_m: the radius of the leg at the foot (thickness at foot)
+
+No wait, foot_radius_m=0.14 is the radial distance of the foot from the central axis (the splay), and foot_bearing_deg is the bearing. top_radius_m=0.12 is the radial distance of the top from the axis.
+
+leg_radius_m=0.02 is the thickness of the leg.
+
+So the leg is a tapered cylinder (frustum) from top (at radial distance 0.12, z=0.42, radius 0.02) to foot (at radial distance 0.14, z=0, radius 0.02).
+
+But the measured lowest point is -0.026, which is way more than the tilt would cause.
+
+Let me actually look at the full vertex list to understand the shape.
+
+Actually, wait. Let me reconsider. Maybe the leg is built as a cone from a point at the top to a circle at the foot, or something. Let me just dump all vertices.
+
+Actually, let me reconsider the -0.026. The lowest vertex is at (0.1212, 0, -0.026). The foot center is (0.14, 0, 0). Distance = 0.0321.
+
+Hmm, what if the leg is built as a cone with apex at the top and base at the foot, where the base radius is larger? No...
+
+Actually, let me reconsider. What if the leg is a tapered shape where the foot is a circle of radius leg_radius_m=0.02 but the leg is built as a cone from top point to foot circle, and the "top" is actually a point (apex)?
+
+Let me just dump the vertices and figure itout.
+
+--- tool ---
+run_python({"source": "\nimport bpy, bmesh\nleg = bpy.data.objects[\"ProbeLeg\"]\nbm = bmesh.new()\nbm.from_mesh(leg.data)\nbm.verts.ensure_lookup_table()\nprint(\"total verts:\", len(bm.verts))\n# group by z\nfor v in sorted(bm.verts, key=lambda v: v.co.z):\n    print(\"  z=%.4f  r=%.4f  (%.3f, %.3f)\" % (v.co.z, (v.co.x**2+v.co.y**2)**0.5, v.co.x, v.co.y))\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+total verts: 24
+  z=-0.0260  r=0.1212  (0.121, 0.000)
+  z=-0.0258  r=0.1243  (0.124, -0.010)
+  z=-0.0258  r=0.1243  (0.124, 0.010)
+  z=-0.0255  r=0.1323  (0.131, -0.017)
+  z=-0.0255  r=0.1323  (0.131, 0.017)
+  z=-0.0250  r=0.1426  (0.141, 0.020)
+  z=-0.0250  r=0.1426  (0.141, -0.020)
+  z=-0.0245  r=0.1522  (0.151, 0.017)
+  z=-0.0245  r=0.1522  (0.151, -0.017)
+  z=-0.0242  r=0.1588  (0.158, 0.010)
+  z=-0.0242  r=0.1588  (0.158, -0.010)
+  z=-0.0241  r=0.1612  (0.161, 0.000)
+  z=0.4190  r=0.1000  (0.100, 0.000)
+  z=0.4191  r=0.1032  (0.103, -0.010)
+  z=0.4191  r=0.1032  (0.103, 0.010)
+  z=0.4195  r=0.1114  (0.110, -0.017)
+  z=0.4195  r=0.1114  (0.110, 0.017)
+  z=0.4200  r=0.1217  (0.120, 0.020)
+  z=0.4200  r=0.1217  (0.120, -0.020)
+  z=0.4204  r=0.1311  (0.130, 0.017)
+  z=0.4204  r=0.1311  (0.130, -0.017)
+  z=0.4208  r=0.1377  (0.137, 0.010)
+  z=0.4208  r=0.1377  (0.137, -0.010)
+  z=0.4209  r=0.1400  (0.140, 0.000)
+
+--- thinking ---
+Now I understand. The leg is a tapered cylinder (frustum). The foot face is a circle of radius 0.02 centered at (0.14, 0, 0), tilted. The top face is a circle of radius 0.02 centered at (0.12, 0, 0.42), tilted.
+
+The foot face circle: 12 vertices around the foot center. The lowest is at (0.1212, 0, -0.026) and highest at (0.1612, 0, -0.0241). Wait, the foot face spans z from -0.026 to -0.0241, and radius from 0.1212 to 0.1612.
+
+So the foot face is a circle of radius 0.02 centered at (0.14, 0, -0.025). Wait, the center of the foot face: the vertices are at radius 0.02 around (0.14, 0, z_center). The z values range from -0.026 to -0.0241, so center z ≈ -0.025. And radius range 0.1212 to 0.1612, center radius ≈ 0.1412.
+
+So the foot face center is at (0.1412, 0, -0.025), NOT at (0.14, 0, 0)!
+
+So the leg's foot is actually placed at z=-0.025, not z=0. The foot face is tilted, and its center is at z=-0.025.
+
+Wait, that's strange. The foot_radius_m=0.14 and foot should be at z=0. But the foot face center is at z=-0.025.
+
+Hmm, actually maybe the leg is built such that the foot face is a circle of radius 0.02, and the "foot point" (0.14, 0, 0) is the CENTER of the foot face, but the foot face is tilted so its center is at z=0 but the circle dips below.
+
+Wait no. Let me reconsider. The foot face is a circle of radius 0.02. Its center should be at (0.14, 0, 0). The circle is tilted (perpendicular to the leg axis). The tilt causes the circle to dip below z=0 on one side and rise above on the other.
+
+The tilt angle: the leg axis from top (0.12, 0, 0.42) to foot (0.14, 0, 0). Direction (0.02, 0, -0.42), angle from vertical = atan(0.02/0.42) = 2.73°.
+
+The foot face circle, tilted 2.73° from horizontal, radius 0.02: the dip is 0.02 * sin(2.73°) = 0.02 * 0.0476 = 0.00095 m. So the lowest point should be at z = -0.00095, not -0.026.
+
+But we measured -0.026. So the foot face center is NOT at z=0. It's at z=-0.025.
+
+So the leg is built with the foot face center at z=-0.025, meaning the leg extends 0.025 m below the intended foot point.
+
+Hmm wait, actually let me reconsider. Maybe the leg is built as a frustum where the foot is a circle of radius 0.02, and the leg's "foot point" (foot_radius, foot_bearing) is where the leg's CENTERLINE meets the ground, but the leg is built as a cylinder whose axis is tilted, and the foot face is perpendicular to the axis.
+
+The foot face center: the axis passes through (0.14, 0, 0) [foot point] and (0.12, 0, 0.42) [top point]. The foot face is perpendicular to the axis at the foot point. So the foot face center IS at (0.14, 0, 0).
+
+But the measured foot face center is at (0.1412, 0, -0.025). That's not (0.14, 0, 0).
+
+Wait, let me recompute. The foot face vertices: 12 vertices. Their average should be the center. Let me compute the average.
+
+Actually, looking at the data: the foot face has 12 vertices (z from -0.026 to -0.0241). The top face has 12 vertices (z from 0.419 to 0.4209). Total 24 vertices.
+
+The foot face center: average of the 12 foot vertices. The z values: -0.026, -0.0258, -0.0258, -0.0255, -0.0255, -0.025, -0.025, -0.0245, -0.0245, -0.0242, -0.0242, -0.0241. Average ≈ -0.0251.
+
+The radius values: 0.1212, 0.1243, 0.1243, 0.1323, 0.1323, 0.1426, 0.1426, 0.1522, 0.1522, 0.1588, 0.1588, 0.1612. Average ≈ 0.1412.
+
+So the foot face center is at (0.1412, 0, -0.0251). This is NOT (0.14, 0, 0).
+
+So the leg is built with the foot face center at z=-0.025, radius 0.1412. That's weird.
+
+Hmm, wait. Maybe I'm misunderstanding the leg construction. Let me reconsider.
+
+Actually, maybe the leg is built as a frustum (tapered cylinder) where:
+- The top is a circle of radius leg_radius_m=0.02 at top_radius_m=0.12, top_z_m=0.42.
+- The foot is a circle of radius leg_radius_m=0.02 at foot_radius_m=0.14, z=0.
+
+But the leg is a SOLID frustum connecting these two circles. The frustum's axis is tilted. The foot face is perpendicular to the axis.
+
+But wait, the foot face center should be at (0.14, 0, 0) if the foot circle is centered there.
+
+Unless... the leg is built as a frustum where the foot circle is centered at (0.14, 0, 0) but the leg extends BEYOND the foot circle, i.e., the leg is longer than the distance between top and foot.
+
+Actually, let me reconsider. Maybe the leg is built as a cylinder (not frustum) of radius 0.02, whose axis goes from top point to foot point, but the cylinder is EXTENDED beyond both ends by some amount (like the sole_clearance_margin or something).
+
+Actually, the -0.025 offset is suspicious. It's close to leg_radius_m=0.02 plus something. Or maybe it's related to the tilt.
+
+Let me think differently. The foot face is a circle of radius 0.02. Its center is at (0.1412, 0, -0.0251). The distance from the intended foot point (0.14, 0, 0) to this center is sqrt(0.0012^2 + 0.0251^2) = 0.0251.
+
+Hmm, what if the leg is built such that the foot face is a circle of radius 0.02, and the leg's axis passes through the foot point (0.14, 0, 0), but the foot face is placed at a distance leg_radius_m BELOW the foot point along the axis? No, that doesn't make sense either.
+
+Actually, let me reconsider. Maybe the leg is built as a cone (not frustum) where:
+- The apex is at the top point (0.12, 0, 0.42).
+- The base is a circle at the foot.
+
+No, the top face has 12 vertices (a circle), not a single apex.
+
+Let me reconsider. Actually, maybe the leg is built as a frustum where the top circle and foot circle have DIFFERENT radii. Let me check: top face radius vs foot face radius.
+
+Top face: 12 vertices, radius from 0.10 to 0.14. Center radius ≈ 0.12. So top face is a circle of radius 0.02 centered at (0.12, 0, 0.42). ✓.
+
+Foot face: 12 vertices, radius from 0.1212 to 0.1612. Center radius ≈ 0.1412. So foot face is a circle of radius 0.02 centered at (0.1412, 0, -0.0251).
+
+So the foot face center is at (0.1412, 0, -0.0251), not (0.14, 0, 0).
+
+This is strange. The foot_radius_m=0.14 should place the foot center at radius 0.14. But it's at 0.1412. And z should be 0, but it's -0.0251.
+
+Wait, maybe the leg is built as a frustum where the foot is a circle of radius leg_radius_m, but the leg is built with the foot circle centered at the foot point, and then the leg is a frustum that's TILTED, and the "foot" of the frustum is actually the circle, but the frustum extends from the top circle to the foot circle, and the foot circle is at the foot point.
+
+But the measured foot face center is at (0.1412, 0, -0.0251). The offset from (0.14, 0, 0) is (0.0012, 0, -0.0251).
+
+Hmm, 0.0251 ≈ 0.02 (leg radius) + 0.005 (sole_clearance_margin). Actually 0.02 + 0.005 = 0.025. That matches -0.025!
+
+So the leg is built with the foot face center at z = -(leg_radius + sole_clearance_margin) = -(0.02 + 0.005) = -0.025.
+
+Wait, that's the sole_clearance_margin_m = 0.005. So the leg is built with the foot face center at z = -(leg_radius_m + sole_clearance_margin_m)?
+
+Hmm, that doesn't quite make sense either. Let me think about what sole_clearance_margin means.
+
+Actually, maybe the leg is built as a frustum where the foot is a circle of radius leg_radius_m, and the leg extends from top_z down to z=0, but the foot face is a circle that's tilted, and the leg is built such that the foot face's LOWEST point is at z=0 (or the foot face is at z=0 with the circle dipping below).
+
+Actually, let me reconsider. The foot face center is at z=-0.0251. The foot face is a circle of radius 0.02 tilted by 2.73°. The lowest point of the foot face is at z = -0.0251 - 0.02*sin(2.73°) = -0.0251 - 0.00095 = -0.026. That matches the measured -0.026!
+
+So the foot face center is at z=-0.0251, and the lowest point is at -0.026.
+
+So the leg is built with the foot face center at z=-0.025, which is -(leg_radius + sole_clearance_margin) = -(0.02+0.005) = -0.025.
+
+Hmm wait, but that means the leg is built with the foot face center BELOW z=0 by 0.025. That seems like a bug or a misunderstanding.
+
+Actually, wait. Let me reconsider. Maybe the leg is built as a frustum where:
+- The foot is a circle of radius leg_radius_m=0.02.
+- The leg's axis goes from top point to foot point.
+- The foot point (foot_radius, foot_bearing) is the CENTER of the foot circle.
+- But the leg is built with the foot circle at z=0, and the leg extends from the top circle down to the foot circle.
+
+But the measured foot face center is at z=-0.025, not 0.
+
+Let me reconsider. Maybe the leg is built as a frustum where the foot circle is at z=0, but the leg is a frustum that's LONGER than the top-to-foot distance, extending below z=0.
+
+Actually, I think I'm overcomplicating this. Let me look at the actual source of the splayed leg op to understand.
+
+Actually, I can't easily read the source. But I can infer from the behavior.
+
+The key finding: the leg's foot face center is at z=-0.025, and the lowest point is at z=-0.026. The leg extends below z=0.
+
+The `trim_soles_flat` operation exists specifically to fix this: "Cut everything below z=0 away, so feet present faces not edges."
+
+So the intended workflow is:
+1. Build legs (they extend below z=0).
+2. Use trim_soles_flat to cut them flat at z=0.
+
+Let me check the trim_soles_flat signature: `trim_soles_flat(blender_object, span_m, cutter_depth_m=0.1)`.
+
+span_m is probably the span (diameter) of the foot circle so the cutter box covers all feet. foot radius 0.14, so span = 0.28 + margin. Let me use span_m = 0.3.
+
+Actually, let me reconsider. The sole_clearance_margin_m=0.005 suggests the leg is built with the foot face center at z = -(leg_radius + clearance) so that after trimming, there's a clean flat sole.
+
+Actually, let me reconsider the whole design. The leg is a frustum. The foot face is a circle of radius 0.02. The leg extends below z=0 by 0.026. After trim_soles_flat, everything below z=0 is cut away, leaving a flat sole at z=0.
+
+But wait, if I trim at z=0, the foot face (which is at z=-0.025) gets cut, and the leg's cross-section at z=0 becomes the new foot. The cross-section at z=0 of the tilted frustum would be an ellipse-ish shape.
+
+Actually, let me just use trim_soles_flat and see what happens.
+
+But there's a subtlety: the legs are already unioned into the seat. I should trim the feet BEFORE unioning, or trim the whole stool after union.
+
+Actually, trim_soles_flat takes a blender_object. I could trim each leg before union, or trim the whole stool after union.
+
+Let me reconsider the workflow:
+1. Build seat.
+2. Build 3 legs.
+3. Trim each leg's sole flat (or trim after union).
+4. Union legs into seat.
+
+Actually, trim_soles_flat cuts everything below z=0. If I trim the whole stool after union, it would cut the legs flat at z=0. But the seat is at z=0.41-0.45, so it wouldn't be affected.
+
+But wait, there's a subtlety: the legs need to overlap the seat for a clean union. The leg top is at z=0.42 (into the seat). After trimming the sole, the leg top is still at 0.42. Good.
+
+Let me reconsider: should I trim before or after union? If I trim before union, each leg gets a flat sole at z=0, then union. If I trim after union, the whole stool gets flat soles.
+
+Either should work. Let me trim after union for simplicity, or trim each leg before union.
+
+Actually, let me reconsider the trim_soles_flat signature. It takes span_m. What is span_m? Let me search for it.
+
+Actually, let me just check the docstring more carefully. The signature is:
+`trim_soles_flat(blender_object, span_m, cutter_depth_m=0.1) -> None`
+
+"Cut everything below z=0 away, so feet present faces not edges."
+
+span_m is probably the span of the cutter (how wide the cutter box is). For feet at radius 0.14, the cutter needs to span at least 0.28 (diameter) plus the leg radius. Let me use span_m = 0.4 to be safe.
+
+Actually, let me search for the exact meaning.
+
+Let me just try it. First, let me clean up the ProbeLeg and rebuild properly.
+
+Actually, let me reconsider the whole approach. Let me re-read the trim_soles_flat doc and search for more info.
+
+Let me search for "trim soles".
+
+--- tool ---
+search_ops({"query": "trim soles flat"})
+
+--- result ---
+blended.ops.legs: trim_soles_flat(blender_object, span_m: 'float', cutter_depth_m: 'float' = 0.1) -> 'None'
+    Cut everything below z=0 away, so feet present faces not edges.
+
+--- thinking ---
+Let me look at the source of trim_soles_flat to understand span_m. Actually, I can read the source viaPython.
+
+--- tool ---
+run_python({"source": "\nimport inspect\nfrom blended.ops import legs\nprint(inspect.getsource(legs.trim_soles_flat))\nprint(\"=====\")\nprint(inspect.getsource(legs.add_splayed_leg))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+[393 earlier characters dropped]
+ts lowest POINT is
+    at z=0, which leaves nothing below the plane to remove.
+    """
+    from blended.ops.booleans import boolean_difference
+    from blended.ops.primitives import add_box, link_into_scene
+
+    if span_m <= 0.0:
+        raise ImpossibleLeg(f"span_m must be positive, got {span_m}")
+    cutter_span_m = span_m * GROUND_CUTTER_SPAN_FACTOR
+    cutter = add_box(
+        f"{blender_object.name}_SoleCutter",
+        width_m=cutter_span_m,
+        depth_m=cutter_span_m,
+        height_m=cutter_depth_m,
+        location_m=(0.0, 0.0, -cutter_depth_m),
+    )
+    link_into_scene(cutter)
+    boolean_difference(blender_object, cutter)
+
+=====
+def add_splayed_leg(name: str, spec: SplayedLegSpec):
+    """Build one splayed leg, LINKED and with its transform applied.
+
+    Positioned so that trimming flush with the floor leaves a sole
+    whose centre is on `spec.foot_radius_m` at `spec.foot_bearing_deg`.
+    Do not call `link_into_scene` on the result — it is already linked.
+    Call `trim_soles_flat` once, after all legs are unioned on.
+    """
+    from mathutils import Euler
+
+    from blended.ops.primitives import add_cylinder, link_into_scene
+    from blended.ops.transforms import apply_object_transform
+
+    leg = add_cylinder(
+        name,
+        radius_m=spec.leg_radius_m,
+        height_m=spec.length_m,
+        segment_count=spec.segment_count,
+    )
+    link_into_scene(leg)
+    # Tilt outward along the leg's own radial direction. Rotation is
+    # about the cylinder's base, which is why the base is what gets
+    # positioned below.
+    bearing_rad = spec.bearing_rad
+    leg.rotation_euler = Euler(
+        (
+            spec.splay_rad * math.sin(bearing_rad),
+            -spec.splay_rad * math.cos(bearing_rad),
+            0.0,
+        ),
+        "XYZ",
+    )
+    leg.location = (
+        spec.base_radius_m * math.cos(bearing_rad),
+        spec.base_radius_m * math.sin(bearing_rad),
+        -spec.sole_drop_m,
+    )
+    apply_object_transform(leg)
+    return leg
+
+--- thinking ---
+Now I understand. The leg is built as a cylinder of radius leg_radius_m and height length_m. It's tilted by splay_rad, and positioned with its base at (base_radius_m * cos, base_radius_m * sin, -sole_drop_m).
+
+So the leg's base (the foot) is at z = -sole_drop_m, and the leg extends UP from there by length_m.
+
+The `sole_drop_m` is the amount the leg drops below z=0, so that after trimming, the sole is flat at z=0.
+
+Let me look at the SplayedLegSpec to understand the computed fields: length_m, splay_rad, base_radius_m, sole_drop_m, bearing_rad.
+
+Let me read the SplayedLegSpec class.
+
+--- tool ---
+run_python({"source": "\nimport inspect\nfrom blended.ops import legs\nprint(inspect.getsource(legs.SplayedLegSpec))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+[906 earlier characters dropped]
+      if self.leg_radius_m <= 0.0:
+            raise ImpossibleLeg(
+                f"leg_radius_m must be positive, got {self.leg_radius_m}"
+            )
+        if self.foot_radius_m < 0.0 or self.top_radius_m < 0.0:
+            raise ImpossibleLeg(
+                f"radii cannot be negative: foot={self.foot_radius_m}, "
+                f"top={self.top_radius_m}"
+            )
+        if self.segment_count < 3:
+            raise ImpossibleLeg(
+                f"segment_count must be at least 3, got {self.segment_count}"
+            )
+
+    @property
+    def rise_m(self) -> float:
+        """Vertical distance the leg covers, floor to what it carries."""
+        return self.top_z_m
+
+    @property
+    def run_m(self) -> float:
+        """Horizontal distance it covers, going outward on the way down."""
+        return self.foot_radius_m - self.top_radius_m
+
+    @property
+    def splay_rad(self) -> float:
+        """Lean from vertical. Zero for a leg that goes straight down."""
+        return math.atan2(self.run_m, self.rise_m)
+
+    @property
+    def sole_drop_m(self) -> float:
+        """How far below z=0 the base sits so the WHOLE cap clears it."""
+        return (
+            self.leg_radius_m / math.cos(self.splay_rad)
+            + self.sole_clearance_margin_m
+        )
+
+    @property
+    def base_radius_m(self) -> float:
+        """Where the base centre goes — outboard of the foot circle.
+
+        Going DOWN the axis leans outward, so a base dropped below the
+        floor has to start further out for the axis to cross z=0
+        exactly on the foot circle. This offset is the whole fix.
+        """
+        return self.foot_radius_m + self.sole_drop_m * math.tan(self.splay_rad)
+
+    @property
+    def length_m(self) -> float:
+        """Hypotenuse plus the drop: it has to regain what it spent."""
+        return math.hypot(self.rise_m, self.run_m) + self.sole_drop_m
+
+    @property
+    def bearing_rad(self) -> float:
+        return math.radians(self.foot_bearing_deg)
+
+--- thinking ---
+Now I fully understand the leg construction. The leg is a cylinder of radius leg_radius_m, height length_m, tilted by splay_rad, with its base at (base_radius_m * cos(bearing), base_radius_m * sin(bearing), -sole_drop_m).
+
+The base (foot) is dropped below z=0 by sole_drop_m = leg_radius/cos(splay) + clearance. This ensures the whole tilted cap clears z=0, so after trimming flat at z=0, the sole is a clean face whose center is on the foot circle.
+
+So the workflow is:
+1. Build seat.
+2. Build 3 legs (they extend below z=0).
+3. Union legs into seat.
+4. trim_soles_flat(seat, span_m) to cut everything below z=0.
+
+The docstring for add_splayed_leg says: "Call trim_soles_flat once, after all legs are unioned on."
+
+So I need to call trim_soles_flat AFTER unioning all legs.
+
+span_m: the span of the cutter. The cutter is a box of size cutter_span_m = span_m * GROUND_CUTTER_SPAN_FACTOR. Let me check GROUND_CUTTER_SPAN_FACTOR.
+
+Actually, span_m should be the span of the feet. The feet are at radius 0.14, so the span (diameter) is 0.28. But the cutter needs to cover all feet. Let me use span_m = 0.3 or 0.4.
+
+Actually, let me check GROUND_CUTTER_SPAN_FACTOR to understand.
+
+Let me read the full trim_soles_flat source (the beginningwas dropped).
+
+--- tool ---
+run_python({"source": "\nimport inspect\nfrom blended.ops import legs\nsrc = inspect.getsource(legs.trim_soles_flat)\nprint(src)\nprint(\"GROUND_CUTTER_SPAN_FACTOR =\", legs.GROUND_CUTTER_SPAN_FACTOR)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+def trim_soles_flat(
+    blender_object,
+    span_m: float,
+    cutter_depth_m: float = DEFAULT_GROUND_CUTTER_DEPTH_M,
+) -> None:
+    """Cut everything below z=0 away, so feet present faces not edges.
+
+    `span_m` is the widest dimension of the object being trimmed; the
+    cutter is sized from it. Call this BEFORE snapping to the ground,
+    never after — snapping lifts the object until its lowest POINT is
+    at z=0, which leaves nothing below the plane to remove.
+    """
+    from blended.ops.booleans import boolean_difference
+    from blended.ops.primitives import add_box, link_into_scene
+
+    if span_m <= 0.0:
+        raise ImpossibleLeg(f"span_m must be positive, got {span_m}")
+    cutter_span_m = span_m * GROUND_CUTTER_SPAN_FACTOR
+    cutter = add_box(
+        f"{blender_object.name}_SoleCutter",
+        width_m=cutter_span_m,
+        depth_m=cutter_span_m,
+        height_m=cutter_depth_m,
+        location_m=(0.0, 0.0, -cutter_depth_m),
+    )
+    link_into_scene(cutter)
+    boolean_difference(blender_object, cutter)
+
+GROUND_CUTTER_SPAN_FACTOR = 4.0
+
+--- thinking ---
+So span_m is the widest dimension of the object being trimmed. The cutter is a box of size span_m * 4.0 (so 4x the span), placed at z from -cutter_depth to 0.
+
+For the stool, the widest dimension is the seat diameter 0.32 m. So span_m = 0.32. The cutter would be 1.28 m wide, covering all feet (at radius 0.14, diameter 0.28). Good.
+
+Actually, span_m should be the widest dimension. The seat is 0.32 m across. The feet span 0.28 m. So span_m = 0.32 is fine (cutter 1.28 m covers everything).
+
+Now let me rebuild properly. The workflow:
+
+1. Clean up ProbeLeg.
+2. Build seat.
+3. Build 3 legs.
+4. Union legs into seat.
+5. trim_soles_flat(seat, span_m=0.32).
+6. Assign material.
+7. Check gate + measure.
+
+Let me also reconsider: after trim_soles_flat, the feet will be flat at z=0. The foot center should be on the foot circle (radius 0.14). Let me verify after.
+
+Also, I need to make sure the leg top overlaps the seat. The leg top is at top_z_m=0.42, which is inside the seat (0.41-0.45). The leg top face is a circle of radius 0.02 centered at (0.12, 0, 0.42), tilted. The top face extends from radius 0.10 to 0.14, all within seat radius 0.16. And z from ~0.419 to ~0.421, within seat. Good overlap.
+
+Wait, but actually the leg top face is tilted, so its highest point is at z=0.4209 and lowest at 0.419. All within seat (0.41-0.45). Good.
+
+Actually, let me reconsider top_z_m. The seat bottom is at 0.41. The leg top at 0.42 is 0.01 into the seat. The leg top face is a circle of radius 0.02 tilted. Its lowest point is at 0.419, which is 0.009 above the seat bottom. So the leg top face is fully inside the seat (0.41 to 0.45). Good, clean overlap.
+
+Actually wait, let me reconsider. Is 0.01 overlap enough? The leg top face is a circle of radius 0.02. The top face center is at (0.12, 0, 0.42). The top face is tilted by splay_rad = atan(0.02/0.42) = 2.73°. The top face circle's lowest point is at z = 0.42 - 0.02*sin(2.73°) = 0.42 - 0.00095 = 0.419. So the entire top face is between 0.419 and 0.421, fully inside the seat (0.41-0.45). Good.
+
+But actually, I want the leg to solidly overlap the seat so the union is clean. The leg top face is at z=0.42, which is 0.01 above the seat bottom (0.41). The leg is a cylinder of radius 0.02. The leg's cross-section at z=0.41 (seat bottom) is a circle-ish shape. Since the leg is tilted, at z=0.41 the leg cross-section is still within the seat. So there's a solid overlap of ~0.01 m. That should be enough for a clean boolean union.
+
+Actually, let me increase the overlap a bit to be safe. Let me set top_z_m = 0.43 (0.02 into the seat). Actually, 0.42 gives 0.01 overlap which is fine. But to be safe against the exact solver, let me use 0.43.
+
+Hmm, but actually the leg top face is tilted and its lowest point is at 0.419. If I set top_z_m=0.42, the lowest point of the top face is 0.419, which is 0.009 above seat bottom. The leg body extends from the top face down to the foot. So the leg body is inside the seat from z=0.41 to 0.42 (roughly). That's a 0.01 overlap. Fine.
+
+Let me just go with top_z_m=0.42 and check the result. If the union is clean (gate passes with 1 component, manifold), we're good.
+
+Actually, let me reconsider whether I should increase overlap. The convention says "Parts that will be unioned must OVERLAP slightly first". 0.01 m overlap is "slightly". Should be fine.
+
+Let me now write the full rebuild. I'll clean up first.
+
+Let me write a clean rebuild script:
+
+```python
+import bpy
+from blended.ops.primitives import add_cylinder, link_into_scene, remove_object_and_mesh
+from blended.ops.legs import splayed_leg_ring, SplayedLegSpec, trim_soles_flat
+from blended.ops.booleans import boolean_union
+from blended.ops.materials import assign_material
+
+# clean up any leftovers
+for name in ["Stool", "ProbeLeg"]:
+    if name in bpy.data.objects:
+        remove_object_and_mesh(name)
+
+SEAT_RADIUS_M = 0.16
+SEAT_THICKNESS_M = 0.04
+TOTAL_HEIGHT_M = 0.45
+FOOT_RADIUS_M = 0.14
+LEG_RADIUS_M = 0.02
+LEG_TOP_RADIUS_M = 0.12
+LEG_TOP_Z_M = 0.42
+
+seat = add_cylinder("Stool", SEAT_RADIUS_M, SEAT_THICKNESS_M, segment_count=32,
+                    location_m=(0,0,TOTAL_HEIGHT_M - SEAT_THICKNESS_M))
+link_into_scene(seat)
+
+spec = SplayedLegSpec(
+    foot_radius_m=FOOT_RADIUS_M,
+    foot_bearing_deg=0.0,
+    top_radius_m=LEG_TOP_RADIUS_M,
+    top_z_m=LEG_TOP_Z_M,
+    leg_radius_m=LEG_RADIUS_M,
+    segment_count=12,
+    sole_clearance_margin_m=0.005,
+)
+
+legs = splayed_leg_ring("Leg", 3, spec, first_bearing_deg=0.0)
+for leg in legs:
+    boolean_union(seat, leg)
+
+trim_soles_flat(seat, span_m=0.32)
+
+assign_material(seat, "Wood", base_color_rgb=(0.6, 0.4, 0.25), roughness=0.7)
+print("done")
+```
+
+Wait, but there's a concern: after trim_soles_flat, the boolean_difference appends an empty material slot. But I assign material AFTER trim, so assign_material sets the material. Actually assign_material "assign it as the object's only slot". Let me check — it might clear existing slots. Let me just assign material after trim.
+
+Actually, the order: trim_soles_flat does boolean_difference which appends an empty material slot. Then assign_material. Let me check assign_material behavior — does it clear slots? The doc says "assign it as the object's only slot". So it should handle it.
+
+Let me also verify the foot positions after trim. The foot center should be at radius 0.14.
+
+Let me write the full rebuild and run it, then measure.
+
+Actually, one more consideration: the trim_soles_flat cutter is a box at z from -0.1 to 0 (cutter_depth default 0.1). It cuts everything below z=0. The legs extend to z=-0.026, so they get cut. The seat is at 0.41-0.45, unaffected. Good.
+
+But wait, the cutter box is centered at origin (0,0,-0.1) with height 0.1, so it spans z from -0.2 to 0. Actually location_m=(0,0,-cutter_depth) = (0,0,-0.1), height 0.1, so z from -0.2 to 0. It cuts everything below z=0. Good.
+
+Let me run the rebuild.
+
+Actually, I realize I should double check: does the boolean_difference in trim_soles_flat leave the cutter object in the scene? boolean_difference "the cutter is consumed". So the cutter is removed. Good.
+
+Let me run it.
+
+--- tool ---
+run_python({"source": "\nimport bpy\nfrom blended.ops.primitives import add_cylinder, link_into_scene, remove_object_and_mesh\nfrom blended.ops.legs import splayed_leg_ring, SplayedLegSpec, trim_soles_flat\nfrom blended.ops.booleans import boolean_union\nfrom blended.ops.materials import assign_material\n\n# clean up leftovers\nfor name in [\"Stool\", \"ProbeLeg\"]:\n    if name in bpy.data.objects:\n        remove_object_and_mesh(name)\n\nSEAT_RADIUS_M = 0.16\nSEAT_THICKNESS_M = 0.04\nTOTAL_HEIGHT_M = 0.45\nFOOT_RADIUS_M = 0.14\nLEG_RADIUS_M = 0.02\nLEG_TOP_RADIUS_M = 0.12\nLEG_TOP_Z_M = 0.42  # overlaps into seat (seat bottom at 0.41)\n\nseat = add_cylinder(\"Stool\", SEAT_RADIUS_M, SEAT_THICKNESS_M, segment_count=32,\n                    location_m=(0, 0, TOTAL_HEIGHT_M - SEAT_THICKNESS_M))\nlink_into_scene(seat)\n\nspec = SplayedLegSpec(\n    foot_radius_m=FOOT_RADIUS_M,\n    foot_bearing_deg=0.0,\n    top_radius_m=LEG_TOP_RADIUS_M,\n    top_z_m=LEG_TOP_Z_M,\n    leg_radius_m=LEG_RADIUS_M,\n    segment_count=12,\n    sole_clearance_margin_m=0.005,\n)\n\nlegs = splayed_leg_ring(\"Leg\", 3, spec, first_bearing_deg=0.0)\nfor leg in legs:\n    boolean_union(seat, leg)\n\ntrim_soles_flat(seat, span_m=0.32)\n\nassign_material(seat, \"Wood\", base_color_rgb=(0.6, 0.4, 0.25), roughness=0.7)\nprint(\"done\")\n", "object_name": "Stool"})
+
+--- result ---
+OK: Stool
+  execute: 1 attempt(s), ok in 0.04s (Blender 5.2.0 LTS)
+  printed:
+done
+  gate: PASS (274 tris, 1 components)
+  sheet: _evaluate/renders/iteration24_three_leg_stool_v9/agent/Stool_sheet.png
+
+--- vision ---
+The asset reads as a simple three-legged round stool (or small table) in a low-poly style with a brown wood-colored material. The top-down and bottom-up views confirm a single circular seat with three leg attachment points spaced evenly around the underside — matching what the side and perspective views show. Proportions look reasonable: the round seat is appropriately sized relative to the three cylindrical legs, which appear roughly equal in length and thickness. The only notable detail is that the underside view (middle-right) shows three small dark crescent-shaped marks where the legs meet the seat, which could simply be where the legs visibly intersect the bottom face. Nothing appears floating, duplicated, or missing; the six views are internally consistent and the object clearly reads as a stool.
+
+--- thinking ---
+Now let me verify the measurements: seat diameter, total height, foot positions, and that feet are flatat z=0.
+
+--- tool ---
+run_python({"source": "\nimport bpy, bmesh, math\nfrom mathutils import Vector\n\nobj = bpy.data.objects[\"Stool\"]\nbpy.context.view_layer.update()\n\ncorners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world X extent (seat dia ~0.32):\", round(max(xs)-min(xs), 4))\nprint(\"world Y extent:\", round(max(ys)-min(ys), 4))\nprint(\"min z (should be 0):\", round(min(zs), 4))\nprint(\"max z (should be 0.45):\", round(max(zs), 4))\n\n# foot vertices at z=0\nbm = bmesh.new()\nbm.from_mesh(obj.data)\nbm.verts.ensure_lookup_table()\nfoot_verts = [v for v in bm.verts if abs(v.co.z) < 1e-4]\nprint(\"num verts at z~0:\", len(foot_verts))\n# cluster by bearing\nfor v in foot_verts:\n    w = obj.matrix_world @ v.co\n    r = (w.x**2 + w.y**2)**0.5\n    b = math.degrees(math.atan2(w.y, w.x))\n    print(\"  foot vert r=%.4f bearing=%.1f\" % (r, b))\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world X extent (seat dia ~0.32): 0.32
+world Y extent: 0.32
+min z (should be 0): 0.0
+max z (should be 0.45): 0.45
+num verts at z~0: 36
+  foot vert r=0.1510 bearing=6.6
+  foot vert r=0.1414 bearing=8.1
+  foot vert r=0.1577 bearing=3.6
+  foot vert r=0.1600 bearing=0.0
+  foot vert r=0.1577 bearing=-3.6
+  foot vert r=0.1510 bearing=-6.6
+  foot vert r=0.1414 bearing=-8.1
+  foot vert r=0.1311 bearing=-7.6
+  foot vert r=0.1231 bearing=-4.7
+  foot vert r=0.1200 bearing=0.0
+  foot vert r=0.1231 bearing=4.7
+  foot vert r=0.1311 bearing=7.6
+  foot vert r=0.1510 bearing=113.4
+  foot vert r=0.1577 bearing=116.4
+  foot vert r=0.1414 bearing=111.9
+  foot vert r=0.1311 bearing=112.4
+  foot vert r=0.1231 bearing=115.3
+  foot vert r=0.1200 bearing=120.0
+  foot vert r=0.1231 bearing=124.7
+  foot vert r=0.1311 bearing=127.6
+  foot vert r=0.1414 bearing=128.1
+  foot vert r=0.1510 bearing=126.6
+  foot vert r=0.1577 bearing=123.6
+  foot vert r=0.1600 bearing=120.0
+  foot vert r=0.1200 bearing=-120.0
+  foot vert r=0.1231 bearing=-124.7
+  foot vert r=0.1231 bearing=-115.3
+  foot vert r=0.1311 bearing=-112.4
+  foot vert r=0.1414 bearing=-111.9
+  foot vert r=0.1510 bearing=-113.4
+  foot vert r=0.1577 bearing=-116.4
+  foot vert r=0.1600 bearing=-120.0
+  foot vert r=0.1577 bearing=-123.6
+  foot vert r=0.1510 bearing=-126.6
+  foot vert r=0.1414 bearing=-128.1
+  foot vert r=0.1311 bearing=-127.6
+
+--- thinking ---
+The measurements look good:
+- Seat diameter 0.32 m ✓
+- Total height 0.45 m ✓
+- min z = 0 ✓ (feet flat on ground)
+- Feet at radius ~0.12-0.16, centered around 0.14 ✓
+
+The foot vertices: each foot is a flat sole (12 vertices each, 3 feet = 36 vertices). The foot centers are at bearing 0°, 120°, -120° (i.e., 0°, 120°, 240°). The first foot is on +X axis (bearing 0°). ✓
+
+The foot sole: the vertices range from r=0.12 to r=0.16, centered at r=0.14. The sole is a flat face (the cross-section of the tilted cylinder at z=0). The sole center is at r=0.14, which is the foot circle radius. ✓
+
+Wait, let me verify the foot center is exactly at r=0.14. The vertices at bearing 0°: r=0.16 (bearing 0), r=0.12 (bearing 0), and others. The sole is an ellipse-ish shape (cross-section of tilted cylinder). The center of the sole should be at r=0.14.
+
+Looking at bearing 0° foot: vertices at r=0.16 (bearing 0), r=0.12 (bearing 0), r=0.1577 (bearing ±3.6), r=0.1510 (bearing ±6.6), r=0.1414 (bearing ±8.1), r=0.1311 (bearing ±7.6), r=0.1231 (bearing ±4.7).
+
+So the sole is centered at r=0.14 (midpoint of 0.12 and 0.16). ✓
+
+The foot circle radius is 0.14 m. ✓
+
+Everything checks out. The first leg is on +X axis (bearing 0°). ✓
+
+Now let me verify the scene has only the Stool mesh object (no leftover ProbeLeg, no cutter, no Leg objects).
+
+Let me check thescene.
+
+--- tool ---
+list_scene({})
+
+--- result ---
+Stool: 274 tris, 0.320 x 0.320 x 0.450 m
+
+--- thinking ---
+Only "Stool" is in the scene. 274 triangles, 0.32 x 0.32 x 0.45 m.
+
+Now let me do a final render to visually confirm it looks right, and check the material is assigned.
+
+Actually, the gate already passed and I've verified measurements. Let me do a final render to confirm the visual, and also verify the material is actually assigned (not an empty slot).
+
+Let me check the material and doa final render.
+
+--- tool ---
+run_python({"source": "\nimport bpy\nobj = bpy.data.objects[\"Stool\"]\nslots = [s for s in obj.data.materials if s is not None]\nprint(\"material slots with real material:\", len(slots))\nfor s in slots:\n    print(\"  material:\", s.name, \"diffuse_color:\", tuple(round(c,3) for c in s.diffuse_color))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+material slots with real material: 1
+  material: Wood diffuse_color: (0.6, 0.4, 0.25, 1.0)
+
+--- tool ---
+render_views({"object_name": "Stool", "look_for": "Are the three legs evenly spaced with the first on +X, feet flat on the ground, no central post or skirt, and is the space between legs open?"})
+
+--- result ---
+Rendered Stool (solid). Look at the attached contact sheet.
+
+--- vision ---
+reads clearly as a simple three-legged round-topped stool/side table. The top is a flat circular disc of moderate thickness, and three straight cylindrical legs support it, splaying slightly outward as they descend.
+
+Looking at the underside view (middle-right), the three leg-attachment points appear evenly distributed around the underside at roughly 120° intervals — one near the upper-right, one at the right side, and one at the lower-left — with none centered, confirming no central post or skirt. The legs themselves are clean cylinders with no cross-bracing or apron between them, and the space between the legs is fully open all the way to the ground.
+
+In the perspective view (bottom-left), all three feet appear to terminate at the same ground level, sitting flat. Proportions look sensible — the top diameter is appropriate for the leg length and thickness, and nothing appears duplicated, floating, or unexpectedly intersecting. The two side views (top row) are consistent with the three-leg structure, with the third leg correctly occluded behind the front two.
+
+--- thinking ---
+Everything checks out:
+1. Executed cleanly.
+2. Gate passed: 274 triangles, 1 component, manifold, no self-intersections, normals outward.
+3. Looks right: three legs evenly spaced, first on +X, feet flat on ground, no central post/skirt, open space between legs.
+
+Measurements:
+- Seat diameter 0.32 m ✓
+- Seat thickness 0.04 m ✓
+- Total height 0.45 m ✓
+- Feet at radius 0.14 m ✓
+- First leg on +X axis ✓
+- Material "Wood" assigned ✓
+- Only mesh object in scene ✓
+
+I'm done. Let me givethe final answer.
+
+--- answer ---
+The stool is complete and verified. Here's the summary:
+
+## Stool — done
+
+**What I built:** A three-legged wooden stool named `Stool`, assembled from a round seat and three splayed legs unioned into a single watertight mesh.
+
+**Measurements (verified after the final boolean/trim):**
+- Seat: 0.32 m diameter, 0.04 m thick ✓
+- Total height: 0.45 m, feet flat on the ground at z=0 ✓
+- Legs: 3, evenly spaced at 120°, first on the +X axis ✓
+- Each foot lands on the 0.14 m radius circle (sole centers measured at r=0.14) ✓
+- Legs splay outward as they descend (top at r=0.12, foot at r=0.14) ✓
+- No central post, no skirt — the space between legs is fully open ✓
+
+**Gate verdict:** PASS — 274 triangles (budget 2000), 1 connected component, manifold, no self-intersections, no flipped normals, no boundary edges.
+
+**Material:** `Wood` (base color 0.6, 0.4, 0.25) assigned as the object's only real material slot.
+
+**Scene:** `Stool` is the only mesh object remaining.
+
+The render confirms the tripod reads correctly from all angles — three evenly spaced legs, feet sitting flat, open space between them.
+
+--- thinking ---
+The user wants to change the total height from 0.45 m to 0.55 m. Everything else stays the same.
+
+Currently:
+- Seat: 0.32 m diameter, 0.04 m thick, bottom at 0.41, top at 0.45
+- Total height 0.45 m
+- Legs: top at r=0.12, z=0.42; foot at r=0.14, z=0
+
+To make it 0.55 m tall, I need to raise the seat by 0.10 m. The seat bottom goes from 0.41 to 0.51, top from 0.45 to 0.55.
+
+The legs need to be longer. The leg top_z_m was 0.42 (0.01 into the seat). Now the seat bottom is at 0.51, so top_z_m should be 0.52.
+
+The foot radius stays 0.14, top radius stays 0.12, leg radius 0.02.
+
+So the change is:
+- Seat location z: 0.55 - 0.04 = 0.51
+- Leg top_z_m: 0.52 (0.01 into seat)
+
+The splay angle changes because rise_m = top_z_m = 0.52, run_m = 0.14 - 0.12 = 0.02. So splay_rad = atan(0.02/0.52) = 2.2° (slightly less splay than before).
+
+The user said "leave everything else exactly as it is." So I should keep:
+- Seat diameter 0.32, thickness 0.04
+- Foot radius 0.14
+- Top radius 0.12
+- Leg radius 0.02
+- First leg on +X
+- Material
+
+The question is whether to edit the existing object or rebuild. The legs are already unioned into the seat, so I can't easily "stretch" the legs. The cleanest approach is to rebuild, since the leg length is baked into the geometry.
+
+Actually, let me think. Can I edit? The legs are part of the unioned mesh. To make the stool taller, I'd need to lengthen the legs, which means rebuilding the legs. Rebuilding is the right approach here since the leg geometry (length, splay angle) is baked in.
+
+Actually, wait — could I just scale the whole thing in Z? No, that would change the seat thickness (0.04 → 0.0489) and the foot radius would stay the same but the splay would change. Actually scaling in Z only would keep foot radius at 0.14 (since x,y unchanged) but change seat thickness and leg thickness in z. That's not "leave everything else exactly as it is."
+
+So rebuild is correct. Let me rebuild with the new height.
+
+The parameters:
+- SEAT_RADIUS_M = 0.16
+- SEAT_THICKNESS_M = 0.04
+- TOTAL_HEIGHT_M = 0.55
+- FOOT_RADIUS_M = 0.14
+- LEG_RADIUS_M = 0.02
+- LEG_TOP_RADIUS_M = 0.12
+- LEG_TOP_Z_M = 0.52 (0.01 into seat, seat bottom at 0.51)
+
+Let me rebuild. I'll reuse the same script with updated height.
+
+Actually, let me be careful about the leg top overlap. Seat bottom at 0.51. Leg top_z at 0.52 gives 0.01 overlap. Same as before. Good.
+
+Let me rebuild and verify.
+
+Actually, I should double-check: the user said "leave everything else exactly as it is." So the seat diameter, thickness, foot radius, leg thickness, top radius, material, all stay the same. Only total height changes.
+
+Let me rebuild.
+
+--- tool ---
+run_python({"source": "\nimport bpy\nfrom blended.ops.primitives import add_cylinder, link_into_scene, remove_object_and_mesh\nfrom blended.ops.legs import splayed_leg_ring, SplayedLegSpec, trim_soles_flat\nfrom blended.ops.booleans import boolean_union\nfrom blended.ops.materials import assign_material\n\n# clean up existing stool\nif \"Stool\" in bpy.data.objects:\n    remove_object_and_mesh(\"Stool\")\n\nSEAT_RADIUS_M = 0.16\nSEAT_THICKNESS_M = 0.04\nTOTAL_HEIGHT_M = 0.55   # changed from 0.45\nFOOT_RADIUS_M = 0.14\nLEG_RADIUS_M = 0.02\nLEG_TOP_RADIUS_M = 0.12\nLEG_TOP_Z_M = 0.52  # overlaps into seat (seat bottom now at 0.51)\n\nseat = add_cylinder(\"Stool\", SEAT_RADIUS_M, SEAT_THICKNESS_M, segment_count=32,\n                    location_m=(0, 0, TOTAL_HEIGHT_M - SEAT_THICKNESS_M))\nlink_into_scene(seat)\n\nspec = SplayedLegSpec(\n    foot_radius_m=FOOT_RADIUS_M,\n    foot_bearing_deg=0.0,\n    top_radius_m=LEG_TOP_RADIUS_M,\n    top_z_m=LEG_TOP_Z_M,\n    leg_radius_m=LEG_RADIUS_M,\n    segment_count=12,\n    sole_clearance_margin_m=0.005,\n)\n\nlegs = splayed_leg_ring(\"Leg\", 3, spec, first_bearing_deg=0.0)\nfor leg in legs:\n    boolean_union(seat, leg)\n\ntrim_soles_flat(seat, span_m=0.32)\n\nassign_material(seat, \"Wood\", base_color_rgb=(0.6, 0.4, 0.25), roughness=0.7)\nprint(\"done\")\n", "object_name": "Stool"})
+
+--- result ---
+OK: Stool
+  execute: 1 attempt(s), ok in 0.05s (Blender 5.2.0 LTS)
+  printed:
+done
+  gate: PASS (274 tris, 1 components)
+  sheet: _evaluate/renders/iteration24_three_leg_stool_v9/agent/Stool_sheet.png
+
+--- vision ---
+This reads as a three-legged round stool (or small table). It has a flat circular seat on top with three thin cylindrical legs splaying slightly outward, visible in the front, side, perspective, and bottom views. Proportions look reasonable for a stool, though the legs are quite slender and tall relative to the seat, giving it a somewhat spindly, bar-stool-like silhouette. All three legs are present and evenly spaced (confirmed by the bottom view showing three attachment holes at ~120° apart), nothing appears floating or duplicated, and the seat sits cleanly atop the legs without visible gaps.
+
+--- thinking ---
+Now let me verify the measurements: total height 0.55, seat diameter 0.32, feet at radius 0.14, feet flat at z=0.
+
+--- tool ---
+run_python({"source": "\nimport bpy, bmesh, math\nfrom mathutils import Vector\n\nobj = bpy.data.objects[\"Stool\"]\nbpy.context.view_layer.update()\n\ncorners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world X extent (seat dia ~0.32):\", round(max(xs)-min(xs), 4))\nprint(\"world Y extent:\", round(max(ys)-min(ys), 4))\nprint(\"min z (should be 0):\", round(min(zs), 4))\nprint(\"max z (should be 0.55):\", round(max(zs), 4))\n\n# foot sole centers: cluster foot verts by bearing\nbm = bmesh.new()\nbm.from_mesh(obj.data)\nbm.verts.ensure_lookup_table()\nfoot_verts = [v for v in bm.verts if abs(v.co.z) < 1e-4]\n# group into 3 clusters by bearing\nimport collections\nclusters = collections.defaultdict(list)\nfor v in foot_verts:\n    w = obj.matrix_world @ v.co\n    b = math.degrees(math.atan2(w.y, w.x))\n    clusters[round(b/120)*120].append((w.x, w.y))\nfor key in sorted(clusters):\n    pts = clusters[key]\n    cx = sum(p[0] for p in pts)/len(pts)\n    cy = sum(p[1] for p in pts)/len(pts)\n    r = (cx**2+cy**2)**0.5\n    print(\"foot cluster bearing ~%d deg: center r=%.4f\" % (key, r))\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world X extent (seat dia ~0.32): 0.32
+world Y extent: 0.32
+min z (should be 0): 0.0
+max z (should be 0.55): 0.55
+foot cluster bearing ~-120 deg: center r=0.1400
+foot cluster bearing ~0 deg: center r=0.1400
+foot cluster bearing ~120 deg: center r=0.1400
+
+--- thinking ---
+All measurements check out:
+- Total height 0.55 m ✓
+- Seat diameter 0.32 m ✓
+- Feet flat at z=0 ✓
+- Foot centers at r=0.14, bearings 0°, 120°, -120° (i.e., 240°) ✓
+- First leg on +X ✓
+
+Everything else unchanged: seat thickness 0.04, foot radius 0.14, leg thickness 0.02, top radius 0.12, material Wood.
+
+The gate passed: 274 triangles, 1 component.
+
+Let me confirm the scene has only Stool.
+
+--- tool ---
+list_scene({})
+
+--- result ---
+Stool: 274 tris, 0.320 x 0.320 x 0.550 m
+
+--- answer ---
+Done. The stool is now 0.55 m tall.
+
+**What changed:** Total height 0.45 m → 0.55 m (seat raised, legs lengthened).
+
+**What stayed exactly the same (verified):**
+- Seat: 0.32 m diameter, 0.04 m thick ✓
+- Feet flat on the ground at z=0, each sole centered on the 0.14 m radius circle ✓
+- 3 legs evenly spaced at 120°, first on the +X axis ✓
+- Leg thickness 0.02 m, top radius 0.12 m, splay outward as they descend ✓
+- No central post, no skirt ✓
+- `Wood` material ✓
+
+**Gate:** PASS — 274 triangles, 1 component, manifold, no self-intersections, no flipped normals.
+
+**Scene:** `Stool` is the only mesh object (0.320 × 0.320 × 0.550 m).
+
+--- thinking ---
+The user wants to change the seat diameter from 0.32 m to 0.4 m. Everything else stays the same.
+
+Current state:
+- Seat: 0.32 m diameter (0.16 radius), 0.04 m thick, bottom at 0.51, top at 0.55
+- Total height 0.55 m
+- Legs: top at r=0.12, z=0.52; foot at r=0.14, z=0
+- Leg radius 0.02
+
+New seat: 0.4 m diameter (0.20 radius), 0.04 m thick.
+
+The seat radius changes from 0.16 to 0.20. The leg top radius is 0.12, which is still inside the new seat (0.20). So the legs still attach under the seat.
+
+Everything else stays the same: total height 0.55, foot radius 0.14, leg thickness 0.02, top radius 0.12, top_z 0.52, material.
+
+So I just need to change SEAT_RADIUS_M from 0.16 to 0.20.
+
+Wait, but I need to think about whether the leg top still overlaps the seat. The leg top is at r=0.12, and the seat is now radius 0.20. So the leg top (r=0.12) is well inside the seat. Good.
+
+Actually, let me reconsider. The leg top radius is 0.12, which is the radial distance of the leg top center from the axis. The leg top face is a circle of radius 0.02 centered at r=0.12. So it spans r=0.10 to 0.14. The new seat radius is 0.20, so the leg top is well inside. Good.
+
+So the only change is SEAT_RADIUS_M = 0.20.
+
+Let me rebuild with the new seat radius.
+
+Actually, wait — should I consider whether the leg top radius should change? The user said "leave everything else exactly as it is." So the leg top radius stays 0.12. The legs stay the same. Only the seat diameter changes.
+
+Let me rebuild.
+
+Actually, let me think about whether I can just edit the seat instead of rebuilding. The seat is a cylinder that's been unioned with the legs. To change the seat diameter, I'd need to... actually the seat is part of the unioned mesh. I can't easily "widen" it without rebuilding.
+
+Actually, could I just scale the seat? No, the seat is already unioned with the legs into one mesh. I can't scale just the seat part.
+
+So rebuild is the right approach. Let me rebuild with SEAT_RADIUS_M = 0.20.
+
+Let me write therebuild script.
+
+--- tool ---
+run_python({"source": "\nimport bpy\nfrom blended.ops.primitives import add_cylinder, link_into_scene, remove_object_and_mesh\nfrom blended.ops.legs import splayed_leg_ring, SplayedLegSpec, trim_soles_flat\nfrom blended.ops.booleans import boolean_union\nfrom blended.ops.materials import assign_material\n\nif \"Stool\" in bpy.data.objects:\n    remove_object_and_mesh(\"Stool\")\n\nSEAT_RADIUS_M = 0.20   # changed from 0.16 -> 0.4 m across\nSEAT_THICKNESS_M = 0.04\nTOTAL_HEIGHT_M = 0.55\nFOOT_RADIUS_M = 0.14\nLEG_RADIUS_M = 0.02\nLEG_TOP_RADIUS_M = 0.12\nLEG_TOP_Z_M = 0.52\n\nseat = add_cylinder(\"Stool\", SEAT_RADIUS_M, SEAT_THICKNESS_M, segment_count=32,\n                    location_m=(0, 0, TOTAL_HEIGHT_M - SEAT_THICKNESS_M))\nlink_into_scene(seat)\n\nspec = SplayedLegSpec(\n    foot_radius_m=FOOT_RADIUS_M,\n    foot_bearing_deg=0.0,\n    top_radius_m=LEG_TOP_RADIUS_M,\n    top_z_m=LEG_TOP_Z_M,\n    leg_radius_m=LEG_RADIUS_M,\n    segment_count=12,\n    sole_clearance_margin_m=0.005,\n)\n\nlegs = splayed_leg_ring(\"Leg\", 3, spec, first_bearing_deg=0.0)\nfor leg in legs:\n    boolean_union(seat, leg)\n\ntrim_soles_flat(seat, span_m=0.4)\n\nassign_material(seat, \"Wood\", base_color_rgb=(0.6, 0.4, 0.25), roughness=0.7)\nprint(\"done\")\n", "object_name": "Stool"})
+
+--- result ---
+OK: Stool
+  execute: 1 attempt(s), ok in 0.04s (Blender 5.2.0 LTS)
+  printed:
+done
+  gate: PASS (268 tris, 1 components)
+  sheet: _evaluate/renders/iteration24_three_leg_stool_v9/agent/Stool_sheet.png
+
+--- vision ---
+reads as a three-legged wooden stool. From the side and front views (top row), I can see a flat circular seat with three cylindrical legs extending down — the side view shows two legs with a third implied behind, and the front view clearly displays three. The top-down view (middle-left) is a clean solid disc, while the underside view (middle-right) reveals three small dark crescent-shaped attachment points arranged in a triangular pattern where the legs meet the seat. The perspective view (bottom-left) confirms the full shape: a round seat over three splayed legs. Proportions look reasonable — the seat is appropriately wider than the leg spread, and the legs are thin relative to the top. The underside attachment points appear small relative to the leg thickness, suggesting the legs may meet the seat in shallow pockets rather than fully penetrating the top, but nothing appears floating, duplicated, or obviously misplaced.
+
+--- thinking ---
+The gate passed. Now let me verify the measurements: seat diameter 0.4, total height 0.55, feet at radius 0.14, feet flat at z=0.
+
+Note the triangle count went from 274 to 268. That's because the seat is now wider, and the leg top (r=0.12) is now further from the seat edge, so the boolean union removes more of the leg top that was previously... actually, wait. Let me think. The triangle count decreased by 6. That's a bit odd but probably because the leg top face is now fully inside the seat (no longer intersecting the seat edge), so the union is cleaner.
+
+Actually, previously the seat radius was 0.16, and the leg top face spanned r=0.10 to 0.14, so it was close to the seat edge (0.16). Now the seat is 0.20, so the leg top is well inside. The union result is slightly different.
+
+Anyway, 268 triangles, 1 component, gate passed. Let me verify measurements.
+
+--- tool ---
+run_python({"source": "\nimport bpy, bmesh, math\nfrom mathutils import Vector\n\nobj = bpy.data.objects[\"Stool\"]\nbpy.context.view_layer.update()\n\ncorners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world X extent (seat dia ~0.4):\", round(max(xs)-min(xs), 4))\nprint(\"world Y extent:\", round(max(ys)-min(ys), 4))\nprint(\"min z (should be 0):\", round(min(zs), 4))\nprint(\"max z (should be 0.55):\", round(max(zs), 4))\n\n# seat thickness: top of seat vs bottom of seat\n# find max z and the z where seat underside begins (legs attach)\nbm = bmesh.new()\nbm.from_mesh(obj.data)\nbm.verts.ensure_lookup_table()\nzs_all = sorted(set(round(v.co.z, 3) for v in bm.verts))\nprint(\"distinct z levels:\", zs_all)\n\n# foot sole centers\nimport collections\nfoot_verts = [v for v in bm.verts if abs(v.co.z) < 1e-4]\nclusters = collections.defaultdict(list)\nfor v in foot_verts:\n    w = obj.matrix_world @ v.co\n    b = math.degrees(math.atan2(w.y, w.x))\n    clusters[round(b/120)*120].append((w.x, w.y))\nfor key in sorted(clusters):\n    pts = clusters[key]\n    cx = sum(p[0] for p in pts)/len(pts)\n    cy = sum(p[1] for p in pts)/len(pts)\n    print(\"foot cluster bearing ~%d deg: center r=%.4f\" % (key, (cx**2+cy**2)**0.5))\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world X extent (seat dia ~0.4): 0.4
+world Y extent: 0.4
+min z (should be 0): 0.0
+max z (should be 0.55): 0.55
+distinct z levels: [0.0, 0.51, 0.55]
+foot cluster bearing ~-120 deg: center r=0.1400
+foot cluster bearing ~0 deg: center r=0.1400
+foot cluster bearing ~120 deg: center r=0.1400
+
+--- thinking ---
+All measurements check out:
+- Seat diameter 0.4 m ✓
+- Total height 0.55 m ✓
+- Seat thickness: z levels 0.51 (bottom) and 0.55 (top), so 0.04 thick ✓
+- Feet flat at z=0 ✓
+- Foot centers at r=0.14, bearings 0°, 120°, -120° ✓
+- First leg on +X ✓
+
+Everything else unchanged. Gate passed: 268 triangles, 1 component.
+
+Let me confirm the scene has only Stool.
+
+--- tool ---
+list_scene({})
+
+--- result ---
+Stool: 268 tris, 0.400 x 0.400 x 0.550 m
+
+--- answer ---
+Done. The seat is now 0.4 m across.
+
+**What changed:** Seat diameter 0.32 m → 0.4 m (radius 0.20).
+
+**What stayed exactly the same (verified):**
+- Seat thickness 0.04 m (z levels 0.51 → 0.55) ✓
+- Total height 0.55 m ✓
+- Feet flat on the ground at z=0, each sole centered on the 0.14 m radius circle ✓
+- 3 legs evenly spaced at 120°, first on the +X axis ✓
+- Leg thickness 0.02 m, top radius 0.12 m, splay outward as they descend ✓
+- No central post, no skirt ✓
+- `Wood` material ✓
+
+**Gate:** PASS — 268 triangles, 1 component, manifold, no self-intersections, no flipped normals.
+
+**Scene:** `Stool` is the only mesh object (0.400 × 0.400 × 0.550 m).
+
+--- thinking ---
+The user wants to change the leg radius from 0.02 m to 0.03 m. Everything else stays the same.
+
+Current state:
+- Seat: 0.4 m diameter (0.20 radius), 0.04 m thick, bottom at 0.51, top at 0.55
+- Total height 0.55 m
+- Legs: top at r=0.12, z=0.52; foot at r=0.14, z=0
+- Leg radius 0.02 → 0.03
+
+So I just change LEG_RADIUS_M from 0.02 to 0.03.
+
+Wait, but I need to think about whether the leg top still overlaps the seat properly. The leg top is at r=0.12, and the leg top face is a circle of radius 0.03 (now) centered at r=0.12. So it spans r=0.09 to 0.15. The seat radius is 0.20, so the leg top is still well inside. Good.
+
+Also, the foot: the foot is at r=0.14, and the leg radius is now 0.03. The foot sole will be a cross-section of the tilted cylinder at z=0, which is an ellipse-ish shape of radius ~0.03. The foot center is still at r=0.14.
+
+The sole_drop_m = leg_radius/cos(splay) + clearance = 0.03/cos(splay) + 0.005. The splay angle: run_m = 0.14 - 0.12 = 0.02, rise_m = 0.52. splay_rad = atan(0.02/0.52) = 2.2°. cos(2.2°) ≈ 0.9993. So sole_drop ≈ 0.03/0.9993 + 0.005 = 0.03002 + 0.005 = 0.035.
+
+The trim_soles_flat will cut everything below z=0, leaving a flat sole at z=0. The sole center is at r=0.14 (the foot circle). Good.
+
+So the only change is LEG_RADIUS_M = 0.03.
+
+Let me rebuild.
+
+Actually, let me double check the triangle count. The leg segment_count is 12. Each leg is a cylinder with 12 segments. The leg radius doesn't change the triangle count (still 12 segments). So triangle count should stay around 268.
+
+Actually, wait — the leg top face is now bigger (radius 0.03 vs 0.02), so it might intersect the seat differently. But it's still well inside the seat (r=0.09 to 0.15 vs seat 0.20). So the union should be similar.
+
+Let me rebuild with LEG_RADIUS_M = 0.03.
+
+--- tool ---
+run_python({"source": "\nimport bpy\nfrom blended.ops.primitives import add_cylinder, link_into_scene, remove_object_and_mesh\nfrom blended.ops.legs import splayed_leg_ring, SplayedLegSpec, trim_soles_flat\nfrom blended.ops.booleans import boolean_union\nfrom blended.ops.materials import assign_material\n\nif \"Stool\" in bpy.data.objects:\n    remove_object_and_mesh(\"Stool\")\n\nSEAT_RADIUS_M = 0.20\nSEAT_THICKNESS_M = 0.04\nTOTAL_HEIGHT_M = 0.55\nFOOT_RADIUS_M = 0.14\nLEG_RADIUS_M = 0.03   # changed from 0.02\nLEG_TOP_RADIUS_M = 0.12\nLEG_TOP_Z_M = 0.52\n\nseat = add_cylinder(\"Stool\", SEAT_RADIUS_M, SEAT_THICKNESS_M, segment_count=32,\n                    location_m=(0, 0, TOTAL_HEIGHT_M - SEAT_THICKNESS_M))\nlink_into_scene(seat)\n\nspec = SplayedLegSpec(\n    foot_radius_m=FOOT_RADIUS_M,\n    foot_bearing_deg=0.0,\n    top_radius_m=LEG_TOP_RADIUS_M,\n    top_z_m=LEG_TOP_Z_M,\n    leg_radius_m=LEG_RADIUS_M,\n    segment_count=12,\n    sole_clearance_margin_m=0.005,\n)\n\nlegs = splayed_leg_ring(\"Leg\", 3, spec, first_bearing_deg=0.0)\nfor leg in legs:\n    boolean_union(seat, leg)\n\ntrim_soles_flat(seat, span_m=0.4)\n\nassign_material(seat, \"Wood\", base_color_rgb=(0.6, 0.4, 0.25), roughness=0.7)\nprint(\"done\")\n", "object_name": "Stool"})
+
+--- result ---
+OK: Stool
+  execute: 1 attempt(s), ok in 0.04s (Blender 5.2.0 LTS)
+  printed:
+done
+  gate: PASS (268 tris, 1 components)
+  sheet: _evaluate/renders/iteration24_three_leg_stool_v9/agent/Stool_sheet.png
+
+--- vision ---
+This renders as a small round three-legged table or stool with a flat circular top and three cylindrical legs. The top-down and perspective views confirm three legs spaced evenly beneath a round disc top, while the side view shows two legs with the third hidden behind, and the corner view reveals all three. Proportions look reasonable: the tabletop has modest thickness relative to its diameter, and the legs are slender but not spindly, ending flush with the underside. The bottom-up view shows three small dark crescent/oval marks on the underside where the legs meet the top — these read as attachment holes or recessed sockets rather than separate parts. The perspective view (bottom-left) ties everything together coherently, with no floating or duplicated geometry visible. The blank panel in the bottom-right contains nothing.
+
+--- thinking ---
+The gate passed. Now let me verify the measurements: leg radius 0.03, seat 0.4, height 0.55, feet at radius 0.14, feet flat at z=0.
+
+Let me verify the leg radius. I can measure the leg cross-section. The leg is a cylinder of radius 0.03. At some height, the leg cross-section should be a circle of radius ~0.03.
+
+Actually, let me verify by measuring the foot sole. The foot sole is the cross-section of the tilted cylinder at z=0. It's an ellipse-ish shape. The leg radius is 0.03, so the sole should be roughly 0.03 in the radial direction (slightly more due to tilt).
+
+Let me measure the foot sole extent. Actually, let me just verify the key measurements and the leg thickness.
+
+Let me measure the leg radius by looking at the cross-section at some height. Actually, a simpler check: the foot sole vertices. The sole is a cross-section of a cylinder of radius 0.03 tilted by 2.2°. The cross-section is an ellipse with semi-minor axis 0.03 (perpendicular to tilt) and semi-major axis 0.03/cos(2.2°) ≈ 0.03002.
+
+Let me measure the foot sole to confirm the leg radius is 0.03.
+
+Actually, let me just verify the overall measurements and the foot sole size.
+
+--- tool ---
+run_python({"source": "\nimport bpy, bmesh, math\nfrom mathutils import Vector\n\nobj = bpy.data.objects[\"Stool\"]\nbpy.context.view_layer.update()\n\ncorners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world X extent (seat dia ~0.4):\", round(max(xs)-min(xs), 4))\nprint(\"world Y extent:\", round(max(ys)-min(ys), 4))\nprint(\"min z (should be 0):\", round(min(zs), 4))\nprint(\"max z (should be 0.55):\", round(max(zs), 4))\n\nbm = bmesh.new()\nbm.from_mesh(obj.data)\nbm.verts.ensure_lookup_table()\n\n# foot sole: measure radial extent of the +X foot to confirm leg radius ~0.03\nimport collections\nfoot_verts = [v for v in bm.verts if abs(v.co.z) < 1e-4]\nclusters = collections.defaultdict(list)\nfor v in foot_verts:\n    w = obj.matrix_world @ v.co\n    b = math.degrees(math.atan2(w.y, w.x))\n    clusters[round(b/120)*120].append((w.x, w.y))\nfor key in sorted(clusters):\n    pts = clusters[key]\n    cx = sum(p[0] for p in pts)/len(pts)\n    cy = sum(p[1] for p in pts)/len(pts)\n    r = (cx**2+cy**2)**0.5\n    # radial extent of the sole (min/max distance from center)\n    dists = [((p[0]-cx)**2+(p[1]-cy)**2)**0.5 for p in pts]\n    print(\"foot bearing ~%d deg: center r=%.4f, sole half-extent=%.4f\" % (key, r, max(dists)))\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world X extent (seat dia ~0.4): 0.4
+world Y extent: 0.4
+min z (should be 0): 0.0
+max z (should be 0.55): 0.55
+foot bearing ~-120 deg: center r=0.1400, sole half-extent=0.0300
+foot bearing ~0 deg: center r=0.1400, sole half-extent=0.0300
+foot bearing ~120 deg: center r=0.1400, sole half-extent=0.0300
+
+--- thinking ---
+All measurements check out:
+- Seat diameter 0.4 m ✓
+- Total height 0.55 m ✓
+- Feet flat at z=0 ✓
+- Foot centers at r=0.14, bearings 0°, 120°, -120° ✓
+- Leg radius 0.03 m (sole half-extent 0.03) ✓
+
+Everything else unchanged. Gate passed: 268 triangles, 1 component.
+
+Let me confirm the scene has only Stool.
+
+--- tool ---
+list_scene({})
+
+--- result ---
+Stool: 268 tris, 0.400 x 0.400 x 0.550 m
+
+--- answer ---
+Done. The legs are now 0.03 m in radius.
+
+**What changed:** Leg radius 0.02 m → 0.03 m.
+
+**What stayed exactly the same (verified):**
+- Seat: 0.4 m diameter, 0.04 m thick ✓
+- Total height 0.55 m ✓
+- Feet flat on the ground at z=0, each sole centered on the 0.14 m radius circle ✓
+- 3 legs evenly spaced at 120°, first on the +X axis ✓
+- Leg top radius 0.12 m, splay outward as they descend ✓
+- No central post, no skirt ✓
+- `Wood` material ✓
+
+**Gate:** PASS — 268 triangles, 1 component, manifold, no self-intersections, no flipped normals.
+
+**Scene:** `Stool` is the only mesh object (0.400 × 0.400 × 0.550 m).

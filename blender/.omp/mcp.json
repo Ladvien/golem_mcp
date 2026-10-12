@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
+  "mcpServers": {
+    "blender": {
+      "command": "true",
+      "enabled": false
+    },
+    "blended": {
+      "type": "stdio",
+      "command": "/Users/ladvien/blended/.venv/bin/blender-mcp",
+      "args": [
+        "--exit-on-source-change"
+      ]
+    }
+  }
+}

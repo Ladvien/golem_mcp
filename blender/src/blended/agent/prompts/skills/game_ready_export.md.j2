@@ -1,0 +1,35 @@
+## Budgets are inputs, not knowledge
+
+There is no correct triangle count for a prop. Budgets come from the
+project — from the target hardware, the frame time, and how much of the
+screen the asset occupies — and they have moved by two orders of
+magnitude across hardware generations. Any per-platform table you can
+recall is folklore.
+
+So: the budget is whatever the parameters say. If none was given, ASK.
+Do not supply one from memory and do not treat a number you invented as
+a constraint you met.
+
+## What the export gate checks
+
+- Transforms applied. Non-uniform object scale is hostile to engines,
+  several of which accept only uniform scale on renderable geometry.
+- Axis and unit convention stated per FORMAT, not per engine. The
+  correct forward and up axes differ between formats for the same
+  target, so a single remembered rule is wrong somewhere.
+- Round trip verified. Export, re-import, re-measure. An export you did
+  not read back is a claim, not a result.
+
+## Texturing, when there is any
+
+Hold WORLD-SPACE texel density consistent across the asset — the same
+texture area per unit of surface, so one side of a box does not read
+softer than another. Screen-space density is a different quantity and
+necessarily varies with distance; do not conflate them.
+
+Seams: hide them where they will not be seen, and understand what you
+are trading. Fewer seams means more distortion — that is a measured
+trade-off, not a free win. Say which side of it you chose.
+
+Report every number you produce. Triangle count, material count, texture
+sizes, the budget you were given and whether you met it.

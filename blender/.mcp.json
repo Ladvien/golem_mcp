@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "blended": {
+      "type": "stdio",
+      "command": "/Users/ladvien/blended/.venv/bin/blender-mcp",
+      "args": []
+    }
+  }
+}

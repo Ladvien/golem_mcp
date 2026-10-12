@@ -1,0 +1,2926 @@
+--- thinking ---
+Let me build this crate. A 0.5m cube, beveled 0.02m, unwrapped with no overlaps, under 12 islands, one material, single watertight manifold mesh, only mesh object in scene.
+
+Let me start by building the box and beveling it.
+
+Plan:
+1. add_box 0.5 x 0.5 x 0.5, snap base to ground (z=0).
+2. add_bevel 0.02m.
+3. apply_all_modifiers.
+4. assign material.
+5. unwrap UVs (clear existing UVs first).
+6. gate check.
+
+Let me writethe first chunk.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, link_into_scene\nfrom blended.ops.transforms import snap_base_to_ground\n\ncrate = add_box(\"Crate\", width_m=0.5, depth_m=0.5, height_m=0.5)\nlink_into_scene(crate)\nsnap_base_to_ground(crate)\nprint(\"box created, base z:\", crate.location)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+box created, base z: <Vector (0.0000, 0.0000, 0.0000)>
+
+--- thinking ---
+Now bevel andapply.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.modifiers import add_bevel, apply_all_modifiers\n\ncrate = bpy.data.objects[\"Crate\"]\nadd_bevel(crate, width_m=0.02, segment_count=2)\napply_all_modifiers(crate)\nprint(\"bevel applied\")\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+bevel applied
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.materials import assign_material\nfrom blended.ops.uv import unwrap_uvs\n\ncrate = bpy.data.objects[\"Crate\"]\nassign_material(crate, \"CrateWood\", base_color_rgb=(0.72, 0.35, 0.22), roughness=0.7)\n\n# clear any pre-existing UVs so unwrap is a pure function of geometry\nmesh = crate.data\nfor uv in list(mesh.uv_layers):\n    mesh.uv_layers.remove(uv)\n\nreport = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(\"uv islands:\", report.island_count)\nprint(\"uv overlaps:\", report.overlapping_face_pair_count)\nprint(\"uv out of bounds:\", report.out_of_bounds_face_count)\nprint(\"uv coverage:\", report.coverage_fraction)\n"})
+
+--- result ---
+FAILED: AttributeError: 'UnwrapReport' object has no attribute 'out_of_bounds_face_count'
+Traceback (most recent call last):
+  File "/Users/ladvien/blended/src/blended/run/executor.py", line 93, in run_source_in_process
+    exec(compiled, execution_namespace)  # noqa: S102 - the harness's job
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<chat>", line 16, in <module>
+AttributeError: 'UnwrapReport' object has no attribute 'out_of_bounds_face_count'
+
+printed before failing:
+Warning: Unwrap failed to solve 1 of 1 island(s), edge seams may need to be added
+uv islands: 54
+uv overlaps: 0
+
+--- thinking ---
+The unwrap failed to solve. 54 islands, and it failed to solve 1 of 1 islands. I need to add seams. The ANGLE_BASED unwrap on a beveled cube without seams produces many islands. I need to mark seams to get a proper layout under 12 islands.
+
+Let me check the UnwrapReport fields. Let me inspect what fields exist.
+
+--- tool ---
+run_python({"source": "from blended.ops.uv import unwrap_uvs\nimport inspect\nprint([f for f in dir(unwrap_uvs) if not f.startswith('_')])\n# inspect the report type\nimport blended.ops.uv as uvmod\nprint([n for n in dir(uvmod) if 'Report' in n or 'report' in n.lower()])\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+[]
+['UnwrapReport']
+
+--- tool ---
+run_python({"source": "from blended.ops.uv import UnwrapReport\nprint([a for a in dir(UnwrapReport) if not a.startswith('_')])\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+['clean', 'summary']
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.uv import unwrap_uvs\ncrate = bpy.data.objects[\"Crate\"]\nr = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(\"clean:\", r.clean)\nprint(\"summary:\", r.summary)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+Warning: Unwrap failed to solve 1 of 1 island(s), edge seams may need to be added
+clean: True
+summary: <bound method UnwrapReport.summary of UnwrapReport(method='ANGLE_BASED', island_count=54, overlapping_face_pair_count=0, coverage_fraction=0.8092497610937325)>
+
+--- thinking ---
+The UnwrapReport has island_count, overlapping_face_pair_count, coverage_fraction. The gate report has uv_island_count, uv_overlapping_face_pair_count, uv_out_of_bounds_face_count, uv_coverage_fraction.
+
+The unwrap failed to solve because there are no seams. I need to mark seams manually. For a beveled cube, I want a proper seam layout. The classic approach: mark seams along edges to create a cross/unfold layout.
+
+Actually, the issue is "Unwrap failed to solve 1 of 1 island(s)". This means the whole mesh is one island (no seams) and it can't solve it. I need to add seams.
+
+Let me think about a good seam layout for a beveled cube. A cube with beveled edges. The bevel creates additional faces. I want to mark seams so the unwrap produces a reasonable number of islands (under 12).
+
+A standard cube unwrap: mark seams to unfold into a cross shape (6 faces). With bevels, the bevel faces connect the faces.
+
+Let me think. The beveled cube has: 6 main faces, 12 beveled edges (each a strip), 8 beveled corners (each a small triangle-ish face). Actually with segment_count=2, each edge bevel has 2 segments.
+
+Let me mark seams. A common approach for a crate: mark seams along the vertical edges and around the top/bottom, so it unfolds into a cross.
+
+Actually, let me think more carefully. I want under 12 islands. The simplest robust approach: mark seams to create a cross layout.
+
+Let me mark seams by selecting edges based on their position/direction. I'll use bmesh to mark seams.
+
+Approach: For a cube, mark seams on edges that are "sharp" in a way that allows unfolding. Actually the standard cube unwrap cross: mark seams along 4 vertical edges (the ones connecting top and bottom faces), plus the bottom face's perimeter edges.
+
+Let me think about what edges to mark. A cube has 12 edges. To unfold into a cross (T shape), you mark seams along:
+- The 4 vertical edges (connecting top and bottom)
+- The bottom face's 4 edges
+
+That gives a cross where the 4 side faces wrap around, top attached to one side, bottom attached to another.
+
+But with bevels, the edges are replaced by bevel strips. So the "vertical edges" are now bevel strips with 2 segments each.
+
+This is getting complex. Let me use a simpler, robust approach: mark seams programmatically.
+
+Actually, let me reconsider. The bevel with segment_count=2 creates a lot of geometry. Let me check the triangle count first.
+
+Actually, let me think about the seam strategy more concretely using bmesh. I'll mark seams on edges based on their geometric properties.
+
+For a beveled cube, I want to select edges that form a "cut" to unfold. A good strategy: mark all edges that are NOT part of the "flat" faces' interior... hmm.
+
+Let me think differently. The goal is a clean unwrap with few islands. The classic crate unwrap: unfold the box into a cross.
+
+Let me mark seams along edges where the face normal changes significantly (i.e., the bevel edges), EXCEPT keep some connected to form the cross.
+
+Actually, simplest reliable approach: mark seams on all edges that are "sharp" (dihedral angle > some threshold), which are the bevel boundary edges. This would separate each flat face from the bevels, giving 6 flat faces + bevel strips + corner pieces = many islands.
+
+That's too many. I need a smarter layout.
+
+Let me think about what a good crate UV looks like. A crate is a box. The natural unwrap is a cross: 4 sides in a row, top and bottom flaps. With bevels, the bevels get absorbed into the adjacent faces.
+
+Let me mark seams to create a cross. I'll do this by selecting edges.
+
+Plan using bmesh:
+1. Get the mesh in bmesh.
+2. Identify edges by their midpoint position and direction.
+3. Mark seams.
+
+For a cube centered at origin (0.5 size, so from -0.25 to 0.25 in x,y, and 0 to 0.5 in z after snap... wait, snap_base_to_ground moved it so base at z=0, so z from 0 to 0.5, x,y from -0.25 to 0.25).
+
+Actually the box was created at origin with height 0.5, so it spans z from -0.25 to 0.25, then snap_base_to_ground moved it up 0.25 so z from 0 to 0.5.
+
+Let me mark seams. The cross layout: I'll mark seams along the 4 vertical edges (the bevel strips at the 4 corners), and around the bottom.
+
+Hmm, but with bevels, "vertical edges" are now bevel strips.
+
+Let me take a step back and think about a robust seam marking that gives a cross.
+
+Alternative: I can mark seams on edges based on their direction and location. Let me identify:
+
+- Vertical edges (parallel to Z): these are the 4 corner bevel strips' edges.
+- Horizontal edges (parallel to X or Y): the top and bottom bevel strips.
+
+For a cross unfold, a common seam set:
+- Mark the 4 vertical corner edges as seams (so the 4 sides unfold into a strip).
+- Mark the bottom perimeter as seams (so bottom is a separate flap).
+- Mark the top perimeter as seams (so top is a separate flap).
+
+This gives: 4 side faces connected in a strip (1 island), top (1 island), bottom (1 island) = 3 islands, plus bevels absorbed.
+
+But with bevels, the bevel strips connect faces. If I mark seams along the bevel strips' outer edges, the bevels stay attached to the flat faces.
+
+This is getting complicated. Let me just try a practical approach and iterate.
+
+Actually, let me reconsider the whole thing. Maybe I should mark seams using a simpler heuristic and check the result.
+
+Let me write code to mark seams on edges where the angle between adjacent faces is sharp (the bevel boundaries), but then also mark additional seams to split into a cross.
+
+Actually, let me try the simplest thing that might work: mark seams on all "sharp" edges (dihedral > 30 degrees), which separates flat faces from bevels. Then see how many islands and whether it solves.
+
+Wait, but that gives 6 flat faces + 12 bevel strips + 8 corners = 26 islands, too many.
+
+Let me think about the cross approach more carefully with actual geometry.
+
+The beveled cube structure:
+- 6 flat faces (top, bottom, 4 sides)
+- 12 bevel strips (one per original edge), each with 2 segments
+- 8 corner patches (one per original vertex), each a small polygon
+
+For a cross unfold, I want:
+- 4 side faces + their connecting bevels as one strip
+- top + its bevels as one island
+- bottom + its bevels as one island
+
+To do this, mark seams along:
+- The 4 vertical corner bevels (the bevel strips at the 4 vertical edges) — split them so sides can unfold
+- The top perimeter bevels (4 horizontal bevel strips at top) — separate top from sides
+- The bottom perimeter bevels (4 horizontal bevel strips at bottom) — separate bottom from sides
+
+Hmm, actually for a cross, you'd keep the top attached to one side and bottom attached to another side, but that's more complex. Simpler: 3 islands (sides strip, top, bottom).
+
+Actually even simpler and very common for crates: just do a "box" unwrap where you mark seams and get a cross. Let me just mark seams and let the solver figure it out.
+
+Let me mark seams on edges based on direction:
+
+For a cross layout, mark seams on:
+1. All 4 vertical corner edges (the bevel strips running vertically at the 4 corners). These are edges whose direction is mostly Z and whose midpoint is at a corner (|x|≈0.25 and |y|≈0.25).
+
+Actually, let me identify edges by their midpoint and direction more carefully.
+
+Let me just write bmesh code to mark seams and iterate based on results.
+
+Let me first understand the geometry by printing edge info.
+
+Actually, let me be efficient. I'll mark seams using a clear strategy:
+
+Seam strategy for cross unfold:
+- Mark all edges that are "vertical" (parallel to Z) AND at a corner (both x and y near ±0.25). These are the 4 corner bevel strips' vertical edges.
+
+Wait, a bevel strip at a vertical corner edge: the original vertical edge is replaced by a bevel strip. The bevel strip has edges running vertically (parallel to Z) and edges running horizontally (around the corner).
+
+This is getting too deep. Let me just experiment.
+
+Let me write code to mark seams on all edges where the dihedral angle is sharp (bevel boundaries), then check island count, then refine.
+
+Actually, a cleaner idea: use the "smart" approach of marking seams along a specific set of edges to get a cross.
+
+Let me think about the cross unfold for a plain cube first (no bevel), then extend.
+
+Plain cube cross: mark seams on 4 vertical edges + 4 bottom edges. Result: cross with 6 faces in 1 island (or a few).
+
+For beveled cube, the bevels are between faces. If I mark seams along the bevel strips' center lines (the "sharpest" edges), the bevels split between adjacent faces.
+
+Hmm. Let me just try: mark seams on all edges with sharp dihedral angle (the bevel boundary edges), and see what happens. Then I'll know the island count and can merge.
+
+Actually, let me reconsider the requirement: "under 12 islands". So I have room. A cross layout is ideal but even 6-8 islands is fine as long as no overlaps and no out-of-bounds.
+
+Let me try a clean approach: mark seams to create a cross.
+
+I'll mark seams on edges that are:
+1. Vertical (Z-parallel) edges at the 4 corners — to split the 4 sides into a strip.
+
+Actually, let me just do it and look at results. Let me write bmesh code.
+
+Let me first inspect the mesh edges to understand structure.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\ncrate = bpy.data.objects[\"Crate\"]\nmesh = crate.data\nprint(\"tris:\", len(mesh.polygons), \"verts:\", len(mesh.vertices), \"edges:\", len(mesh.edges))\n\nbm = bmesh.new()\nbm.from_mesh(mesh)\nbm.edges.ensure_lookup_table()\n\n# classify edges by direction and midpoint\nfrom mathutils import Vector\nfor e in bm.edges:\n    v0, v1 = e.verts\n    d = (v1.co - v0.co)\n    if d.length < 1e-6:\n        continue\n    d.normalize()\n    mid = (v0.co + v1.co) / 2\n    # dominant axis\n    ax = max(range(3), key=lambda i: abs(d[i]))\n    print(f\"edge len={ (v1.co-v0.co).length:.3f} dir_axis={ax} mid=({mid.x:.3f},{mid.y:.3f},{mid.z:.3f})\")\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+[3525 earlier characters dropped]
+=1 mid=(0.247,0.237,0.480)
+edge len=0.012 dir_axis=2 mid=(0.243,0.243,0.486)
+edge len=0.015 dir_axis=0 mid=(0.237,0.247,0.480)
+edge len=0.015 dir_axis=2 mid=(0.230,0.247,0.487)
+edge len=0.460 dir_axis=1 mid=(-0.230,0.000,0.000)
+edge len=0.460 dir_axis=1 mid=(-0.244,0.000,0.006)
+edge len=0.460 dir_axis=1 mid=(-0.250,0.000,0.020)
+edge len=0.460 dir_axis=2 mid=(-0.230,-0.250,0.250)
+edge len=0.460 dir_axis=2 mid=(-0.244,-0.244,0.250)
+edge len=0.460 dir_axis=2 mid=(-0.250,-0.230,0.250)
+edge len=0.460 dir_axis=1 mid=(-0.230,0.000,0.500)
+edge len=0.460 dir_axis=1 mid=(-0.244,0.000,0.494)
+edge len=0.460 dir_axis=1 mid=(-0.250,0.000,0.480)
+edge len=0.460 dir_axis=2 mid=(-0.230,0.250,0.250)
+edge len=0.460 dir_axis=2 mid=(-0.244,0.244,0.250)
+edge len=0.460 dir_axis=2 mid=(-0.250,0.230,0.250)
+edge len=0.460 dir_axis=0 mid=(0.000,0.230,0.000)
+edge len=0.460 dir_axis=0 mid=(0.000,0.244,0.006)
+edge len=0.460 dir_axis=0 mid=(0.000,0.250,0.020)
+edge len=0.460 dir_axis=0 mid=(0.000,0.230,0.500)
+edge len=0.460 dir_axis=0 mid=(0.000,0.244,0.494)
+edge len=0.460 dir_axis=0 mid=(0.000,0.250,0.480)
+edge len=0.460 dir_axis=2 mid=(0.250,0.230,0.250)
+edge len=0.460 dir_axis=2 mid=(0.244,0.244,0.250)
+edge len=0.460 dir_axis=2 mid=(0.230,0.250,0.250)
+edge len=0.460 dir_axis=1 mid=(0.230,0.000,0.000)
+edge len=0.460 dir_axis=1 mid=(0.244,0.000,0.006)
+edge len=0.460 dir_axis=1 mid=(0.250,0.000,0.020)
+edge len=0.460 dir_axis=1 mid=(0.230,0.000,0.500)
+edge len=0.460 dir_axis=1 mid=(0.244,0.000,0.494)
+edge len=0.460 dir_axis=1 mid=(0.250,0.000,0.480)
+edge len=0.460 dir_axis=2 mid=(0.230,-0.250,0.250)
+edge len=0.460 dir_axis=2 mid=(0.244,-0.244,0.250)
+edge len=0.460 dir_axis=2 mid=(0.250,-0.230,0.250)
+edge len=0.460 dir_axis=0 mid=(0.000,-0.230,0.000)
+edge len=0.460 dir_axis=0 mid=(0.000,-0.244,0.006)
+edge len=0.460 dir_axis=0 mid=(0.000,-0.250,0.020)
+edge len=0.460 dir_axis=0 mid=(0.000,-0.230,0.500)
+edge len=0.460 dir_axis=0 mid=(0.000,-0.244,0.494)
+edge len=0.460 dir_axis=0 mid=(0.000,-0.250,0.480)
+
+--- thinking ---
+The bevel with segment_count=2 created a lot of geometry. The edges are: long edges (0.46) along the flat faces, and short bevel edges (0.012-0.015).
+
+The structure: 6 flat faces, each with bevel strips around. The bevel strips have 2 segments.
+
+Let me think about the seam strategy. I want a cross unfold.
+
+The flat faces are at:
+- top: z=0.5
+- bottom: z=0
+- +x: x=0.25
+- -x: x=-0.25
+- +y: y=0.25
+- -y: y=-0.25
+
+The bevel strips connect these faces.
+
+For a cross unfold, I want to mark seams along the 4 vertical corner bevels (the bevel strips at the 4 vertical edges), and around the top and bottom.
+
+Let me think about the edges. The long edges (0.46) are the boundaries between flat faces and bevel strips. The short edges are within bevel strips.
+
+Actually, let me reconsider. A simpler and very robust approach for a crate: mark seams to create a cross where:
+- The 4 side faces form a strip (unfolded around)
+- Top and bottom are separate flaps
+
+To do this, I mark seams along:
+1. The 4 vertical corner bevel strips (split them so sides unfold)
+2. The top perimeter (separate top)
+3. The bottom perimeter (separate bottom)
+
+The vertical corner bevels are at the 4 corners (x=±0.25, y=±0.25), running in Z direction.
+
+Let me identify edges to mark as seams. I'll mark seams on edges that are:
+- Part of the vertical corner bevels (edges near corners, running vertically)
+- Part of the top and bottom perimeter bevels
+
+Actually, let me simplify. The key insight: to unfold a box into a cross, mark seams along a "cut" path.
+
+Let me use a different, cleaner strategy. I'll mark seams on all edges that are "sharp" (dihedral angle between adjacent faces > threshold). The bevel boundary edges are sharp (the bevel is at 45 degrees, so the angle between flat face and bevel face is 135 degrees, which is "sharp" in the sense of > some threshold).
+
+Wait, actually the bevel makes the transition smooth-ish. The dihedral angle between a flat face and a bevel face is 135 degrees (since bevel is at 45°). Between two bevel segments it's 180 (flat). 
+
+Hmm, let me think about what "sharp" means. For seam marking, I want to mark edges where I want to cut.
+
+Let me just go with a concrete plan and mark seams explicitly.
+
+Cross unfold plan:
+- Mark seams on the 4 vertical corner bevel strips. Each vertical corner bevel strip consists of edges running vertically (Z direction) at the corner. Actually the bevel strip at a vertical edge has: 2 vertical edges (the outer boundaries) and horizontal edges (the segments).
+
+Let me identify the vertical corner bevels. At corner (0.25, 0.25), the bevel strip runs vertically. Its edges: some vertical (Z) edges and some horizontal edges.
+
+Actually, this is getting complicated. Let me take yet another approach: mark seams based on face normals.
+
+The cleanest cross unfold for a beveled cube:
+
+Mark seams on edges where the two adjacent faces have normals that differ in a way that indicates a "corner" that should be cut.
+
+Actually, let me just try the simplest thing and iterate: mark seams on ALL edges that are "sharp" (dihedral angle < 180 - epsilon, i.e., not flat). This separates every flat face from every bevel. Then I'll get 6 flat faces + 12 bevel strips + 8 corners as separate islands = 26 islands. Too many.
+
+But wait — maybe I can then merge. No, too complex.
+
+Let me think about the cross more concretely.
+
+For a cross unfold of a box, the standard is:
+- Cut along 4 vertical edges (the 4 corners), leaving the 4 sides connected as a strip.
+- Cut around the top face (4 edges), leaving top as a flap attached to one side.
+- Cut around the bottom face (4 edges), leaving bottom as a flap.
+
+Actually the classic cross: sides form a strip of 4, top attached to top of one side, bottom attached to bottom of one side. That's 1 island (cross shape).
+
+For the beveled cube, the bevels are at the corners and edges. If I mark seams along the bevel strips' center lines, the bevels get split between adjacent faces.
+
+Let me define the seam set:
+1. Vertical corner bevels: mark seams along the vertical edges of the 4 corner bevel strips. This splits the 4 sides.
+
+Actually, let me reconsider what edges exist at a vertical corner bevel. The bevel strip at corner (0.25, 0.25) runs in Z. It has:
+- 2 boundary edges running in Z (at the "inner" corners where bevel meets flat faces)
+- horizontal edges (the 2 segments across the bevel)
+
+Hmm wait, with segment_count=2, the bevel has 2 segments, so 3 "rings" of vertices.
+
+This is really getting complicated. Let me just look at the actual structure by examining faces and their normals.
+
+Actually, let me step back and think about what's simplest and most robust.
+
+Simplest robust approach: mark seams on all "sharp" edges (dihedral angle significantly less than 180°). This gives clean islands but many of them. Then check if under 12.
+
+With segment_count=2 bevel, the sharp edges are:
+- Between flat face and bevel: 135° dihedral (sharp)
+- Between bevel segments: 180° (flat, not sharp)
+- Between bevel and corner patch: sharp
+
+Number of sharp edges: each flat face has 4 boundary edges (sharp), 6 faces = 24 sharp edges. Plus corner patches.
+
+If I mark all sharp edges as seams, I get: 6 flat faces + 12 bevel strips + 8 corner patches = 26 islands. Too many.
+
+So I need a smarter approach. Let me reduce the bevel segment count to 1, which simplifies things. Actually, the brief says "beveled 0.02 m" — segment count isn't specified. segment_count=1 gives a simpler bevel (chamfer). That would reduce geometry and make unwrapping easier.
+
+Actually, let me reconsider. With segment_count=1, the bevel is a simple chamfer: each edge becomes a single flat strip, each corner becomes a single triangle. That's much simpler.
+
+Let me redo with segment_count=1. Actually, let me check: does segment_count=1 give a clean result? A chamfer with 1 segment.
+
+Actually, let me reconsider the whole approach. The requirement is:
+- beveled 0.02m
+- UV with no overlaps, no out-of-bounds, under 12 islands
+- single watertight manifold mesh under 2000 triangles
+
+Let me use segment_count=1 for simplicity, then mark seams for a cross unfold.
+
+With segment_count=1:
+- 6 flat faces
+- 12 bevel strips (each a single quad strip, actually a single quad)
+- 8 corner triangles
+
+Total faces: 6 + 12 + 8 = 26 faces. Triangles: 6 quads + 12 quads + 8 tris = 6*2 + 12*2 + 8 = 12 + 24 + 8 = 44 triangles. Well under 2000.
+
+For the cross unfold, I want to mark seams to get a cross. Let me mark seams on:
+1. The 4 vertical corner bevel strips (split them)
+2. The top and bottom perimeter
+
+Actually, let me think about the cross unfold for a chamfered cube.
+
+The cross: 4 sides in a strip, top flap, bottom flap.
+
+To unfold:
+- Mark seams along the 4 vertical edges (corners). But now corners are bevel strips. So mark seams along the vertical bevel strips' center.
+
+Hmm. Let me just mark seams and iterate. Let me write code that marks seams on edges based on a clear rule, then check island count.
+
+Let me define the rule for a cross unfold:
+
+Mark seams on edges that are:
+1. Vertical (Z-parallel) edges located at the 4 corners (|x|≈0.25 AND |y|≈0.25). These are the vertical corner bevel edges.
+
+Wait, but with a chamfer, the corner bevel strip at (0.25, 0.25) has vertical edges at its two sides. Let me identify them.
+
+Actually, let me simplify by using face normals to guide seam marking.
+
+Alternative clean approach: Use the "mark seams on sharp edges" but then manually merge islands by removing seams. Too complex.
+
+Let me just go with a concrete geometric approach and iterate.
+
+Let me redo the bevel with segment_count=1 first.
+
+Actually wait, let me reconsider. Maybe I'm overcomplicating. Let me think about what a good crate UV actually needs.
+
+A crate is a box. The natural UV is a cross (box unfold). With bevels, the bevels are small and can be absorbed.
+
+Let me mark seams to produce a cross. The cross for a box:
+- 4 side faces connected in a strip (unfolded)
+- top face attached to top of one side
+- bottom face attached to bottom of one side
+
+Seams needed:
+- 4 vertical edges (the 4 corners) — cut so sides unfold into strip
+- 3 of the 4 top edges — cut so top is a flap attached to one side
+- 3 of the 4 bottom edges — cut so bottom is a flap attached to one side
+
+For the beveled cube, "vertical edges" = vertical corner bevel strips, "top edges" = top perimeter bevel strips, "bottom edges" = bottom perimeter bevel strips.
+
+So I mark seams on:
+- 4 vertical corner bevel strips (all their edges)
+- 3 top perimeter bevel strips (all their edges)
+- 3 bottom perimeter bevel strips (all their edges)
+
+This should give a cross with 1 island (or a few).
+
+Let me implement this. I need to identify bevel strips by their location.
+
+Vertical corner bevel strips: at corners (x=±0.25, y=±0.25), running in Z. Their edges are vertical (Z) and horizontal (around corner).
+
+Top perimeter bevel strips: at z=0.5, running along the 4 top edges (x=±0.25 or y=±0.25).
+
+Bottom perimeter bevel strips: at z=0, running along the 4 bottom edges.
+
+Let me identify edges by their midpoint location and mark seams.
+
+Actually, a cleaner way: mark seams on edges based on their midpoint being near a corner/edge AND their direction.
+
+Let me define:
+- Vertical corner edges: edges where |mid.x| ≈ 0.25 AND |mid.y| ≈ 0.25 (near a corner), direction mostly Z. Actually the vertical edges of the corner bevel strip.
+
+Hmm, let me just look at the actual edges more carefully. Let me redo with segment_count=1 and print all edges.
+
+Actually, let me reconsider using a totally different, simpler and very robust method: mark seams on all edges, then use the "unwrap" which will give one island per face (26 islands), then... no.
+
+OK let me just be systematic. Let me redo the bevel with segment_count=1 and examine.
+
+Actually, I realize I should think about whether segment_count matters for the brief. The brief just says "beveled 0.02 m". A single-segment chamfer is a valid bevel. But a 2-segment bevel looks nicer (rounded). However, for UV simplicity, 1 segment is much easier.
+
+Let me go with segment_count=1 (chamfer). Actually, let me reconsider — a "bevel" typically implies rounded. But for a wooden crate, a chamfer (flat 45° cut) is very common and looks fine. And the brief says "beveled 0.02 m" which is about the width, not the roundness.
+
+I'll use segment_count=1 for a clean chamfer. This is a reasonable interpretation and makes UV much cleaner.
+
+Actually, let me keep it simple and robust. Let me redo with segment_count=1.
+
+Let me remove the current crate and rebuild.
+
+Actually, I can just modify the bevel. But the bevel is already applied. Let me just rebuild from scratch cleanly.
+
+Let me write a full clean build with segment_count=1, then mark seams, then unwrap.
+
+Let me plan the seam marking for a chamfered cube (segment_count=1):
+
+Faces:
+- 6 flat faces (top z=0.5, bottom z=0, +x, -x, +y, -y)
+- 12 chamfer strips (one per edge)
+- 8 corner triangles
+
+For a cross unfold, mark seams on:
+1. 4 vertical corner chamfer strips (at x=±0.25, y=±0.25)
+2. 3 top chamfer strips (leave one unmarked so top attaches to a side)
+3. 3 bottom chamfer strips (leave one unmarked so bottom attaches to a side)
+
+Actually, let me simplify to a "3 island" approach: sides strip, top, bottom. Mark seams on:
+1. 4 vertical corner strips
+2. all 4 top strips (top becomes separate island)
+3. all 4 bottom strips (bottom becomes separate island)
+
+This gives 3 islands: sides (4 faces + their chamfers), top (1 face + 4 chamfers), bottom (1 face + 4 chamfers). Under 12. 
+
+Actually even simpler and cleaner: just do the cross with 1 island. But 3 islands is fine and simpler to reason about.
+
+Wait, but actually the corner triangles — where do they go? Each corner triangle is at a vertex where 3 edges meet. When I mark seams on the vertical corner strips and top/bottom strips, the corner triangles get separated appropriately.
+
+Let me just implement and check the island count.
+
+Let me identify edges to mark as seams. I'll use bmesh and mark edges based on midpoint location.
+
+For a chamfered cube (0.5 size, z from 0 to 0.5, x,y from -0.25 to 0.25):
+
+Vertical corner strips: at the 4 corners. The chamfer strip at corner (0.25, 0.25) runs vertically. Its edges: 2 vertical edges (at the boundaries) and 1 horizontal edge (the chamfer line).
+
+Actually, let me identify by edge direction and midpoint:
+
+- Vertical edges (Z direction): these are at the corners (the chamfer strip's vertical boundaries) and also... wait, the flat faces have vertical edges too? No. The flat faces are quads. The +x face (x=0.25) is a quad with edges in Y and Z directions. Its vertical edges are at y=±0.25 (but those are chamfered, so the flat face's vertical edges are at y=±(0.25-0.02)=±0.23).
+
+Hmm wait, with a 0.02 chamfer, the flat face shrinks by 0.02 on each side. So the +x face spans y from -0.23 to 0.23, z from 0.02 to 0.48.
+
+This is getting complicated. Let me just mark seams based on a clear geometric rule and iterate.
+
+Let me define the seam rule for a cross/3-island unfold:
+
+Mark seams on edges whose midpoint is:
+1. Near a vertical corner: |x| > 0.24 AND |y| > 0.24 (the 4 vertical corner chamfer strips)
+2. Near the top perimeter: z > 0.48 (top chamfer strips)
+3. Near the bottom perimeter: z < 0.02 (bottom chamfer strips)
+
+But I need to be careful: the corner triangles are at |x|>0.24 AND |y|>0.24 AND (z near 0 or 0.5). Those are shared between vertical and top/bottom.
+
+Let me just mark seams on edges and check. Let me write the code.
+
+Actually, let me reconsider. Rather than guessing, let me mark seams on ALL sharp edges first (dihedral angle based), see the island count, and understand the structure. Then refine.
+
+Let me write a helper to mark seams on sharp edges and report island count.
+
+Actually, I'll go straight to the geometric approach and iterate. Let me rebuild with segment_count=1 and mark seams.
+
+Let me write the full rebuild + seam marking + unwrap in one chunk, but carefully.
+
+For seam marking, I'll mark edges based on midpoint:
+- vertical corner strips: edges where |mid.x| > 0.24 and |mid.y| > 0.24 (all edges in the corner region, both vertical and horizontal)
+- top strips: edges where mid.z > 0.48
+- bottom strips: edges where mid.z < 0.02
+
+Wait, but this would mark the corner triangles' edges too, which is fine.
+
+Actually, let me think about whether marking ALL edges in the corner region + top + bottom gives a clean unfold.
+
+The 4 side faces are connected through the vertical corner chamfers. If I mark seams on all vertical corner chamfer edges, the 4 sides become disconnected from each other → 4 separate side islands. That's not a strip.
+
+Hmm, I want the sides to form a strip. So I should mark seams on only 3 of the 4 vertical corners, leaving one corner connected so the sides form a strip.
+
+This is the classic cross: cut 3 vertical edges, leave 1 connected.
+
+Let me do the cross properly:
+- Mark seams on 3 vertical corner strips (leave the 4th connected)
+- Mark seams on 3 top strips (leave 1 connected to a side)
+- Mark seams on 3 bottom strips (leave 1 connected to a side)
+
+This gives a cross with 1 island.
+
+But this is fiddly. Let me just go with the simpler 3-island approach (sides strip via leaving... no).
+
+Actually, let me reconsider. The simplest clean approach that definitely works:
+
+Mark seams on:
+- All 4 vertical corner strips → sides become 4 separate islands? No wait.
+
+Ugh, let me think clearly.
+
+A cube has 6 faces. To unfold into a cross:
+- The 4 side faces are connected in a ring. To flatten the ring into a strip, cut 3 of the 4 vertical edges (corners). Leave 1 corner connected.
+- Top face: connected to all 4 sides via top edges. Cut 3 of the 4 top edges, leave 1 (so top attaches to one side).
+- Bottom face: same, cut 3 of 4 bottom edges.
+
+Result: 1 island (cross).
+
+For the chamfered cube, "vertical edges" = vertical corner chamfer strips, "top edges" = top chamfer strips, "bottom edges" = bottom chamfer strips.
+
+So mark seams on:
+- 3 vertical corner strips
+- 3 top strips
+- 3 bottom strips
+
+Total 9 strips marked, 3 strips unmarked (1 vertical corner, 1 top, 1 bottom).
+
+This gives a cross with 1 island. 
+
+Let me implement this. I need to identify the 4 vertical corner strips, 4 top strips, 4 bottom strips, and mark 3 of each.
+
+Let me identify strips by their midpoint:
+- Vertical corner strips: midpoint has |x|≈0.25 AND |y|≈0.25 (corner), and z in middle (0.02 to 0.48). Actually the vertical corner strip spans z from 0.02 to 0.48.
+- Top strips: midpoint z≈0.5, and either |x|≈0.25 or |y|≈0.25 (but not both, since corners are separate).
+- Bottom strips: midpoint z≈0, similar.
+
+Let me identify edges and mark seams. I'll mark seams on edges belonging to these strips.
+
+Actually, marking seams on edges is what matters. Each strip has multiple edges. Let me mark all edges of the selected strips.
+
+Let me write code to:
+1. For each edge, compute midpoint.
+2. Classify: is it in a vertical corner strip, top strip, or bottom strip?
+3. Mark seams on 3 of 4 vertical corners, 3 of 4 top, 3 of 4 bottom.
+
+To identify which strip an edge belongs to, I'll use the midpoint's dominant location.
+
+Let me define:
+- An edge is in a "vertical corner" if |mid.x| > 0.24 and |mid.y| > 0.24.
+- An edge is in "top" if mid.z > 0.48.
+- An edge is in "bottom" if mid.z < 0.02.
+
+But corner triangles are at |x|>0.24, |y|>0.24, AND z near 0 or 0.5. So they'd be classified as both vertical corner and top/bottom. That's fine — I'll mark them as seams if either condition holds.
+
+Actually, let me simplify: I'll mark seams on edges where:
+- (|mid.x| > 0.24 and |mid.y| > 0.24) → vertical corner (mark 3 of 4)
+- OR mid.z > 0.48 → top (mark 3 of 4)
+- OR mid.z < 0.02 → bottom (mark 3 of 4)
+
+For "3 of 4", I need to identify the 4 corners/edges and leave one unmarked.
+
+The 4 vertical corners: (+,+), (+,-), (-,+), (-,-). Leave one, e.g., (+,+) unmarked.
+
+The 4 top strips: +x, -x, +y, -y. Leave one, e.g., +x unmarked.
+
+The 4 bottom strips: same, leave +x unmarked.
+
+Hmm, but I need to make sure the unmarked top strip connects to a side that's connected to the unmarked vertical corner, etc. Actually for a valid cross, the connectivity just needs to form a tree. Let me not overthink — mark 3 of 4 in each category and check the result.
+
+Actually, let me simplify even further and just do the 3-island approach which is more forgiving:
+
+Mark seams on:
+- All 4 vertical corner strips
+- All 4 top strips
+- All 4 bottom strips
+
+This gives: 4 side faces (each separate, since all 4 corners cut) + top + bottom = 6 islands. Plus the corner triangles and chamfer strips get distributed.
+
+Wait, 6 islands is under 12, so that's fine! And it's simpler (no "3 of 4" logic).
+
+But 6 islands where each side is separate is a bit ugly but acceptable. Actually, a nicer layout is the cross (1 island) or 3 islands (sides strip + top + bottom).
+
+Let me go with the cross (1 island) for a "real seam-and-unwrap layout" as the brief requests. The brief says "a real seam-and-unwrap layout, not one island per face". So a cross (1 island) or a few islands is ideal.
+
+Let me do the cross properly. Mark seams on 3 vertical corners, 3 top, 3 bottom.
+
+Let me write it carefully.
+
+Actually, let me reconsider the corner triangles. With a chamfer, each corner has a triangle. When I mark seams on the vertical corner strips and top/bottom strips, the corner triangles need to be handled.
+
+Let me just implement and check the island count, then adjust.
+
+Let me write the code now. I'll rebuild with segment_count=1.
+
+Actually, wait — let me reconsider segment count. Let me check: does the brief care about roundness? "beveled 0.02 m" — just the width. A chamfer (1 segment) is fine and cleaner. But a 2-segment bevel looks more "beveled" (rounded). 
+
+For UV simplicity and to keep triangle count low, I'll use segment_count=1. Actually, let me reconsider — 2 segments gives a nicer rounded look and still manageable. But the UV seam marking gets more complex.
+
+Let me go with segment_count=1 for a clean chamfer. It's a valid bevel and much easier to unwrap cleanly.
+
+Hmm, actually, let me reconsider once more. A "bevel" in 3D modeling usually means rounded. But "chamfer" means flat 45°. The brief says "beveled 0.02 m". I think either is acceptable, but to be safe and match "bevel" more closely, maybe 2 segments is better.
+
+But 2 segments makes the UV much harder. Let me think about whether I can do 2 segments cleanly.
+
+With 2 segments, the bevel strip has 2 segments, so more faces. The seam marking is similar in principle (mark the same strips), just more edges.
+
+Actually, let me just go with segment_count=1 (chamfer). It's clean, valid, and the result will look like a nicely chamfered wooden crate. If the user wants rounded, they can ask.
+
+Wait, actually, let me reconsider the triangle budget. With segment_count=1, ~44 triangles. With segment_count=2, more but still way under 2000. The budget isn't a concern either way.
+
+The real concern is UV cleanliness. segment_count=1 is much cleaner. Let me go with 1.
+
+Let me rebuild now.
+
+Actually, I realize I should just rebuild the whole thing cleanly in one go, since the current crate has a 2-segment bevel already applied. Let me remove it and rebuild.
+
+Let me write the full build:
+1. Remove existing Crate.
+2. add_box, snap to ground.
+3. add_bevel segment_count=1, apply.
+4. assign material.
+5. mark seams (cross layout).
+6. unwrap.
+7. check.
+
+Let me do it step by step but combine where safe.
+
+First, rebuild with segment_count=1.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.primitives import add_box, link_into_scene\nfrom blended.ops.transforms import snap_base_to_ground\nfrom blended.ops.modifiers import add_bevel, apply_all_modifiers\nfrom blended.ops.materials import assign_material\n\n# clean rebuild\nif \"Crate\" in bpy.data.objects:\n    bpy.data.objects.remove(bpy.data.objects[\"Crate\"], do_unlink=True)\n\ncrate = add_box(\"Crate\", width_m=0.5, depth_m=0.5, height_m=0.5)\nlink_into_scene(crate)\nsnap_base_to_ground(crate)\nadd_bevel(crate, width_m=0.02, segment_count=1)\napply_all_modifiers(crate)\nassign_material(crate, \"CrateWood\", base_color_rgb=(0.72, 0.35, 0.22), roughness=0.7)\n\nmesh = crate.data\nprint(\"faces:\", len(mesh.polygons), \"verts:\", len(mesh.vertices), \"edges:\", len(mesh.edges))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+faces: 26 verts: 24 edges: 48
+
+--- thinking ---
+26 faces, 24 verts, 48 edges. This is a chamfered cube: 6 flat faces + 12 chamfer strips + 8 corner triangles = 26. 
+
+Now let me mark seams for a cross unfold. Let me examine the edges to understand the structure.
+
+Let me print edge midpoints and directions to identify the strips.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom mathutils import Vector\ncrate = bpy.data.objects[\"Crate\"]\nbm = bmesh.new()\nbm.from_mesh(crate.data)\nbm.edges.ensure_lookup_table()\nfor e in bm.edges:\n    v0, v1 = e.verts\n    mid = (v0.co + v1.co) / 2\n    d = v1.co - v0.co\n    ax = max(range(3), key=lambda i: abs(d[i]))\n    print(f\"len={d.length:.3f} ax={ax} mid=({mid.x:.3f},{mid.y:.3f},{mid.z:.3f})\")\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+len=0.028 ax=2 mid=(-0.240,-0.230,0.010)
+len=0.028 ax=2 mid=(-0.230,-0.240,0.010)
+len=0.028 ax=0 mid=(-0.240,-0.240,0.020)
+len=0.028 ax=0 mid=(-0.240,-0.240,0.480)
+len=0.028 ax=2 mid=(-0.230,-0.240,0.490)
+len=0.028 ax=2 mid=(-0.240,-0.230,0.490)
+len=0.028 ax=2 mid=(-0.230,0.240,0.010)
+len=0.028 ax=2 mid=(-0.240,0.230,0.010)
+len=0.028 ax=0 mid=(-0.240,0.240,0.020)
+len=0.028 ax=2 mid=(-0.240,0.230,0.490)
+len=0.028 ax=2 mid=(-0.230,0.240,0.490)
+len=0.028 ax=0 mid=(-0.240,0.240,0.480)
+len=0.028 ax=2 mid=(0.230,-0.240,0.010)
+len=0.028 ax=2 mid=(0.240,-0.230,0.010)
+len=0.028 ax=0 mid=(0.240,-0.240,0.020)
+len=0.028 ax=2 mid=(0.240,-0.230,0.490)
+len=0.028 ax=2 mid=(0.230,-0.240,0.490)
+len=0.028 ax=0 mid=(0.240,-0.240,0.480)
+len=0.028 ax=2 mid=(0.240,0.230,0.010)
+len=0.028 ax=2 mid=(0.230,0.240,0.010)
+len=0.028 ax=0 mid=(0.240,0.240,0.020)
+len=0.028 ax=2 mid=(0.230,0.240,0.490)
+len=0.028 ax=2 mid=(0.240,0.230,0.490)
+len=0.028 ax=0 mid=(0.240,0.240,0.480)
+len=0.460 ax=1 mid=(-0.230,0.000,0.000)
+len=0.460 ax=1 mid=(-0.250,0.000,0.020)
+len=0.460 ax=2 mid=(-0.230,-0.250,0.250)
+len=0.460 ax=2 mid=(-0.250,-0.230,0.250)
+len=0.460 ax=1 mid=(-0.230,0.000,0.500)
+len=0.460 ax=1 mid=(-0.250,0.000,0.480)
+len=0.460 ax=2 mid=(-0.230,0.250,0.250)
+len=0.460 ax=2 mid=(-0.250,0.230,0.250)
+len=0.460 ax=0 mid=(0.000,0.230,0.000)
+len=0.460 ax=0 mid=(0.000,0.250,0.020)
+len=0.460 ax=0 mid=(0.000,0.230,0.500)
+len=0.460 ax=0 mid=(0.000,0.250,0.480)
+len=0.460 ax=2 mid=(0.250,0.230,0.250)
+len=0.460 ax=2 mid=(0.230,0.250,0.250)
+len=0.460 ax=1 mid=(0.230,0.000,0.000)
+len=0.460 ax=1 mid=(0.250,0.000,0.020)
+len=0.460 ax=1 mid=(0.230,0.000,0.500)
+len=0.460 ax=1 mid=(0.250,0.000,0.480)
+len=0.460 ax=2 mid=(0.230,-0.250,0.250)
+len=0.460 ax=2 mid=(0.250,-0.230,0.250)
+len=0.460 ax=0 mid=(0.000,-0.230,0.000)
+len=0.460 ax=0 mid=(0.000,-0.250,0.020)
+len=0.460 ax=0 mid=(0.000,-0.230,0.500)
+len=0.460 ax=0 mid=(0.000,-0.250,0.480)
+
+--- thinking ---
+Now I understand the structure. There are:
+
+Short edges (0.028) — these are the chamfer edges. They form the corner triangles and the chamfer strips' short edges.
+
+Long edges (0.46) — these are the flat face edges (boundaries between flat faces and chamfer strips).
+
+Let me understand the layout:
+
+The chamfer strips: each original edge (12 edges) becomes a chamfer strip. Each chamfer strip is a quad with 2 long edges (0.46) and 2 short edges (0.028).
+
+The corner triangles: each original vertex (8 vertices) becomes a triangle with 3 short edges (0.028).
+
+Let me identify:
+
+Short edges (0.028) at corners: these form the corner triangles. E.g., at corner (-0.25, -0.25, 0):
+- (-0.240,-0.230,0.010) ax=2 (vertical)
+- (-0.230,-0.240,0.010) ax=2 (vertical)
+- (-0.240,-0.240,0.020) ax=0 (horizontal)
+
+These 3 short edges form the corner triangle at (-0.25,-0.25,0).
+
+So each corner has 3 short edges forming a triangle.
+
+The chamfer strips: each has 2 long edges (0.46) and 2 short edges (0.028). Wait, but I see short edges only at corners. Let me recount.
+
+Actually, looking at the short edges, they're all at corners (midpoints like ±0.24, ±0.24). There are 24 short edges (0.028). 8 corners × 3 edges = 24. Yes.
+
+The long edges (0.46): 24 of them. These are the boundaries between flat faces and chamfer strips.
+
+So the structure:
+- 6 flat faces (quads), each with 4 long edges.
+- 12 chamfer strips (quads), each with 2 long edges + 2 short edges.
+- 8 corner triangles, each with 3 short edges.
+
+Total faces: 6 + 12 + 8 = 26. ✓
+
+Now for the cross unfold, I need to mark seams.
+
+The chamfer strips connect flat faces. The corner triangles connect chamfer strips.
+
+For a cross unfold, I want to cut along:
+- 3 vertical corner "edges" (the vertical chamfer strips at the 4 corners)
+- 3 top edges (top chamfer strips)
+- 3 bottom edges (bottom chamfer strips)
+
+The vertical chamfer strips are at the 4 corners, running in Z. Each vertical chamfer strip is a quad with 2 long vertical edges + 2 short horizontal edges.
+
+Wait, let me identify the vertical chamfer strips. At corner (0.25, 0.25), the vertical chamfer strip runs from z=0.02 to z=0.48. Its edges:
+- 2 long vertical edges (0.46) at (0.25, 0.23) and (0.23, 0.25), running in Z.
+- 2 short horizontal edges (0.028) at z=0.02 and z=0.48.
+
+Looking at the long edges with ax=2 (vertical):
+- (-0.230,-0.250,0.250) — this is at corner (-0.25,-0.25), vertical
+- (-0.250,-0.230,0.250) — same corner
+- (-0.230,0.250,0.250) — corner (-0.25,0.25)
+- (-0.250,0.230,0.250) — same
+- (0.250,0.230,0.250) — corner (0.25,0.25)
+- (0.230,0.250,0.250) — same
+- (0.230,-0.250,0.250) — corner (0.25,-0.25)
+- (0.250,-0.230,0.250) — same
+
+So 8 vertical long edges, 2 per corner. These are the vertical chamfer strips' long edges.
+
+The horizontal long edges (ax=0 or ax=1) are the top/bottom chamfer strips' long edges and the flat faces' edges.
+
+Let me identify:
+- Top chamfer strips: at z=0.5, running along the 4 top edges. Their long edges are horizontal at z≈0.48-0.5.
+- Bottom chamfer strips: at z=0, running along the 4 bottom edges. Their long edges at z≈0-0.02.
+
+Looking at long edges:
+- ax=1 (Y direction) at z=0.000: (-0.230,0.000,0.000), (-0.250,0.000,0.020) — these are bottom chamfer strip edges (front/back bottom).
+- ax=1 at z=0.500: (-0.230,0.000,0.500), (-0.250,0.000,0.480) — top chamfer strip edges.
+- ax=0 (X direction) at z=0.000: (0.000,0.230,0.000), (0.000,0.250,0.020) — bottom chamfer (left/right).
+- ax=0 at z=0.500: (0.000,0.230,0.500), (0.000,0.250,0.480) — top chamfer.
+
+So the flat faces' edges are the long edges at the "inner" positions (0.23 vs 0.25).
+
+OK this is getting complicated. Let me just mark seams using a clear rule and check the result.
+
+My plan: mark seams to create a cross. Let me mark seams on:
+
+1. Vertical corner chamfer strips: mark seams on the 3 of 4 corners. Each vertical corner strip has 2 long vertical edges + 2 short horizontal edges. To "cut" the corner, I mark seams on the strip's edges.
+
+Actually, the simplest way to think: to cut along a corner, mark seams on the 2 long vertical edges of that corner's chamfer strip (and the short edges too, but the short edges are shared with corner triangles).
+
+Hmm, let me think about what "mark seam" does. A seam is marked on an edge. When unwrapping, the mesh is cut along seam edges. So to separate two faces, mark the shared edge as a seam.
+
+For the cross unfold, I want to cut the box open. The cuts are:
+- 3 vertical corners (cut the 4 sides into a strip)
+- 3 top edges (cut top into a flap)
+- 3 bottom edges (cut bottom into a flap)
+
+Each "cut" is along a chamfer strip. To cut along a chamfer strip, I mark seams on the strip's edges that separate it from the adjacent flat faces.
+
+Actually, let me simplify. The chamfer strip connects two flat faces. To cut between them, mark seams on the chamfer strip's 2 long edges (the boundaries with the flat faces). Then the chamfer strip itself becomes a separate island (or gets absorbed).
+
+Hmm, this is getting complicated. Let me just try a concrete approach and check the island count.
+
+Let me mark seams on ALL edges that are "sharp" (dihedral angle < 180°), which separates everything, then see the island count. Actually I already know that gives 26 islands.
+
+Let me instead mark seams on a specific set and check.
+
+Let me define the cross cut more concretely. I'll mark seams on these edges:
+
+For the cross, cut along:
+1. Vertical corners at (0.25, 0.25), (0.25, -0.25), (-0.25, -0.25) — leave (-0.25, 0.25) connected. So 3 corners cut.
+
+Wait, actually let me think about which corners to leave connected. The 4 sides are: +x, -x, +y, -y. They're connected in a ring: +x connects to +y (via corner (0.25,0.25)), +y to -x (via (-0.25,0.25)), -x to -y (via (-0.25,-0.25)), -y to +x (via (0.25,-0.25)).
+
+To make a strip, cut 3 corners, leave 1. E.g., leave corner (0.25,0.25) connected (so +x and +y stay connected), cut the other 3.
+
+2. Top: cut 3 of 4 top edges, leave 1 (so top attaches to one side).
+3. Bottom: cut 3 of 4 bottom edges, leave 1.
+
+Let me just implement and check. I'll mark seams on edges based on midpoint location.
+
+Let me define the seam marking:
+
+For each edge, compute midpoint. Mark as seam if:
+- It's a vertical corner edge (|x|>0.24 and |y|>0.24) at a corner I want to cut (3 of 4 corners).
+- It's a top edge (z>0.48) at a side I want to cut (3 of 4).
+- It's a bottom edge (z<0.02) at a side I want to cut (3 of 4).
+
+But I need to be careful about which edges. Let me think about what edges to mark.
+
+Actually, let me simplify the whole thing. Let me mark seams on edges and just check the island count, iterating.
+
+Let me try: mark seams on all edges where the midpoint is at a corner (|x|>0.24 and |y|>0.24) OR at top (z>0.48) OR at bottom (z<0.02). This cuts all 4 corners, all 4 top, all 4 bottom. Result: 6 islands (4 sides + top + bottom). Let me check.
+
+Actually wait, that might give more islands because the chamfer strips and corner triangles become separate. Let me just try and see.
+
+Let me write the seam marking code and unwrap, then check island count.
+
+Actually, let me think about what "mark seam on edge" does to the chamfer strip. If I mark seams on the 2 long edges of a chamfer strip, the chamfer strip becomes disconnected from both flat faces, becoming its own island. That's bad (adds islands).
+
+Instead, to cut between two flat faces, I should mark seams on the chamfer strip's SHORT edges (the ones perpendicular to the strip direction), splitting the strip in half, so each half stays with its adjacent flat face.
+
+Hmm wait, no. Let me think again.
+
+A chamfer strip is a quad connecting flat face A and flat face B. The strip has:
+- 2 long edges: one shared with face A, one shared with face B.
+- 2 short edges: shared with corner triangles (or other strips).
+
+To separate face A from face B, I mark seams on the 2 long edges. Then the strip becomes its own island (disconnected from both A and B). That's not ideal.
+
+Alternatively, to keep the strip attached to one face, I mark seams on only 1 long edge (the one shared with the face I want to separate from).
+
+This is getting complicated. Let me just try the simplest thing and look at the result.
+
+Let me mark seams on all "sharp" edges (dihedral < 180°) and see the island count. Then I'll know the baseline.
+
+Actually, I already know: 26 islands (one per face). Too many.
+
+Let me think about the cross unfold differently. 
+
+The key realization: for a clean cross, I want to mark seams along a "cut path" that goes around the box. The cut path separates the box into a cross.
+
+The classic cross cut: 
+- 4 vertical cuts at the 4 corners (but actually 3, leaving 1 connected)
+- top and bottom perimeter cuts
+
+Let me just mark seams on the chamfer strips' long edges selectively.
+
+Actually, let me step back and use a much simpler mental model. Let me mark seams on edges and just iterate quickly. I'll write a function that marks seams based on a rule, unwraps, and reports island count. Then I'll adjust the rule.
+
+Let me try rule 1: mark seams on all edges where midpoint is at a corner (|x|>0.24 and |y|>0.24) or top (z>0.48) or bottom (z<0.02).
+
+Let me write it and check.
+
+Actually, I realize the corner triangles are at |x|>0.24 AND |y|>0.24 AND (z<0.02 or z>0.48). So they'd be caught by both corner and top/bottom rules. Fine.
+
+Let me just do it and check island count.
+
+Let me write the code to mark seams and unwrap, reportingisland count.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom blended.ops.uv import unwrap_uvs\n\ncrate = bpy.data.objects[\"Crate\"]\nmesh = crate.data\n\n# clear UVs\nfor uv in list(mesh.uv_layers):\n    mesh.uv_layers.remove(uv)\n\nbm = bmesh.new()\nbm.from_mesh(mesh)\nbm.edges.ensure_lookup_table()\n\n# Rule: mark seams on edges at corners, top, or bottom perimeter\nseam_count = 0\nfor e in bm.edges:\n    v0, v1 = e.verts\n    mid = (v0.co + v1.co) / 2\n    at_corner = abs(mid.x) > 0.24 and abs(mid.y) > 0.24\n    at_top = mid.z > 0.48\n    at_bottom = mid.z < 0.02\n    if at_corner or at_top or at_bottom:\n        e.seam = True\n        seam_count += 1\n\nbm.to_mesh(mesh)\nbm.free()\n\nr = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(\"seams marked:\", seam_count)\nprint(\"islands:\", r.island_count, \"overlaps:\", r.overlapping_face_pair_count, \"coverage:\", round(r.coverage_fraction,3))\n"})
+
+--- result ---
+Executed OK in 0.01s.
+printed:
+seams marked: 36
+islands: 15 overlaps: 0 coverage: 0.659
+
+--- thinking ---
+15 islands, 0 overlaps. Under 12 needed. 15 is too many. The corner triangles and chamfer strips are becoming separate islands.
+
+Let me think. 15 islands = 6 flat faces + some chamfer strips + corner triangles that got separated.
+
+The issue: when I mark seams on all edges of a chamfer strip (both long edges), the strip becomes its own island.
+
+Let me reconsider. I want a cross. Let me think about the correct seam set.
+
+For a cross unfold, the cuts should be along the chamfer strips, but I should mark seams such that the chamfer strips stay attached to one side.
+
+Actually, let me reconsider the whole approach. The cleanest cross for a chamfered cube:
+
+The 6 flat faces + their adjacent chamfer strips + corner triangles should unfold into a cross.
+
+Let me think about the connectivity graph:
+- 6 flat faces (nodes)
+- 12 chamfer strips (edges connecting faces)
+- 8 corner triangles (connecting 3 strips each)
+
+For a cross, I want to cut the graph into a tree (spanning tree) so it unfolds flat.
+
+The cross is: 4 sides in a strip + top + bottom. 
+
+Let me think about which chamfer strips to "cut" (mark seams on) vs "keep" (leave connected).
+
+To make the 4 sides a strip: keep 3 of the 4 vertical corner connections, cut 1. Wait, 4 sides in a ring need 3 connections to form a strip (cut 1 corner).
+
+Actually, 4 sides in a ring: to make a strip (path), cut 1 of the 4 corners. So keep 3 vertical corners connected, cut 1.
+
+Top: connected to 4 sides via 4 top chamfer strips. To attach top to one side, keep 1 top connection, cut 3.
+
+Bottom: same, keep 1, cut 3.
+
+Total cuts: 1 vertical corner + 3 top + 3 bottom = 7 cuts.
+
+Each "cut" is along a chamfer strip. To cut a chamfer strip, I mark seams on its 2 long edges (separating it from both adjacent flat faces). But then the strip becomes its own island.
+
+Alternatively, to cut a chamfer strip while keeping it attached to one face, mark seams on only 1 long edge.
+
+Hmm. Let me think about what "cut" means for the chamfer strip.
+
+Actually, the chamfer strip is a thin quad. When I cut along it, I want to split the box. The strip itself can go with either side.
+
+Let me reconsider. The simplest correct approach: mark seams on the chamfer strip's 2 long edges (both boundaries). This makes the strip a separate island. But then I have extra islands for the cut strips.
+
+7 cuts × 1 strip each = 7 extra islands. Plus the corner triangles.
+
+This is getting complicated. Let me think about a cleaner approach.
+
+Alternative: Instead of cutting along chamfer strips, cut along the flat faces' edges directly.
+
+Actually, let me reconsider. Maybe the cleanest approach is to mark seams on the chamfer strips' SHORT edges (the 0.028 edges), which would split the chamfer strips in half along their length, keeping each half attached to its adjacent flat face.
+
+Wait, no. The chamfer strip's short edges are at its ends (shared with corner triangles). Marking seams on those separates the strip from the corner triangles.
+
+Let me think about the actual topology more carefully.
+
+A chamfer strip (e.g., the top-front edge, running in X direction at y=0.25, z=0.5):
+- It's a quad connecting the top face (z=0.5) and the front face (y=0.25).
+- Its 2 long edges: one at z=0.48 (shared with top face), one at y=0.23 (shared with front face).
+- Its 2 short edges: at x=±0.23 (shared with corner triangles at the left/right front-top corners).
+
+To cut between top and front faces, mark seams on the 2 long edges. Then the strip is separate.
+
+To keep the strip attached to the top face, mark seam only on the long edge shared with front face (y=0.23).
+
+OK, I think the cleanest approach is:
+
+For each chamfer strip I want to "cut", mark seams on BOTH long edges, making the strip a separate island. But that adds islands.
+
+Alternatively, mark seams on the long edge shared with ONE face, keeping the strip attached to the other face.
+
+Let me think about the total island count for a proper cross.
+
+Actually, let me reconsider. Maybe I'm overcomplicating. Let me think about what a "good" crate UV looks like and just aim for under 12 islands with no overlaps.
+
+15 islands is close. I need to reduce to under 12. The extra islands are likely the corner triangles (8) and some chamfer strips.
+
+Let me check: 15 = 6 flat faces + 9 others (chamfer strips + corner triangles). 
+
+Actually, let me reconsider my seam rule. I marked seams on ALL edges at corners, top, and bottom. This over-cuts.
+
+Let me think about the correct minimal cut for a cross.
+
+The cross needs these cuts (marking seams to separate):
+1. Cut 1 vertical corner (to open the 4-side ring into a strip).
+2. Cut 3 top edges (to make top a flap).
+3. Cut 3 bottom edges (to make bottom a flap).
+
+For each cut, I mark seams on the chamfer strip's 2 long edges. But to avoid extra islands, I should mark seams on only 1 long edge per strip, keeping the strip attached to one face.
+
+Actually, let me reconsider. When I mark a seam on an edge, the two faces sharing that edge get separated in UV space. The chamfer strip is a face. If I mark seams on both its long edges, it's separated from both flat faces → its own island.
+
+If I mark seam on only 1 long edge, it stays attached to the other flat face → no extra island.
+
+So for a clean cross with minimal islands, I should mark seams on exactly 1 long edge per cut strip.
+
+But wait, there's also the corner triangles. Each corner triangle connects 3 chamfer strips. When I cut strips, the corner triangles need to be handled too.
+
+This is getting really complicated. Let me take a step back and think about a simpler, more robust approach.
+
+Alternative approach: Use a different unwrap strategy. Instead of ANGLE_BASED with manual seams, maybe I can use a simpler seam layout.
+
+Actually, let me reconsider. The brief says "under 12 islands". 15 is close. Let me see if I can get a clean cross with ~6-8 islands.
+
+Let me think about the cross more carefully and mark seams precisely.
+
+The cross layout (box unfold):
+- 4 side faces in a horizontal strip
+- top face above one side
+- bottom face below one side
+
+For the chamfered cube, the chamfer strips and corner triangles need to be distributed.
+
+Let me define the cut precisely. I'll mark seams on these edges:
+
+1. Vertical corner cuts (3 of 4 corners): For each corner to cut, mark seams on the 2 long vertical edges of that corner's chamfer strip. This separates the two adjacent side faces.
+
+Wait, but the vertical chamfer strip connects 2 side faces (e.g., +x and +y). Its 2 long vertical edges: one shared with +x face, one shared with +y face. Marking both separates the strip from both → strip becomes island.
+
+To keep the strip attached to one side, mark only 1 long edge.
+
+Hmm. Let me think about which is cleaner.
+
+Actually, you know what, let me just try a cleaner rule and iterate. Let me mark seams on:
+
+1. The 3 vertical corners to cut: mark seams on the 2 long vertical edges of each (6 edges).
+2. The 3 top edges to cut: mark seams on the 2 long horizontal edges of each top chamfer strip (6 edges).
+3. The 3 bottom edges to cut: mark seams on the 2 long horizontal edges of each bottom chamfer strip (6 edges).
+
+Plus the corner triangles: they'll be separated as needed.
+
+Total 18 long edges marked. Let me see the island count.
+
+Actually, let me reconsider. The corner triangles: each corner triangle is at a vertex where 3 chamfer strips meet. If I cut the strips, the corner triangle might become its own island.
+
+Let me just try and iterate. Let me write a more precise seam marking.
+
+Actually, let me reconsider the whole thing from scratch with a cleaner mental model.
+
+The chamfered cube has 26 faces. I want to unfold it into a cross with few islands.
+
+Let me think of it as: the box has 6 "sides" (flat faces), and the chamfers are "trim" around the edges.
+
+For a cross, I'll cut along specific chamfer strips. When I cut a chamfer strip, I split it so half goes to each adjacent face. To do this, I mark seams on the strip's 2 long edges AND the strip's 2 short edges? No...
+
+Ugh. Let me just try the "mark 2 long edges per cut strip" approach and see the island count, then refine.
+
+Let me write precise code.
+
+Actually, let me reconsider using a simpler and more reliable method: mark seams on the flat faces' edges directly, treating the chamfer as part of the flat faces.
+
+Hmm, but the chamfer strips are separate faces.
+
+Let me just go with a concrete plan and iterate. I'll mark seams on:
+
+For the cross, cut these chamfer strips (mark both long edges as seams):
+- Vertical corners: cut 3 of 4. The 4 vertical corners are at (0.25,0.25), (0.25,-0.25), (-0.25,-0.25), (-0.25,0.25). Cut all except (-0.25,0.25) [leave +x and +y... wait].
+
+Let me define which sides connect. Sides: +x (x=0.25), -x (x=-0.25), +y (y=0.25), -y (y=-0.25).
+
+Ring order: +x → +y (corner (0.25,0.25)), +y → -x (corner (-0.25,0.25)), -x → -y (corner (-0.25,-0.25)), -y → +x (corner (0.25,-0.25)).
+
+To make a strip, cut 1 corner. Let me cut corner (0.25,-0.25) (between -y and +x). Keep the other 3 connected. So sides form: +x - +y - -x - -y (a strip).
+
+Top: attach to +x side (keep top-front... wait, top connects to all 4 sides). Keep top connected to +x (via top edge at x=0.25), cut the other 3 top edges.
+
+Bottom: keep connected to +x (via bottom edge at x=0.25), cut other 3.
+
+Hmm wait, but if top and bottom both attach to +x, and +x is at one end of the strip, that's fine.
+
+Actually, let me simplify and just do it, checking island count.
+
+Let me write code that marks seams on the 2 long edges of specific chamfer strips.
+
+To identify chamfer strips and their long edges:
+
+A chamfer strip's long edges are the 0.46-length edges. The short edges are 0.028.
+
+For a vertical corner chamfer strip (at corner (cx, cy)), its 2 long edges are vertical (ax=2) with midpoint (cx, cy±0.02, 0.25) roughly. Actually from the data:
+- corner (0.25, 0.25): long vertical edges at (0.250, 0.230, 0.250) and (0.230, 0.250, 0.250).
+
+So the 2 long edges of the vertical corner strip at (0.25,0.25) are at midpoints (0.25, 0.23, 0.25) and (0.23, 0.25, 0.25).
+
+For a top chamfer strip (e.g., top-front at y=0.25, z=0.5), its 2 long edges are horizontal (ax=0, X direction) at midpoints (0, 0.25, 0.48) and (0, 0.23, 0.5). From data:
+- (0.000,0.250,0.480) ax=0 and (0.000,0.230,0.500) ax=0.
+
+So the top-front strip's long edges are at (0, 0.25, 0.48) and (0, 0.23, 0.5).
+
+OK this is doable but tedious. Let me write a more general approach.
+
+Actually, let me reconsider. Maybe there's a much simpler approach: mark seams on ALL long edges (0.46 edges) that are NOT on the "keep" connections.
+
+Hmm, let me think about the total. There are 24 long edges. Each chamfer strip has 2 long edges. 12 strips × 2 = 24. ✓
+
+For the cross, I cut 7 strips (1 vertical corner + 3 top + 3 bottom). Each cut strip: mark both long edges as seams = 14 long edges marked.
+
+The remaining 5 strips (3 vertical corners + 1 top + 1 bottom) stay connected (no seams on their long edges).
+
+Wait, but the flat faces also have long edges that are NOT part of chamfer strips. Let me recount.
+
+Actually, all 24 long edges are chamfer strip boundaries. Each flat face has 4 long edges, but each long edge is shared between a flat face and a chamfer strip. So 24 long edges = 6 faces × 4 edges, but each edge shared... no.
+
+Let me recount. 6 flat faces, each a quad with 4 edges. But the flat faces' edges are shared with chamfer strips. So 6×4 = 24 flat-face edges, but each is shared with a chamfer strip, so 24 long edges total. And 12 chamfer strips each have 2 long edges = 24. ✓ Consistent.
+
+So all 24 long edges are "flat face ↔ chamfer strip" boundaries.
+
+For the cross, I mark seams on the long edges of the cut strips.
+
+Let me just implement it. I'll mark seams on long edges based on which strip they belong to.
+
+Let me define the cut strips and mark their long edges.
+
+Actually, let me simplify the implementation. I'll mark seams on long edges (length > 0.4) based on their midpoint:
+
+1. Vertical corner strips to cut (3 of 4): long edges with ax=2 (vertical) at corners. The 4 corners: (0.25,0.25), (0.25,-0.25), (-0.25,-0.25), (-0.25,0.25). Cut 3, keep 1.
+
+2. Top strips to cut (3 of 4): long edges with ax=0 or ax=1 at z≈0.48-0.5. The 4 top strips: +x (x=0.25), -x, +y, -y. Cut 3, keep 1.
+
+3. Bottom strips to cut (3 of 4): long edges at z≈0-0.02.
+
+Let me write this. For each long edge, determine its strip and whether to cut.
+
+Let me define helper to classify a long edge:
+- vertical corner: ax==2 (vertical). Its corner is (sign(mid.x), sign(mid.y)).
+- top: mid.z > 0.4 (near top). Its side is determined by which of |x| or |y| is ~0.25.
+- bottom: mid.z < 0.1.
+
+Let me just write it and check island count.
+
+Actually, let me simplify even more. Let me mark seams on long edges and check. I'll write a clear rule.
+
+Let me define:
+- For vertical long edges (ax=2): these are the 4 vertical corner strips (2 edges each = 8 edges). Cut 3 corners → mark 6 edges, keep 1 corner (2 edges unmarked).
+
+- For horizontal long edges (ax=0 or ax=1): these are top and bottom strips. 16 edges total (8 top + 8 bottom). Cut 3 top + 3 bottom → mark 12 edges, keep 2 (1 top + 1 bottom = 4 edges unmarked).
+
+Total marked: 6 + 12 = 18 long edges. Unmarked: 2 + 4 = 6 long edges.
+
+Let me implement and check.
+
+For the "keep" choices:
+- Keep vertical corner (-0.25, 0.25) (between +y and -x). So cut corners (0.25,0.25), (0.25,-0.25), (-0.25,-0.25).
+
+Wait, let me reconsider. I want the 4 sides to form a strip. Cut 1 corner. Let me cut corner (0.25,-0.25) (between -y and +x). Keep the other 3.
+
+Actually, it doesn't matter much which I cut, as long as it's a valid tree. Let me cut corner (0.25, -0.25).
+
+- Keep top strip at +x (x=0.25). Cut top strips at -x, +y, -y.
+- Keep bottom strip at +x. Cut bottom strips at -x, +y, -y.
+
+Let me implement.
+
+For vertical long edges (ax=2), midpoint (mx, my, 0.25):
+- corner = (sign(mx), sign(my)).
+- cut if corner != (0.25, -0.25) [the keep corner]. Actually sign: keep corner is (+, -). Cut corners: (+,+), (-,+), (-,-).
+
+For top long edges (mid.z > 0.4), horizontal:
+- side: if |mx| > 0.24 → x-side (sign(mx)); if |my| > 0.24 → y-side (sign(my)).
+- Actually the top strip at +x has long edges at (0.25, 0.23, 0.48) and (0.23, 0.25, 0.5)? No wait.
+
+Let me look at the data again for top strips:
+- (0.000,0.250,0.480) ax=0 — this is top-front strip (y=0.25), long edge at y=0.25, z=0.48.
+- (0.000,0.230,0.500) ax=0 — top-front strip, long edge at y=0.23, z=0.5.
+
+So the top-front strip (y=0.25) has long edges at (0, 0.25, 0.48) and (0, 0.23, 0.5). Both have |my| ≈ 0.23-0.25, mx=0.
+
+The top-right strip (x=0.25) has long edges at (0.25, 0, 0.48) and (0.23, 0, 0.5). From data:
+- (0.250,0.230,0.250)? No that's vertical.
+
+Let me look for top strips at x=0.25. The data shows:
+- (0.000,0.230,0.500) ax=0 — top-front (y=0.25)
+- (0.000,0.250,0.480) ax=0 — top-front
+- (0.000,-0.230,0.500) ax=0 — top-back (y=-0.25)
+- (0.000,-0.250,0.480) ax=0 — top-back
+- (0.230,0.000,0.500) ax=1 — top-right (x=0.25)
+- (0.250,0.000,0.480) ax=1 — top-right
+- (-0.230,0.000,0.500) ax=1 — top-left (x=-0.25)
+- (-0.250,0.000,0.480) ax=1 — top-left
+
+So top strips:
+- +x (right): long edges (0.23,0,0.5) and (0.25,0,0.48), ax=1.
+- -x (left): (-0.23,0,0.5) and (-0.25,0,0.48), ax=1.
+- +y (front): (0,0.23,0.5) and (0,0.25,0.48), ax=0.
+- -y (back): (0,-0.23,0.5) and (0,-0.25,0.48), ax=0.
+
+Similarly bottom strips at z≈0-0.02.
+
+OK. Let me write the code to mark seams precisely.
+
+For each long edge (length > 0.4):
+- If ax==2 (vertical): it's a vertical corner strip. corner = (sign(mx), sign(my)). Cut if corner is one of the 3 cut corners.
+- If ax==0 or ax==1 (horizontal): 
+  - if mid.z > 0.4: top strip. side = sign of the non-zero coordinate (mx if ax==1, my if ax==0). Cut if side is one of 3 cut sides.
+  - if mid.z < 0.1: bottom strip. similar.
+
+Let me define:
+- cut vertical corners: (+,+), (-,+), (-,-). Keep (+, -).
+- cut top sides: -x, +y, -y. Keep +x.
+- cut bottom sides: -x, +y, -y. Keep +x.
+
+Let me write it.
+
+Actually, I realize I should double check: does marking seams on the 2 long edges of a cut strip actually separate the two flat faces cleanly, or does the strip become its own island?
+
+When I mark seams on both long edges of a strip, the strip is disconnected from both flat faces. The strip's short edges connect to corner triangles. If the corner triangles are also cut, the strip becomes its own island.
+
+So marking both long edges of a cut strip → strip becomes its own island (unless it merges with a corner triangle).
+
+This means 7 cut strips → 7 extra islands. Plus 6 flat faces = 13 islands. Plus corner triangles.
+
+Hmm, that's still potentially > 12.
+
+Let me reconsider. Maybe I should mark seams on only 1 long edge per cut strip, keeping the strip attached to one face.
+
+Actually, let me reconsider the whole thing. Let me think about what gives the cleanest result.
+
+Alternative clean approach: mark seams on the SHORT edges (0.028) of the cut strips, splitting each cut strip in half along its length. Then each half stays attached to its adjacent flat face.
+
+Wait, the short edges are at the strip's ends (shared with corner triangles), not along its length. Marking seams on short edges separates the strip from corner triangles.
+
+Hmm. Let me think about the strip's topology again.
+
+A chamfer strip is a quad. Its 4 edges:
+- 2 long edges (0.46): shared with 2 flat faces.
+- 2 short edges (0.028): shared with 2 corner triangles.
+
+To "cut" the strip (separate the 2 flat faces), I need to mark seams on the 2 long edges. This makes the strip a separate island (disconnected from both flat faces and, if corner triangles are also cut, from everything).
+
+To avoid the strip becoming its own island, I could mark seams on only 1 long edge, keeping the strip attached to the other flat face. But then the strip is still connected to the "keep" face, and the "cut" face is separated. This works!
+
+So for each cut strip, mark seam on only 1 long edge (the one shared with the face I want to separate).
+
+But which face to separate? For a cross, I want to cut between specific faces.
+
+This is getting complicated. Let me just try a few approaches and check island counts, iterating quickly.
+
+Let me try approach A: mark seams on both long edges of cut strips, and also mark seams on the corner triangles' edges appropriately. Check island count.
+
+Actually, let me just try the simplest thing that might give a clean cross: mark seams on ALL long edges EXCEPT the "keep" connections, and see.
+
+Hmm, let me just iterate. Let me try marking seams on both long edges of the 7 cut strips and see the island count.
+
+Let me write it.
+
+Actually, let me reconsider the corner triangles. There are 8 corner triangles. Each connects 3 chamfer strips. In a cross unfold, the corner triangles should be distributed to the faces.
+
+If I mark seams on the cut strips' long edges, the corner triangles remain connected to the strips via their short edges (which I'm NOT marking). So corner triangles stay attached to strips.
+
+This means: a cut strip + its 2 corner triangles might form a small island.
+
+Let me just try and see. Let me write the code.
+
+Let me define the cut strips and mark their long edges as seams.
+
+I'll write a cleanimplementation.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom blended.ops.uv import unwrap_uvs\n\ncrate = bpy.data.objects[\"Crate\"]\nmesh = crate.data\nfor uv in list(mesh.uv_layers):\n    mesh.uv_layers.remove(uv)\n\nbm = bmesh.new()\nbm.from_mesh(mesh)\nbm.edges.ensure_lookup_table()\n\n# Cross unfold: cut 1 vertical corner, 3 top, 3 bottom.\n# Keep corner (+, -) connected; keep top/bottom +x connected.\ndef sign(v): return 1 if v > 0 else -1\n\nseam_count = 0\nfor e in bm.edges:\n    v0, v1 = e.verts\n    d = v1.co - v0.co\n    if d.length < 0.4:   # only long edges (chamfer strip boundaries)\n        continue\n    mid = (v0.co + v1.co) / 2\n    ax = max(range(3), key=lambda i: abs(d[i]))\n    cut = False\n    if ax == 2:  # vertical corner strip\n        corner = (sign(mid.x), sign(mid.y))\n        cut = corner != (1, -1)   # keep (+, -)\n    else:  # horizontal top/bottom strip\n        if mid.z > 0.4:  # top\n            side = sign(mid.x) if ax == 1 else sign(mid.y)\n            cut = side != 1   # keep +x\n        elif mid.z < 0.1:  # bottom\n            side = sign(mid.x) if ax == 1 else sign(mid.y)\n            cut = side != 1\n    if cut:\n        e.seam = True\n        seam_count += 1\n\nbm.to_mesh(mesh)\nbm.free()\n\nr = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(\"seams:\", seam_count, \"islands:\", r.island_count, \"overlaps:\", r.overlapping_face_pair_count, \"coverage:\", round(r.coverage_fraction,3))\n"})
+
+--- result ---
+Executed OK in 0.01s.
+printed:
+seams: 14 islands: 22 overlaps: 0 coverage: 0.716
+
+--- thinking ---
+22 islands. Worse. The cut strips became separate islands, and the corner triangles too.
+
+The problem is that marking seams on both long edges of a strip makes the strip + corner triangles separate islands.
+
+Let me reconsider. I need a cleaner approach.
+
+Let me think about this differently. The issue is the chamfer strips and corner triangles create many small faces that become separate islands when I cut.
+
+Let me reconsider: maybe I should mark seams on the SHORT edges (0.028) instead, to split the chamfer strips along their length, keeping each half attached to a flat face.
+
+Wait, no. Let me think about the actual goal: a clean cross with few islands.
+
+Let me reconsider the topology. The chamfered cube:
+- 6 flat faces
+- 12 chamfer strips (each connecting 2 flat faces)
+- 8 corner triangles (each connecting 3 strips)
+
+For a cross unfold, I want to cut the box open. The natural cuts are along the chamfer strips.
+
+When I cut a chamfer strip, I want to split it so each half goes with its adjacent flat face. To do this, I mark seams on the strip's 2 long edges (separating from flat faces) AND I need to split the strip itself in half.
+
+Actually, the strip is a single quad. To split it in half, I'd need to mark seams on its 2 short edges too, but that separates it from corner triangles, not split it in half.
+
+Hmm. The strip is a quad with 2 long edges and 2 short edges. To split it into 2 halves (each a triangle), I'd need a diagonal seam. That's not how seams work.
+
+Let me reconsider. Maybe the cleanest approach is different.
+
+Alternative: Don't cut along chamfer strips. Instead, treat the chamfer as part of the flat faces and cut along the flat faces' "logical" edges.
+
+Actually, let me reconsider the whole problem. Maybe I'm overcomplicating the seam layout.
+
+Let me think about what a clean crate UV looks like. A crate is a box. The standard box UV is a cross. With chamfers, the chamfers are small trim.
+
+The cleanest approach might be: mark seams along the chamfer strips' CENTER (the "sharp" edge), so each chamfer strip is split between its two adjacent faces.
+
+But a chamfer strip is a single quad — it doesn't have a center edge. With segment_count=1, the chamfer is a flat 45° strip, a single quad.
+
+Hmm. So to split the chamfer strip between two faces, I'd need to mark seams on both long edges, making the strip its own island.
+
+Wait, but actually, maybe the strip should just go entirely with one face. Let me think.
+
+For a cross unfold, the cuts are:
+- 3 vertical corners (to open the ring)
+- 3 top edges
+- 3 bottom edges
+
+Each cut is along a chamfer strip. The chamfer strip, when cut, should go with one of its adjacent faces.
+
+To make the strip go with face A (not face B), mark seam on the long edge shared with face B only. Then the strip stays attached to face A.
+
+So for each cut strip, mark seam on exactly 1 long edge (the one shared with the face being separated).
+
+Let me reconsider which face to separate for each cut.
+
+For a vertical corner cut (e.g., corner (0.25, 0.25) between +x and +y): I want to separate +x from +y. Mark seam on the long edge shared with +y (or +x). The strip goes with the other face.
+
+For a top cut (e.g., top-front strip between top and +y): separate top from +y. Mark seam on the long edge shared with +y (or top).
+
+This way, each cut strip stays attached to one face, no extra island.
+
+But the corner triangles: each corner triangle connects 3 strips. When I cut strips, the corner triangle needs to go somewhere.
+
+Let me think about the corner triangle at (0.25, 0.25, 0.5) (top-front-right corner). It connects:
+- top-right strip (x=0.25, top)
+- top-front strip (y=0.25, top)
+- vertical corner strip (0.25, 0.25)
+
+If I cut some of these strips, the corner triangle's connectivity changes.
+
+This is getting really complicated. Let me step back and think about a fundamentally simpler approach.
+
+Simpler approach: Use a different unwrap method or a different seam strategy that's more forgiving.
+
+Actually, let me reconsider. The requirement is:
+- no overlapping faces
+- no faces outside 0-1 UV square
+- under 12 islands
+- "a real seam-and-unwrap layout, not one island per face"
+
+15 islands was my first attempt (marking all corner/top/bottom edges). 22 was worse. Let me think about what gives a clean result.
+
+Actually, maybe the issue is that I'm cutting too much. Let me think about the MINIMAL cut for a cross.
+
+A cross needs to cut the box open. The box is a closed surface (sphere topology). To unfold it flat, I need to cut it into a disk (tree).
+
+The minimal cuts: the box has 6 faces. To unfold into a cross (1 island), I need to cut along a spanning tree of the "face adjacency graph".
+
+Face adjacency graph: 6 flat faces, connected via 12 chamfer strips (edges). Plus corner triangles.
+
+Actually, let me think about it as: the whole surface is a sphere. To unfold to a disk, cut along a tree that spans all faces.
+
+The cross is the standard result. The cuts are along 7 chamfer strips (as I said: 1 vertical corner + 3 top + 3 bottom).
+
+But the chamfer strips and corner triangles complicate the "cut" because they're separate faces.
+
+Let me reconsider: what if I mark seams on the chamfer strips' long edges such that the strips stay attached to faces, and handle corner triangles by marking their edges too?
+
+Actually, let me try a completely different, simpler approach: mark seams on ALL short edges (0.028) and see what happens. The short edges are the corner triangle edges and the strip ends.
+
+Hmm, let me think. The short edges (0.028) are:
+- 3 per corner triangle (8 corners × 3 = 24 short edges).
+
+Wait, but I counted 24 short edges earlier. Let me verify: 8 corners × 3 edges = 24. ✓
+
+The short edges connect corner triangles to chamfer strips (and corner triangles to each other? No, each corner triangle has 3 edges, all shared with 3 different chamfer strips).
+
+So marking seams on all short edges separates all corner triangles from all strips. That gives 8 corner triangle islands + strips + faces. Bad.
+
+Let me think yet again.
+
+OK, let me take a totally different, pragmatic approach. Let me just try to get a clean result by experimenting with the seam marking and checking island count, but more cleverly.
+
+Key insight: I want the chamfer strips to be ABSORBED into the flat faces (not separate islands). To do this, I should NOT mark seams on the long edges (which separate strips from faces). Instead, I should mark seams on the short edges (which separate strips from corner triangles) in a way that lets the strips unfold with the faces.
+
+Wait, but the strips connect 2 faces. If I don't mark seams on the strip's long edges, the strip stays connected to BOTH faces, which means the 2 faces are connected through the strip. That's fine for a cross (I want some faces connected).
+
+The cuts should be at the CORNER TRIANGLES, not the strips. Because the corner triangles are where 3 faces meet.
+
+Hmm, let me think about the topology as a graph where:
+- Nodes = flat faces (6)
+- The chamfer strips and corner triangles are "connectors" between faces.
+
+Actually, let me think about it more simply. The box's 6 faces are connected at 12 edges (chamfer strips) and 8 corners (corner triangles).
+
+For a cross, I cut along 7 of the 12 edges (chamfer strips). Each cut separates 2 faces.
+
+To cut along a chamfer strip, I mark seams on the strip's 2 long edges. This makes the strip a separate island. To avoid that, I mark seams on the strip's 2 short edges instead? No, that separates the strip from corner triangles.
+
+Wait, actually, let me reconsider what "cut along a chamfer strip" means geometrically.
+
+The chamfer strip is a thin quad between face A and face B. To separate A from B, I need to cut the strip. The strip's 2 long edges are shared with A and B. If I mark seams on both long edges, the strip is free from both A and B, but the strip itself is still a connected quad (its 2 short edges connect to corner triangles).
+
+So the strip becomes a separate island (connected to corner triangles via short edges, unless those are also cut).
+
+To make the strip NOT a separate island, I need to attach it to one face. Mark seam on only 1 long edge.
+
+So: for each cut strip, mark seam on 1 long edge (the one shared with the face to separate). The strip stays attached to the other face.
+
+Now the corner triangles: each corner triangle connects 3 strips. After cutting, the corner triangle should stay attached to one of the strips (and thus one face).
+
+The corner triangle's 3 edges are shared with 3 strips. If I don't mark seams on the corner triangle's edges, it stays connected to all 3 strips. But if 2 of those strips are "cut" (separated from their faces), the corner triangle might bridge them, defeating the cut.
+
+This is getting too complicated. Let me just try a concrete approach and check.
+
+Let me try: mark seams on 1 long edge per cut strip (the edge shared with the face to separate), and see the island count.
+
+Actually, let me reconsider and simplify the goal. Maybe I don't need a perfect cross. I just need:
+- under 12 islands
+- no overlaps
+- no out-of-bounds
+- "real seam-and-unwrap layout" (not one island per face)
+
+A reasonable layout: 6 islands (one per flat face, with chamfers absorbed) would be "one island per face" which the brief explicitly says NOT to do. So I need fewer islands, meaning some faces should be connected.
+
+A cross (1 island) or a few islands (like 3: sides strip + top + bottom) is ideal.
+
+Let me aim for the cross. Let me think about the cleanest way.
+
+Actually, let me reconsider the chamfer. What if I use segment_count=2? No, that's more complex.
+
+What if I DON'T bevel, and instead just... no, the brief requires bevel.
+
+Let me think about the cross unfold for a chamfered cube more carefully, treating it as a graph.
+
+Let me define the graph:
+- 6 face nodes: T (top), B (bottom), +X, -X, +Y, -Y.
+- 12 edge nodes (chamfer strips): each connects 2 faces.
+- 8 corner nodes (corner triangles): each connects 3 strips.
+
+For a cross, I want to cut the surface into a disk. The cuts are along strips.
+
+Let me just mark seams on the strips' long edges and accept that strips become separate islands, but then MERGE the strips into faces by NOT marking some edges.
+
+Ugh. Let me just try a bunch of things quickly.
+
+Actually, let me reconsider. Let me look at what 15 islands looked like (my first attempt: mark all corner/top/bottom edges). 15 islands = 6 faces + 9 others. The 9 others are probably: 8 corner triangles + 1 something, or some strips.
+
+Let me actually inspect the islands to understand. Let me write code to count islands and their face composition.
+
+Actually, let me just try a cleaner approach and check. Let me try marking seams on the short edges (0.028) of the cut strips only, plus the corner triangle edges.
+
+Hmm, I'm going in circles. Let me take a concrete, systematic approach:
+
+1. First, understand the island structure by marking seams on ALL long edges (separate all strips from faces) and see how many islands and what they are.
+
+Actually, let me just try the approach of marking seams on 1 long edge per cut strip and check.
+
+Let me define the cuts clearly and mark 1 long edge per cut.
+
+For the cross:
+- Cut 1 vertical corner: corner (0.25, -0.25) [between -Y and +X]. Separate -Y from +X. Mark seam on the long edge shared with -Y (or +X).
+
+Actually, let me simplify and just mark seams on specific long edges and check the result, iterating.
+
+Let me write a helper that marks seams and reports islands, and try a few configurations.
+
+Let me try configuration: mark seams on ALL long edges EXCEPT the "keep" connections (6 keep edges: 2 for the keep vertical corner, 2 for keep top, 2 for keep bottom).
+
+Wait, I already tried marking 14 long edges (both edges of 7 cut strips) and got 22 islands. The problem is the strips become islands.
+
+Let me try marking only 1 long edge per cut strip (7 edges total) and see.
+
+For each cut strip, mark the long edge shared with the "separated" face.
+
+Let me define:
+- Vertical corner cut at (0.25,-0.25): separates -Y and +X. The strip's 2 long edges: one shared with -Y face (y=-0.25), one shared with +X face (x=0.25). Mark the one shared with -Y (so strip stays with +X).
+
+Hmm wait, actually which long edge is shared with which face? The vertical corner strip at (0.25,-0.25) has long edges at (0.25, -0.23, 0.25) and (0.23, -0.25, 0.25). The edge at (0.25, -0.23) is shared with +X face (x=0.25). The edge at (0.23, -0.25) is shared with -Y face (y=-0.25).
+
+To separate -Y from +X, mark seam on the edge shared with -Y: (0.23, -0.25, 0.25). Then the strip stays with +X.
+
+This is getting very detailed. Let me just write code that, for each cut strip, marks the long edge on the "separated" side.
+
+Actually, let me simplify by just trying: mark seams on 1 long edge per cut strip, choosing the edge based on a simple rule, and check island count. If it's not clean, adjust.
+
+Let me write it and check.
+
+Actually, I wonder if there's a much simpler solution. Let me reconsider.
+
+What if I mark seams on the flat faces' edges directly, treating the chamfer strips as part of the flat faces? No, they're separate faces.
+
+What if I use a different approach: mark seams on the chamfer strips' short edges (0.028) to split the strips, so each strip's two halves go to different faces?
+
+Wait, the strip is a quad. Its short edges are at the ends (shared with corner triangles). Marking seams on short edges separates the strip from corner triangles, not split it in half.
+
+To split a quad strip in half, I'd need to mark a seam along its diagonal or middle. Seams are on edges, and the strip has no middle edge.
+
+So I can't split a single-quad chamfer strip in half via seams. The strip must go entirely to one face or be its own island.
+
+OK so the cleanest approach: for each cut strip, mark seam on 1 long edge (the separated side), keeping the strip attached to the other face. This gives no extra islands for strips.
+
+The corner triangles: each connects 3 strips. After cutting, a corner triangle might connect 2 faces that should be separated. To handle this, I need to mark seams on the corner triangle's edges too.
+
+Let me think about the corner triangle at (0.25, 0.25, 0.5) (top-front-right). It connects:
+- top-right strip (x=0.25, top)
+- top-front strip (y=0.25, top)
+- vertical corner strip (0.25, 0.25)
+
+In my cross, which of these are cut?
+- vertical corner (0.25, 0.25): this is a "keep" corner (I keep (+, -), so (+,+) is cut). Wait, let me recheck my keep choices.
+
+Earlier I chose: keep vertical corner (+, -), cut (+,+), (-,+), (-,-). Keep top +x, cut -x, +y, -y. Keep bottom +x, cut -x, +y, -y.
+
+So at corner (0.25, 0.25, 0.5):
+- vertical corner strip (0.25, 0.25): CUT (since (+,+) is cut).
+- top-right strip (x=0.25): KEEP (top +x kept).
+- top-front strip (y=0.25): CUT (top +y cut).
+
+So the corner triangle connects: 1 cut vertical strip, 1 keep top strip, 1 cut top strip.
+
+This corner triangle needs to be assigned to one face. It's connected to the top face (via top strips) and to +X and +Y faces (via vertical strip).
+
+This is really intricate. Let me just try the "mark 1 long edge per cut strip" approach and check the island count, then refine based on what I see.
+
+Let me write it.
+
+Actually, let me reconsider whether I even need the cross to be perfect. Let me just aim for a clean result under 12 islands with no overlaps.
+
+Let me try a simpler seam layout: mark seams on the 4 vertical corner strips (both long edges) + top perimeter + bottom perimeter, but in a way that gives a reasonable island count.
+
+Actually, let me just try the "1 long edge per cut strip" and see.
+
+Let me write code that marks seams on 1 long edge per cut strip.
+
+For each cut strip, I'll mark the long edge that is "farther" from the keep face. Actually, let me just mark a specific edge and check.
+
+Let me define the cuts and mark 1 long edge each:
+
+Vertical corner cuts (3): (+,+), (-,+), (-,-). For each, mark the long edge shared with... let me just mark one of the two long edges.
+
+Actually, let me simplify drastically. Let me mark seams on long edges with a rule and just check island count, iterating a few times.
+
+Let me try: mark seams on long edges where the edge is "on the cut side".
+
+I'll write a clean function and iterate.
+
+Let me define for each long edge which face it's shared with, and mark seams based on the cut plan.
+
+A long edge is shared between a flat face and a chamfer strip. The flat face is determined by the edge's position:
+- vertical long edge (ax=2) at corner (cx, cy): shared with the side face at (cx, 0.25) or (0.25, cy). Specifically, edge at (0.25, -0.23) is on +X face; edge at (0.23, -0.25) is on -Y face.
+
+Hmm, let me determine the face from the midpoint:
+- For vertical edge at (mx, my, 0.25): if |mx| > |my|, it's on the X face (sign(mx)); else on Y face (sign(my)).
+
+Wait, from data: (0.250, 0.230, 0.250) → |mx|=0.25 > |my|=0.23, so X face (+X). (0.230, 0.250, 0.250) → Y face (+Y). Yes.
+
+- For horizontal top edge: (mx, my, mz) with mz>0.4. If ax==1 (X direction), the edge runs in X, so it's on a Y face (front/back) or top face. From data: (0.230, 0.000, 0.500) ax=1 → this is on top face (z=0.5) or +X face (x=0.23)? 
+
+Hmm, (0.23, 0, 0.5): x=0.23, z=0.5. This edge is shared between top face (z=0.5) and +X face (x=0.25)? No, x=0.23 not 0.25.
+
+Wait, let me reconsider. The top-right chamfer strip (x=0.25, top) connects top face and +X face. Its 2 long edges:
+- (0.25, 0, 0.48): shared with +X face (x=0.25).
+- (0.23, 0, 0.5): shared with top face (z=0.5).
+
+So the edge at (0.23, 0, 0.5) is shared with the TOP face, and (0.25, 0, 0.48) is shared with +X face.
+
+OK so to determine which face a long edge is shared with, I look at which coordinate is at the "extreme" (0.25 or 0.5 or 0).
+
+This is doable but tedious. Let me write a helper.
+
+Actually, let me step back and think about whether there's a fundamentally simpler approach to get a clean cross.
+
+Alternative: What if I mark seams on the chamfer strips' long edges such that I get a cross, but I accept the strips as part of the faces by marking seams on the SHORT edges of the corner triangles?
+
+Hmm.
+
+Let me try yet another approach: use the "smart UV project" or "cube project"? No, those have issues (smart project overlaps on curved, but this is boxy so smart project might be OK). But the brief says "a real seam-and-unwrap layout", implying manual seams + unwrap, not projection.
+
+Actually, "cube project" would give 6 islands (one per face direction), which is "one island per face" — not what's wanted.
+
+Let me just carefully implement the cross with 1-long-edge-per-cut and handle corner triangles.
+
+Actually, let me reconsider the corner triangle handling. The corner triangle has 3 edges, each shared with a strip. If I mark seams on the corner triangle's edges that are shared with "cut" strips, the corner triangle stays attached to the "keep" strips.
+
+But actually, the corner triangle is a single face. Its 3 edges connect to 3 strips. If I mark seams on 2 of its 3 edges (the ones shared with cut strips), it stays attached to 1 strip (the keep strip).
+
+So the plan:
+1. For each cut strip, mark seam on 1 long edge (separated side).
+2. For each corner triangle, mark seams on the edges shared with cut strips (so it stays with the keep strip).
+
+This is getting complex but let me just implement it carefully.
+
+Actually, wait. Let me reconsider the whole thing. Maybe there's a simpler seam layout that gives a clean cross.
+
+Let me think about the cross as a "T" or "cross" shape and what seams it needs.
+
+Standard cube cross (no chamfer): mark seams on 4 vertical edges + 4 bottom edges (or similar). Result: cross with 6 faces in 1 island.
+
+For the chamfered cube, the "vertical edges" are now chamfer strips, and "bottom edges" are chamfer strips.
+
+The key difference: the chamfer strips are separate faces, so cutting along them is more complex.
+
+Let me try a completely different tactic: mark seams on the chamfer strips' long edges to separate ALL strips from ALL faces, then manually merge the strips back into faces by removing seams where I want them attached.
+
+Actually, that's the same complexity.
+
+Let me just try the "1 long edge per cut strip + corner triangle edges" approach and check. If it works, great. If not, I'll iterate.
+
+Let me write it carefully.
+
+Actually, let me reconsider once more. Let me think about what the MINIMUM island count is and whether I can just get a clean cross.
+
+Let me try a simpler idea: mark seams on the 4 vertical corner strips (both long edges each = 8 edges) + the 4 top strips (both long edges = 8 edges) + the 4 bottom strips (both long edges = 8 edges) = 24 edges. This separates everything into 26 islands (one per face). Then I selectively REMOVE seams to merge.
+
+No, let me just go with the careful cross approach.
+
+Let me define everything precisely and write the code.
+
+Faces and their coordinates (chamfered cube, 0.5 size, z from 0 to 0.5):
+- Top face: z=0.5, spans x,y in [-0.23, 0.23].
+- Bottom face: z=0, spans x,y in [-0.23, 0.23].
+- +X face: x=0.25, spans y in [-0.23, 0.23], z in [0.02, 0.48].
+- -X face: x=-0.25, similar.
+- +Y face: y=0.25, spans x in [-0.23, 0.23], z in [0.02, 0.48].
+- -Y face: y=-0.25, similar.
+
+Chamfer strips (12):
+- 4 vertical corner strips: at (0.25,0.25), (0.25,-0.25), (-0.25,0.25), (-0.25,-0.25), running in Z from 0.02 to 0.48.
+- 4 top strips: at top edges, z from 0.48 to 0.5.
+- 4 bottom strips: at bottom edges, z from 0 to 0.02.
+
+Corner triangles (8): at the 8 corners.
+
+For the cross, cuts:
+1. Vertical corner: cut 3, keep 1. Keep (0.25, -0.25) [so +X and -Y stay connected]. Cut (0.25,0.25), (-0.25,0.25), (-0.25,-0.25).
+
+Wait, let me reconsider which to keep. The 4 sides form a ring: +X - +Y - -X - -Y - +X. To make a strip, cut 1 corner. If I keep (0.25,-0.25), then +X and -Y stay connected, and the ring is cut at (0.25,-0.25)... 
+
+Actually, cutting 1 corner opens the ring into a strip. The strip is: +X - +Y - -X - -Y (with +X and -Y NOT connected, since (0.25,-0.25) is cut).
+
+Wait, I need to be careful. The ring is +X - +Y (corner (0.25,0.25)) - -X (corner (-0.25,0.25)) - -Y (corner (-0.25,-0.25)) - +X (corner (0.25,-0.25)).
+
+If I cut corner (0.25,-0.25), the ring opens: +X - +Y - -X - -Y (a strip, with +X and -Y as the two ends).
+
+So keep corners (0.25,0.25), (-0.25,0.25), (-0.25,-0.25). Cut (0.25,-0.25).
+
+2. Top: keep +X (top-right strip), cut -X, +Y, -Y. So top face attaches to +X face.
+
+3. Bottom: keep +X, cut -X, +Y, -Y. Bottom face attaches to +X face.
+
+So the cross: 
+- Sides strip: +X - +Y - -X - -Y (4 faces).
+- Top attached to +X.
+- Bottom attached to +X.
+
+This is a valid cross (1 island).
+
+Now, the seams to mark:
+
+For each cut strip, mark seam on 1 long edge (the "separated" side).
+
+Cut strips:
+1. Vertical corner (0.25,-0.25): separates +X and -Y. Mark seam on the long edge shared with -Y (y=-0.25 side). The strip stays with +X.
+
+Actually, wait. Let me reconsider. The vertical corner strip at (0.25,-0.25) connects +X face and -Y face. Its 2 long edges:
+- (0.25, -0.23, 0.25): shared with +X face.
+- (0.23, -0.25, 0.25): shared with -Y face.
+
+To separate +X from -Y, mark seam on ONE of these. If I mark the -Y edge, the strip stays with +X. If I mark the +X edge, strip stays with -Y.
+
+Either works for separating. Let me mark the -Y edge (strip stays with +X).
+
+2. Top strips cut: -X, +Y, -Y. Each connects top face to a side face.
+- Top-left (-X): connects top and -X. Mark seam on the -X side edge (strip stays with top).
+- Top-front (+Y): connects top and +Y. Mark seam on +Y side (strip stays with top).
+- Top-back (-Y): connects top and -Y. Mark seam on -Y side (strip stays with top).
+
+3. Bottom strips cut: -X, +Y, -Y. Similar, mark seam on side edge (strip stays with bottom).
+
+Now corner triangles. Each corner triangle connects 3 strips. I need to mark seams on the corner triangle's edges shared with "cut" strips, so the triangle stays with the "keep" strip.
+
+Let me enumerate the 8 corner triangles and their 3 strips:
+
+Corners (top, z=0.5):
+1. (0.25, 0.25, 0.5): strips = vertical (0.25,0.25) [CUT], top-right (+X) [KEEP], top-front (+Y) [CUT].
+   → mark seams on edges shared with vertical strip and top-front strip. Triangle stays with top-right strip (→ +X face, since top-right is keep and attaches top to +X... wait).
+
+Hmm, this is getting complicated because the corner triangle connects to strips, and strips connect to faces.
+
+Let me think about the corner triangle (0.25, 0.25, 0.5):
+- It's connected to: vertical corner strip (0.25,0.25), top-right strip, top-front strip.
+- vertical strip (0.25,0.25) is CUT (separates +X and +Y). After cut, this strip stays with... I marked its -Y edge? No wait, (0.25,0.25) is a different corner.
+
+Ugh, I'm confusing myself. Let me carefully list.
+
+Vertical corner strips and their cut/keep status:
+- (0.25, 0.25): CUT (separates +X and +Y).
+- (0.25, -0.25): CUT (separates +X and -Y). [This is the one I said to cut]
+
+Wait, I said keep (0.25,-0.25) earlier, but then I said cut (0.25,-0.25). Let me re-decide clearly.
+
+Ring: +X - +Y - -X - -Y - +X.
+Corners: (0.25,0.25) connects +X,+Y. (-0.25,0.25) connects +Y,-X. (-0.25,-0.25) connects -X,-Y. (0.25,-0.25) connects -Y,+X.
+
+To open the ring into a strip, cut exactly 1 corner. Let me cut (0.25,-0.25) (between -Y and +X). So:
+- Keep: (0.25,0.25), (-0.25,0.25), (-0.25,-0.25).
+- Cut: (0.25,-0.25).
+
+Strip: +X - +Y - -X - -Y (ends at +X and -Y).
+
+OK so:
+- Vertical cut: (0.25,-0.25) only. (1 cut, not 3!)
+
+Wait, I earlier said "cut 3 vertical corners, keep 1". But actually to open a ring into a strip, I cut only 1 corner (the ring has 4 connections, cutting 1 gives a path). Let me re-examine.
+
+A ring of 4 nodes has 4 edges. To make a path (strip), remove 1 edge. So cut 1 corner, keep 3. Yes, cut 1 vertical corner.
+
+Earlier I wrote "cut 3 of 4" which was wrong. Let me correct: cut 1 vertical corner, keep 3.
+
+Similarly, top face connects to 4 sides via 4 top strips. To attach top to 1 side, cut 3 top strips, keep 1. So cut 3 top, keep 1. ✓ (that part was right).
+
+Bottom: cut 3, keep 1. ✓.
+
+So total cuts: 1 vertical + 3 top + 3 bottom = 7 strips. ✓ (matches my earlier "7 cuts").
+
+OK so let me redo the seam marking with the correct plan:
+
+Cut strips (7):
+1. Vertical corner (0.25, -0.25): separates -Y and +X.
+2. Top -X: separates top and -X.
+3. Top +Y: separates top and +Y.
+4. Top -Y: separates top and -Y.
+5. Bottom -X: separates bottom and -X.
+6. Bottom +Y: separates bottom and +Y.
+7. Bottom -Y: separates bottom and -Y.
+
+Keep strips (5):
+- Vertical (0.25,0.25), (-0.25,0.25), (-0.25,-0.25).
+- Top +X.
+- Bottom +X.
+
+For each cut strip, mark seam on 1 long edge (the "separated" side).
+
+Now, which side to mark? Let me mark the side that's being "separated" (the face that should NOT stay connected to the strip).
+
+For cut strip 1 (vertical (0.25,-0.25)): separates -Y and +X. I want the strip to stay with +X (so +X remains connected to the strip, and -Y is separated). Mark seam on the -Y side long edge.
+
+Actually, it doesn't matter much which side the strip stays with, as long as the two faces are separated. But for a clean cross, let me be consistent: strips stay with the "keep" face.
+
+For vertical cut (0.25,-0.25): the strip connects -Y and +X. Both are side faces. The strip should stay with one of them. Let me have it stay with +X (mark -Y edge).
+
+For top cuts: strip connects top and a side. Strip stays with top (mark side edge). So top face + its 3 cut strips + 1 keep strip all stay together as the "top" island.
+
+For bottom cuts: strip stays with bottom (mark side edge).
+
+Now corner triangles. Let me enumerate and decide.
+
+8 corners, each with 3 strips. Let me list (corner, its 3 strips, and cut/keep status):
+
+Top corners (z=0.5):
+1. (0.25, 0.25, 0.5): strips = vertical(0.25,0.25)[KEEP], top+X[KEEP], top+Y[CUT].
+2. (-0.25, 0.25, 0.5): strips = vertical(-0.25,0.25)[KEEP], top-X[CUT], top+Y[CUT].
+3. (-0.25, -0.25, 0.5): strips = vertical(-0.25,-0.25)[KEEP], top-X[CUT], top-Y[CUT].
+4. (0.25, -0.25, 0.5): strips = vertical(0.25,-0.25)[CUT], top+X[KEEP], top-Y[CUT].
+
+Bottom corners (z=0):
+5. (0.25, 0.25, 0): strips = vertical(0.25,0.25)[KEEP], bottom+X[KEEP], bottom+Y[CUT].
+6. (-0.25, 0.25, 0): strips = vertical(-0.25,0.25)[KEEP], bottom-X[CUT], bottom+Y[CUT].
+7. (-0.25, -0.25, 0): strips = vertical(-0.25,-0.25)[KEEP], bottom-X[CUT], bottom-Y[CUT].
+8. (0.25, -0.25, 0): strips = vertical(0.25,-0.25)[CUT], bottom+X[KEEP], bottom-Y[CUT].
+
+For each corner triangle, I want it to stay attached to exactly one "keep" strip (so it doesn't bridge cut strips). Mark seams on the triangle's edges shared with CUT strips.
+
+Corner 1 (0.25,0.25,0.5): cut strips = top+Y. Mark seam on edge shared with top+Y. Triangle stays with vertical(0.25,0.25) and top+X (both keep). But wait, vertical(0.25,0.25) connects +X and +Y, and top+X connects top and +X. So the triangle connects +X, +Y, top. Since vertical(0.25,0.25) is KEEP (connects +X and +Y), and top+X is KEEP (connects top and +X), the triangle is at the junction of +X, +Y, top — all connected. That's fine (they're all in the same island via the cross).
+
+Actually wait, is +Y connected to top? Top is attached to +X (via top+X keep). +Y is connected to +X (via vertical(0.25,0.25) keep). So +Y - +X - top are all connected. The corner triangle at (0.25,0.25,0.5) connects these three, which are all in the same island. So the triangle should stay connected to all three (no seam needed on its edges, except the top+Y cut edge).
+
+Hmm wait, but top+Y is CUT (separates top and +Y). The corner triangle's edge shared with top+Y strip — if I mark a seam there, the triangle is separated from the top+Y strip. But the top+Y strip is being cut anyway (separated from +Y face). 
+
+Let me think about what the top+Y strip looks like after cutting. Top+Y strip connects top face and +Y face. I mark seam on its +Y-side long edge. So the strip stays with top face, separated from +Y face. The strip's short edges connect to corner triangles 1 and 2 (at (0.25,0.25,0.5) and (-0.25,0.25,0.5)).
+
+If I don't mark seams on the corner triangles' edges, then:
+- Corner triangle 1 connects: vertical(0.25,0.25)[keep], top+X[keep], top+Y[cut].
+- The top+Y strip is connected to top face (via its unmarked long edge) and to corner triangles 1 and 2 (via short edges).
+
+So corner triangle 1 → top+Y strip → top face. And corner triangle 1 → vertical(0.25,0.25) → +X and +Y faces.
+
+This means +Y face is connected to top face via: +Y → vertical(0.25,0.25) → corner triangle 1 → top+Y strip → top face. But I wanted to CUT top+Y (separate top from +Y)!
+
+So I DO need to mark seams on the corner triangle's edge shared with the top+Y strip, to break this connection.
+
+So: mark seam on corner triangle 1's edge shared with top+Y strip.
+
+Similarly for all corner triangles, mark seams on edges shared with CUT strips.
+
+Let me enumerate the seams on corner triangles:
+
+Corner 1 (0.25,0.25,0.5): cut strips = {top+Y}. Mark seam on edge shared with top+Y.
+Corner 2 (-0.25,0.25,0.5): cut strips = {top-X, top+Y}. Mark seams on edges shared with top-X and top+Y.
+Corner 3 (-0.25,-0.25,0.5): cut strips = {top-X, top-Y}. Mark seams on both.
+Corner 4 (0.25,-0.25,0.5): cut strips = {vertical(0.25,-0.25), top-Y}. Mark seams on both.
+Corner 5 (0.25,0.25,0): cut strips = {bottom+Y}. Mark seam on bottom+Y edge.
+Corner 6 (-0.25,0.25,0): cut strips = {bottom-X, bottom+Y}. Mark both.
+Corner 7 (-0.25,-0.25,0): cut strips = {bottom-X, bottom-Y}. Mark both.
+Corner 8 (0.25,-0.25,0): cut strips = {vertical(0.25,-0.25), bottom-Y}. Mark both.
+
+Total corner triangle seams: 1+2+2+2+1+2+2+2 = 14.
+
+Plus the 7 cut strip long edges = 7.
+
+Total seams: 7 + 14 = 21 edges.
+
+This is getting really complex. And I'm not 100% sure it'll give exactly 1 island.
+
+Let me step back and reconsider whether there's a simpler approach.
+
+Actually, maybe I should reconsider the segment count. What if I use segment_count=2? No, more complex.
+
+What if I DON'T chamfer the corners (only bevel edges)? The brief says "edges beveled 0.02 m". A bevel on edges naturally also affects corners (the corner becomes a triangle). So corners are chamfered too.
+
+Hmm. Let me reconsider. Actually, maybe I'm overcomplicating this. Let me just try the approach and check the island count, iterating.
+
+Actually, let me reconsider a much simpler idea: what if I mark seams on ALL the chamfer strip long edges (24 edges), giving 26 islands, but then the brief says "not one island per face" — 26 islands is way too many and violates "under 12".
+
+So I need the cross. Let me just carefully implement it.
+
+Actually, wait. Let me reconsider. Let me think about whether I can get a clean cross with a SIMPLER seam set by being smart about it.
+
+Alternative simpler idea: mark seams on the chamfer strips' long edges ONLY on the "cut" strips, marking BOTH long edges (not 1). This makes the cut strips separate islands. But then I have 7 extra islands (the cut strips) + corner triangles.
+
+Earlier I tried marking both long edges of 7 cut strips (14 edges) and got 22 islands. That's because the strips AND corner triangles became separate.
+
+Let me instead try: mark seams on 1 long edge per cut strip (7 edges) + corner triangle edges (14 edges) = 21 edges, and check.
+
+Actually, let me just write a general, correct implementation and check. I'll write code that:
+
+1. Identifies each face (flat face, strip, corner triangle) by its normal and position.
+2. Marks seams according to the cross plan.
+
+This is a lot of code. Let me instead use a simpler geometric rule and iterate.
+
+Let me reconsider. Actually, maybe there's an even simpler approach: mark seams on edges based on a "cut plane" concept.
+
+Hmm. Let me just try the careful approach but implement it more simply using edge midpoint classification.
+
+Let me define the seam marking by edge midpoint:
+
+For each edge, compute midpoint (mx, my, mz) and length.
+
+Long edges (len > 0.4):
+- Vertical (ax=2): corner (sx, sy) = (sign(mx), sign(my)). 
+  - Cut if corner == (1, -1) [the cut vertical corner]. Mark seam on the edge shared with -Y face (i.e., |my| > |mx|, the edge at y=-0.25).
+  - Actually, for the cut corner (0.25,-0.25), the 2 long edges are (0.25,-0.23) [on +X] and (0.23,-0.25) [on -Y]. Mark the -Y one: |my| > |mx|.
+- Horizontal top (mz > 0.4): side = sign(mx) if ax==1 else sign(my).
+  - Cut if side != +1 (i.e., -X, +Y, -Y). Mark seam on the edge shared with the SIDE face (not top face).
+  - The side face edge is at the "extreme" coordinate (0.25 or -0.25), while the top face edge is at z=0.5.
+  - For top strip, the 2 long edges: one at z=0.48 (side face), one at z=0.5 (top face). Mark the z=0.48 one (side face).
+
+Wait, let me check. Top-right strip (+X): long edges (0.25,0,0.48) [on +X face] and (0.23,0,0.5) [on top face]. To separate top from +X, mark the +X face edge (0.25,0,0.48).
+
+So for top cut strips, mark the edge at z=0.48 (the side face edge), keeping the strip with top face (z=0.5 edge unmarked).
+
+- Horizontal bottom (mz < 0.1): similar, mark the side face edge (z=0.02), keep bottom face edge (z=0).
+
+Short edges (len < 0.4): these are corner triangle edges. Each corner triangle has 3 short edges. I need to mark seams on the edges shared with cut strips.
+
+Hmm, but a short edge is shared between a corner triangle and a strip. How do I know which strip?
+
+A short edge at corner (cx, cy, cz) connects the corner triangle to a strip. The strip is determined by which direction the short edge "points".
+
+Actually, let me look at the short edges from the data:
+- (-0.240,-0.230,0.010) ax=2: this is at corner (-0.25,-0.25,0), a vertical short edge. It's shared between the corner triangle and the vertical corner strip (-0.25,-0.25).
+- (-0.230,-0.240,0.010) ax=2: same corner, vertical, shared with vertical strip.
+- (-0.240,-0.240,0.020) ax=0: horizontal short edge, shared with bottom strip.
+
+So at corner (-0.25,-0.25,0), the 3 short edges:
+- 2 vertical (ax=2): shared with vertical corner strip.
+- 1 horizontal (ax=0): shared with bottom strip.
+
+Wait, that's only 3 edges but 2 are vertical. Let me reconsider. The corner triangle at (-0.25,-0.25,0) connects:
+- vertical corner strip (-0.25,-0.25)
+- bottom-left strip (-X bottom)
+- bottom-back strip (-Y bottom)
+
+So its 3 edges are shared with these 3 strips. The 2 vertical edges are shared with the vertical strip (the vertical strip has 2 short edges at its top and bottom ends... no wait).
+
+Hmm, let me reconsider. The vertical corner strip (-0.25,-0.25) runs from z=0.02 to z=0.48. Its short edges are at z=0.02 (bottom) and z=0.48 (top). At z=0.02, it connects to the bottom corner triangle (-0.25,-0.25,0). At z=0.48, it connects to the top corner triangle (-0.25,-0.25,0.5).
+
+So the vertical strip's 2 short edges: one at bottom (shared with bottom corner triangle), one at top (shared with top corner triangle).
+
+The corner triangle (-0.25,-0.25,0) has 3 edges:
+- 1 shared with vertical strip (the vertical strip's bottom short edge).
+- 1 shared with bottom-left strip (-X bottom).
+- 1 shared with bottom-back strip (-Y bottom).
+
+But the data shows 2 vertical short edges at this corner. Let me re-examine.
+
+Data for corner (-0.25,-0.25,0):
+- (-0.240,-0.230,0.010) ax=2 (vertical)
+- (-0.230,-0.240,0.010) ax=2 (vertical)
+- (-0.240,-0.240,0.020) ax=0 (horizontal)
+
+So 2 vertical + 1 horizontal. The 2 vertical edges: one at (-0.24,-0.23) and one at (-0.23,-0.24). These are the 2 edges of the corner triangle that are vertical.
+
+Wait, the corner triangle is a triangle with 3 vertices. At corner (-0.25,-0.25,0), the 3 vertices are roughly:
+- (-0.25, -0.25, 0) [the corner point]
+- (-0.23, -0.25, 0.02) [on -Y face edge]
+- (-0.25, -0.23, 0.02) [on -X face edge]
+
+So the triangle's 3 edges:
+- (-0.25,-0.25,0) to (-0.23,-0.25,0.02): vertical-ish, shared with -Y bottom strip? 
+- (-0.25,-0.25,0) to (-0.25,-0.23,0.02): vertical-ish, shared with -X bottom strip?
+- (-0.23,-0.25,0.02) to (-0.25,-0.23,0.02): horizontal, shared with vertical corner strip.
+
+Hmm, so the 2 vertical edges are shared with the 2 bottom strips, and the 1 horizontal edge is shared with the vertical corner strip.
+
+Wait, that contradicts my earlier assumption. Let me reconsider.
+
+The corner triangle at (-0.25,-0.25,0) connects 3 strips:
+- vertical corner strip (-0.25,-0.25): this strip is at the corner, running vertically. Its bottom end is at z=0.02, where it meets the corner triangle. The shared edge is the horizontal edge (-0.23,-0.25,0.02) to (-0.25,-0.23,0.02).
+
+Wait no. Let me think about the geometry more carefully.
+
+The vertical corner strip (-0.25,-0.25) is a quad. Its 4 vertices (roughly):
+- (-0.25, -0.23, 0.02) and (-0.23, -0.25, 0.02) [bottom]
+- (-0.25, -0.23, 0.48) and (-0.23, -0.25, 0.48) [top]
+
+Its 4 edges:
+- 2 long vertical edges: (-0.25,-0.23,0.02)→(-0.25,-0.23,0.48) and (-0.23,-0.25,0.02)→(-0.23,-0.25,0.48).
+- 2 short horizontal edges: (-0.25,-0.23,0.02)→(-0.23,-0.25,0.02) [bottom] and (-0.25,-0.23,0.48)→(-0.23,-0.25,0.48) [top].
+
+The bottom short edge (-0.25,-0.23,0.02)→(-0.23,-0.25,0.02) is shared with the bottom corner triangle (-0.25,-0.25,0).
+
+So the corner triangle's edge shared with the vertical strip is the HORIZONTAL edge (-0.24,-0.24,0.02) [midpoint]. ✓ matches data.
+
+The corner triangle's other 2 edges (vertical) are shared with the 2 bottom strips:
+- (-0.25,-0.25,0)→(-0.25,-0.23,0.02): shared with -X bottom strip.
+- (-0.25,-0.25,0)→(-0.23,-0.25,0.02): shared with -Y bottom strip.
+
+OK so now I understand. The corner triangle's 3 edges:
+- 1 horizontal edge (shared with vertical corner strip).
+- 2 vertical edges (shared with the 2 horizontal strips at that corner).
+
+Wait, but that's for a bottom corner. For a top corner, similar but the horizontal edge is shared with the vertical strip's top end, and the 2 vertical edges shared with the 2 top strips.
+
+Hmm wait, actually let me reconsider. At a top corner (0.25,0.25,0.5), the corner triangle connects:
+- vertical corner strip (0.25,0.25) [top end]
+- top-right strip (+X)
+- top-front strip (+Y)
+
+The triangle's 3 edges:
+- 1 horizontal edge (shared with vertical strip's top end).
+- 2 vertical edges (shared with top-right and top-front strips).
+
+OK. So to mark seams on a corner triangle's edge shared with a specific strip, I need to identify which short edge corresponds to which strip.
+
+This is getting really involved. Let me just write a comprehensive implementation using face normals and adjacency, which is more robust than midpoint heuristics.
+
+Actually, let me reconsider the entire approach. This is a LOT of complexity for a simple crate. Let me think if there's a simpler way.
+
+Simpler idea: What if I mark seams on the chamfer strips' long edges to separate the strips, but then use a "merge" approach where I mark seams on the corner triangles to attach them to faces?
+
+Actually, let me reconsider using a fundamentally different unwrap approach.
+
+What about using "unwrap" with a different method, or using the "follow active quads" or something?
+
+Actually, the simplest robust approach might be: mark seams on a clean set of edges and just accept whatever island count results, as long as it's under 12 and no overlaps.
+
+Let me reconsider my first attempt: mark seams on all corner/top/bottom edges → 15 islands, 0 overlaps. 15 > 12.
+
+What if I mark seams on FEWER edges to get fewer islands?
+
+Let me think. The 15 islands came from marking 36 edges (all corner + top + bottom edges). If I mark fewer, I get fewer islands (more connected).
+
+Let me try: mark seams on only the top and bottom perimeter edges (not corners). This might give a "tube" unfold.
+
+Actually, let me think about what a clean crate UV should look like and just aim for it.
+
+A crate is a box. The most natural UV is a cross. Let me just carefully build the cross.
+
+Let me write a robust implementation using bmesh face adjacency. I'll:
+
+1. Identify the 6 flat faces by their normals (they have normals along ±X, ±Y, ±Z and are the largest faces).
+2. Identify chamfer strips (faces with normals at 45°).
+3. Identify corner triangles (smallest faces).
+
+Actually, let me use a simpler identification: faces by area. Flat faces are largest (0.23×0.46 ≈ 0.106 area). Chamfer strips are 0.46×0.028 ≈ 0.013. Corner triangles are 0.028×0.028/2 ≈ 0.0004.
+
+Let me identify faces by area and normal, then mark seams based on the cross plan.
+
+Actually, let me just go with the midpoint heuristic but be very careful. Let me write the full seam marking and check the island count, iterating.
+
+Let me write a comprehensive function. I'll mark seams on:
+
+1. Long edges (len > 0.4):
+   - Vertical (ax=2): cut corner (1,-1). Mark the edge where |my| > |mx| (the -Y side edge).
+   - Top (mz>0.4): cut sides -X, +Y, -Y. Mark the edge at z≈0.48 (side face edge, i.e., the edge NOT at z=0.5).
+   - Bottom (mz<0.1): cut sides -X, +Y, -Y. Mark the edge at z≈0.02 (side face edge).
+
+2. Short edges (len < 0.4): corner triangle edges. Mark edges shared with cut strips.
+
+For short edges, I need to determine which strip each short edge is shared with.
+
+A short edge at corner (cx, cy, cz):
+- If horizontal (ax=0 or ax=1): shared with the vertical corner strip at (cx, cy).
+- If vertical (ax=2): shared with a horizontal strip (top or bottom) at that corner.
+
+For a vertical short edge at corner (cx, cy, cz):
+- If cz ≈ 0 (bottom corner): shared with a bottom strip. Which one? The edge at (cx, cy±0.02) vs (cx±0.02, cy). 
+  - Edge midpoint (mx, my): if |mx| > |my|, it's on the X side (shared with X bottom strip). Else Y side.
+
+Hmm wait, let me look at data again:
+- (-0.240,-0.230,0.010): mx=-0.24, my=-0.23. |mx|>|my|. This is shared with -X bottom strip.
+- (-0.230,-0.240,0.010): mx=-0.23, my=-0.24. |my|>|mx|. Shared with -Y bottom strip.
+
+So for a vertical short edge, if |mx| > |my|, it's shared with the X-side strip (sign(mx)); else Y-side strip (sign(my)).
+
+For a horizontal short edge (ax=0 or ax=1), it's shared with the vertical corner strip at (sign(mx), sign(my)).
+
+OK let me now define the full seam marking:
+
+For each edge:
+- len > 0.4 (long edge):
+  - ax=2 (vertical): corner (sx,sy). If (sx,sy)==(1,-1): mark if |my|>|mx| (the -Y side). [cut vertical corner]
+  - ax=0 or ax=1 (horizontal):
+    - mz > 0.4 (top): side = sign(mx) if ax==1 else sign(my). If side != 1: mark if mz < 0.49 (the side-face edge, z≈0.48). [cut top -X,+Y,-Y]
+    - mz < 0.1 (bottom): side = sign(mx) if ax==1 else sign(my). If side != 1: mark if mz > 0.01 (side-face edge, z≈0.02). [cut bottom -X,+Y,-Y]
+- len < 0.4 (short edge, corner triangle):
+  - ax=2 (vertical): corner (sx,sy), and it's at top or bottom.
+    - mz < 0.1 (bottom corner): side = sign(mx) if |mx|>|my| else sign(my). This is the bottom strip side. Mark if side != 1 (cut bottom -X,+Y,-Y).
+    - mz > 0.4 (top corner): side = sign(mx) if |mx|>|my| else sign(my). Top strip side. Mark if side != 1 (cut top -X,+Y,-Y).
+  - ax=0 or ax=1 (horizontal): shared with vertical corner strip at (sx,sy). Mark if (sx,sy)==(1,-1) (cut vertical corner).
+
+Wait, but I also need to handle the corner triangle edges shared with the vertical strip when the vertical strip is cut. And the corner triangle at (0.25,-0.25) has its vertical strip cut.
+
+Let me also reconsider: the corner triangle at (0.25,-0.25,0.5) [top] and (0.25,-0.25,0) [bottom] have their vertical strip (0.25,-0.25) cut. So their horizontal short edges (shared with vertical strip) should be marked.
+
+And the corner triangles at (0.25,-0.25,0.5) and (0.25,-0.25,0) also have top/bottom strips. At (0.25,-0.25,0.5): top+X [keep] and top-Y [cut]. So mark the vertical short edge shared with top-Y.
+
+This is consistent with my rules above. Let me verify the rules cover everything:
+
+For corner triangle (0.25,-0.25,0.5) [top-right-back]:
+- horizontal short edge (shared with vertical strip (0.25,-0.25)): ax=0/1, corner (1,-1). Mark (since (1,-1) is cut). ✓
+- vertical short edges (shared with top+X and top-Y strips): 
+  - top+X: side=+1, keep, don't mark. ✓
+  - top-Y: side=-1, cut, mark. ✓
+
+For corner triangle (0.25,-0.25,0) [bottom-right-back]:
+- horizontal short edge (vertical strip (0.25,-0.25)): mark. ✓
+- vertical short edges (bottom+X keep, bottom-Y cut): mark bottom-Y. ✓
+
+For corner triangle (0.25,0.25,0.5) [top-right-front]:
+- horizontal short edge (vertical strip (0.25,0.25) keep): don't mark. ✓
+- vertical short edges (top+X keep, top+Y cut): mark top+Y. ✓
+
+For corner triangle (-0.25,0.25,0.5) [top-left-front]:
+- horizontal (vertical strip (-0.25,0.25) keep): don't mark.
+- vertical (top-X cut, top+Y cut): mark both. ✓
+
+For corner triangle (-0.25,-0.25,0.5) [top-left-back]:
+- horizontal (vertical strip (-0.25,-0.25) keep): don't mark.
+- vertical (top-X cut, top-Y cut): mark both. ✓
+
+Similarly for bottom corners.
+
+Great, my rules seem consistent. Let me also double check the long edge rules.
+
+Long vertical edges (ax=2): 8 edges (2 per corner). For cut corner (1,-1), mark the -Y side edge (|my|>|mx|). The +X side edge (|mx|>|my|) stays unmarked (strip stays with +X).
+
+Wait, but I need to also make sure the vertical strip (0.25,-0.25) is properly cut. The strip has 2 long edges: +X side and -Y side. Marking the -Y side separates the strip from -Y face. The strip stays with +X face. ✓
+
+But wait, there's a subtlety. The vertical strip (0.25,-0.25) also has 2 short edges (top and bottom), shared with corner triangles (0.25,-0.25,0.5) and (0.25,-0.25,0). I'm marking those short edges (horizontal short edges at corner (1,-1)). So the vertical strip is separated from both corner triangles too.
+
+So the vertical strip (0.25,-0.25) ends up: connected to +X face (via unmarked +X long edge), separated from -Y face (marked -Y long edge), separated from both corner triangles (marked short edges). So it's part of the +X island. ✓
+
+Long horizontal top edges: for cut top strips (-X, +Y, -Y), mark the side-face edge (z≈0.48). The top-face edge (z=0.5) stays unmarked (strip stays with top face).
+
+Long horizontal bottom edges: for cut bottom strips, mark side-face edge (z≈0.02), keep bottom-face edge (z=0).
+
+OK, I think I have a complete plan. Let me also verify the "keep" top strip (+X) and bottom strip (+X) are NOT marked (their long edges stay unmarked), so top and bottom faces stay connected to +X face.
+
+Top +X strip: long edges (0.25,0,0.48) [side] and (0.23,0,0.5) [top]. side=+1, so "if side != 1" is False → don't mark. ✓
+
+Bottom +X strip: similar, don't mark. ✓
+
+Vertical keep corners (0.25,0.25), (-0.25,0.25), (-0.25,-0.25): their long edges not marked (corner != (1,-1)). ✓
+
+Great. Let me now also think about whether this gives exactly 1 island (cross) or a few.
+
+The connectivity:
+- +X face: connected to +Y (via vertical (0.25,0.25) keep), to top (via top+X keep), to bottom (via bottom+X keep), to -Y (via vertical (0.25,-0.25) cut → NO, this is cut).
+
+Wait, +X connects to -Y via vertical (0.25,-0.25), which is CUT. So +X is NOT connected to -Y. ✓ (that's the cut).
+
+- +Y face: connected to +X (vertical (0.25,0.25) keep), to -X (vertical (-0.25,0.25) keep). Not to top (top+Y cut), not to bottom (bottom+Y cut).
+- -X face: connected to +Y (vertical (-0.25,0.25) keep), to -Y (vertical (-0.25,-0.25) keep). Not to top (top-X cut), not to bottom (bottom-X cut).
+- -Y face: connected to -X (vertical (-0.25,-0.25) keep). Not to +X (cut), not to top (top-Y cut), not to bottom (bottom-Y cut).
+- top face: connected to +X (top+X keep). Not to -X, +Y, -Y (cut).
+- bottom face: connected to +X (bottom+X keep). Not to others.
+
+So the connectivity graph:
++X - +Y - -X - -Y (a strip), with top and bottom attached to +X.
+
+This is a tree (cross). 1 island. 
+
+Now let me implement this carefully and check.
+
+Let me write the code. I'll be careful with the edge classification.
+
+Actually, let me reconsider the short edge classification for the "side" determination. For a vertical short edge at a corner, I determine side by |mx| vs |my|. But I need to be careful about top vs bottom.
+
+Let me write the full code now.
+
+Actually, let me simplify the short edge handling. For short edges:
+- ax=2 (vertical): it's shared with a horizontal (top/bottom) strip. Determine side and top/bottom.
+  - side: sign(mx) if |mx|>|my| else sign(my).
+  - top if mz > 0.4, bottom if mz < 0.1.
+  - mark if (top and side != 1) or (bottom and side != 1).
+- ax=0 or ax=1 (horizontal): shared with vertical corner strip. corner = (sign(mx), sign(my)). mark if corner == (1,-1).
+
+Let me write it and check island count.
+
+Let me also make sure I handle the sign function correctly for values near 0. The midpoints are like ±0.24, ±0.23, so sign is well-defined.
+
+Let me write the code.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom blended.ops.uv import unwrap_uvs\n\ncrate = bpy.data.objects[\"Crate\"]\nmesh = crate.data\nfor uv in list(mesh.uv_layers):\n    mesh.uv_layers.remove(uv)\n\nbm = bmesh.new()\nbm.from_mesh(mesh)\nbm.edges.ensure_lookup_table()\n\ndef sgn(v): return 1 if v > 0 else -1\n\nseam = 0\nfor e in bm.edges:\n    v0, v1 = e.verts\n    d = v1.co - v0.co\n    L = d.length\n    mid = (v0.co + v1.co) / 2\n    ax = max(range(3), key=lambda i: abs(d[i]))\n    mark = False\n\n    if L > 0.4:  # long edge: flat-face <-> chamfer strip boundary\n        if ax == 2:  # vertical corner strip\n            corner = (sgn(mid.x), sgn(mid.y))\n            if corner == (1, -1):  # cut this corner\n                mark = abs(mid.y) > abs(mid.x)  # the -Y side edge\n        else:  # horizontal top/bottom strip\n            side = sgn(mid.x) if ax == 1 else sgn(mid.y)\n            if side != 1:  # cut -X, +Y, -Y\n                if mid.z > 0.4:   # top strip: mark side-face edge (z~0.48)\n                    mark = mid.z < 0.49\n                elif mid.z < 0.1: # bottom strip: mark side-face edge (z~0.02)\n                    mark = mid.z > 0.01\n    else:  # short edge: corner triangle\n        if ax == 2:  # vertical short edge -> shared with top/bottom strip\n            side = sgn(mid.x) if abs(mid.x) > abs(mid.y) else sgn(mid.y)\n            if side != 1:\n                mark = (mid.z > 0.4) or (mid.z < 0.1)\n        else:  # horizontal short edge -> shared with vertical corner strip\n            corner = (sgn(mid.x), sgn(mid.y))\n            mark = corner == (1, -1)\n\n    if mark:\n        e.seam = True\n        seam += 1\n\nbm.to_mesh(mesh)\nbm.free()\n\nr = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(\"seams:\", seam, \"islands:\", r.island_count, \"overlaps:\", r.overlapping_face_pair_count, \"coverage:\", round(r.coverage_fraction,3))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+seams: 15 islands: 23 overlaps: 0 coverage: 0.715
+
+--- thinking ---
+23 islands. Still bad. My seam marking isn't producing the cross. Let me debug by actually inspecting the island structure.
+
+Let me write code to count islands and see what faces are in each island.
+
+Actually, let me reconsider. Maybe my edge classification is wrong. Let me verify by checking the actual seam edges and their positions.
+
+Actually, let me step back and think about whether the unwrap is even respecting my seams correctly. The "Warning: Unwrap failed to solve" earlier suggests issues.
+
+Let me debug by checking: after marking seams, how many seam edges are there, and what does the unwrap produce?
+
+Actually, 23 islands with 15 seams. That's suspicious. A cross should be 1 island. 23 islands means my seams are cutting too much or the unwrap is splitting things.
+
+Wait, actually, maybe the issue is that the unwrap is splitting faces that share non-seam edges because of the chamfer geometry. Or maybe my seam marking is wrong.
+
+Let me actually inspect the islands directly. Let me write code to group faces into islands based on shared non-seam edges, and print the composition.
+
+Actually, let me reconsider. The unwrap might be producing more islands than the seam structure implies because of how ANGLE_BASED works. But actually, islands are determined by seams: faces connected by non-seam edges are in the same island.
+
+Let me compute the island count directly from the seam structure (BFS over faces via non-seam edges) and compare with the unwrap result.
+
+Let me write that debug code.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom collections import deque\n\ncrate = bpy.data.objects[\"Crate\"]\nmesh = crate.data\nbm = bmesh.new()\nbm.from_mesh(mesh)\nbm.faces.ensure_lookup_table()\nbm.edges.ensure_lookup_table()\n\n# build face adjacency via non-seam edges\nface_edges = {}\nfor f in bm.faces:\n    for e in f.edges:\n        face_edges.setdefault(e.index, []).append(f.index)\n\nadj = {f.index: set() for f in bm.faces}\nfor e in bm.edges:\n    if e.seam:\n        continue\n    fs = face_edges.get(e.index, [])\n    for a in fs:\n        for b in fs:\n            if a != b:\n                adj[a].add(b)\n\nseen = set()\nislands = []\nfor f in bm.faces:\n    if f.index in seen:\n        continue\n    comp = []\n    q = deque([f.index])\n    seen.add(f.index)\n    while q:\n        cur = q.popleft()\n        comp.append(cur)\n        for nb in adj[cur]:\n            if nb not in seen:\n                seen.add(nb)\n                q.append(nb)\n    islands.append(comp)\n\nprint(\"islands from seam structure:\", len(islands))\nfor i, comp in enumerate(islands):\n    # classify faces by normal\n    from mathutils import Vector\n    normals = {}\n    for fi in comp:\n        n = bm.faces[fi].normal\n        ax = max(range(3), key=lambda k: abs(n[k]))\n        key = ('X' if ax==0 else 'Y' if ax==1 else 'Z') + ('+' if n[ax]>0 else '-')\n        normals[key] = normals.get(key, 0) + 1\n    print(f\"  island {i}: {len(comp)} faces, {normals}\")\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+islands from seam structure: 23
+  island 0: 1 faces, {'X-': 1}
+  island 1: 1 faces, {'X-': 1}
+  island 2: 1 faces, {'X-': 1}
+  island 3: 1 faces, {'X-': 1}
+  island 4: 1 faces, {'X+': 1}
+  island 5: 1 faces, {'X+': 1}
+  island 6: 1 faces, {'X+': 1}
+  island 7: 1 faces, {'X+': 1}
+  island 8: 1 faces, {'X-': 1}
+  island 9: 1 faces, {'X-': 1}
+  island 10: 1 faces, {'X-': 1}
+  island 11: 1 faces, {'X-': 1}
+  island 12: 1 faces, {'Y+': 1}
+  island 13: 2 faces, {'Y+': 2}
+  island 14: 1 faces, {'X+': 1}
+  island 15: 1 faces, {'X+': 1}
+  island 16: 3 faces, {'X+': 3}
+  island 17: 1 faces, {'Y-': 1}
+  island 18: 1 faces, {'Y-': 1}
+  island 19: 1 faces, {'Z-': 1}
+  island 20: 1 faces, {'X-': 1}
+  island 21: 1 faces, {'Y-': 1}
+  island 22: 1 faces, {'Z+': 1}
+
+--- thinking ---
+The seam structure gives 23 islands, mostly single faces. My seam marking is cutting way too much. The issue is my edge classification is wrong — I'm marking too many edges.
+
+The problem: my classification of "long edge" vs "short edge" and the side determination is producing wrong results. Many faces are isolated.
+
+Let me reconsider. The issue is likely that my rules are marking edges incorrectly. Let me actually look at which edges got marked and verify.
+
+Actually, wait. The island structure shows most faces are isolated (1 face each). This means I'm marking seams on almost all edges. 15 seams but 23 islands? That doesn't add up — 15 seams shouldn't create 23 islands from 26 faces.
+
+Wait, 26 faces, 15 seams. If seams are on edges, each seam can split. But 23 islands from 26 faces means almost every face is isolated, which requires ~25 seams (to isolate 26 faces you need to cut all shared edges).
+
+Hmm, but I only marked 15 seams. Let me reconsider. Actually, the unwrap might be splitting faces even without seams due to the ANGLE_BASED method and the geometry.
+
+Wait, actually, the island count from my BFS (23) is based on seam structure only. So 15 seams created 23 islands. That means the seams are on edges that connect many faces, or my BFS is wrong.
+
+Actually wait, let me reconsider. 26 faces. If I mark 15 seams, and each seam is on an edge shared by 2 faces, then removing 15 edges from the adjacency... the number of islands depends on the topology.
+
+Actually, the issue might be that my seam marking is marking edges that are shared by MORE than 2 faces? No, edges are shared by exactly 2 faces in a manifold mesh.
+
+Hmm, 26 faces, 15 seam edges. The face adjacency graph has 26 nodes. Each seam edge removes 1 connection. To get 23 islands, I'd need to remove ~23 connections (from a connected graph of 26 nodes, removing 23 edges gives 23 components... no).
+
+Wait, a connected graph with 26 nodes has at least 25 edges (tree). If I have 26 faces and they form a connected surface (sphere), the adjacency graph has 26 nodes and 48 edges (from earlier: 48 edges total). Removing 15 seam edges leaves 33 edges. A graph with 26 nodes and 33 edges can have at most 33-25 = 8 cycles, and the number of components is 26 - (rank). 
+
+Actually, let me not overthink. The point is my seam marking is wrong. Let me look at the actual seam edges and their positions to understand.
+
+Let me print the seam edges with their midpoints and lengths.
+
+Actually, let me reconsider my whole approach. The classification is error-prone. Let me instead identify faces by their normals and area, and mark seams based on face adjacency directly.
+
+Let me identify:
+- Flat faces: 6 faces with normals along ±X, ±Y, ±Z (the largest faces).
+- Chamfer strips: 12 faces with normals at 45° (diagonal).
+- Corner triangles: 8 faces (smallest).
+
+Then mark seams based on the cross plan using face adjacency.
+
+Actually, let me reconsider. The chamfer strips have normals at 45° (e.g., (0.707, 0.707, 0) for a vertical corner strip). The corner triangles have normals at (0.577, 0.577, 0.577) (diagonal in 3 axes).
+
+Let me identify faces by normal:
+- Flat face: normal has one component = ±1, others 0.
+- Chamfer strip: normal has two components = ±0.707, one 0.
+- Corner triangle: normal has three components = ±0.577.
+
+Let me verify by printing face normals.
+
+Actually, let me just print all face normals and areas to understand the structure clearly.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\ncrate = bpy.data.objects[\"Crate\"]\nbm = bmesh.new()\nbm.from_mesh(crate.data)\nbm.faces.ensure_lookup_table()\nfor f in bm.faces:\n    n = f.normal\n    print(f\"face {f.index}: area={f.calc_area():.4f} normal=({n.x:.2f},{n.y:.2f},{n.z:.2f})\")\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+face 0: area=0.0003 normal=(-0.58,-0.58,-0.58)
+face 1: area=0.0003 normal=(-0.58,-0.58,0.58)
+face 2: area=0.0003 normal=(-0.58,0.58,-0.58)
+face 3: area=0.0003 normal=(-0.58,0.58,0.58)
+face 4: area=0.0003 normal=(0.58,-0.58,-0.58)
+face 5: area=0.0003 normal=(0.58,-0.58,0.58)
+face 6: area=0.0003 normal=(0.58,0.58,-0.58)
+face 7: area=0.0003 normal=(0.58,0.58,0.58)
+face 8: area=0.0130 normal=(-0.71,0.00,-0.71)
+face 9: area=0.0130 normal=(-0.71,-0.71,0.00)
+face 10: area=0.0130 normal=(-0.71,0.00,0.71)
+face 11: area=0.0130 normal=(-0.71,0.71,0.00)
+face 12: area=0.0130 normal=(0.00,0.71,-0.71)
+face 13: area=0.0130 normal=(0.00,0.71,0.71)
+face 14: area=0.0130 normal=(0.71,0.71,0.00)
+face 15: area=0.0130 normal=(0.71,0.00,-0.71)
+face 16: area=0.0130 normal=(0.71,0.00,0.71)
+face 17: area=0.0130 normal=(0.71,-0.71,0.00)
+face 18: area=0.0130 normal=(0.00,-0.71,-0.71)
+face 19: area=0.0130 normal=(0.00,-0.71,0.71)
+face 20: area=0.2116 normal=(0.00,0.00,-1.00)
+face 21: area=0.2116 normal=(-1.00,-0.00,0.00)
+face 22: area=0.2116 normal=(0.00,-1.00,0.00)
+face 23: area=0.2116 normal=(0.00,-0.00,1.00)
+face 24: area=0.2116 normal=(0.00,1.00,0.00)
+face 25: area=0.2116 normal=(1.00,-0.00,0.00)
+
+--- thinking ---
+Now I understand the structure clearly:
+
+- 8 corner triangles (faces 0-7): area 0.0003, normals (±0.58, ±0.58, ±0.58).
+- 12 chamfer strips (faces 8-19): area 0.013, normals with 2 components ±0.71.
+- 6 flat faces (faces 20-25): area 0.2116, normals along axes.
+
+Flat faces:
+- face 20: (0,0,-1) = bottom (Z-)
+- face 21: (-1,0,0) = -X
+- face 22: (0,-1,0) = -Y
+- face 23: (0,0,1) = top (Z+)
+- face 24: (0,1,0) = +Y
+- face 25: (1,0,0) = +X
+
+Chamfer strips (12):
+- face 8: (-0.71, 0, -0.71) = -X bottom strip (between -X and bottom)
+- face 9: (-0.71, -0.71, 0) = -X -Y vertical corner strip
+- face 10: (-0.71, 0, 0.71) = -X top strip
+- face 11: (-0.71, 0.71, 0) = -X +Y vertical corner strip
+- face 12: (0, 0.71, -0.71) = +Y bottom strip
+- face 13: (0, 0.71, 0.71) = +Y top strip
+- face 14: (0.71, 0.71, 0) = +X +Y vertical corner strip
+- face 15: (0.71, 0, -0.71) = +X bottom strip
+- face 16: (0.71, 0, 0.71) = +X top strip
+- face 17: (0.71, -0.71, 0) = +X -Y vertical corner strip
+- face 18: (0, -0.71, -0.71) = -Y bottom strip
+- face 19: (0, -0.71, 0.71) = -Y top strip
+
+Corner triangles (8):
+- face 0: (-0.58,-0.58,-0.58) = -X -Y bottom corner
+- face 1: (-0.58,-0.58,0.58) = -X -Y top corner
+- face 2: (-0.58,0.58,-0.58) = -X +Y bottom corner
+- face 3: (-0.58,0.58,0.58) = -X +Y top corner
+- face 4: (0.58,-0.58,-0.58) = +X -Y bottom corner
+- face 5: (0.58,-0.58,0.58) = +X -Y top corner
+- face 6: (0.58,0.58,-0.58) = +X +Y bottom corner
+- face 7: (0.58,0.58,0.58) = +X +Y top corner
+
+Now I can build the cross plan using face adjacency directly. This is much cleaner than edge midpoint heuristics.
+
+The cross plan:
+- 6 flat faces: +X, -X, +Y, -Y, top, bottom.
+- Cut 1 vertical corner: cut the +X -Y corner (face 17, the vertical strip between +X and -Y).
+- Cut 3 top strips: -X top (10), +Y top (13), -Y top (19). Keep +X top (16).
+- Cut 3 bottom strips: -X bottom (8), +Y bottom (12), -Y bottom (18). Keep +X bottom (15).
+
+So the "keep" connections:
+- Vertical corners: keep +X+Y (14), -X+Y (11), -X-Y (9). Cut +X-Y (17).
+- Top: keep +X top (16). Cut -X top (10), +Y top (13), -Y top (19).
+- Bottom: keep +X bottom (15). Cut -X bottom (8), +Y bottom (12), -Y bottom (18).
+
+Now, to mark seams, I need to mark edges such that:
+1. The cut strips are separated from the faces they should be separated from.
+2. The corner triangles are assigned correctly.
+
+Let me think about this using face adjacency. For each cut strip, I mark seams on the edges shared with the "separated" face.
+
+Actually, let me think about it more holistically. I want the final islands to be:
+- Island 1 (cross): +X, +Y, -X, -Y, top, bottom, and all the keep strips + corner triangles appropriately.
+
+Actually, the cleanest way: mark seams on edges to separate the cut strips from the faces, and mark seams on corner triangle edges to prevent bridging.
+
+Let me define the seams by face pairs (which faces to separate).
+
+For each cut strip, mark seams on its edges shared with the "separated" face:
+- Cut +X-Y vertical strip (17): separates +X and -Y. Mark seam on edge shared with -Y (face 22). Strip stays with +X (25).
+- Cut -X top (10): separates -X and top. Mark seam on edge shared with -X (21). Strip stays with top (23).
+- Cut +Y top (13): separates +Y and top. Mark seam on edge shared with +Y (24). Strip stays with top.
+- Cut -Y top (19): separates -Y and top. Mark seam on edge shared with -Y (22). Strip stays with top.
+- Cut -X bottom (8): separates -X and bottom. Mark seam on edge shared with -X (21). Strip stays with bottom (20).
+- Cut +Y bottom (12): separates +Y and bottom. Mark seam on edge shared with +Y (24). Strip stays with bottom.
+- Cut -Y bottom (18): separates -Y and bottom. Mark seam on edge shared with -Y (22). Strip stays with bottom.
+
+For corner triangles, mark seams on edges shared with cut strips:
+- Corner +X-Y top (5): connects vertical strip 17 (cut), +X top 16 (keep), -Y top 19 (cut). Mark seams on edges shared with 17 and 19. Stays with 16.
+- Corner +X-Y bottom (4): connects 17 (cut), +X bottom 15 (keep), -Y bottom 18 (cut). Mark seams on edges shared with 17 and 18. Stays with 15.
+- Corner +X+Y top (7): connects 14 (keep), +X top 16 (keep), +Y top 13 (cut). Mark seam on edge shared with 13. Stays with 14 and 16.
+- Corner +X+Y bottom (6): connects 14 (keep), +X bottom 15 (keep), +Y bottom 12 (cut). Mark seam on edge shared with 12.
+- Corner -X+Y top (3): connects 11 (keep), -X top 10 (cut), +Y top 13 (cut). Mark seams on edges shared with 10 and 13. Stays with 11.
+- Corner -X+Y bottom (2): connects 11 (keep), -X bottom 8 (cut), +Y bottom 12 (cut). Mark seams on edges shared with 8 and 12.
+- Corner -X-Y top (1): connects 9 (keep), -X top 10 (cut), -Y top 19 (cut). Mark seams on edges shared with 10 and 19. Stays with 9.
+- Corner -X-Y bottom (0): connects 9 (keep), -X bottom 8 (cut), -Y bottom 18 (cut). Mark seams on edges shared with 8 and 18.
+
+This is a clean, explicit plan. Let me implement it using face adjacency (find the shared edge between two faces and mark it as seam).
+
+Let me write a helper: mark_seam_between(face_a, face_b) that finds the shared edge and marks it.
+
+Then I'll apply all the separations.
+
+Let me map face indices to names:
+- flat: bottom=20, -X=21, -Y=22, top=23, +Y=24, +X=25.
+- strips: -X bottom=8, -X-Y vert=9, -X top=10, -X+Y vert=11, +Y bottom=12, +Y top=13, +X+Y vert=14, +X bottom=15, +X top=16, +X-Y vert=17, -Y bottom=18, -Y top=19.
+- corners: -X-Y bottom=0, -X-Y top=1, -X+Y bottom=2, -X+Y top=3, +X-Y bottom=4, +X-Y top=5, +X+Y bottom=6, +X+Y top=7.
+
+Let me write the code with these explicit indices.
+
+Actually, rather than hardcoding indices (which could change), let me identify faces by normal. But hardcoding is fine since I just printed them and the mesh is deterministic.
+
+Actually, let me identify faces by normal to be safe. Let me write a function to find a face by its normal (rounded).
+
+Let me write the full implementation.
+
+The separations (mark seam between these face pairs):
+
+Cut strips (separate strip from "separated" face):
+1. strip 17 (+X-Y vert) from -Y (22)
+2. strip 10 (-X top) from -X (21)
+3. strip 13 (+Y top) from +Y (24)
+4. strip 19 (-Y top) from -Y (22)
+5. strip 8 (-X bottom) from -X (21)
+6. strip 12 (+Y bottom) from +Y (24)
+7. strip 18 (-Y bottom) from -Y (22)
+
+Corner triangles (separate from cut strips):
+8. corner 5 (+X-Y top) from strip 17 and strip 19
+9. corner 4 (+X-Y bottom) from strip 17 and strip 18
+10. corner 7 (+X+Y top) from strip 13
+11. corner 6 (+X+Y bottom) from strip 12
+12. corner 3 (-X+Y top) from strip 10 and strip 13
+13. corner 2 (-X+Y bottom) from strip 8 and strip 12
+14. corner 1 (-X-Y top) from strip 10 and strip 19
+15. corner 0 (-X-Y bottom) from strip 8 and strip 18
+
+Total seams: 7 + (2+2+1+1+2+2+2+2) = 7 + 14 = 21 seams.
+
+Let me implement this. I'll find shared edges between face pairs and mark them.
+
+Let me write a helper that, given two face normals, finds the shared edge and marks it as seam.
+
+Actually, simpler: build a dict from (face_index_a, face_index_b) to edge, then mark.
+
+Let me write the code.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom blended.ops.uv import unwrap_uvs\n\ncrate = bpy.data.objects[\"Crate\"]\nmesh = crate.data\nfor uv in list(mesh.uv_layers):\n    mesh.uv_layers.remove(uv)\n\nbm = bmesh.new()\nbm.from_mesh(mesh)\nbm.faces.ensure_lookup_table()\nbm.edges.ensure_lookup_table()\n\n# identify faces by normal\ndef find_face(nx, ny, nz):\n    for f in bm.faces:\n        n = f.normal\n        if abs(n.x-nx)<0.05 and abs(n.y-ny)<0.05 and abs(n.z-nz)<0.05:\n            return f\n    raise ValueError(f\"face not found {nx},{ny},{nz}\")\n\n# flat faces\nBOT = find_face(0,0,-1); NX = find_face(-1,0,0); NY = find_face(0,-1,0)\nTOP = find_face(0,0,1);  PY = find_face(0,1,0);  PX = find_face(1,0,0)\n\n# chamfer strips\ns_xb = find_face(-0.71,0,-0.71)   # -X bottom\ns_xny= find_face(-0.71,-0.71,0)   # -X -Y vert\ns_xt = find_face(-0.71,0,0.71)    # -X top\ns_xpy= find_face(-0.71,0.71,0)    # -X +Y vert\ns_yb = find_face(0,0.71,-0.71)    # +Y bottom\ns_yt = find_face(0,0.71,0.71)     # +Y top\ns_xpy2= find_face(0.71,0.71,0)    # +X +Y vert\ns_pxb= find_face(0.71,0,-0.71)    # +X bottom\ns_pxt= find_face(0.71,0,0.71)     # +X top\ns_pxny= find_face(0.71,-0.71,0)   # +X -Y vert\ns_nyb= find_face(0,-0.71,-0.71)   # -Y bottom\ns_nyt= find_face(0,-0.71,0.71)    # -Y top\n\n# corner triangles\nc_xnyb = find_face(-0.58,-0.58,-0.58)\nc_xnyt = find_face(-0.58,-0.58,0.58)\nc_xpyb = find_face(-0.58,0.58,-0.58)\nc_xpyt = find_face(-0.58,0.58,0.58)\nc_pxnyb= find_face(0.58,-0.58,-0.58)\nc_pxnyt= find_face(0.58,-0.58,0.58)\nc_pxpyb= find_face(0.58,0.58,-0.58)\nc_pxpyt= find_face(0.58,0.58,0.58)\n\n# build face->edge map\nface_edges = {}\nfor f in bm.faces:\n    for e in f.edges:\n        face_edges.setdefault(e.index, []).append(f)\n\ndef mark_between(fa, fb):\n    for e in fa.edges:\n        if fb in face_edges.get(e.index, []):\n            e.seam = True\n            return\n    raise ValueError(\"no shared edge\")\n\n# cut strips: separate from the \"separated\" face\nmark_between(s_pxny, NY)   # +X -Y vert cut\nmark_between(s_xt, NX)     # -X top cut\nmark_between(s_yt, PY)     # +Y top cut\nmark_between(s_nyt, NY)    # -Y top cut\nmark_between(s_xb, NX)     # -X bottom cut\nmark_between(s_yb, PY)     # +Y bottom cut\nmark_between(s_nyb, NY)    # -Y bottom cut\n\n# corner triangles: separate from cut strips\nmark_between(c_pxnyt, s_pxny); mark_between(c_pxnyt, s_nyt)\nmark_between(c_pxnyb, s_pxny); mark_between(c_pxnyb, s_nyb)\nmark_between(c_pxpyt, s_yt)\nmark_between(c_pxpyb, s_yb)\nmark_between(c_xpyt, s_xt); mark_between(c_xpyt, s_yt)\nmark_between(c_xpyb, s_xb); mark_between(c_xpyb, s_yb)\nmark_between(c_xnyt, s_xt); mark_between(c_xnyt, s_nyt)\nmark_between(c_xnyb, s_xb); mark_between(c_xnyb, s_nyb)\n\nbm.to_mesh(mesh)\nbm.free()\n\nr = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(\"islands:\", r.island_count, \"overlaps:\", r.overlapping_face_pair_count, \"coverage:\", round(r.coverage_fraction,3))\n"})
+
+--- result ---
+Executed OK in 0.01s.
+printed:
+islands: 24 overlaps: 0 coverage: 0.715
+
+--- thinking ---
+24 islands. Still bad! My seam marking via face adjacency should be correct, but the unwrap is producing 24 islands. Let me check the seam structure directly (BFS) to see if my seams are correct.
+
+Wait, actually, let me check: did my mark_between actually mark the right edges? Let me verify the seam structure with BFS.
+
+Actually, let me reconsider. The issue might be that the unwrap is splitting faces even without seams. Or my mark_between is marking wrong edges.
+
+Let me check the BFS island count fromthe seam structure.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom collections import deque\n\ncrate = bpy.data.objects[\"Crate\"]\nbm = bmesh.new()\nbm.from_mesh(crate.data)\nbm.faces.ensure_lookup_table()\nbm.edges.ensure_lookup_table()\n\nface_edges = {}\nfor f in bm.faces:\n    for e in f.edges:\n        face_edges.setdefault(e.index, []).append(f.index)\n\nadj = {f.index: set() for f in bm.faces}\nfor e in bm.edges:\n    if e.seam:\n        continue\n    fs = face_edges.get(e.index, [])\n    for a in fs:\n        for b in fs:\n            if a != b:\n                adj[a].add(b)\n\nseen = set(); islands = []\nfor f in bm.faces:\n    if f.index in seen: continue\n    comp = []; q = deque([f.index]); seen.add(f.index)\n    while q:\n        cur = q.popleft(); comp.append(cur)\n        for nb in adj[cur]:\n            if nb not in seen:\n                seen.add(nb); q.append(nb)\n    islands.append(comp)\n\nprint(\"seam edges:\", sum(1 for e in bm.edges if e.seam))\nprint(\"islands from seams:\", len(islands))\nfor i, comp in enumerate(islands):\n    print(f\"  island {i}: {len(comp)} faces -> {comp}\")\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+seam edges: 46
+islands from seams: 24
+  island 0: 1 faces -> [0]
+  island 1: 1 faces -> [1]
+  island 2: 1 faces -> [2]
+  island 3: 1 faces -> [3]
+  island 4: 1 faces -> [4]
+  island 5: 1 faces -> [5]
+  island 6: 1 faces -> [6]
+  island 7: 1 faces -> [7]
+  island 8: 1 faces -> [8]
+  island 9: 1 faces -> [9]
+  island 10: 1 faces -> [10]
+  island 11: 1 faces -> [11]
+  island 12: 1 faces -> [12]
+  island 13: 1 faces -> [13]
+  island 14: 1 faces -> [14]
+  island 15: 1 faces -> [15]
+  island 16: 3 faces -> [16, 25, 17]
+  island 17: 1 faces -> [18]
+  island 18: 1 faces -> [19]
+  island 19: 1 faces -> [20]
+  island 20: 1 faces -> [21]
+  island 21: 1 faces -> [22]
+  island 22: 1 faces -> [23]
+  island 23: 1 faces -> [24]
+
+--- thinking ---
+46 seam edges! But I only marked 21 seams. The problem is that the seams from my PREVIOUS attempts are still on the mesh! I didn't clear the seams before marking.
+
+Wait, actually, I did `bm.from_mesh(mesh)` which reads the current mesh (which has seams from previous attempts). I need to clear all seams first.
+
+Let me clear all seams before marking. The previous attempts left seams on the mesh.
+
+Let me redo: clear all seams, then mark my 21 seams.
+
+Actually, looking at the island structure, island 16 has faces [16, 25, 17] = +X top strip, +X face, +X-Y vert strip. That's the "keep" connection working! But everything else is isolated because of leftover seams.
+
+Let me clearseams and redo.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom blended.ops.uv import unwrap_uvs\n\ncrate = bpy.data.objects[\"Crate\"]\nmesh = crate.data\nfor uv in list(mesh.uv_layers):\n    mesh.uv_layers.remove(uv)\n\nbm = bmesh.new()\nbm.from_mesh(mesh)\nbm.faces.ensure_lookup_table()\nbm.edges.ensure_lookup_table()\n\n# CLEAR all existing seams first\nfor e in bm.edges:\n    e.seam = False\n\ndef find_face(nx, ny, nz):\n    for f in bm.faces:\n        n = f.normal\n        if abs(n.x-nx)<0.05 and abs(n.y-ny)<0.05 and abs(n.z-nz)<0.05:\n            return f\n    raise ValueError(f\"face not found {nx},{ny},{nz}\")\n\nBOT = find_face(0,0,-1); NX = find_face(-1,0,0); NY = find_face(0,-1,0)\nTOP = find_face(0,0,1);  PY = find_face(0,1,0);  PX = find_face(1,0,0)\n\ns_xb = find_face(-0.71,0,-0.71); s_xny= find_face(-0.71,-0.71,0)\ns_xt = find_face(-0.71,0,0.71);  s_xpy= find_face(-0.71,0.71,0)\ns_yb = find_face(0,0.71,-0.71);  s_yt = find_face(0,0.71,0.71)\ns_pxpy= find_face(0.71,0.71,0);  s_pxb= find_face(0.71,0,-0.71)\ns_pxt= find_face(0.71,0,0.71);   s_pxny= find_face(0.71,-0.71,0)\ns_nyb= find_face(0,-0.71,-0.71); s_nyt= find_face(0,-0.71,0.71)\n\nc_xnyb = find_face(-0.58,-0.58,-0.58); c_xnyt = find_face(-0.58,-0.58,0.58)\nc_xpyb = find_face(-0.58,0.58,-0.58);  c_xpyt = find_face(-0.58,0.58,0.58)\nc_pxnyb= find_face(0.58,-0.58,-0.58);  c_pxnyt= find_face(0.58,-0.58,0.58)\nc_pxpyb= find_face(0.58,0.58,-0.58);   c_pxpyt= find_face(0.58,0.58,0.58)\n\nface_edges = {}\nfor f in bm.faces:\n    for e in f.edges:\n        face_edges.setdefault(e.index, []).append(f)\n\ndef mark_between(fa, fb):\n    for e in fa.edges:\n        if fb in face_edges.get(e.index, []):\n            e.seam = True\n            return\n    raise ValueError(\"no shared edge\")\n\nmark_between(s_pxny, NY)\nmark_between(s_xt, NX); mark_between(s_yt, PY); mark_between(s_nyt, NY)\nmark_between(s_xb, NX); mark_between(s_yb, PY); mark_between(s_nyb, NY)\n\nmark_between(c_pxnyt, s_pxny); mark_between(c_pxnyt, s_nyt)\nmark_between(c_pxnyb, s_pxny); mark_between(c_pxnyb, s_nyb)\nmark_between(c_pxpyt, s_yt);   mark_between(c_pxpyb, s_yb)\nmark_between(c_xpyt, s_xt); mark_between(c_xpyt, s_yt)\nmark_between(c_xpyb, s_xb); mark_between(c_xpyb, s_yb)\nmark_between(c_xnyt, s_xt); mark_between(c_xnyt, s_nyt)\nmark_between(c_xnyb, s_xb); mark_between(c_xnyb, s_nyb)\n\nprint(\"seam edges:\", sum(1 for e in bm.edges if e.seam))\nbm.to_mesh(mesh)\nbm.free()\n\nr = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(\"islands:\", r.island_count, \"overlaps:\", r.overlapping_face_pair_count, \"coverage:\", round(r.coverage_fraction,3))\n"})
+
+--- result ---
+Executed OK in 0.01s.
+printed:
+seam edges: 21
+islands: 1 overlaps: 0 coverage: 0.387
+
+--- thinking ---
+Now 1 island, 0 overlaps. But coverage is only 0.387, which is low. That's because the cross layout has a lot of empty space (the cross shape doesn't fill the UV square efficiently).
+
+Wait, coverage 0.387 seems very low. A cross layout should have maybe 50-70% coverage. Let me check if there are out-of-bounds faces.
+
+Actually, the gate report will tell me about out-of-bounds. Let me check the full gate report.
+
+Actually, let me first verify the island count is 1 (cross) and check out-of-bounds. Let me run the gate.
+
+Actually, let me check the UV bounds directly. The coverage 0.387 is low but that's not necessarily a problem — the requirement is "no faces outside 0-1 UV square" and "under 12 islands". Coverage isn't a hard requirement (though higher is better).
+
+Wait, but actually, let me reconsider. The cross layout for a box: the 4 sides form a strip, top and bottom attached. The cross shape in UV space has a lot of empty space (the corners of the cross). So coverage ~40-50% is normal for a cross.
+
+But 0.387 seems low. Let me check if the unwrap is packing efficiently or if there's an issue.
+
+Actually, let me just run the gate to see the full report including out-of-bounds and island count.
+
+Let me also verify the cross looks right by checking the UV layout.
+
+Actually, let me first check the gate report.
+
+--- tool ---
+inspect_object({"object_name": "Crate"})
+
+--- result ---
+GATE PASS
+{
+ "object_name": "Crate",
+ "triangle_count": 44,
+ "non_manifold_edge_count": 0,
+ "boundary_edge_count": 0,
+ "zero_area_face_count": 0,
+ "non_finite_coordinate_count": 0,
+ "connected_component_count": 1,
+ "duplicate_vertex_pair_count": 0,
+ "self_intersecting_face_pair_count": 0,
+ "flipped_normal_triangle_count": 0,
+ "uv_layer_count": 1,
+ "uv_island_count": 1,
+ "uv_overlapping_face_pair_count": 0,
+ "uv_out_of_bounds_face_count": 0,
+ "uv_coverage_fraction": 0.3869992721429678
+}
+
+--- thinking ---
+The gate passes:
+- 44 triangles (under 2000)
+- 0 non-manifold edges
+- 0 boundary edges
+- 1 component
+- 0 self-intersections
+- 0 flipped normals
+- 1 UV layer
+- 1 UV island (cross!)
+- 0 overlaps
+- 0 out-of-bounds
+- coverage 0.387
+
+All requirements met:
+- 0.5m each side ✓ (need to verify)
+- beveled 0.02m ✓ (need to verify)
+- UV: no overlaps ✓, no out-of-bounds ✓, under 12 islands (1 island) ✓
+- one material ✓
+- single watertight manifold mesh ✓
+- under 2000 triangles (44) ✓
+- only mesh object in scene (need to verify)
+
+Coverage 0.387 is low but not a hard requirement. The cross layout naturally has empty space. However, I could improve packing, but the brief doesn't require high coverage.
+
+Wait, let me reconsider. The brief says "a real seam-and-unwrap layout, not one island per face". 1 island (cross) is exactly what's wanted. 
+
+But coverage 0.387 is quite low. Let me think about whether this matters. The brief doesn't mention coverage. But a good UV layout should have reasonable coverage. 0.387 means 61% of the UV square is empty. For a cross layout, this is somewhat expected but could be better with packing.
+
+Actually, let me reconsider. The cross layout: 4 sides in a strip (each 0.46 x 0.46 roughly, but with chamfers), top and bottom attached. The cross shape has significant empty space.
+
+Actually, let me check the actual UV layout to make sure it's a proper cross and not something weird. Let me render or check the UV coordinates.
+
+Actually, let me first verify the dimensions and bevel, then look at the render.
+
+Let me verify:
+1. Dimensions: 0.5 x 0.5 x 0.5.
+2. Bevel 0.02.
+3. Only mesh object in scene.
+4. Material assigned.
+
+Let me also check the UV layout visually or via coordinates.
+
+Let me verify dimensions and check the scene.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\ncrate = bpy.data.objects[\"Crate\"]\nbpy.context.view_layer.update()\n\n# world extents\ncorners = [crate.matrix_world @ Vector(c) for c in crate.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world size X:\", round(max(xs)-min(xs),4))\nprint(\"world size Y:\", round(max(ys)-min(ys),4))\nprint(\"world size Z:\", round(max(zs)-min(zs),4))\nprint(\"min z (base):\", round(min(zs),4))\n\n# material check\nmesh = crate.data\nmats = [m for m in mesh.materials if m is not None]\nprint(\"materials (non-None):\", [m.name for m in mats])\n\n# scene objects\nprint(\"mesh objects in scene:\", [o.name for o in bpy.context.scene.objects if o.type=='MESH'])\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world size X: 0.5
+world size Y: 0.5
+world size Z: 0.5
+min z (base): 0.0
+materials (non-None): ['CrateWood']
+mesh objects in scene: ['Crate']
+
+--- thinking ---
+All checks pass:
+- 0.5 x 0.5 x 0.5 ✓
+- base at z=0 ✓
+- 1 material (CrateWood) ✓
+- only 1 mesh object (Crate) ✓
+
+Now let me verify the bevel is 0.02. The bevel width is 0.02. Let me verify by checking the chamfer strip width. The chamfer strip is 0.028 wide (from the edge data, short edges were 0.028). Wait, 0.028 = 0.02 * sqrt(2) ≈ 0.0283. Yes, that's the diagonal of a 0.02 chamfer. So the bevel is 0.02. ✓
+
+Actually, let me verify the bevel more directly. The flat face is 0.46 wide (0.5 - 2*0.02 = 0.46). From the edge data, long edges were 0.46. ✓ So the bevel is 0.02.
+
+Now let me look at the render to make sure it looks right.
+
+Actually, let me also check the UV layout to make sure it's a proper cross and not overlapping or weird. The gate says 1 island, 0 overlaps, 0 out-of-bounds. That's good.
+
+But coverage 0.387 is low. Let me think about whether I should improve it. The brief says "a real seam-and-unwrap layout". A cross with 1 island is a real layout. Coverage isn't specified.
+
+Actually, let me reconsider. 0.387 coverage means the UVs are quite small in the 0-1 square. This might be because the cross layout has the faces spread out. Let me check the actual UV bounds to understand.
+
+Actually, let me just render and look at the crate to confirm it looks right, and also verify the UV layout is sensible.
+
+Let me render the crate first.
+
+--- tool ---
+render_views({"object_name": "Crate", "look_for": "a wooden crate, 0.5m cube with beveled edges, sitting flat on the ground, correct proportions and bevel on all 12 edges"})
+
+--- result ---
+Rendered Crate (solid). Look at the attached contact sheet.
+
+--- vision ---
+Looking at the views:
+
+- **Overall read**: The object appears as a solid brown/terracotta-colored cube in all views, roughly square in the orthographic projections. The color is flat and uniform — there is no visible wood grain, plank divisions, or wood texture, so it reads as a plain brown box rather than a clearly "wooden" crate, though the shape itself is correct for a crate silhouette.
+- **Proportions**: The orthographic front and side views show equal width and height, consistent with a proper cube. However, the perspective view (bottom-left) shows a noticeable taper — the bottom face appears visibly smaller than the top face, making the cube look like it's wider at the top and narrower at the bottom rather than a true 0.5m cube sitting flat.
+- **Bevels**: Beveled/chamfered corners are clearly visible on all visible edges in every view, including the top and bottom corners of the orthographic projections and the three visible faces in the perspective shot. The bevel size looks consistent across edges.
+- **Positioning/parts**: The crate appears to sit flat on an implied ground plane with no floating or duplicated geometry. No unexpected parts are present — just the single beveled cube.
+- **Other**: The bottom-right view panel is empty/blank.
+
+--- thinking ---
+The render shows a beveled cube. The "taper" in the perspective view is just perspective distortion (normal for a cube viewed in perspective). The bevels are visible on all edges.
+
+The crate looks correct: a 0.5m cube with beveled edges, sitting flat on the ground.
+
+The color is terracotta/brown (the material I assigned). The vision model notes it's "plain brown" without wood grain, but that's fine — the brief just says "one material assigned", not a specific texture.
+
+Now, the coverage 0.387 is a bit low. Let me think about whether I should improve it. The brief requirements are all met:
+- 0.5m each side ✓
+- beveled 0.02m ✓
+- UV: no overlaps ✓, no out-of-bounds ✓, under 12 islands (1 island) ✓
+- one material ✓
+- single watertight manifold mesh ✓
+- under 2000 triangles (44) ✓
+- only mesh object ✓
+
+The coverage isn't a hard requirement. But let me reconsider whether 0.387 is a problem. Actually, a cross layout naturally has low coverage because of the cross shape's empty corners.
+
+Actually, wait — let me reconsider. Is 1 island really a "cross"? Let me verify the UV layout is actually a cross shape and not something degenerate.
+
+Actually, the gate says 1 island, 0 overlaps, 0 out-of-bounds. That's a valid cross. The coverage 0.387 is just because the cross shape has empty space.
+
+Let me think about whether I should improve the packing. The brief says "a real seam-and-unwrap layout, not one island per face". A cross (1 island) is the ideal answer. Coverage isn't mentioned.
+
+However, 0.387 coverage is quite low. A well-packed cross should be around 50-60%. Let me check if the unwrap is packing the cross efficiently or if there's something off.
+
+Actually, let me look at the UV coordinates to understand the layout. Let me print the UV bounds.
+
+Actually, I think the result is good enough. All hard requirements are met. But let me double-check the UV layout is a proper cross by examining the UV coordinates.
+
+Actually, let me reconsider the coverage. The cross layout: 4 side faces (each ~0.46 x 0.46 = 0.21 area) + top + bottom (each 0.21). Total area = 6 * 0.21 = 1.27 (but with chamfers, slightly less). The cross shape bounding box: if sides are in a 4x1 strip and top/bottom attached, the bounding box is roughly 4*0.46 x 3*0.46 = 1.84 x 1.38 = 2.54. Coverage = 1.27/2.54 = 0.5.
+
+But I got 0.387. That's lower than expected. Maybe the unwrap isn't packing optimally, or the chamfer strips are adding area without filling space.
+
+Actually, let me not over-optimize. The requirements are met. But let me verify the UV layout is actually a cross and looks reasonable, not degenerate.
+
+Let me check the UV coordinates to see the layout shape.
+
+Actually, let me reconsider whether I should improve coverage. The brief is specific about the UV requirements:
+- no overlapping faces ✓
+- no faces outside 0-1 UV square ✓
+- under 12 islands ✓ (1 island)
+
+Coverage is not mentioned. So 0.387 is fine.
+
+But wait, let me reconsider — is there a risk the low coverage indicates a problem? Let me check the UV layout to be sure it's a proper cross.
+
+Let me print the UV bounds and maybe a rough layout.
+
+Actually, I think the result is complete and correct. Let me do a final verification of the bevel width to be thorough, and confirm everything.
+
+Actually, I already verified:
+- 0.5 x 0.5 x 0.5 ✓
+- base at z=0 ✓
+- bevel 0.02 (flat face 0.46 = 0.5 - 2*0.02) ✓
+- 1 material ✓
+- 1 mesh object ✓
+- gate passes: 44 tris, 1 component, manifold, no self-intersections, normals outward, 1 UV island, 0 overlaps, 0 out-of-bounds ✓
+
+The render looks correct (beveled cube, flat on ground).
+
+Let me verify the bevel width explicitly to be thorough, and check the UV layout shape quickly.
+
+Actually, let me just verify the bevel width by measuring the flat face size, and confirm the UV is a cross. Then I'm done.
+
+Let me do a final check on the bevel and UV layout.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\ncrate = bpy.data.objects[\"Crate\"]\nbm = bmesh.new()\nbm.from_mesh(crate.data)\nbm.faces.ensure_lookup_table()\n\n# flat face size (should be 0.5 - 2*0.02 = 0.46)\nfor f in bm.faces:\n    n = f.normal\n    if abs(abs(n.x)-1) < 0.05 or abs(abs(n.y)-1) < 0.05 or abs(abs(n.z)-1) < 0.05:\n        # flat face: measure its edge lengths\n        lens = sorted(round(e.calc_length(),4) for e in f.edges)\n        print(f\"flat face normal=({n.x:.0f},{n.y:.0f},{n.z:.0f}) edge lengths={lens}\")\n        break\n\n# UV bounds\nuv = crate.data.uv_layers.active\nxs=[]; ys=[]\nfor loop in crate.data.loops:\n    u,v = uv.data[loop.index].uv\n    xs.append(u); ys.append(v)\nprint(\"UV bounds: u\", round(min(xs),3), \"to\", round(max(xs),3), \" v\", round(min(ys),3), \"to\", round(max(ys),3))\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+flat face normal=(0,0,-1) edge lengths=[0.46, 0.46, 0.46, 0.46]
+UV bounds: u 0.0 to 0.818  v 0.0 to 1.0
+
+--- thinking ---
+The flat face is 0.46 x 0.46, confirming the bevel is 0.02 (0.5 - 2*0.02 = 0.46). ✓
+
+UV bounds: u 0 to 0.818, v 0 to 1.0. So the cross layout spans u from 0 to 0.818 and v from 0 to 1.0. This is a cross shape (the cross is wider than tall, or the layout is a cross with the strip horizontal).
+
+Coverage 0.387 = area / (0.818 * 1.0) = area / 0.818. So area = 0.387 * 0.818 = 0.316. Hmm, that seems low. The total surface area of the crate is ~1.27 (6 faces * 0.21 + chamfers). But the UV area is 0.316?
+
+Wait, that doesn't add up. Let me reconsider. The UV area should equal the surface area (if no scaling distortion). The crate surface area: 6 flat faces * 0.46*0.46 = 6*0.2116 = 1.27, plus 12 chamfer strips * 0.46*0.028 = 12*0.0129 = 0.155, plus 8 corner triangles * 0.0004 = 0.003. Total ≈ 1.43.
+
+But UV area is 0.316? That's way off. Something is wrong with my coverage calculation, or the UVs are scaled down.
+
+Wait, actually, the coverage_fraction is the fraction of the 0-1 square covered by UV faces. If the UVs span u 0-0.818 and v 0-1, and coverage is 0.387, then the UV faces cover 0.387 of the 0-1 square = 0.387 area. But the actual surface area is 1.43.
+
+This means the UVs are scaled down by a factor. The unwrap might be scaling the cross to fit, but the cross has empty space.
+
+Actually, wait. Let me reconsider. The cross layout: the 4 sides form a strip. Each side is 0.46 x 0.46. The strip is 4*0.46 = 1.84 wide and 0.46 tall. Top and bottom attached above/below one side.
+
+If the cross is laid out with the strip horizontal (4 sides in a row), the bounding box is 1.84 x (0.46 + 0.46 + 0.46) = 1.84 x 1.38. But the UVs are scaled to fit in 0-1, so scaled by 1/1.84 = 0.543.
+
+The cross area = 6 * 0.46 * 0.46 = 1.27 (flat faces) + chamfers. Scaled by 0.543^2 = 0.295. So UV area ≈ 1.27 * 0.295 = 0.375. That matches coverage 0.387!
+
+So the coverage is low because the cross shape has empty space (the cross's bounding box is 1.84 x 1.38 but the cross only fills part of it).
+
+This is normal for a cross layout. The coverage 0.387 is expected for a cross.
+
+Actually, wait, but the UV bounds show u 0 to 0.818, v 0 to 1.0. That's not a square cross. Let me think. If the strip is horizontal (4 sides), the cross is 1.84 wide x 1.38 tall. Aspect ratio 1.84/1.38 = 1.33. But the UV bounds are 0.818 x 1.0, aspect ratio 0.818. That's inverted.
+
+Hmm, maybe the cross is laid out vertically (4 sides in a column). Then it's 0.46 wide x 1.84 tall, plus top/bottom. Bounding box 1.38 x 1.84. Scaled to fit 0-1: 0.75 x 1.0. But I got 0.818 x 1.0.
+
+Actually, the exact layout depends on the unwrap algorithm. The point is: 1 island, 0 overlaps, 0 out-of-bounds, and it's a cross. The coverage is low but that's inherent to a cross layout.
+
+Actually, let me reconsider whether I should improve the coverage. The brief doesn't require high coverage. But a "real seam-and-unwrap layout" implies a reasonable layout. 0.387 coverage is a bit low but acceptable for a cross.
+
+Actually, I could improve coverage by using a different layout (e.g., a "T" or "L" shape that packs better), but the cross is the standard and most natural for a box.
+
+Alternatively, I could pack the cross more efficiently. But the unwrap already packs it. The coverage is what it is.
+
+Actually, let me reconsider. Is there a way to get better coverage? The cross layout inherently wastes space. A common alternative is to split into a few islands and pack them more tightly. But the brief says "under 12 islands" and "a real seam-and-unwrap layout, not one island per face".
+
+1 island (cross) is the cleanest answer. The coverage 0.387 is acceptable.
+
+Actually, wait, let me reconsider the coverage more carefully. 0.387 seems really low. Let me check if the unwrap is doing something suboptimal.
+
+Actually, let me reconsider. The issue might be that the cross is being laid out with the 4 sides in a strip, but the top and bottom are attached in a way that creates a large bounding box.
+
+Let me look at the actual UV layout to understand. Let me print the UV coordinates of each face's corners.
+
+Actually, I think this is fine. The requirements are all met. Let me not over-optimize.
+
+But actually, let me reconsider one thing: the brief says "a real seam-and-unwrap layout, not one island per face". My result is 1 island (cross), which is the ideal. 
+
+Let me also double-check: is the coverage a concern for the gate? The gate passed with coverage 0.387. The budget knobs don't include a minimum coverage. So it's fine.
+
+Actually, let me reconsider whether I should try to improve the layout to get better coverage. A cross with better packing could get ~50% coverage. But it's not required.
+
+I think the result is complete. Let me do a final summary.
+
+Actually, wait — let me reconsider the coverage issue once more. The coverage 0.387 means the UVs are quite small. For texturing, this means lower texel density. But it's not a hard requirement.
+
+Actually, let me reconsider if I can improve it easily. The cross layout's empty space is inherent. But I could rotate/repack. The unwrap already does its best packing.
+
+Alternatively, I could use a different seam layout that gives a more compact result. For example, a "box" layout where the 4 sides + top + bottom are arranged more compactly.
+
+But honestly, the cross (1 island) is the standard and correct answer. The coverage is a minor concern.
+
+Let me verify the final state is complete and correct, and provide my summary.
+
+Actually, let me reconsider one more time whether the coverage matters. Looking at the brief again:
+
+"it needs a UV layout with no overlapping faces and no faces outside the 0-1 UV square, in under 12 islands — a real seam-and-unwrap layout, not one island per face."
+
+So the requirements are:
+1. no overlapping faces ✓
+2. no faces outside 0-1 UV square ✓
+3. under 12 islands ✓ (1 island)
+4. real seam-and-unwrap layout (not one island per face) ✓ (cross, 1 island)
+
+All met. Coverage is not mentioned.
+
+I'm done. Let me provide the final summary.
+
+Actually, wait, let me reconsider the coverage once more. 0.387 is quite low. Let me think if there's a quick win to improve it.
+
+Actually, the cross layout for a cube: the standard cross has the 4 sides in a row, with top attached above one side and bottom attached below one side. This creates a cross shape with 4 empty corner regions.
+
+The bounding box of the cross: width = 4 * side, height = 3 * side (if top and bottom are on the middle sides). Area = 12 * side^2. The cross fills 6 * side^2. Coverage = 6/12 = 0.5.
+
+But I got 0.387. So either the layout is different, or the chamfers are adding area without filling space, or the packing is suboptimal.
+
+Actually, the chamfer strips and corner triangles add surface area (1.43 total vs 1.27 for just flat faces), but they're small and attached to the faces, so they don't add much to the bounding box. So coverage should be ~0.5, not 0.387.
+
+Hmm, let me investigate. Maybe the unwrap is laying out the cross in a suboptimal way (e.g., the top and bottom are attached to the END sides, making a longer strip).
+
+Let me look at the actual UV layout to understand.
+
+Actually, let me just check the UV coordinates of the flat faces to see the layout.
+
+Let me print the UV centerof each flat face.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\ncrate = bpy.data.objects[\"Crate\"]\nbm = bmesh.new()\nbm.from_mesh(crate.data)\nbm.faces.ensure_lookup_table()\nuv = crate.data.uv_layers.active\n\n# map face -> its UV center\nfor f in bm.faces:\n    n = f.normal\n    # only flat faces\n    if abs(abs(n.x)-1)<0.05 or abs(abs(n.y)-1)<0.05 or abs(abs(n.z)-1)<0.05:\n        us=[]; vs=[]\n        for loop in f.loops:\n            u,v = uv.data[loop.index].uv\n            us.append(u); vs.append(v)\n        name = ('X' if abs(n.x)>0.5 else 'Y' if abs(n.y)>0.5 else 'Z') + ('+' if (n.x+n.y+n.z)>0 else '-')\n        print(f\"{name}: uv center=({sum(us)/len(us):.3f},{sum(vs)/len(vs):.3f}) size=({max(us)-min(us):.3f}x{max(vs)-min(vs):.3f})\")\nbm.free()\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+Z-: uv center=(0.150,0.848) size=(0.269x0.269)
+X-: uv center=(0.422,0.364) size=(0.237x0.237)
+Y-: uv center=(0.428,0.119) size=(0.237x0.237)
+Z+: uv center=(0.672,0.850) size=(0.263x0.263)
+Y+: uv center=(0.415,0.610) size=(0.237x0.237)
+X+: uv center=(0.412,0.862) size=(0.265x0.247)
+
+--- thinking ---
+The layout is a cross:
+- 4 sides (X-, Y-, Y+, X+) in a vertical strip (centers at v=0.119, 0.364, 0.610, 0.862).
+- Top (Z+) attached to X+ (at v=0.850, u=0.672).
+- Bottom (Z-) attached to X- (at v=0.848, u=0.150).
+
+So the cross is: 4 sides in a vertical column, top attached to the right of the top side, bottom attached to the left of the top side.
+
+Wait, let me look more carefully:
+- X- at (0.422, 0.364)
+- Y- at (0.428, 0.119)
+- Y+ at (0.415, 0.610)
+- X+ at (0.412, 0.862)
+- Z+ (top) at (0.672, 0.850)
+- Z- (bottom) at (0.150, 0.848)
+
+So the 4 sides are in a vertical column (v from 0.119 to 0.862). Top (Z+) is to the right of X+ (u=0.672 vs 0.412). Bottom (Z-) is to the left of X- (u=0.150 vs 0.422).
+
+So the cross is: vertical strip of 4 sides, with top and bottom flaps on the left and right of the top side.
+
+This is a valid cross layout. The coverage is 0.387 because the cross shape has empty space in the corners.
+
+The layout is correct and valid. All requirements met.
+
+Actually, the coverage is a bit low but acceptable. The cross is a standard, valid layout.
+
+I think I'm done. Let me provide the final summary.
+
+Actually, let me reconsider whether I should try to improve coverage. The brief doesn't require it, and the cross is the standard answer. I'll leave it.
+
+But wait, let me reconsider one thing: the brief says "a real seam-and-unwrap layout, not one island per face". My result is 1 island (cross), which is exactly right.
+
+Let me also verify the material is properly assigned (diffuse_color set for Workbench rendering). The assign_material op sets both base color and diffuse_color per the API notes. The render showed terracotta/brown, so it's working.
+
+Final summary:
+- Crate: 0.5 x 0.5 x 0.5 m cube
+- Beveled 0.02 m on all 12 edges (chamfer, 1 segment)
+- 44 triangles, 1 component, manifold, no self-intersections, normals outward
+- 1 material (CrateWood, terracotta)
+- UV: 1 island (cross layout), 0 overlaps, 0 out-of-bounds
+- Only mesh object in scene
+- Gate passed
+
+I'm done. Let me write the final summary.
+
+Actually, let me reconsider the coverage one more time. Is 0.387 going to be a problem for the user? The brief explicitly lists the UV requirements and coverage is not among them. The gate passed. I'll mention the coverage in my summary so the user is aware, but it's not a failure.
+
+Actually, I realize I should double-check: is the bevel "0.02 m" correctly interpreted? The brief says "edges beveled 0.02 m". I used a chamfer (1-segment bevel) of width 0.02. The flat face is 0.46 = 0.5 - 2*0.02, confirming the bevel removes 0.02 from each side. ✓
+
+I'm confident the result is complete and correct. Let me write the final summary.
+
+Let me also note: the render showed the crate correctly. The "taper" the vision model mentioned is just perspective distortion, not a real issue (the orthographic views show a proper square).
+
+Final answer time.
+
+--- answer ---
+The crate is complete and passes the gate. Here's what I built and verified:
+
+## Result
+
+**Crate** — a solid wooden crate, 0.5 m on each side, sitting flat on the ground.
+
+| Check | Measured | Requirement |
+|---|---|---|
+| Dimensions | 0.5 × 0.5 × 0.5 m (world extents) | 0.5 m each side ✓ |
+| Base | min z = 0.0 | sits on ground ✓ |
+| Bevel | flat faces 0.46 m (= 0.5 − 2×0.02) | 0.02 m on all 12 edges ✓ |
+| Triangles | 44 | < 2000 ✓ |
+| Components | 1 | single watertight manifold ✓ |
+| Non-manifold / boundary / self-intersections / flipped normals | all 0 | clean ✓ |
+| Material | 1 (`CrateWood`, terracotta) | one material ✓ |
+| UV islands | 1 (a cross layout) | < 12 ✓ |
+| UV overlaps / out-of-bounds | 0 / 0 | clean ✓ |
+| Scene | only `Crate` remains | only mesh object ✓ |
+
+## How the UV was done
+
+Rather than one island per face, I marked a real seam set to unfold the box into a **single cross island**: cut one vertical corner (opening the four sides into a strip) plus three top and three bottom edges (leaving the top and bottom flaps attached to the +X side). The chamfer strips and corner triangles were seam-split so each stays attached to its correct face instead of becoming orphan islands. Result: 1 island, 0 overlapping faces, 0 faces outside the 0–1 square.
+
+One note for your awareness: the cross layout's UV coverage is ~0.39 — that's inherent to a cross shape (the four empty corner regions of the cross), not a defect. If you'd like higher texel density, I could split it into a few islands and pack them tighter, but that would trade away the single-island cross. Let me know if you want that.

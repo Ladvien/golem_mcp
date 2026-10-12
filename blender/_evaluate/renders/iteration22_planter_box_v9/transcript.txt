@@ -1,0 +1,104 @@
+--- thinking ---
+Let me build this planter box. I'll use boxes and a boolean difference for the interior cavity, then a cylinder for the drainage hole.
+
+Plan:
+- Outer box: 0.3 x 0.2 x 0.25, at z=0 (base at 0).
+- Inner cavity: 0.26 x 0.16 x 0.23 (walls 0.02 thick, floor 0.02 thick). Inner box positioned so walls are 0.02 thick on all sides, floor 0.02 thick at bottom, open at top.
+
+Outer box: width 0.3 (X), depth 0.2 (Y), height 0.25 (Z). Location at (0,0,0) means base at z=0, top at z=0.25.
+
+Inner cavity: width 0.3 - 2*0.02 = 0.26, depth 0.2 - 2*0.02 = 0.16, height 0.25 - 0.02 = 0.23 (floor thickness 0.02). Inner box should start at z=0.02 (floor) and go up to z=0.25 (open top). So inner box location z = 0.02, height 0.23.
+
+Actually to be safe, make the inner box slightly taller so it pokes through the top, ensuring the top is open. Let me make inner box height 0.25 and place at z=0.02, so it goes from 0.02 to 0.27, poking above the top (0.25). That ensures clean open top.
+
+Drainage hole: cylinder radius 0.015, height enough to go through floor. Floor is at z=0 to z=0.02. Cylinder centered at (0,0), radius 0.015, height say 0.05, placed at z=-0.01 to z=0.04, so it goes all the way through the floor. Actually to ensure it goes through, place cylinder from z=-0.01 to z=0.05.
+
+Let me write the code.
+
+Steps:
+1. add_box outer
+2. add_box inner (cavity cutter)
+3. boolean_difference outer - inner
+4. add_cylinder drainage cutter
+5. boolean_difference outer - cylinder
+6. assign material
+7. link into scene (ops probably link automatically? Let me check - add_box creates object, but need link_into_scene).
+
+Actually the ops create objects but I need to link them. Let me check: "Objects must be linked into the scene (link_into_scene)". The primitives create mesh objects but maybe not linked. Let me link them.
+
+Actually, let me just write it and see. The boolean ops consume cutters, so I need them linked? Boolean ops work on objects regardless of linking probably. But for the final object to be measured, it must be linked.
+
+Let me write carefully.
+
+For the drainage hole to go "all the way through", the cylinder must extend beyond both top and bottom of the floor. Floor spans z=0 to z=0.02. Cylinder from z=-0.01 to z=0.05 (height 0.06) centered at z=0.02.
+
+Let me write the chunk.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.materials import assign_material\n\n# Dimensions\nWALL_T = 0.02\nW_M, D_M, H_M = 0.3, 0.2, 0.25\n\n# Outer shell\nouter = add_box(\"PlanterBox\", W_M, D_M, H_M, (0, 0, 0))\nlink_into_scene(outer)\n\n# Interior cavity cutter (pokes above top to guarantee open top)\ncav_w = W_M - 2 * WALL_T\ncav_d = D_M - 2 * WALL_T\ncav = add_box(\"cavity_cutter\", cav_w, cav_d, H_M, (0, 0, WALL_T))\nlink_into_scene(cav)\nboolean_difference(outer, cav)\n\n# Drainage hole cutter, extends through the floor (z 0..0.02)\nhole = add_cylinder(\"drain_cutter\", 0.015, 0.06, 24, (0, 0, -0.01))\nlink_into_scene(hole)\nboolean_difference(outer, hole)\n\nassign_material(outer, \"PlanterMaterial\", (0.45, 0.30, 0.20), 0.7)\n\nprint(\"objects in scene:\", [o.name for o in __import__('bpy').data.objects])\n", "object_name": "PlanterBox"})
+
+--- result ---
+OK: PlanterBox
+  execute: 1 attempt(s), ok in 0.02s (Blender 5.2.0 LTS)
+  printed:
+objects in scene: ['PlanterBox']
+  gate: PASS (128 tris, 1 components)
+  sheet: _evaluate/renders/iteration22_planter_box_v9/agent/PlanterBox_sheet.png
+
+--- vision ---
+This appears to be an open-topped box or planter rendered in brown. The top view (upper left) shows a near-square footprint, while the side view (upper right) is a taller-than-wide rectangle, indicating the box is deeper front-to-back than its height. The two middle views show wide rectangular faces, each with a small dark circular hole centered on the surface — likely drainage holes, reinforcing that this reads as a planter/pot. The perspective render (bottom left) confirms an open rectangular container with visible interior walls and thick side panels. Proportions look consistent and sensible across all views — no floating geometry, missing parts, or obvious intersections. The box reads clearly as a simple open container.
+
+--- thinking ---
+The gate passed. But wait — the render shows "a small dark circular hole centered on the surface" in the middle views. That's the drainage hole. But I need to verify the hole goes all the way through. The render description mentions the hole appears on the surface. Let me verify the hole actually passes through the floor.
+
+Actually, the gate passed with 128 tris, 1 component, manifold. But I need to verify the drainage hole goes all the way through. Let me check with a clear-axis probe or just render with xray looking for the hole.
+
+Actually, let me verify the hole is a through-hole. The cylinder cutter went from z=-0.01 to z=0.05, floor is z=0 to 0.02. So it should cut through. But let me verify by checking the geometry — measure the hole.
+
+Let me do a quick check: render with xray looking for the drainage hole being open through the floor.
+
+Actually, let me verify dimensions and the hole. Let me measure world extents and check the hole passes through.
+
+Let me do a render with xray to confirm the hole goesthrough.
+
+--- tool ---
+render_views({"object_name": "PlanterBox", "xray": true, "look_for": "Does the drainage hole pass all the way through the floor (visible opening on the bottom face), and is the top fully open?"})
+
+--- result ---
+Rendered PlanterBox (x-ray). Look at the attached contact sheet.
+
+--- vision ---
+The object reads as a rectangular open-top basin or trough in matte brown. The perspective view (bottom-left) clearly shows an open top with no lid or covering, and a small circular drainage hole visible in the bottom floor. The front and back orthographic views (top row) show only a faint dark dot at the bottom edge, consistent with the hole being seen edge-on through the floor thickness. The two middle orthographic views each show a dark circular opening centered in a brown rectangle — the top view shows the hole from above (visible through the open top), and the bottom view shows it from below. Both top and bottom faces display a visible circular opening, confirming the hole passes all the way through the floor, and the perspective confirms the top is completely open. Proportions look like a simple rectangular box, roughly wider than tall, with thin walls — nothing appears duplicated, floating, or misplaced.
+
+--- thinking ---
+The hole passes all the way through (visible from both top and bottom). Top is open. Gate passed. Let me verify dimensions and confirm the scene has only one mesh object.
+
+Let me do a final measurement check of dimensions and confirm only one meshobject.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\nobj = bpy.data.objects[\"PlanterBox\"]\nbpy.context.view_layer.update()\n# world extents\ncorners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world extents X:\", max(xs)-min(xs), \"Y:\", max(ys)-min(ys), \"Z:\", max(zs)-min(zs))\nprint(\"min z:\", min(zs), \"max z:\", max(zs))\n\n# mesh objects in scene\nmeshes = [o for o in bpy.data.objects if o.type == 'MESH']\nprint(\"mesh objects:\", [o.name for o in meshes])\n\n# material slots with non-None contents\nmats = [m for m in obj.data.materials if m is not None]\nprint(\"materials assigned:\", [m.name for m in mats])\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world extents X: 0.30000001192092896 Y: 0.20000000298023224 Z: 0.25
+min z: 0.0 max z: 0.25
+mesh objects: ['PlanterBox']
+materials assigned: ['PlanterMaterial']
+
+--- answer ---
+Done. The planter box is built and verified.
+
+**What I built — `PlanterBox`:**
+- Outer dimensions: **0.30 m (X) × 0.20 m (Y) × 0.25 m (Z)**, sitting on the ground at z=0 (measured world extents confirm exactly these values, min z = 0.0).
+- Walls and floor **0.02 m thick**, top fully open (hollow container, not a solid block).
+- One drainage hole of **radius 0.015 m** bored straight down through the centre of the floor — confirmed open on both the top and bottom faces, so water drains all the way through.
+
+**Gate verdict: PASS**
+- 128 triangles (well under the 2000 budget)
+- 1 connected component, watertight manifold, no self-intersections, normals outward
+- Material `PlanterMaterial` assigned (terracotta brown)
+
+**Scene state:** `PlanterBox` is the only mesh object left in the scene.
+
+The render (including an X-ray pass) confirms the open top, the through-hole drainage, and clean proportions from all angles.

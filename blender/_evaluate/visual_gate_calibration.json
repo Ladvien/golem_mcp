@@ -1,0 +1,347 @@
+{
+  "blender_series": "5.2",
+  "capture_resolution_px": 512,
+  "clean": {
+    "crate_with_lid": {
+      "bottom": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "front": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "right": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "top": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      }
+    },
+    "planter_box": {
+      "bottom": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "front": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "right": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "top": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      }
+    },
+    "ribbed_column": {
+      "bottom": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "front": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "right": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "top": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      }
+    },
+    "three_leg_stool": {
+      "bottom": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "front": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "right": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "top": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      }
+    },
+    "uv_crate": {
+      "bottom": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "front": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "right": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "top": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      }
+    }
+  },
+  "control": {
+    "crate_with_lid": {
+      "bottom": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "front": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "right": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "top": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      }
+    },
+    "planter_box": {
+      "bottom": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "front": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "right": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "top": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      }
+    },
+    "ribbed_column": {
+      "bottom": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "front": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "right": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "top": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      }
+    },
+    "three_leg_stool": {
+      "bottom": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "front": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "right": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "top": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      }
+    },
+    "uv_crate": {
+      "bottom": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "front": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "right": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      },
+      "top": {
+        "shading_rmse": 0.0,
+        "silhouette_iou": 1.0
+      }
+    }
+  },
+  "iou_margin": 0.002,
+  "maximum_shading_rmse": 0.01,
+  "minimum_silhouette_iou": 0.998,
+  "mutation": {
+    "crate_with_lid": {
+      "bottom": {
+        "shading_rmse": 0.15628336369991302,
+        "silhouette_iou": 0.9405028250729969
+      },
+      "front": {
+        "shading_rmse": 0.37374618649482727,
+        "silhouette_iou": 0.4439459062794842
+      },
+      "right": {
+        "shading_rmse": 0.3570767045021057,
+        "silhouette_iou": 0.46554399798674606
+      },
+      "three_quarter": {
+        "shading_rmse": 0.24768799543380737,
+        "silhouette_iou": 0.47565924968703305
+      },
+      "top": {
+        "shading_rmse": 0.11667134612798691,
+        "silhouette_iou": 0.9408016989646933
+      }
+    },
+    "planter_box": {
+      "bottom": {
+        "shading_rmse": 0.032557085156440735,
+        "silhouette_iou": 0.9948039266970061
+      },
+      "front": {
+        "shading_rmse": 0.07681833207607269,
+        "silhouette_iou": 0.9716122787610619
+      },
+      "right": {
+        "shading_rmse": 0.09956774860620499,
+        "silhouette_iou": 0.9611714925744628
+      },
+      "three_quarter": {
+        "shading_rmse": 0.07633611559867859,
+        "silhouette_iou": 0.9546535458940221
+      },
+      "top": {
+        "shading_rmse": 0.14381174743175507,
+        "silhouette_iou": 0.9947692361341168
+      }
+    },
+    "ribbed_column": {
+      "bottom": {
+        "shading_rmse": 0.15472224354743958,
+        "silhouette_iou": 0.9401952085181899
+      },
+      "front": {
+        "shading_rmse": 0.1350775510072708,
+        "silhouette_iou": 0.8892215568862275
+      },
+      "right": {
+        "shading_rmse": 0.13054166734218597,
+        "silhouette_iou": 0.8923010246726311
+      },
+      "three_quarter": {
+        "shading_rmse": 0.0833674892783165,
+        "silhouette_iou": 0.9468201754385965
+      },
+      "top": {
+        "shading_rmse": 0.14735114574432373,
+        "silhouette_iou": 0.9398722951401206
+      }
+    },
+    "three_leg_stool": {
+      "bottom": {
+        "shading_rmse": 0.0897492840886116,
+        "silhouette_iou": 0.9598470860531038
+      },
+      "front": {
+        "shading_rmse": 0.09623195976018906,
+        "silhouette_iou": 0.9726822536125994
+      },
+      "right": {
+        "shading_rmse": 0.16584880650043488,
+        "silhouette_iou": 0.8219815947539538
+      },
+      "three_quarter": {
+        "shading_rmse": 0.10104214400053024,
+        "silhouette_iou": 0.9246162592382036
+      },
+      "top": {
+        "shading_rmse": 0.08235915750265121,
+        "silhouette_iou": 0.9597701149425287
+      }
+    },
+    "uv_crate": {
+      "bottom": {
+        "shading_rmse": 0.18531577289104462,
+        "silhouette_iou": 0.8637396147742478
+      },
+      "front": {
+        "shading_rmse": 0.23902854323387146,
+        "silhouette_iou": 0.8411873485524806
+      },
+      "right": {
+        "shading_rmse": 0.17626801133155823,
+        "silhouette_iou": 0.8410866307432324
+      },
+      "three_quarter": {
+        "shading_rmse": 0.21052175760269165,
+        "silhouette_iou": 0.7379278158058494
+      },
+      "top": {
+        "shading_rmse": 0.16182443499565125,
+        "silhouette_iou": 0.8637530533816689
+      }
+    }
+  },
+  "recorded_at": "2026-08-23T19:19:31.949447+00:00",
+  "revision": 10,
+  "rmse_margin": 0.01,
+  "skipped_briefs": []
+}

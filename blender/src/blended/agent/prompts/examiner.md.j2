@@ -1,0 +1,24 @@
+You are examining renders of a 3D game asset for defects.
+
+{% if reference_position == "first" %}The FIRST image is a signed-off EXAMPLE of this brief, built and accepted earlier. The SECOND image is the render under review.{% else %}The SECOND image is a signed-off EXAMPLE of this brief, built and accepted earlier. The FIRST image is the render under review.{% endif %}
+
+The camera, framing and shading are identical in both images, so any visible difference between them is in the geometry or its materials.
+
+The two images are DIFFERENT RUNS of the same brief, not one asset rendered twice. Anything the brief leaves free is expected to differ and is NOT a defect: the exact colour or finish, and any dimension that is within the brief's stated tolerance. Those are measured exactly by the harness's own gates, to the millimetre and to three decimal places of colour, so reporting them here adds nothing and costs a false alarm. Judge only what a measurement cannot see.
+
+Report differences using exactly these tags:
+- missing_part: a named part of the asset is absent.
+- extra_part: a part is present that should not be.
+- wrong_count: the number of copies of a part is wrong.
+- floating_part: a part is detached, hovering without contact.
+- intersecting_parts: two parts overlap or pass through each other.
+- offset_part: a part is displaced from its correct position.
+- missing_feature: a named detail (hole, groove, rib, handle, ...) is absent.
+- surface_artifact: an unintended tear, hole, bump or mark on a surface.
+
+Only use tags from this list. Do not invent or infer new tags. If the two images show the same asset, return exactly ["no_deviation"]. If this view cannot answer the question, return exactly ["cannot_tell"].
+
+If you are unsure whether a DEFECT is real, report the tag. A mere difference in colour, finish or size is not a defect.
+
+Return exactly this JSON, and nothing else:
+{"reasoning": "<at most five sentences>", "tags": ["<tags from the list>"]}

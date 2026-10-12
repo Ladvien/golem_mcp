@@ -1,0 +1,285 @@
+--- tool ---
+declare_plan({"steps": ["Build outer box (0.3x0.2x0.25) and inner cavity box, boolean-subtract to hollow with 0.02m walls/floor, open top", "Build drainage hole cylinder and boolean-subtract through the floor", "Verify gate (manifold, single component, tri budget) and correct dimensions/hole via measurement", "Assign a material", "Render views to visually confirm hollow interior, open top, and through-hole", "Confirm PlanterBox is the only mesh object in the scene"]})
+
+--- result ---
+Plan declared:
+  1. Build outer box (0.3x0.2x0.25) and inner cavity box, boolean-subtract to hollow with 0.02m walls/floor, open top
+  2. Build drainage hole cylinder and boolean-subtract through the floor
+  3. Verify gate (manifold, single component, tri budget) and correct dimensions/hole via measurement
+  4. Assign a material
+  5. Render views to visually confirm hollow interior, open top, and through-hole
+  6. Confirm PlanterBox is the only mesh object in the scene
+
+--- tool_event ---
+{"arguments": {"steps": ["Build outer box (0.3x0.2x0.25) and inner cavity box, boolean-subtract to hollow with 0.02m walls/floor, open top", "Build drainage hole cylinder and boolean-subtract through the floor", "Verify gate (manifold, single component, tri budget) and correct dimensions/hole via measurement", "Assign a material", "Render views to visually confirm hollow interior, open top, and through-hole", "Confirm PlanterBox is the only mesh object in the scene"]}, "gates": [], "hatch_reason": "", "images": [], "ok": true, "plan_step": null, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "", "tool_name": "declare_plan", "wall_time_s": 6.17500045336783e-05}
+
+--- plan ---
+{"steps": ["Build outer box (0.3x0.2x0.25) and inner cavity box, boolean-subtract to hollow with 0.02m walls/floor, open top", "Build drainage hole cylinder and boolean-subtract through the floor", "Verify gate (manifold, single component, tri budget) and correct dimensions/hole via measurement", "Assign a material", "Render views to visually confirm hollow interior, open top, and through-hole", "Confirm PlanterBox is the only mesh object in the scene"], "current_step": 0}
+
+--- tool ---
+add_box({"name": "PlanterBox", "width_m": 0.3, "depth_m": 0.2, "height_m": 0.25, "location_m": [0, 0, 0.125], "plan_step": 1})
+
+--- result ---
+OK: add_box
+  execute: ok in 0.00s (Blender 5.2)
+  returned: "PlanterBox"
+
+--- tool_event ---
+{"arguments": {"depth_m": 0.2, "height_m": 0.25, "location_m": [0.0, 0.0, 0.125], "name": "PlanterBox", "width_m": 0.3}, "gates": [], "hatch_reason": "", "images": [], "ok": true, "plan_step": 1, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "add_box", "wall_time_s": 0.008626791008282453}
+
+--- step ---
+1
+
+--- tool ---
+add_box({"name": "PlanterBox_Cavity", "width_m": 0.26, "depth_m": 0.16, "height_m": 0.3, "location_m": [0, 0, 0.17], "plan_step": 1})
+
+--- result ---
+OK: add_box
+  execute: ok in 0.00s (Blender 5.2)
+  returned: "PlanterBox_Cavity"
+
+--- tool_event ---
+{"arguments": {"depth_m": 0.16, "height_m": 0.3, "location_m": [0.0, 0.0, 0.17], "name": "PlanterBox_Cavity", "width_m": 0.26}, "gates": [], "hatch_reason": "", "images": [], "ok": true, "plan_step": 1, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "add_box", "wall_time_s": 0.0003825000021606684}
+
+--- step ---
+1
+
+--- tool ---
+link_into_scene({"object_name": "PlanterBox", "plan_step": 1})
+
+--- result ---
+OK: link_into_scene
+  execute: ok in 0.00s (Blender 5.2)
+  returned: "PlanterBox"
+  gate: PASS (12 tris, 1 components)
+  orient: extents x 0.3000 y 0.2000 z 0.2500 m; middle extent on z, canonical depth axis is y
+
+--- tool_event ---
+{"arguments": {"object_name": "PlanterBox"}, "gates": [{"gate_failures": [], "object_name": "PlanterBox", "object_type": "MESH", "report": {"boundary_edge_count": 0, "connected_component_count": 1, "duplicate_vertex_pair_count": 0, "flipped_normal_triangle_count": 0, "inverted_facet_count": 0, "non_finite_coordinate_count": 0, "non_manifold_edge_count": 0, "object_name": "PlanterBox", "self_intersecting_face_pair_count": 0, "surface_area_m2": 0.3700000196695328, "triangle_count": 12, "uv_coverage_fraction": 0.0, "uv_island_count": 0, "uv_layer_count": 0, "uv_out_of_bounds_face_count": 0, "uv_overlapping_face_pair_count": 0, "volume_m3": 0.015000000819563875, "zero_area_face_count": 0}, "scene_state": "", "stage_reached": "done", "world_extents_m": [0.30000001192092896, 0.20000000298023224, 0.25]}], "hatch_reason": "", "images": [], "ok": true, "plan_step": 1, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "link_into_scene", "wall_time_s": 0.0010688750189729035}
+
+--- step ---
+1
+
+--- tool ---
+boolean_difference({"target_name": "PlanterBox", "cutter_name": "PlanterBox_Cavity", "plan_step": 1})
+
+--- result ---
+FAILED at execute: boolean_difference
+  execute: FAILED in 0.00s: UnlinkedOperand: boolean operand 'PlanterBox_Cavity' is not linked into the scene, so the modifier cannot evaluate it and the result would silently be the unchanged target. Call link_into_scene('PlanterBox_Cavity') after creating it, before any boolean.
+Traceback (most recent call last):
+  File "/Users/ladvien/blended/src/blended/run/executor.py", line 99, in execute_captured
+    returned = thunk()
+  File "/Users/ladvien/blended/src/blended/agent/op_call.py", line 270, in bind_and_call
+    return function(**bound)
+  File "/Users/ladvien/blended/src/blended/ops/booleans.py", line 127, in boolean_difference
+    _apply_boolean(target_name, cutter_name, "DIFFERENCE", solver)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ladvien/blended/src/blended/ops/booleans.py", line 79, in _apply_boolean
+    _require_linked(operand_object, "operand")
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ladvien/blended/src/blended/ops/booleans.py", line 54, in _require_linked
+    raise UnlinkedOperand(
+    ...<5 lines>...
+    )
+blended.ops.booleans.UnlinkedOperand: boolean operand 'PlanterBox_Cavity' is not linked into the scene, so the modifier cannot evaluate it and the result would silently be the unchanged target. Call link_into_scene('PlanterBox_Cavity') after creating it, before any boolean.
+
+
+--- tool_event ---
+{"arguments": {"cutter_name": "PlanterBox_Cavity", "target_name": "PlanterBox"}, "gates": [], "hatch_reason": "", "images": [], "ok": false, "plan_step": 1, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "execute", "tool_name": "boolean_difference", "wall_time_s": 0.0007699999841861427}
+
+--- step ---
+1
+
+--- tool ---
+link_into_scene({"object_name": "PlanterBox_Cavity", "plan_step": 1})
+
+--- result ---
+OK: link_into_scene
+  execute: ok in 0.00s (Blender 5.2)
+  returned: "PlanterBox_Cavity"
+  gate: PASS (12 tris, 1 components)
+  orient: extents x 0.2600 y 0.1600 z 0.3000 m; middle extent on x, canonical depth axis is y
+
+--- tool_event ---
+{"arguments": {"object_name": "PlanterBox_Cavity"}, "gates": [{"gate_failures": [], "object_name": "PlanterBox_Cavity", "object_type": "MESH", "report": {"boundary_edge_count": 0, "connected_component_count": 1, "duplicate_vertex_pair_count": 0, "flipped_normal_triangle_count": 0, "inverted_facet_count": 0, "non_finite_coordinate_count": 0, "non_manifold_edge_count": 0, "object_name": "PlanterBox_Cavity", "self_intersecting_face_pair_count": 0, "surface_area_m2": 0.3351999968290329, "triangle_count": 12, "uv_coverage_fraction": 0.0, "uv_island_count": 0, "uv_layer_count": 0, "uv_out_of_bounds_face_count": 0, "uv_overlapping_face_pair_count": 0, "volume_m3": 0.012479999139308945, "zero_area_face_count": 0}, "scene_state": "", "stage_reached": "done", "world_extents_m": [0.25999999046325684, 0.1599999964237213, 0.30000001192092896]}], "hatch_reason": "", "images": [], "ok": true, "plan_step": 1, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "link_into_scene", "wall_time_s": 0.002400917001068592}
+
+--- step ---
+1
+
+--- tool ---
+boolean_difference({"target_name": "PlanterBox", "cutter_name": "PlanterBox_Cavity", "plan_step": 1})
+
+--- result ---
+OK: boolean_difference
+  execute: ok in 0.00s (Blender 5.2)
+  returned: "PlanterBox"
+  gate: PASS (28 tris, 1 components)
+  orient: extents x 0.3000 y 0.2000 z 0.2500 m; middle extent on z, canonical depth axis is y
+
+--- tool_event ---
+{"arguments": {"cutter_name": "PlanterBox_Cavity", "target_name": "PlanterBox"}, "gates": [{"gate_failures": [], "object_name": "PlanterBox", "object_type": "MESH", "report": {"boundary_edge_count": 0, "connected_component_count": 1, "duplicate_vertex_pair_count": 0, "flipped_normal_triangle_count": 0, "inverted_facet_count": 0, "non_finite_coordinate_count": 0, "non_manifold_edge_count": 0, "object_name": "PlanterBox", "self_intersecting_face_pair_count": 0, "surface_area_m2": 0.5422000072430819, "triangle_count": 28, "uv_coverage_fraction": 0.0, "uv_island_count": 0, "uv_layer_count": 0, "uv_out_of_bounds_face_count": 0, "uv_overlapping_face_pair_count": 0, "volume_m3": 0.00647200139737129, "zero_area_face_count": 0}, "scene_state": "", "stage_reached": "done", "world_extents_m": [0.30000001192092896, 0.20000000298023224, 0.25]}], "hatch_reason": "", "images": [], "ok": true, "plan_step": 1, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "boolean_difference", "wall_time_s": 0.00419741595396772}
+
+--- step ---
+1
+
+--- tool ---
+add_cylinder({"name": "PlanterBox_DrainHole", "radius_m": 0.015, "height_m": 0.05, "location_m": [0, 0, -0.01], "plan_step": 2})
+
+--- result ---
+OK: add_cylinder
+  execute: ok in 0.00s (Blender 5.2)
+  returned: "PlanterBox_DrainHole"
+
+--- tool_event ---
+{"arguments": {"height_m": 0.05, "location_m": [0.0, 0.0, -0.01], "name": "PlanterBox_DrainHole", "radius_m": 0.015}, "gates": [], "hatch_reason": "", "images": [], "ok": true, "plan_step": 2, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "add_cylinder", "wall_time_s": 0.0013886659871786833}
+
+--- step ---
+2
+
+--- tool ---
+link_into_scene({"object_name": "PlanterBox_DrainHole", "plan_step": 2})
+
+--- result ---
+OK: link_into_scene
+  execute: ok in 0.00s (Blender 5.2)
+  returned: "PlanterBox_DrainHole"
+  gate: PASS (92 tris, 1 components)
+  orient: extents x 0.0300 y 0.0300 z 0.0500 m; middle extent on y (canonical)
+
+--- tool_event ---
+{"arguments": {"object_name": "PlanterBox_DrainHole"}, "gates": [{"gate_failures": [], "object_name": "PlanterBox_DrainHole", "object_type": "MESH", "report": {"boundary_edge_count": 0, "connected_component_count": 1, "duplicate_vertex_pair_count": 0, "flipped_normal_triangle_count": 0, "inverted_facet_count": 0, "non_finite_coordinate_count": 0, "non_manifold_edge_count": 0, "object_name": "PlanterBox_DrainHole", "self_intersecting_face_pair_count": 0, "surface_area_m2": 0.006096565688494593, "triangle_count": 92, "uv_coverage_fraction": 0.0, "uv_island_count": 0, "uv_layer_count": 0, "uv_out_of_bounds_face_count": 0, "uv_overlapping_face_pair_count": 0, "volume_m3": 3.494056857923948e-05, "zero_area_face_count": 0}, "scene_state": "", "stage_reached": "done", "world_extents_m": [0.029999999329447746, 0.029999999329447746, 0.05000000074505806]}], "hatch_reason": "", "images": [], "ok": true, "plan_step": 2, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "link_into_scene", "wall_time_s": 0.0017726669902913272}
+
+--- step ---
+2
+
+--- tool ---
+boolean_difference({"target_name": "PlanterBox", "cutter_name": "PlanterBox_DrainHole", "plan_step": 2})
+
+--- result ---
+FAILED at execute: boolean_difference
+  execute: FAILED in 0.00s: BooleanNoOp: boolean DIFFERENCE left PlanterBox unchanged (16 verts / 12 polys before and after). The EXACT solver ignores exactly-coplanar faces — make the cutter overlap the target instead of sharing a face plane, then retry.
+Traceback (most recent call last):
+  File "/Users/ladvien/blended/src/blended/run/executor.py", line 99, in execute_captured
+    returned = thunk()
+  File "/Users/ladvien/blended/src/blended/agent/op_call.py", line 270, in bind_and_call
+    return function(**bound)
+  File "/Users/ladvien/blended/src/blended/ops/booleans.py", line 127, in boolean_difference
+    _apply_boolean(target_name, cutter_name, "DIFFERENCE", solver)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ladvien/blended/src/blended/ops/booleans.py", line 109, in _apply_boolean
+    raise BooleanNoOp(
+    ...<5 lines>...
+    )
+blended.ops.booleans.BooleanNoOp: boolean DIFFERENCE left PlanterBox unchanged (16 verts / 12 polys before and after). The EXACT solver ignores exactly-coplanar faces — make the cutter overlap the target instead of sharing a face plane, then retry.
+
+
+--- tool_event ---
+{"arguments": {"cutter_name": "PlanterBox_DrainHole", "target_name": "PlanterBox"}, "gates": [], "hatch_reason": "", "images": [], "ok": false, "plan_step": 2, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "execute", "tool_name": "boolean_difference", "wall_time_s": 0.0019163750112056732}
+
+--- step ---
+2
+
+--- tool ---
+remove_object_and_mesh({"object_name": "PlanterBox_DrainHole", "plan_step": 2})
+
+--- result ---
+OK: remove_object_and_mesh
+  execute: ok in 0.00s (Blender 5.2)
+  returned: null
+
+--- tool_event ---
+{"arguments": {"object_name": "PlanterBox_DrainHole"}, "gates": [], "hatch_reason": "", "images": [], "ok": true, "plan_step": 2, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "remove_object_and_mesh", "wall_time_s": 0.0009472499950788915}
+
+--- step ---
+2
+
+--- tool ---
+add_cylinder({"name": "PlanterBox_DrainHole", "radius_m": 0.015, "height_m": 0.1, "location_m": [0, 0, -0.02], "plan_step": 2})
+
+--- result ---
+OK: add_cylinder
+  execute: ok in 0.00s (Blender 5.2)
+  returned: "PlanterBox_DrainHole"
+
+--- tool_event ---
+{"arguments": {"height_m": 0.1, "location_m": [0.0, 0.0, -0.02], "name": "PlanterBox_DrainHole", "radius_m": 0.015}, "gates": [], "hatch_reason": "", "images": [], "ok": true, "plan_step": 2, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "add_cylinder", "wall_time_s": 0.0009860420250333846}
+
+--- step ---
+2
+
+--- tool ---
+link_into_scene({"object_name": "PlanterBox_DrainHole", "plan_step": 2})
+
+--- result ---
+OK: link_into_scene
+  execute: ok in 0.00s (Blender 5.2)
+  returned: "PlanterBox_DrainHole"
+  gate: PASS (92 tris, 1 components)
+  orient: extents x 0.0300 y 0.0300 z 0.1000 m; middle extent on y (canonical)
+
+--- tool_event ---
+{"arguments": {"object_name": "PlanterBox_DrainHole"}, "gates": [{"gate_failures": [], "object_name": "PlanterBox_DrainHole", "object_type": "MESH", "report": {"boundary_edge_count": 0, "connected_component_count": 1, "duplicate_vertex_pair_count": 0, "flipped_normal_triangle_count": 0, "inverted_facet_count": 0, "non_finite_coordinate_count": 0, "non_manifold_edge_count": 0, "object_name": "PlanterBox_DrainHole", "self_intersecting_face_pair_count": 0, "surface_area_m2": 0.010795508569572121, "triangle_count": 92, "uv_coverage_fraction": 0.0, "uv_island_count": 0, "uv_layer_count": 0, "uv_out_of_bounds_face_count": 0, "uv_overlapping_face_pair_count": 0, "volume_m3": 6.988113715847896e-05, "zero_area_face_count": 0}, "scene_state": "", "stage_reached": "done", "world_extents_m": [0.029999999329447746, 0.029999999329447746, 0.10000000149011612]}], "hatch_reason": "", "images": [], "ok": true, "plan_step": 2, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "link_into_scene", "wall_time_s": 0.002546624979004264}
+
+--- step ---
+2
+
+--- tool ---
+boolean_difference({"target_name": "PlanterBox", "cutter_name": "PlanterBox_DrainHole", "plan_step": 2})
+
+--- result ---
+FAILED at execute: boolean_difference
+  execute: FAILED in 0.00s: BooleanNoOp: boolean DIFFERENCE left PlanterBox unchanged (16 verts / 12 polys before and after). The EXACT solver ignores exactly-coplanar faces — make the cutter overlap the target instead of sharing a face plane, then retry.
+Traceback (most recent call last):
+  File "/Users/ladvien/blended/src/blended/run/executor.py", line 99, in execute_captured
+    returned = thunk()
+  File "/Users/ladvien/blended/src/blended/agent/op_call.py", line 270, in bind_and_call
+    return function(**bound)
+  File "/Users/ladvien/blended/src/blended/ops/booleans.py", line 127, in boolean_difference
+    _apply_boolean(target_name, cutter_name, "DIFFERENCE", solver)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ladvien/blended/src/blended/ops/booleans.py", line 109, in _apply_boolean
+    raise BooleanNoOp(
+    ...<5 lines>...
+    )
+blended.ops.booleans.BooleanNoOp: boolean DIFFERENCE left PlanterBox unchanged (16 verts / 12 polys before and after). The EXACT solver ignores exactly-coplanar faces — make the cutter overlap the target instead of sharing a face plane, then retry.
+
+
+--- tool_event ---
+{"arguments": {"cutter_name": "PlanterBox_DrainHole", "target_name": "PlanterBox"}, "gates": [], "hatch_reason": "", "images": [], "ok": false, "plan_step": 2, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "execute", "tool_name": "boolean_difference", "wall_time_s": 0.0025874580023810267}
+
+--- step ---
+2
+
+--- tool ---
+run_python({"source": "import bpy\nbpy.context.view_layer.update()\nfor name in ['PlanterBox', 'PlanterBox_DrainHole']:\n    obj = bpy.data.objects[name]\n    corners = [obj.matrix_world @ v.co for v in obj.data.vertices]\n    xs = [c.x for c in corners]\n    ys = [c.y for c in corners]\n    zs = [c.z for c in corners]\n    print(name, 'X', min(xs), max(xs), 'Y', min(ys), max(ys), 'Z', min(zs), max(zs))\n", "reason": "Need to see actual world-space bounding box of target and cutter to understand why the boolean reports no overlap, since no op exposes raw bbox coordinates.", "plan_step": 2})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+PlanterBox X -0.15000000596046448 0.15000000596046448 Y -0.10000000149011612 0.10000000149011612 Z 0.125 0.375
+PlanterBox_DrainHole X -0.014999999664723873 0.014999999664723873 Y -0.014999999664723873 0.014999999664723873 Z -0.020000001415610313 0.07999999821186066
+
+--- tool_event ---
+{"arguments": {"plan_step": 2, "reason": "Need to see actual world-space bounding box of target and cutter to understand why the boolean reports no overlap, since no op exposes raw bbox coordinates.", "source": "import bpy\nbpy.context.view_layer.update()\nfor name in ['PlanterBox', 'PlanterBox_DrainHole']:\n    obj = bpy.data.objects[name]\n    corners = [obj.matrix_world @ v.co for v in obj.data.vertices]\n    xs = [c.x for c in corners]\n    ys = [c.y for c in corners]\n    zs = [c.z for c in corners]\n    print(name, 'X', min(xs), max(xs), 'Y', min(ys), max(ys), 'Z', min(zs), max(zs))\n"}, "gates": [], "hatch_reason": "Need to see actual world-space bounding box of target and cutter to understand why the boolean reports no overlap, since no op exposes raw bbox coordinates.", "images": [], "ok": true, "plan_step": 2, "refusal": "", "schema_version": 2, "source_sha256": "0dcdbfcee950", "stage_reached": "done", "tool_name": "run_python", "wall_time_s": 0.0013373330002650619}
+
+--- step ---
+2
+
+--- tool ---
+move_object_to({"object_name": "PlanterBox", "location_m": [0, 0, 0], "plan_step": 2})
+
+--- result ---
+OK: move_object_to
+  execute: ok in 0.00s (Blender 5.2)
+  returned: "PlanterBox"
+  gate: PASS (28 tris, 1 components)
+  orient: extents x 0.3000 y 0.2000 z 0.2500 m; middle extent on z, canonical depth axis is y
+
+--- tool_event ---
+{"arguments": {"location_m": [0.0, 0.0, 0.0], "object_name": "PlanterBox"}, "gates": [{"gate_failures": [], "object_name": "PlanterBox", "object_type": "MESH", "report": {"boundary_edge_count": 0, "connected_component_count": 1, "duplicate_vertex_pair_count": 0, "flipped_normal_triangle_count": 0, "inverted_facet_count": 0, "non_finite_coordinate_count": 0, "non_manifold_edge_count": 0, "object_name": "PlanterBox", "self_intersecting_face_pair_count": 0, "surface_area_m2": 0.5422000072430819, "triangle_count": 28, "uv_coverage_fraction": 0.0, "uv_island_count": 0, "uv_layer_count": 0, "uv_out_of_bounds_face_count": 0, "uv_overlapping_face_pair_count": 0, "volume_m3": 0.00647200139737129, "zero_area_face_count": 0}, "scene_state": "", "stage_reached": "done", "world_extents_m": [0.30000001192092896, 0.20000000298023224, 0.25]}], "hatch_reason": "", "images": [], "ok": true, "plan_step": 2, "refusal": "", "schema_version": 2, "source_sha256": "", "stage_reached": "done", "tool_name": "move_object_to", "wall_time_s": 0.002494624990504235}
+
+--- step ---
+2
+
+--- answer ---
+Stopped after 931,851 tokens in one turn (budget 750,000) without reaching an answer. Tell me how to narrow this.

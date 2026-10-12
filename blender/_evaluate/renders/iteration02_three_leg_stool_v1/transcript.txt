@@ -1,0 +1,623 @@
+--- thinking ---
+Let me plan this stool build.
+
+Requirements:
+- Name 'Stool'
+- Round seat: 0.32 m across (diameter), so radius 0.16 m, thickness 0.04 m
+- Total height 0.45 m, feet on ground at z=0
+- 3 legs splay outward as they descend: each foot touches ground on circle radius 0.14 m from central axis
+- Legs evenly spaced, first one on +X axis
+- Space between legs open — no central post, no skirt
+- Single watertight manifold mesh under 2000 triangles
+- Material assigned
+- Only mesh object left in scene
+
+Let me think about geometry.
+
+Seat: cylinder radius 0.16, height 0.04. Top of seat at 0.45, so seat occupies z from 0.41 to 0.45. Actually total height 0.45 means top of seat at 0.45. Seat thickness 0.04, so seat bottom at 0.41.
+
+Legs: from seat bottom (z=0.41) down to ground (z=0). Each leg is a cylinder. Top of leg at seat bottom, radius small. Legs splay outward: at top they're near center, at bottom they're at radius 0.14.
+
+Actually legs attach to seat. The seat is radius 0.16. Legs at top should be within seat footprint. Let's have leg top at radius ~0.10 from center (under the seat), and bottom at radius 0.14.
+
+Legs evenly spaced at 120° apart, first on +X axis. So angles: 0°, 120°, 240°.
+
+Each leg is a cylinder tilted outward. We can create a cylinder and rotate it. Or create a cylinder along an axis.
+
+Let me think about the leg as a cylinder. The leg goes from a point at top (radius r_top, z=0.41) to bottom (radius 0.14, z=0). The leg is tilted.
+
+Let me define leg as a cylinder of radius, say, 0.02 m. Length = distance between top and bottom points.
+
+Top point: (r_top * cos(angle), r_top * sin(angle), 0.41)
+Bottom point: (0.14 * cos(angle), 0.14 * sin(angle), 0)
+
+Let r_top = 0.10.
+
+For angle 0 (first leg on +X):
+Top: (0.10, 0, 0.41)
+Bottom: (0.14, 0, 0)
+
+The leg cylinder axis from top to bottom. Length = sqrt((0.04)^2 + (0.41)^2) = sqrt(0.0016 + 0.1681) = sqrt(0.1697) ≈ 0.412.
+
+I'll create a cylinder with height = length, then rotate and position it.
+
+Actually, easier: create cylinder along Z with base at origin, height = length. Then rotate it to align with the leg direction, then position.
+
+Let me think about the approach with blended.ops.
+
+I'll build the seat as a cylinder (add_cylinder). Then build each leg as a cylinder, rotate/position, union them all.
+
+Let me use add_cylinder for seat: radius 0.16, height 0.04, location at (0,0,0.41). Base at location z. So seat occupies 0.41 to 0.45. Good.
+
+For legs, create cylinder radius 0.02, height = leg length. Then rotate to align axis.
+
+The leg direction vector from top to bottom: d = bottom - top = (0.04*cos, 0.04*sin, -0.41). Actually for angle 0: (0.04, 0, -0.41).
+
+The cylinder's axis is Z. We need to rotate Z axis to align with d direction. 
+
+Let me compute rotation. The cylinder initially along +Z from z=0 to z=length. We want it along direction d (unit). 
+
+I can use a rotation. Let me just compute the rotation matrix to map (0,0,1) to unit(d).
+
+Actually, let me use bpy to set rotation_euler. But computing Euler from arbitrary direction is fiddly. Better to use a quaternion or matrix.
+
+Alternative approach: create the cylinder, then use a transform matrix. Let me set object's matrix_world directly.
+
+Actually, let me think simpler. I can create the leg cylinder with its base at the bottom point and pointing up along the leg direction. 
+
+Let me use the approach: create cylinder of height = length, base at origin. Then I want to rotate it so its axis points along unit(d), and position its base at bottom point.
+
+The rotation that maps +Z to unit(d): axis = cross(Z, unit_d), angle = acos(dot(Z, unit_d)).
+
+Let me just compute in Python using mathutils.
+
+Let me write the code.
+
+Actually, let me reconsider the leg geometry. Legs splay outward as they descend. So at the top (attached to seat) they're closer to center, at bottom they're at radius 0.14. The leg is a straight cylinder tilted outward.
+
+Let me set leg radius = 0.02 m. That's a reasonable stool leg.
+
+Let me build.
+
+I'll create seat, then for each of 3 angles create a leg cylinder, rotate and position, then union all into one object.
+
+Let me write the code step by step. First create seat and one leg, verify.
+
+Let me think about the union. I'll create seat object 'Stool'. Then create leg objects and boolean_union them into 'Stool'.
+
+But boolean_union consumes the addend. So I create seat as 'Stool', then create leg1, union into Stool, etc.
+
+Let me write.
+
+For the leg cylinder creation, add_cylinder creates base at location z. I'll create at origin then transform.
+
+Let me compute the transform. I'll use mathutils.
+
+```python
+import math
+from mathutils import Vector, Matrix
+from blended.ops.primitives import add_cylinder, link_into_scene
+from blended.ops.booleans import boolean_union
+
+SEAT_RADIUS = 0.16
+SEAT_THICKNESS = 0.04
+TOTAL_HEIGHT = 0.45
+LEG_RADIUS = 0.02
+FOOT_RADIUS = 0.14
+LEG_TOP_RADIUS = 0.10
+LEG_COUNT = 3
+
+seat_bottom = TOTAL_HEIGHT - SEAT_THICKNESS  # 0.41
+
+# seat
+add_cylinder('Stool', SEAT_RADIUS, SEAT_THICKNESS, location_m=(0,0,seat_bottom))
+```
+
+Wait, add_cylinder base at location z. So seat from 0.41 to 0.45. Good.
+
+For legs, I need to create them and union. Let me create leg cylinders.
+
+```python
+for i in range(LEG_COUNT):
+    angle = 2*math.pi*i/LEG_COUNT
+    top = Vector((LEG_TOP_RADIUS*math.cos(angle), LEG_TOP_RADIUS*math.sin(angle), seat_bottom))
+    bottom = Vector((FOOT_RADIUS*math.cos(angle), FOOT_RADIUS*math.sin(angle), 0))
+    d = bottom - top
+    length = d.length
+    # create cylinder base at origin, height=length
+    add_cylinder(f'Leg{i}', LEG_RADIUS, length)
+    leg = bpy.data.objects[f'Leg{i}']
+    # rotate +Z to align with d
+    z = Vector((0,0,1))
+    axis = z.cross(d.normalized())
+    angle_rot = math.acos(z.dot(d.normalized()))
+    if axis.length > 1e-6:
+        rot = Matrix.Rotation(angle_rot, 4, axis.normalized())
+    else:
+        rot = Matrix.Identity(4)
+    # position base at bottom
+    leg.matrix_world = rot @ Matrix.Translation(bottom)
+    ...
+```
+
+Hmm, but matrix_world assignment and then union. Let me be careful. Actually I should set location and rotation, then view_layer.update() before reading matrix_world. But here I'm setting matrix_world directly which should be fine.
+
+Actually, let me set the object's matrix_world directly. Then union.
+
+But the boolean ops use the object's evaluated geometry. Let me set matrix_world and then call boolean_union.
+
+Let me just do it.
+
+Actually, there's a subtlety: add_cylinder creates base at location z. If I create at origin with height=length, base at z=0, top at z=length. Then I transform matrix_world to rotate and translate. Good.
+
+Let me write the full build and run it.
+
+Let me also assign material at the end.
+
+Let me first do a small chunk: create seat and one leg, inspect.
+
+Actually let me just build the whole thing and gate it. But the instructions say smallest chunks. Let me do seat first, then legs.
+
+Let me start.
+
+Let me write chunk 1: create seat.
+
+Actually let me combine: create seat, then create legs and union. Let me do it in one go but carefully. I'll run and gate.
+
+Let me write the code.
+
+I need to import bpy too for object access.
+
+Let me write.
+
+```python
+import math
+import bpy
+from mathutils import Vector, Matrix
+from blended.ops.primitives import add_cylinder, link_into_scene
+from blended.ops.booleans import boolean_union
+from blended.ops.materials import assign_material
+
+SEAT_RADIUS = 0.16
+SEAT_THICKNESS = 0.04
+TOTAL_HEIGHT = 0.45
+LEG_RADIUS = 0.02
+FOOT_RADIUS = 0.14
+LEG_TOP_RADIUS = 0.10
+LEG_COUNT = 3
+
+seat_bottom = TOTAL_HEIGHT - SEAT_THICKNESS
+
+add_cylinder('Stool', SEAT_RADIUS, SEAT_THICKNESS, location_m=(0,0,seat_bottom))
+stool = bpy.data.objects['Stool']
+
+for i in range(LEG_COUNT):
+    angle = 2*math.pi*i/LEG_COUNT
+    top = Vector((LEG_TOP_RADIUS*math.cos(angle), LEG_TOP_RADIUS*math.sin(angle), seat_bottom))
+    bottom = Vector((FOOT_RADIUS*math.cos(angle), FOOT_RADIUS*math.sin(angle), 0))
+    d = bottom - top
+    length = d.length
+    leg_name = f'Stool_Leg{i}'
+    add_cylinder(leg_name, LEG_RADIUS, length)
+    leg = bpy.data.objects[leg_name]
+    z = Vector((0,0,1))
+    dn = d.normalized()
+    axis = z.cross(dn)
+    if axis.length > 1e-6:
+        rot = Matrix.Rotation(math.acos(z.dot(dn)), 4, axis.normalized())
+    else:
+        rot = Matrix.Identity(4)
+    leg.matrix_world = rot @ Matrix.Translation(bottom)
+    bpy.context.view_layer.update()
+    boolean_union(stool, leg)
+
+assign_material(stool, 'Wood', base_color_rgb=(0.6,0.4,0.25), roughness=0.6)
+```
+
+Wait, boolean_union consumes the addend (leg). So after union, leg object is gone. Good.
+
+But there's a concern: the leg top at radius 0.10, seat radius 0.16. The leg top is under the seat, overlapping the seat. Good for union. The leg cylinder radius 0.02, so it overlaps seat. Good.
+
+But do the legs overlap each other? At top they're at radius 0.10, spaced 120° apart. Distance between adjacent leg tops = 2*0.10*sin(60°) = 0.173. Leg radius 0.02, so no overlap between legs. Good, space between legs open.
+
+Let me verify the leg doesn't poke through the seat top. Leg top at z=0.41 = seat bottom. Leg extends up to 0.41. Seat from 0.41 to 0.45. So leg top is at seat bottom, overlapping seat. Good.
+
+Let me run this.
+
+Let me also double check triangle budget. Seat cylinder with default 24 segments: 24*2 triangles for side + 24*2 for caps = 96. Legs: 24 segments, 96 each, 3 legs = 288. Total ~384. Well under 2000. Good.
+
+Let me run.
+
+Actually, let me reconsider whether the leg should be a cylinder or tapered. A stool leg could be tapered (thinner at bottom). But cylinder is fine and simpler. The requirement just says legs splay outward. Cylinder is fine.
+
+Let merun the build.
+
+--- tool ---
+run_python({"source": "import math\nimport bpy\nfrom mathutils import Vector, Matrix\nfrom blended.ops.primitives import add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_union\nfrom blende)
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+leg length: 0.41194659773734754
+leg bottom world: <Vector (-0.1393, 0.0000, -0.0136)>
+leg top world: <Vector (-0.0993, 0.0000, -0.4236)>
+
+--- thinking ---
+The leg bottom world is at (-0.1393, 0, -0.0136) but I wanted (0.14, 0, 0). The issue: the cylinder base is at z=0 but the cylinder's base is at the bottom of the cylinder. Wait, the leg bottom should be at (0.14, 0, 0). But it's at (-0.1393, 0, -0.0136). 
+
+The problem: the cylinder's base is at z=0, but the cylinder extends in +Z. When I rotate +Z to align with d, the base point (0,0,0) maps to... the rotation maps (0,0,1) to dn. The base (0,0,0) is the origin, which stays at origin under rotation. Then translation by bottom. So base should be at bottom = (0.14, 0, 0).
+
+But it printed (-0.1393, 0, -0.0136). That's wrong. 
+
+Wait, the issue is that add_cylinder creates base at location z. I created at location (0,0,0) default. But maybe the cylinder's base is at z=0 and extends up. When I set matrix_world = rot @ Translation(bottom), the base (0,0,0) maps to bottom. But it printed something else.
+
+Hmm, actually the issue might be that the cylinder's geometry isn't centered. Let me reconsider. Actually the printed bottom is (-0.1393, 0, -0.0136). That's close to (-0.14, 0, 0) but with a small z offset and negative x.
+
+Wait, maybe the cylinder base isn't at z=0. Let me check. add_cylinder "base at location_m[2]". So base at z=0. 
+
+Hmm, but the result is off. Let me reconsider. Maybe matrix_world assignment isn't taking effect as I expect, or the cylinder's local geometry has base at z=0 but the rotation is applied around origin.
+
+Actually wait — the rotation maps +Z to dn. The base point (0,0,0) is the origin, rotation keeps it at origin, then translation by bottom puts it at bottom=(0.14,0,0). So it should be (0.14,0,0). But we got (-0.1393, 0, -0.0136).
+
+That's very strange. Let me reconsider. Maybe the cylinder's base is NOT at z=0 in local coords. Let me check the actual mesh vertices.
+
+Actually, maybe add_cylinder centers the cylinder? Let me check. The doc says "base at location_m[2]". So base at z=0. 
+
+Hmm, but the result suggests the base is at some other location. Let me inspect the leg's mesh bounds.
+
+Actually, wait. Maybe the issue is that matrix_world assignment combined with the object's existing location. When I create the cylinder, its location is (0,0,0) and matrix_world is identity. Setting matrix_world directly should override. But maybe there's a scale or the mesh isn't where I think.
+
+Let me inspect the leg mesh vertices in local space.
+
+Actually, let me reconsider: the printed bottom world = (-0.1393, 0, -0.0136). The magnitude is ~0.14. And top world = (-0.0993, 0, -0.4236). 
+
+Hmm, the top should be at (0.10, 0, 0.41). But it's at (-0.0993, 0, -0.4236). So both are reflected/negated and shifted.
+
+The difference between top and bottom: (-0.0993 - (-0.1393), 0, -0.4236 - (-0.0136)) = (0.04, 0, -0.41). That matches d = (0.04, 0, -0.41). Good, the direction is right.
+
+But the position is wrong. The base is at (-0.1393, 0, -0.0136) instead of (0.14, 0, 0).
+
+So the translation isn't being applied as bottom. It seems the base point in local coords isn't (0,0,0). 
+
+Let me check: maybe add_cylinder places base at z=0 but the mesh vertices... Actually maybe the cylinder is created with base at z=0 but the object's origin is at the center? No.
+
+Let me just inspect the leg mesh local bounds.
+
+Actually, let me reconsider. Perhaps the issue is that the cylinder's local base is at z=0, but when I do rot @ Translation(bottom), the translation is applied in world space AFTER rotation. So base local (0,0,0) -> rot*(0,0,0) = (0,0,0) -> + bottom = bottom. That's correct.
+
+Unless... the cylinder's base is not at local origin. Let me check the mesh.
+
+Let me inspect.
+
+--- tool ---
+run_python({"source": "import bpy\nleg = bpy.data.objects['Stool_Leg0']\nmesh = leg.data\nzs = [v.co.z for v in mesh.vertices]\nxs = [v.co.x for v in mesh.vertices]\nprint(\"local z min/max:\", min(zs), max(zs)))
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+local z min/max: 1.511114566810079e-09 0.4119465947151184
+local x min/max: -0.019999999552965164 0.019999999552965164
+object location: <Vector (-0.1393, 0.0000, -0.0136)>
+matrix_world: <Matrix 4x4 (-0.9953, 0.0000,  0.0971, -0.1393)
+            ( 0.0000, 1.0000,  0.0000,  0.0000)
+            (-0.0971, 0.0000, -0.9953, -0.0136)
+            ( 0.0000, 0.0000,  0.0000,  1.0000)>
+
+--- thinking ---
+The local geometry is correct: base at z=0, top at z=0.412. The matrix_world has translation (-0.1393, 0, -0.0136). But I set matrix_world = rot @ Translation(bottom) where bottom = (0.14, 0, 0). 
+
+Wait, the translation column is (-0.1393, 0, -0.0136), not (0.14, 0, 0). So the matrix_world I set isn't what I intended. 
+
+Hmm. The issue: `rot @ Matrix.Translation(bottom)`. Matrix.Translation(bottom) is a translation matrix. rot is a rotation matrix. rot @ Translation(bottom) = rotation applied to translation... Actually matrix multiplication: (rot @ trans) applied to a point p = rot @ (trans @ p) = rot @ (p + bottom). So the translation is applied first, then rotation. So the base point (0,0,0) -> (0,0,0)+bottom = bottom -> rot*(bottom). 
+
+So the base ends up at rot*(bottom), not bottom! That's the bug. I need Translation(bottom) @ rot, so that rotation is applied first then translation: p -> rot*p + bottom. Base (0,0,0) -> rot*0 + bottom = bottom. 
+
+So I should use `Matrix.Translation(bottom) @ rot`.
+
+Let me verify: with Translation @ rot, base (0,0,0) -> rot*(0,0,0)=0 -> +bottom = bottom = (0.14,0,0). 
+
+Let me fix. Also the rotation matrix in the printed matrix_world: the top-left 3x3 is the rotation. Let me just fix the order.
+
+Let me rebuild the whole thing with the fix.
+
+--- tool ---
+run_python({"source": "import math\nimport bpy\nfrom mathutils import Vector, Matrix\nfrom blended.ops.primitives import add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_union\nfrom blende)
+
+--- result ---
+OK: Stool
+  execute: 1 attempt(s), ok in 0.01s (Blender 5.2.0 LTS)
+  printed:
+leg0 base world: <Vector (0.1400, 0.0000, 0.0000)>
+leg0 top world: <Vector (0.1800, 0.0000, -0.4100)>
+leg1 base world: <Vector (-0.0700, 0.1212, 0.0000)>
+leg1 top world: <Vector (-0.0900, 0.1559, -0.4100)>
+leg2 base world: <Vector (-0.0700, -0.1212, 0.0000)>
+leg2 top world: <Vector (-0.0900, -0.1559, -0.4100)>
+done, stool material slots: ['Wood']
+  gate: PASS (92 tris, 1 components)
+  sheet: _evaluate/renders/iteration02_three_leg_stool_v1/agent/Stool_sheet.png
+
+--- vision ---
+image contains no visible 3D content — it shows a 2×2 grid of solid black panels separated by thin gray/tan divider lines, with no object, geometry, or shading present in any of the four views. No intended asset can be identified because nothing was rendered; the viewports are entirely black. No parts, proportions, or positioning can be assessed since there is no visible geometry to describe.
+
+--- thinking ---
+The gate passed (92 tris, 1 component). But the render shows black panels — nothing visible. That's concerning. The legs base at (0.14,0,0) etc. But the top world shows (0.18, 0, -0.41)?? Wait, the top should be at (0.10, 0, 0.41). But it shows (0.18, 0, -0.41). 
+
+Wait, that's wrong! The top world is (0.18, 0, -0.41). But I expected (0.10, 0, 0.41). 
+
+Hmm. Let me reconsider. The leg top local is (0,0,length) = (0,0,0.412). After transform Translation(bottom) @ rot, top = rot*(0,0,0.412) + bottom. rot maps +Z to dn = d.normalized() = (0.04,0,-0.41)/0.412 = (0.0971, 0, -0.9953). So rot*(0,0,0.412) = 0.412 * (0.0971, 0, -0.9953) = (0.04, 0, -0.41). Then + bottom (0.14,0,0) = (0.18, 0, -0.41). 
+
+So the top of the leg is at (0.18, 0, -0.41), which is BELOW the ground (z=-0.41)! That's wrong.
+
+Wait, I think I have the direction backwards. The leg should go from top (under seat, z=0.41) down to bottom (ground, z=0). The cylinder's +Z axis should point from bottom to top, i.e., along (top - bottom) = -d. But I aligned +Z with d = bottom - top, which points downward. So the cylinder extends downward from the base.
+
+So the base (bottom) is at ground (0.14,0,0), and the cylinder extends in the -Z-ish direction (downward), going to (0.18, 0, -0.41). That's below ground. Wrong.
+
+I need to align +Z with (top - bottom) = -d, so the cylinder extends upward from the base at the ground to the top under the seat.
+
+So dn should be (top - bottom).normalized() = -d.normalized().
+
+Let me fix: dn = (top - bottom).normalized().
+
+Then base at bottom (ground), top at top (under seat). 
+
+Let me redo. Also the render was black — maybe because the object was below ground / camera framing. Let me fix and re-render.
+
+Let me rebuild.
+
+--- tool ---
+run_python({"source": "import math\nimport bpy\nfrom mathutils import Vector, Matrix\nfrom blended.ops.primitives import add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_union\nfrom blende)
+
+--- result ---
+OK: Stool
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+leg0 base world: <Vector (0.1400, 0.0000, 0.0000)>
+leg0 top world: <Vector (0.1000, 0.0000, 0.4100)>
+leg1 base world: <Vector (-0.0700, 0.1212, 0.0000)>
+leg1 top world: <Vector (-0.0500, 0.0866, 0.4100)>
+leg2 base world: <Vector (-0.0700, -0.1212, 0.0000)>
+leg2 top world: <Vector (-0.0500, -0.0866, 0.4100)>
+done
+  gate: PASS (92 tris, 1 components)
+  sheet: _evaluate/renders/iteration02_three_leg_stool_v1/agent/Stool_sheet.png
+
+--- vision ---
+views are completely black — no object, geometry, or shading is visible in any of the four panels. The panels are only distinguished by thin off-white grid lines separating them, and aside from that there is nothing rendered. This does not read as any recognizable object; it looks like an empty or failed render with no content to evaluate.
+
+--- thinking ---
+Now the geometry is correct: leg0 base at (0.14,0,0), top at (0.10,0,0.41). Legs at 120° spacing. Gate passes.
+
+But the render is still black. That's odd. The object exists and gate passes. Why is the render black?
+
+Maybe the camera framing is off, or the render is happening before the object is properly set. Or maybe the render viewport is looking at a location where the object isn't.
+
+Let me check the scene — maybe there are other objects, or the camera isn't framing the stool. Let me list the scene and check object bounds.
+
+Actually, the render might be black because the object is very small relative to camera, or the camera is positioned wrong. Let me check the object's world bounds and the scene.
+
+Let me list_scene.
+
+--- tool ---
+list_scene({})
+
+--- result ---
+Scene is empty (no mesh objects).
+
+--- tool ---
+run_python({"source": "import bpy\nstool = bpy.data.objects['Stool']\n# world bounds\nco = [stool.matrix_world @ v.co for v in stool.data.vertices]\nxs=[c.x for c in co]; ys=[c.y for c in co]; zs=[c.z for c in c)
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+bounds x: -0.1599999964237213 0.1599999964237213
+bounds y: -0.1599999964237213 0.1599999964237213
+bounds z: 0.4099999964237213 0.44999998807907104
+num objects in scene: 0
+
+--- thinking ---
+The scene is empty! The object 'Stool' exists in bpy.data but is not linked into the scene. That's why the render is black — there's nothing in the scene to render.
+
+The ops create objects but I need to link them into the scene. The doc says "Objects must be linked into the scene (link_into_scene)". The add_cylinder op may not auto-link. Let me check — the gate passed because it measures the object by name from bpy.data, but the render uses the scene.
+
+Wait, but the gate passed with 1 component. The gate measures the object. But the render needs it in the scene.
+
+Also note: bounds z shows 0.41 to 0.45 — that's only the seat! The legs aren't in the bounds. Wait, bounds z min is 0.41, but legs go down to z=0. That means the legs aren't part of the stool mesh!
+
+Hmm. The boolean_union consumed the legs but maybe they didn't actually union into the stool mesh. Let me reconsider.
+
+Wait, bounds z: 0.41 to 0.45. That's just the seat. The legs should extend from 0 to 0.41. So the legs are NOT in the stool mesh. The boolean union didn't work?
+
+But gate says 1 component, 92 tris. 92 tris = seat only (24*2 side + 24*2 caps = 96, close to 92). So the stool is just the seat. The legs were consumed by boolean_union but didn't merge.
+
+Why? Because the legs weren't linked into the scene! The boolean modifier operates on objects in the scene/depsgraph. If the leg object isn't linked into the scene, the boolean can't evaluate it, so it does nothing (or the leg is consumed but not added).
+
+So the root cause: objects created by add_cylinder are not auto-linked into the scene. I need to call link_into_scene on each.
+
+Let me check: the doc for add_cylinder doesn't mention linking. And link_into_scene is a separate op. So I must link each object.
+
+Let me rebuild, linking seat and each leg into the scene before unioning.
+
+Let me verify by checking the stool mesh triangle count and whether legs are present. Currently 92 tris = seat only. So yes, legs not merged.
+
+Let me rebuild with link_into_scene.
+
+Let me check the signature of link_into_scene.
+
+--- tool ---
+search_ops({"query": "link into scene"})
+
+--- result ---
+No operation matches 'link into scene'. Available modules: primitives, materials, booleans, lathe, arrays, transforms, modifiers, heal, uv.
+
+--- tool ---
+search_ops({"query": "link"})
+
+--- result ---
+blended.ops.primitives: link_into_scene(blender_object) -> 'None'
+    Link an object into the active scene collection.
+
+--- thinking ---
+So link_into_scene is in primitives. Let me rebuild, linking each object into the scene before unioning.
+
+Let me rebuildthe whole thing.
+
+--- tool ---
+run_python({"source": "import math\nimport bpy\nfrom mathutils import Vector, Matrix\nfrom blended.ops.primitives import add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_union\nfrom blende)
+
+--- result ---
+OK: Stool
+  execute: 1 attempt(s), ok in 0.03s (Blender 5.2.0 LTS)
+  printed:
+scene objects: ['Stool']
+stool z bounds: -0.0019420048920437694 0.44999998807907104
+  gate: PASS (384 tris, 1 components)
+  sheet: _evaluate/renders/iteration02_three_leg_stool_v1/agent/Stool_sheet.png
+
+--- vision ---
+four views show a small three-legged stool (or round side table) rendered in a flat brown wood-like color. The top is a flat circular disc of moderate thickness, and three cylindrical legs extend downward from beneath it, splaying slightly outward at the bottom. In the bottom-right perspective view the three-leg arrangement reads clearly, while the top-left side view only shows two legs (the third is hidden directly behind). The top-down view (bottom-left) shows only the circular seat with no legs visible past its edge, which is consistent with legs tucked inward under the top. Proportions look reasonable: the seat is wider than the legs are thick, the legs reach the ground, and the leg-to-seat connection sits sensibly at the underside. Nothing appears floating, intersecting, duplicated, or missing — the object reads as a simple three-legged wooden stool.
+
+--- thinking ---
+Now the stool is correct. Gate passes: 384 tris, 1 component. Scene has only 'Stool'. z bounds from ~0 to 0.45. 
+
+The render shows a proper three-legged stool. Let me verify the render more carefully — check that the legs splay outward, feet on circle radius 0.14, first leg on +X, space between legs open.
+
+Let me render views with look_for to confirm the splay and open space.
+
+Actually the render description already confirms: three cylindrical legs splaying outward, seat wider than legs, legs reach ground. 
+
+Let me do a final render to confirm the splay and open space between legs, and verify the first leg is on +X.
+
+Let me render withlook_for.
+
+--- tool ---
+render_views({"object_name": "Stool", "look_for": "Do the three legs splay outward as they descend, with open space between them (no central post)? Is the seat a flat round disc on top? Do all three feet touch the)
+
+--- result ---
+Rendered Stool (solid). Look at the attached contact sheet.
+
+--- vision ---
+This reads clearly as a three-legged stool, similar to a classic milking stool. The seat is a flat, round cylindrical disc sitting on top, visible as a perfect circle in the top-down view and as a thick disc in the perspective view. 
+
+Regarding the specific questions:
+- **Leg splay / no central post**: Yes, the three legs splay outward as they descend, with open space between them visible in both the right-side and perspective views. No central column or post is present.
+- **Seat shape**: Yes, the seat is a flat round disc (a low cylinder), confirmed by the perfect circle in the top-down view.
+- **Foot levelness**: In the bottom-right perspective view, all three feet appear to terminate at roughly the same height on the ground plane, consistent with a level surface.
+
+Proportions look reasonable — the seat is appropriately sized relative to the leg length, and the legs are of moderate thickness without being spindly or chunky. Nothing appears floating, intersecting, duplicated, or missing. The shading is flat/unlit but the geometry reads correctly as a simple wooden stool.
+
+--- thinking ---
+The stool looks correct. Let me verify the first leg is on +X axis. The render description doesn't explicitly confirm that, but I know from the code that leg0 is at angle 0 (on +X). Let me verify the foot positions from the mesh.
+
+Actually, I already confirmed leg0 base at (0.14, 0, 0) in the earlier run. And the gate passes. 
+
+Let me do a final check: verify the foot positions and that the first leg is on +X, and confirm the material is assigned. Then export.
+
+Let me verify foot positions from the finalmesh.
+
+--- tool ---
+run_python({"source": "import bpy, math\nstool = bpy.data.objects['Stool']\n# find lowest vertices (feet) and their XY positions\nco = [stool.matrix_world @ v.co for v in stool.data.vertices]\nfeet = [c for c in)
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+[417 earlier characters dropped]
+.0deg
+  foot at r=0.120 angle=-120.0deg
+  foot at r=0.159 angle=-118.1deg
+  foot at r=0.121 angle=-117.5deg
+  foot at r=0.158 angle=-116.4deg
+  foot at r=0.123 angle=-115.3deg
+  foot at r=0.155 angle=-114.8deg
+  foot at r=0.127 angle=-113.6deg
+  foot at r=0.151 angle=-113.4deg
+  foot at r=0.146 angle=-112.4deg
+  foot at r=0.131 angle=-112.4deg
+  foot at r=0.141 angle=-111.9deg
+  foot at r=0.136 angle=-111.8deg
+  foot at r=0.136 angle=-8.2deg
+  foot at r=0.141 angle=-8.1deg
+  foot at r=0.131 angle=-7.6deg
+  foot at r=0.146 angle=-7.6deg
+  foot at r=0.151 angle=-6.6deg
+  foot at r=0.127 angle=-6.4deg
+  foot at r=0.155 angle=-5.2deg
+  foot at r=0.123 angle=-4.7deg
+  foot at r=0.158 angle=-3.6deg
+  foot at r=0.121 angle=-2.5deg
+  foot at r=0.159 angle=-1.9deg
+  foot at r=0.160 angle=0.0deg
+  foot at r=0.120 angle=0.0deg
+  foot at r=0.159 angle=1.9deg
+  foot at r=0.121 angle=2.5deg
+  foot at r=0.158 angle=3.6deg
+  foot at r=0.123 angle=4.7deg
+  foot at r=0.155 angle=5.2deg
+  foot at r=0.127 angle=6.4deg
+  foot at r=0.151 angle=6.6deg
+  foot at r=0.146 angle=7.6deg
+  foot at r=0.131 angle=7.6deg
+  foot at r=0.141 angle=8.1deg
+  foot at r=0.136 angle=8.2deg
+  foot at r=0.136 angle=111.8deg
+  foot at r=0.141 angle=111.9deg
+  foot at r=0.131 angle=112.4deg
+  foot at r=0.146 angle=112.4deg
+  foot at r=0.151 angle=113.4deg
+  foot at r=0.127 angle=113.6deg
+  foot at r=0.155 angle=114.8deg
+  foot at r=0.123 angle=115.3deg
+  foot at r=0.158 angle=116.4deg
+  foot at r=0.121 angle=117.5deg
+  foot at r=0.159 angle=118.1deg
+  foot at r=0.120 angle=120.0deg
+  foot at r=0.160 angle=120.0deg
+  foot at r=0.159 angle=121.9deg
+  foot at r=0.121 angle=122.5deg
+  foot at r=0.158 angle=123.6deg
+  foot at r=0.123 angle=124.7deg
+  foot at r=0.155 angle=125.2deg
+  foot at r=0.127 angle=126.4deg
+  foot at r=0.151 angle=126.6deg
+  foot at r=0.146 angle=127.6deg
+  foot at r=0.131 angle=127.6deg
+  foot at r=0.141 angle=128.1deg
+  foot at r=0.136 angle=128.2deg
+material slots: ['Wood']
+tri count: 107
+
+--- thinking ---
+The feet are at angles 0°, 120°, -120° (i.e., 0, 120, 240). The first leg is on +X (angle 0). Feet radius ~0.14-0.16 (the foot circle is at radius 0.14, and the leg cylinder radius 0.02 extends to 0.16). Good.
+
+Material 'Wood' assigned. Tri count 107 (after boolean, the mesh is triangulated? Actually 107 polygons — the gate said 384 tris. Hmm, len(data.polygons) is 107 but gate said 384 tris. The gate counts triangles after triangulation. The mesh has ngons (cylinder caps are 24-gons). So 107 polygons but 384 triangles. That's fine.
+
+Everything checks out. The stool is complete and correct. Let me export to .glb.
+
+Let me export.
+
+--- tool ---
+export_asset({"object_name": "Stool", "path": "Stool.glb"})
+
+--- result ---
+Exported and verified: Stool.glb (17452 bytes, 384 tris round-tripped).
+
+--- answer ---
+The stool is complete and verified.
+
+## Summary
+
+**`Stool`** — a three-legged wooden stool, built and gated:
+
+- **Seat**: round disc, 0.32 m across (radius 0.16 m), 0.04 m thick, top at 0.45 m
+- **Legs**: 3 cylindrical legs (radius 0.02 m) splaying outward as they descend, from under the seat (radius 0.10 m) down to feet on a circle of radius 0.14 m at z=0
+- **Spacing**: evenly at 0°, 120°, 240° — first foot on the +X axis (verified: foot angles 0/120/240)
+- **Open between legs**: no central post, no skirt
+- **Material**: 'Wood' assigned (base color 0.6/0.4/0.25, roughness 0.6)
+
+**Gate report**: PASS — 384 triangles, 1 connected component, manifold, no self-intersections, no flipped normals, well under the 2000-triangle budget. Only `Stool` remains in the scene.
+
+**Renders confirmed**: flat round seat on top, three legs splaying outward with open space between them, all three feet level on the ground.
+
+**Exported**: `Stool.glb` (17,452 bytes, 384 tris round-tripped on re-import).
+
+One note on the build process: the first two attempts produced a black render because the primitive ops don't auto-link objects into the scene — the legs were silently dropped from the boolean union. Linking each object into the scene before unioning fixed it.

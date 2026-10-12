@@ -1,0 +1,162 @@
+--- thinking ---
+Let me plan this. I need to build a rectangular planter box.
+
+Dimensions: 0.3m wide (X), 0.2m deep (Y), 0.25m tall (Z), sitting on ground at z=0. Walls and floor 0.02m thick. Top open (container, hollow). One drainage hole radius 0.015m bored straight down through center of floor, all the way through.
+
+Let me think about the construction. I'll build the outer box and inner box, subtract inner from outer to get hollow container. Then cut drainage hole through floor.
+
+Outer box: 0.3 x 0.2 x 0.25, base at z=0.
+Inner box: walls 0.02 thick. So inner width = 0.3 - 2*0.02 = 0.26. Inner depth = 0.2 - 2*0.02 = 0.16. Inner height: floor 0.02 thick, so inner cavity height = 0.25 - 0.02 = 0.23. Inner box base at z=0.02, top at z=0.25.
+
+Wait, the top is open. So the inner box should extend to the top (z=0.25) so the cavity is open at top. Inner box: width 0.26, depth 0.16, height 0.23, base at z=0.02, top at z=0.25.
+
+Subtract inner from outer → hollow container with open top (since inner box reaches top, the top face is removed).
+
+Then drainage hole: cylinder radius 0.015, through the floor. Floor is at z=0 to z=0.02. The hole must go all the way through. So cylinder from z=-0.01 to z=0.03 (extending beyond both sides) to ensure through-hole. Actually to be safe, extend beyond. Cylinder radius 0.015, height say 0.05, centered at z=0.01, at center x=0, y=0.
+
+Wait, but the hole is in the floor. The floor is the bottom of the container. The cavity is above the floor. The hole goes through the floor from the cavity down to outside. So cylinder from z=-0.02 to z=0.04 to be safe, centered at z=0.01.
+
+Let me use boolean_difference.
+
+Let me build with blended.ops.
+
+Let me start.
+
+Outer box: add_box('PlanterBox_outer', 0.3, 0.2, 0.25, location (0,0,0)). Base at z=0 since box base at location z. Actually add_box location is center? Let me check. add_box creates box of given outer dimensions. Location default (0,0,0). Is location the center or base? For cylinder, base at location_m[2]. For box, unclear. Let me just create and snap_base_to_ground.
+
+Let me build outer box, then inner box, boolean difference, then cylinder, boolean difference.
+
+Let me write the code.
+
+I'll create outer box, snap to ground. Then inner box, snap to ground, then move up by 0.02. Actually inner box base should be at z=0.02. Let me create inner box and set location z=0.02 after snapping.
+
+Let me do it step by step.
+
+Let me start with creating outer box and checking.
+
+Actually let me just do the whole build in one chunk but carefully. Let me create objects.
+
+Let me write:
+
+```python
+from blended.ops.primitives import add_box, add_cylinder, link_into_scene
+from blended.ops.booleans import boolean_difference
+from blended.ops.transforms import snap_base_to_ground
+from blended.ops.materials import assign_material
+
+W = 0.3
+D = 0.2
+H = 0.25
+T = 0.02
+HOLE_R = 0.015
+
+outer = add_box('PlanterBox_outer', W, D, H)
+link_into_scene(outer)
+snap_base_to_ground(outer)
+
+inner = add_box('PlanterBox_inner', W-2*T, D-2*T, H-T)
+link_into_scene(inner)
+snap_base_to_ground(inner)
+inner.location.z = T
+
+boolean_difference(outer, inner)
+
+hole = add_cylinder('PlanterBox_hole', HOLE_R, 0.06, location_m=(0,0,0.01))
+link_into_scene(hole)
+boolean_difference(outer, hole)
+
+outer.name = 'PlanterBox'
+assign_material(outer, 'PlanterMaterial', (0.72,0.35,0.22), 0.6)
+```
+
+Wait, cylinder base at location z. add_cylinder base at location_m[2]. So if I want cylinder centered at z=0.01 with height 0.06, base at z=0.01-0.03 = -0.02. Let me set location z = -0.02. Actually let me just make it tall enough and position base below floor.
+
+Floor from z=0 to 0.02. Hole through floor. Cylinder base at z=-0.02, height 0.06 → top at z=0.04. Good, extends beyond both sides.
+
+Let me set location_m=(0,0,-0.02).
+
+After boolean, the object name is 'PlanterBox_outer'. I rename to 'PlanterBox'. But the harness looks up by name. Let me rename.
+
+Also need to ensure only mesh object left in scene. The boolean consumes cutters, so only outer remains. Good.
+
+Let me run this.
+
+Let me also verify the hole goes all the way through. The gate measures manifold etc. The hole through floor: since cylinder extends beyond both top and bottom of floor, the boolean cuts a through hole. Good.
+
+Let merun.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.transforms import snap_base_to_ground\nfrom)
+
+--- result ---
+OK: PlanterBox
+  execute: 1 attempt(s), ok in 0.01s (Blender 5.2.0 LTS)
+  printed:
+built PlanterBox
+  gate: PASS (128 tris, 1 components)
+  sheet: _evaluate/renders/iteration03_planter_box_v2/agent/PlanterBox_sheet.png
+
+--- vision ---
+The asset reads as an open-top rectangular box or planter, shown in three orthographic views and one perspective view. The front and side views show solid flat brown rectangles of equal width and height, the perspective view confirms a hollow container with thick walls and a visible interior cavity, and the proportions look square from the front and roughly square from the side, with a moderately deep interior. One notable feature: the top-down view shows a small black dot near the center, which appears to be a circular hole punched through what would be the bottom of the box — if this is meant to be a solid planter base, that hole looks unintended; if it's meant to be a drainage hole, it's positioned reasonably. No floating, duplicated, or intersecting geometry is visible; the box sits cleanly on an implied ground plane.
+
+--- thinking ---
+The gate passed. Let me verify the hole goes all the way through. The render shows a black dot in top-down view, which is the drainage hole. But I need to confirm it goes all the way through the floor. Let me check the scene and verify only one mesh object remains, and verify the hole is a through-hole.
+
+Let me check the scene contents and verify the hole passes through. The gate passed with 128 tris, 1 component, manifold. 
+
+Let me verify the hole is a through-hole by checking the floor. Actually the render top-down shows the hole. But I should confirm it goes all the way through. Let me do a quick check of scene objects and maybe render from below.
+
+Let me list scene to confirm only one mesh object.
+
+--- tool ---
+list_scene({})
+
+--- result ---
+PlanterBox: 128 tris, 0.300 x 0.200 x 0.250 m
+
+--- tool ---
+render_views({"object_name": "PlanterBox", "look_for": "Is the drainage hole visible as a clear opening through the floor when viewed from below? Is the interior hollow with an open top?"})
+
+--- result ---
+Rendered PlanterBox (solid). Look at the attached contact sheet.
+
+--- vision ---
+This is a four-view orthographic render of a simple terracotta/brown rectangular planter or box. The top-left and top-right views show solid flat rectangular faces (sides/ends) with no openings, while the bottom-left view shows the underside of the box with a single, clearly visible round drainage hole near the center-left. The bottom-right perspective view confirms the object reads as an open-topped rectangular pot: the rim is clearly defined, the interior walls and floor are visible, and the cavity looks properly hollow with no lid or covering.
+
+Regarding the specific questions: **Yes**, the drainage hole reads as a clean circular opening passing through the floor — it shows as solid black against the brown underside, which is exactly how a hole would appear. **Yes**, the interior is clearly hollow with a fully open top — you can see the inner back wall and floor receding into the box from the angled view.
+
+Proportions look reasonable for a planter — roughly as wide as it is tall, with a moderate depth. Nothing appears floating, duplicated, or intersecting. All four views are consistent with each other (the hole's position in the bottom view matches what would be expected for a centered-or-slightly-off-center drainage hole on the floor of the box).
+
+--- thinking ---
+The scene has only one mesh object (PlanterBox, 128 tris). The render confirms the drainage hole is a clean through-hole visible from below, and the interior is hollow with open top.
+
+Let me verify the hole goes all the way through with a clear-axis probe. Actually the render from below shows the hole clearly. The gate passed manifold, 1 component. 
+
+Let me do a quick verification that the hole is a through-hole by checking geometry. Actually the render from below showing a clean black circle confirms it. And the gate passed.
+
+Let me verify the hole is truly through by checking that there's no material blocking. The bottom view shows the hole clearly. Good.
+
+Everything is done. Let me give final answer.
+
+Actually, let me double check the hole is centered. The render says "centered-or-slightly-off-center". The hole is at x=0, y=0 which is center. Good.
+
+Let me confirm the hole goes all the way through with a probe. The render from below shows it clearly as a through hole. I'm confident.
+
+Final answer.
+
+--- answer ---
+The planter box is complete and verified.
+
+**What I built** — `PlanterBox`, a rectangular garden planter:
+- **Outer dimensions:** 0.300 m (X) × 0.200 m (Y) × 0.250 m (Z), sitting on the ground at z=0
+- **Walls & floor:** 0.02 m thick, hollow interior with a fully open top
+- **Drainage hole:** radius 0.015 m, bored straight down through the center of the floor, extending beyond both floor faces so it is a true through-hole (confirmed visible as a clean opening from the underside render)
+- **Material:** terracotta `PlanterMaterial` assigned
+
+**Construction:** outer box minus inner cavity (open at top) minus a through-floor cylinder for the drain, all via EXACT booleans.
+
+**Gate verdict:** PASS — 128 triangles, 1 connected component, watertight manifold, no boundary edges, no self-intersections, outward normals, well under the 2000-triangle budget.
+
+**Scene state:** `PlanterBox` is the only mesh object left in the scene.
+
+The renders confirm the interior is hollow with a defined rim, and the drainage hole reads as a clean circular opening through the floor.

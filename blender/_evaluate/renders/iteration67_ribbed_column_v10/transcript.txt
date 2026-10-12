@@ -1,0 +1,129 @@
+--- tool ---
+declare_plan({"steps": ["Build lathe profile with shaft radius 0.08m and 5 ribs bulging to 0.1m radius, revolve into 'Column' mesh", "Center on origin XY and snap base to z=0", "Assign a material", "Verify geometry against gate (manifold, triangle budget, round silhouette)", "Measure diameter, height, rib positions/thickness and render views", "Clean up scene to leave only 'Column'"]})
+
+--- result ---
+Plan declared:
+  1. Build lathe profile with shaft radius 0.08m and 5 ribs bulging to 0.1m radius, revolve into 'Column' mesh
+  2. Center on origin XY and snap base to z=0
+  3. Assign a material
+  4. Verify geometry against gate (manifold, triangle budget, round silhouette)
+  5. Measure diameter, height, rib positions/thickness and render views
+  6. Clean up scene to leave only 'Column'
+
+--- plan ---
+{"steps": ["Build lathe profile with shaft radius 0.08m and 5 ribs bulging to 0.1m radius, revolve into 'Column' mesh", "Center on origin XY and snap base to z=0", "Assign a material", "Verify geometry against gate (manifold, triangle budget, round silhouette)", "Measure diameter, height, rib positions/thickness and render views", "Clean up scene to leave only 'Column'"], "current_step": 0}
+
+--- tool ---
+run_python({"source": "from blended.ops.lathe import add_lathe\nfrom blended.ops.transforms import center_on_origin_xy, snap_base_to_ground, apply_object_transform\n\nSHAFT_RADIUS_M = 0.08       # 0.16 m shaft diameter / 2\nRIB_RADIUS_M = 0.10         # 0.20 m full column diameter / 2\nRIB_HALF_THICKNESS_M = 0.015  # 0.03 m rib thickness / 2\nRIB_TAPER_M = 0.005          # short slope so rib reads as ridge, not a knife edge\nRIB_CENTERS_M = [0.1, 0.3, 0.5, 0.7, 0.9]\nCOLUMN_HEIGHT_M = 1.0\nSEGMENT_COUNT = 24  # round-reading silhouette while keeping triangle budget\n\nprofile_m = [(SHAFT_RADIUS_M, 0.0)]\nfor zc in RIB_CENTERS_M:\n    profile_m.append((SHAFT_RADIUS_M, zc - RIB_HALF_THICKNESS_M - RIB_TAPER_M))\n    profile_m.append((RIB_RADIUS_M, zc - RIB_HALF_THICKNESS_M))\n    profile_m.append((RIB_RADIUS_M, zc + RIB_HALF_THICKNESS_M))\n    profile_m.append((SHAFT_RADIUS_M, zc + RIB_HALF_THICKNESS_M + RIB_TAPER_M))\nprofile_m.append((SHAFT_RADIUS_M, COLUMN_HEIGHT_M))\n\nprint(\"profile points:\", len(profile_m))\n\nadd_lathe(\"Column\", profile_m, segment_count=SEGMENT_COUNT)\ncenter_on_origin_xy(\"Column\")\nsnap_base_to_ground(\"Column\")\napply_object_transform(\"Column\")\nprint(\"done\")\n", "object_name": "Column", "plan_step": 1})
+
+--- result ---
+FAILED at locate: Column
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+profile points: 22
+done; 'Column' exists as a datablock but is NOT linked into the scene, so nothing the user can see has changed and it would be missing from any export. Link it at the end of the chunk with `blended.ops.link_into_scene('Column')`.
+
+--- step ---
+1
+
+--- tool ---
+run_python({"source": "from blended.ops.lathe import add_lathe\nfrom blended.ops.primitives import link_into_scene\nfrom blended.ops.transforms import center_on_origin_xy, snap_base_to_ground, apply_object_transform\n\nSHAFT_RADIUS_M = 0.08\nRIB_RADIUS_M = 0.10\nRIB_HALF_THICKNESS_M = 0.015\nRIB_TAPER_M = 0.005\nRIB_CENTERS_M = [0.1, 0.3, 0.5, 0.7, 0.9]\nCOLUMN_HEIGHT_M = 1.0\nSEGMENT_COUNT = 24\n\nprofile_m = [(SHAFT_RADIUS_M, 0.0)]\nfor zc in RIB_CENTERS_M:\n    profile_m.append((SHAFT_RADIUS_M, zc - RIB_HALF_THICKNESS_M - RIB_TAPER_M))\n    profile_m.append((RIB_RADIUS_M, zc - RIB_HALF_THICKNESS_M))\n    profile_m.append((RIB_RADIUS_M, zc + RIB_HALF_THICKNESS_M))\n    profile_m.append((SHAFT_RADIUS_M, zc + RIB_HALF_THICKNESS_M + RIB_TAPER_M))\nprofile_m.append((SHAFT_RADIUS_M, COLUMN_HEIGHT_M))\n\nprint('profile points:', len(profile_m))\n\nadd_lathe('Column', profile_m, segment_count=SEGMENT_COUNT)\nlink_into_scene('Column')\ncenter_on_origin_xy('Column')\nsnap_base_to_ground('Column')\napply_object_transform('Column')\nprint('done')\n", "object_name": "Column", "plan_step": 1})
+
+--- result ---
+OK: Column
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+profile points: 22
+done
+  gate: PASS (1056 tris, 1 components)
+  orient: extents x 0.2000 y 0.2000 z 1.0000 m; middle extent on y (canonical)
+  sheet: _evaluate/renders/iteration67_ribbed_column_v10/agent/Column_sheet.png
+
+--- step ---
+1
+
+--- render ---
+_evaluate/renders/iteration67_ribbed_column_v10/agent/Column_sheet.png
+
+--- tool ---
+run_python({"source": "from blended.ops.materials import assign_material\nassign_material('Column', 'ColumnMaterial', base_color_rgb=(0.6, 0.55, 0.45), roughness=0.5)\nprint('material assigned')\n\nimport bpy, math\nbpy.context.view_layer.update()\nobj = bpy.data.objects['Column']\nmesh = obj.data\nzs = [(obj.matrix_world @ v.co).z for v in mesh.vertices]\nprint('z min/max', min(zs), max(zs))\n\ndef radius_at_z(target_z, tol=0.002):\n    rs = []\n    for v in mesh.vertices:\n        w = obj.matrix_world @ v.co\n        if abs(w.z - target_z) < tol:\n            rs.append(math.hypot(w.x, w.y))\n    return max(rs) if rs else None\n\nfor z in [0.05, 0.1, 0.3, 0.5, 0.7, 0.9, 0.95]:\n    print(z, radius_at_z(z))\n\nprint('scene mesh objects:', [o.name for o in bpy.context.scene.objects if o.type=='MESH'])\n", "object_name": "Column", "plan_step": 3})
+
+--- result ---
+OK: Column
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+material assigned
+z min/max 0.0 1.0
+0.05 None
+0.1 None
+0.3 None
+0.5 None
+0.7 None
+0.9 None
+0.95 None
+scene mesh objects: ['Column']
+  gate: PASS (1056 tris, 1 components)
+  orient: extents x 0.2000 y 0.2000 z 1.0000 m; middle extent on y (canonical)
+  sheet: _evaluate/renders/iteration67_ribbed_column_v10/agent/Column_sheet.png
+
+--- step ---
+3
+
+--- render ---
+_evaluate/renders/iteration67_ribbed_column_v10/agent/Column_sheet.png
+
+--- tool ---
+run_python({"source": "import bpy, math\nbpy.context.view_layer.update()\nobj = bpy.data.objects['Column']\nmesh = obj.data\nfrom collections import defaultdict\nby_z = defaultdict(list)\nfor v in mesh.vertices:\n    w = obj.matrix_world @ v.co\n    by_z[round(w.z,4)].append(math.hypot(w.x, w.y))\n\nfor z in sorted(by_z):\n    rs = by_z[z]\n    print(z, 'r_max=%.4f' % max(rs), 'r_min=%.4f' % min(rs))\n\nprint('scene mesh objects:', [o.name for o in bpy.context.scene.objects if o.type=='MESH'])\n", "object_name": "Column", "plan_step": 4})
+
+--- result ---
+OK: Column
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+0.0 r_max=0.0800 r_min=0.0000
+0.08 r_max=0.0800 r_min=0.0800
+0.085 r_max=0.1000 r_min=0.1000
+0.115 r_max=0.1000 r_min=0.1000
+0.12 r_max=0.0800 r_min=0.0800
+0.28 r_max=0.0800 r_min=0.0800
+0.285 r_max=0.1000 r_min=0.1000
+0.315 r_max=0.1000 r_min=0.1000
+0.32 r_max=0.0800 r_min=0.0800
+0.48 r_max=0.0800 r_min=0.0800
+0.485 r_max=0.1000 r_min=0.1000
+0.515 r_max=0.1000 r_min=0.1000
+0.52 r_max=0.0800 r_min=0.0800
+0.68 r_max=0.0800 r_min=0.0800
+0.685 r_max=0.1000 r_min=0.1000
+0.715 r_max=0.1000 r_min=0.1000
+0.72 r_max=0.0800 r_min=0.0800
+0.88 r_max=0.0800 r_min=0.0800
+0.885 r_max=0.1000 r_min=0.1000
+0.915 r_max=0.1000 r_min=0.1000
+0.92 r_max=0.0800 r_min=0.0800
+1.0 r_max=0.0800 r_min=0.0000
+scene mesh objects: ['Column']
+  gate: PASS (1056 tris, 1 components)
+  orient: extents x 0.2000 y 0.2000 z 1.0000 m; middle extent on y (canonical)
+  sheet: _evaluate/renders/iteration67_ribbed_column_v10/agent/Column_sheet.png
+
+--- step ---
+4
+
+--- render ---
+_evaluate/renders/iteration67_ribbed_column_v10/agent/Column_sheet.png
+
+--- answer ---
+The column measurements confirm everything matches the brief:
+
+- **Shaft radius**: 0.0800 m (0.16 m diameter) ✓
+- **Rib radius**: 0.1000 m (0.20 m diameter) — full ridge, not tapered smooth ✓
+- **Rib centers**: 0.1, 0.3, 0.5, 0.7, 0.9 m — each rib's flat-top region spans exactly ±0.015 m (0.03 m thick) around its center, with a short 0.005 m transitional slope so it reads as a real ridge, not a knife edge ✓
+- **Height**: z from 0.0 to 1.0 m, base sitting at z=0 ✓
+- **Overall diameter**: 0.20 m (x/y extents both 0.2000 m) ✓
+- **Silhouette**: 24-segment lathe revolve — round-reading, not faceted ✓
+
+Gate: **PASS** — 1056 triangles (under 1200 budget), 1 connected component, manifold.
+
+Material `ColumnMaterial` is assigned. Scene contains only `Column` as the mesh object.
+
+The column is done: a single watertight manifold turned column with five proud ribs at the specified heights and thickness, under budget, with material assigned, and it's the only mesh object in the scene.

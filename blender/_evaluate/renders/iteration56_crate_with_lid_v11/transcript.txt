@@ -1,0 +1,129 @@
+--- tool ---
+declare_plan({"steps": ["Build CrateBody as outer box minus inner cavity (boolean difference), open top, 0.02m walls/floor", "Assign a distinct material colour to CrateBody", "Build CrateLid as a solid slab resting on the crate's rim", "Assign a distinct material colour to CrateLid", "Verify both objects: gate check + measure dimensions/positions + render"]})
+
+--- result ---
+Plan declared:
+  1. Build CrateBody as outer box minus inner cavity (boolean difference), open top, 0.02m walls/floor
+  2. Assign a distinct material colour to CrateBody
+  3. Build CrateLid as a solid slab resting on the crate's rim
+  4. Assign a distinct material colour to CrateLid
+  5. Verify both objects: gate check + measure dimensions/positions + render
+
+--- plan ---
+{"steps": ["Build CrateBody as outer box minus inner cavity (boolean difference), open top, 0.02m walls/floor", "Assign a distinct material colour to CrateBody", "Build CrateLid as a solid slab resting on the crate's rim", "Assign a distinct material colour to CrateLid", "Verify both objects: gate check + measure dimensions/positions + render"], "current_step": 0}
+
+--- tool ---
+run_python({"plan_step": 1, "source": "from blended.ops.primitives import add_box, link_into_scene, remove_object_and_mesh\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.materials import assign_material\n\n# clean any stale objects from prior attempts\nfor nm in [\"CrateBody\", \"CrateLid\", \"_CrateOuter\", \"_CrateCutter\"]:\n    try:\n        remove_object_and_mesh(nm)\n    except Exception:\n        pass\n\nWIDTH_M = 0.5\nDEPTH_M = 0.5\nHEIGHT_M = 0.4\nWALL_M = 0.02  # wall/floor thickness\n\nouter = add_box(\"_CrateOuter\", WIDTH_M, DEPTH_M, HEIGHT_M, location_m=(0.0, 0.0, 0.0))\nlink_into_scene(outer)\n\ninner_w = WIDTH_M - 2 * WALL_M\ninner_d = DEPTH_M - 2 * WALL_M\nTOP_OVERLAP_M = 0.02  # ensure cutter passes cleanly through the top face\ninner_h = (HEIGHT_M - WALL_M) + TOP_OVERLAP_M\ncutter = add_box(\"_CrateCutter\", inner_w, inner_d, inner_h, location_m=(0.0, 0.0, WALL_M))\nlink_into_scene(cutter)\n\nboolean_difference(outer, cutter)\nouter.name = \"CrateBody\"\n\nassign_material(outer, \"CrateBodyMat\", base_color_rgb=(0.35, 0.20, 0.08), roughness=0.8)\n\nprint(\"body dims:\", outer.dimensions)\n", "object_name": "CrateBody"})
+
+--- result ---
+OK: CrateBody
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+body dims: <Vector (0.5000, 0.5000, 0.4000)>
+  gate: PASS (28 tris, 1 components)
+  sheet: _evaluate/renders/iteration56_crate_with_lid_v11/agent/CrateBody_sheet.png
+
+--- step ---
+1
+
+--- render ---
+_evaluate/renders/iteration56_crate_with_lid_v11/agent/CrateBody_sheet.png
+
+--- tool ---
+run_python({"plan_step": 3, "source": "from blended.ops.primitives import add_box, link_into_scene, remove_object_and_mesh\nfrom blended.ops.materials import assign_material\n\nfor nm in [\"CrateLid\"]:\n    try:\n        remove_object_and_mesh(nm)\n    except Exception:\n        pass\n\nWIDTH_M = 0.5\nDEPTH_M = 0.5\nCRATE_HEIGHT_M = 0.4\nLID_THICKNESS_M = 0.06\n\nlid = add_box(\"CrateLid\", WIDTH_M, DEPTH_M, LID_THICKNESS_M, location_m=(0.0, 0.0, CRATE_HEIGHT_M))\nlink_into_scene(lid)\n\nassign_material(lid, \"CrateLidMat\", base_color_rgb=(0.85, 0.82, 0.75), roughness=0.6)\n\nprint(\"lid dims:\", lid.dimensions, \"lid loc z:\", lid.location.z)\n", "object_name": "CrateLid"})
+
+--- result ---
+OK: CrateLid
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+lid dims: <Vector (0.5000, 0.5000, 0.0600)> lid loc z: 0.0
+  gate: PASS (12 tris, 1 components)
+  sheet: _evaluate/renders/iteration56_crate_with_lid_v11/agent/CrateLid_sheet.png
+
+--- step ---
+3
+
+--- render ---
+_evaluate/renders/iteration56_crate_with_lid_v11/agent/CrateLid_sheet.png
+
+--- tool ---
+run_python({"plan_step": 5, "source": "import bpy\nfrom mathutils import Vector\n\nbpy.context.view_layer.update()\n\ndef world_bounds(obj):\n    corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\n    xs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\n    return (min(xs),max(xs)), (min(ys),max(ys)), (min(zs),max(zs))\n\nbody = bpy.data.objects[\"CrateBody\"]\nlid = bpy.data.objects[\"CrateLid\"]\n\nprint(\"body x,y,z bounds:\", world_bounds(body))\nprint(\"lid x,y,z bounds:\", world_bounds(lid))\n\nprint(\"body mat color:\", body.data.materials[0].diffuse_color[:])\nprint(\"lid mat color:\", lid.data.materials[0].diffuse_color[:])\n\nnames = [o.name for o in bpy.data.objects if o.type == 'MESH']\nprint(\"mesh objects in scene:\", names)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+body x,y,z bounds: ((-0.25, 0.25), (-0.25, 0.25), (0.0, 0.4000000059604645))
+lid x,y,z bounds: ((-0.25, 0.25), (-0.25, 0.25), (0.4000000059604645, 0.46000000834465027))
+body mat color: (0.3499999940395355, 0.20000000298023224, 0.07999999821186066, 1.0)
+lid mat color: (0.8500000238418579, 0.8199999928474426, 0.75, 1.0)
+mesh objects in scene: ['CrateBody', 'CrateLid']
+
+--- step ---
+5
+
+--- tool ---
+inspect_object({"object_name": "CrateBody", "plan_step": 5})
+
+--- result ---
+GATE PASS
+{
+ "object_name": "CrateBody",
+ "triangle_count": 28,
+ "non_manifold_edge_count": 0,
+ "boundary_edge_count": 0,
+ "zero_area_face_count": 0,
+ "non_finite_coordinate_count": 0,
+ "connected_component_count": 1,
+ "duplicate_vertex_pair_count": 0,
+ "self_intersecting_face_pair_count": 0,
+ "flipped_normal_triangle_count": 0,
+ "uv_layer_count": 0,
+ "uv_island_count": 0,
+ "uv_overlapping_face_pair_count": 0,
+ "uv_out_of_bounds_face_count": 0,
+ "uv_coverage_fraction": 0.0,
+ "inverted_facet_count": 0
+}
+
+--- step ---
+5
+
+--- tool ---
+inspect_object({"object_name": "CrateLid", "plan_step": 5})
+
+--- result ---
+GATE PASS
+{
+ "object_name": "CrateLid",
+ "triangle_count": 12,
+ "non_manifold_edge_count": 0,
+ "boundary_edge_count": 0,
+ "zero_area_face_count": 0,
+ "non_finite_coordinate_count": 0,
+ "connected_component_count": 1,
+ "duplicate_vertex_pair_count": 0,
+ "self_intersecting_face_pair_count": 0,
+ "flipped_normal_triangle_count": 0,
+ "uv_layer_count": 0,
+ "uv_island_count": 0,
+ "uv_overlapping_face_pair_count": 0,
+ "uv_out_of_bounds_face_count": 0,
+ "uv_coverage_fraction": 0.0,
+ "inverted_facet_count": 0
+}
+
+--- step ---
+5
+
+--- answer ---
+Both objects are built and verified:
+
+**CrateBody** — hollow open-top box, 0.5 × 0.5 × 0.4 m, walls/floor 0.02 m thick, base at z=0. 28 tris, 1 component, manifold, gate PASS. Material: dark brown (0.35, 0.20, 0.08).
+
+**CrateLid** — solid slab, 0.5 × 0.5 × 0.06 m, sitting exactly on the rim (z from 0.400 to 0.460, matching the body's top at z=0.400 with no gap or sinking), centred on X/Y with no overhang. 12 tris, 1 component, manifold, gate PASS. Material: light grey-tan (0.85, 0.82, 0.75).
+
+Colour distance between the two materials is well over 0.1 in linear RGB, so they read as distinct in the render — confirmed visually (dark brown body, light lid resting flush on top).
+
+Scene check: only `CrateBody` and `CrateLid` remain as mesh objects — no leftover boolean scraps.
+
+This satisfies the brief as given. Let me know if you'd like different colours, a different wall thickness, or anything else adjusted.

@@ -1,0 +1,539 @@
+--- thinking ---
+Let me build this crate. A 0.5m cube, beveled 0.02m, unwrapped with no overlaps, no out-of-bounds faces, under 12 islands, one material, single watertight manifold mesh under 2000 triangles, only mesh object in scene.
+
+Let me start by building the box and beveling it.
+
+Let me write the first chunk: create box, bevel, apply.
+
+Actually let me think about the UV unwrap. A beveled cube. I need a seam-and-unwrap layout with under 12 islands, no overlaps, no out-of-bounds. A cube unwrap typically gives 6 islands (one per face). With bevels, the bevel faces get added. Let me just mark seams and unwrap.
+
+Actually, the standard approach: mark seams along edges to create a cross-like layout. A cube can be unwrapped into a single cross (6 faces connected) = 1 island, or fewer islands.
+
+Let me plan the seams. For a cube, mark seams on edges so it unfolds into a cross. That gives 1 island. But with bevel, the beveled edges create additional faces.
+
+Let me just do it and measure. The gate requires uv_island_count under 12, no overlaps, no out-of-bounds.
+
+Let me build step by step.
+
+Step 1: create box 0.5m, bevel 0.02m, apply.
+
+Let me write it.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, link_into_scene\nfrom blended.ops.modifiers import add_bevel, apply_all_modifiers\nfrom blended.ops.transforms import snap_base_to_ground\n\nbox = add_box('Crate', width_m=0.5, depth_m=0.5, height_m=0.5)\nlink_into_scene(box)\nadd_bevel(box, width_m=0.02, segment_count=2)\napply_all_modifiers(box)\nsnap_base_to_ground(box)\n\nimport bpy\nbpy.context.view_layer.update()\nprint('verts', len(box.data.vertices), 'faces', len(box.data.polygons))\n", "object_name": "Crate"})
+
+--- result ---
+OK: Crate
+  execute: 1 attempt(s), ok in 0.01s (Blender 5.2.0 LTS)
+  printed:
+verts 56 faces 54
+  gate: PASS (108 tris, 1 components)
+  sheet: _evaluate/renders/iteration44_uv_crate_v10/agent/Crate_sheet.png
+
+--- vision ---
+A simple cube is shown across five views. The top four panels each display a flat gray square (with very slight corner beveling), representing the orthographic projections from different sides — front, back, left, and right (or similar cardinal faces) — all consistent in size and shape. The bottom-left panel shows a 3D perspective view revealing a clean cube with three visible faces: the top is lightest, the front-left face is mid-gray, and the right face is darker, indicating overhead-left lighting. The cube's proportions look even and balanced — not stretched or squashed in any axis. The bottom-right panel is empty (white). No missing parts, no floating geometry, no intersections, and no duplication are visible. Everything reads as a single, intact cube as intended.
+
+--- thinking ---
+The box is built and beveled. Now I need to unwrap it. Let me mark seams and unwrap.
+
+For a beveled cube, I want a clean seam layout. Let me think about the seams. A cube with beveled edges. The bevel creates faces along each edge (12 edges) and corner faces (8 corners).
+
+To get a good unwrap with few islands, I'll mark seams along a set of edges to unfold the cube into a cross.
+
+Let me mark seams. The standard cube cross unwrap: mark seams on the edges that form the boundary of the cross.
+
+Actually, let me just mark seams and unwrap, then measure. I'll clear existing UVs first (there are none yet, but good practice).
+
+Let me think about which edges to mark as seams. For a cube, to unfold into a cross (one island), you mark seams along 7 edges forming a tree... actually the cross layout: bottom face is center, four side faces fold out, top face attached to one side.
+
+Let me mark seams on the edges. Actually simpler: use the smart approach but the trap says smart_project overlaps on curved geometry. For a box it's clean. But I want a real seam-and-unwrap layout.
+
+Let me mark seams manually. I'll select edges by their world position/direction.
+
+For a cube centered at origin (0.5 box, so from -0.25 to 0.25 in x,y, z from 0 to 0.5 after snap). Actually snap_base_to_ground moved it so lowest point at z=0, so z from 0 to 0.5, x,y from -0.25 to 0.25.
+
+The bevel adds faces. Let me mark seams on the bevel edges too.
+
+Actually, a simpler robust approach: mark seams along the vertical edges and a few horizontal edges to create a cross.
+
+Let me think about the classic cube unwrap. The cube has 6 faces. To unwrap as a cross:
+- Bottom face (z=0) is the center.
+- 4 side faces fold out from bottom's 4 edges.
+- Top face folds out from one side face.
+
+Seams needed: the edges that are NOT folded. 
+
+Let me just do it programmatically. I'll mark seams based on edge geometry.
+
+Actually, let me take a more careful approach. I'll mark seams on edges and let Blender's unwrap do the work, then measure islands and overlaps.
+
+Let me identify edges. For a beveled cube, the original cube edges are now bevel faces. The bevel creates a strip along each of the 12 original edges, plus corner triangles/quads at the 8 corners.
+
+Hmm, this is getting complex. Let me just mark seams on a reasonable set and measure.
+
+Approach: mark seams on all edges that are "sharp" (the bevel boundary edges) in a pattern. Actually, let me think simpler.
+
+Alternative: I can mark seams to get a cross. Let me mark seams on:
+- The 4 vertical edges (going up in z) — these separate the 4 side faces from each other.
+- The top edges connecting top face to side faces, except one side.
+
+Actually let me just do the standard: mark seams so the cube unfolds into a cross.
+
+Let me write code that marks seams by edge direction and position.
+
+For a cube, edges are along X, Y, or Z. The beveled cube has:
+- Original 12 edges → now bevel strips (each original edge replaced by a bevel face).
+- 8 corners → corner faces.
+
+The bevel with 2 segments creates: each edge becomes a strip with 2 segments (so 3 edges along the strip direction? no). Let me not overthink.
+
+Let me just mark seams and unwrap, then check the result. I'll iterate.
+
+Let me mark seams on edges that are nearly vertical (parallel to Z) and on the top perimeter edges.
+
+Actually, the cleanest: mark seams along a "T" or cross pattern.
+
+Let me write a function to mark seams by selecting edges whose midpoint satisfies conditions.
+
+Plan for cross unwrap of cube:
+- Keep bottom face connected to all 4 sides (no seam on bottom edges).
+- Seam on the 4 vertical edges (corners of the cube).
+- Seam on top edges of 3 sides, keep top face attached to 1 side.
+
+So seams: 4 vertical edges + 3 top edges = 7 seams. This gives 1 island (cross).
+
+For the beveled cube, the "vertical edges" are now bevel strips. I need to mark seams along the bevel strips too so they split correctly.
+
+This is getting complicated. Let me just mark seams on ALL edges that are "sharp" (angle > some threshold) in a way... no.
+
+Let me try a different, simpler approach: mark seams on all edges, then selectively clear seams to merge faces into a cross.
+
+Actually, simplest reliable approach: mark seams on all edges, unwrap (gives 54 islands, one per face), then... no, that's too many islands.
+
+Let me think again. I want under 12 islands. A cross unwrap = 1 island. Even a "6 faces" unwrap = 6 islands (each face separate). With bevel, faces are more numerous.
+
+Let me aim for the cross. I'll mark seams carefully.
+
+Let me identify the geometry. Let me print edge info to understand.
+
+Actually, let me just do a smart approach: mark seams on edges where the face angle is sharp (the bevel boundary), but keep the flat faces connected.
+
+Hmm. Let me think about what "no overlapping faces" and "under 12 islands" requires. 
+
+Let me just try: mark seams on the 4 vertical corner edges (the bevel strips at the 4 vertical corners) and the top edges, unwrap, measure.
+
+Let me write code to mark seams based on edge direction and position.
+
+For the beveled cube at z in [0, 0.5], x,y in [-0.25, 0.25]:
+
+Vertical corner edges: these are the bevel strips at the 4 corners (x=±0.25, y=±0.25). Each corner has a bevel face (the corner face) and the vertical bevel strips.
+
+Actually with bevel, each original edge becomes a bevel face (a strip). The 4 vertical original edges (at corners) become 4 vertical bevel strips. The 8 horizontal original edges (top and bottom perimeters) become 8 horizontal bevel strips. The 8 corners become corner faces (small quads/triangles).
+
+So the beveled cube has:
+- 6 flat faces (top, bottom, 4 sides) — but reduced in size.
+- 12 bevel strips (one per original edge).
+- 8 corner faces.
+
+Total = 26 faces? But we measured 54 faces. With 2 segments, each bevel strip is split into 2 segments, so 12 strips × 2 = 24, plus 8 corners × ... hmm. 6 + 24 + 8 = 38, not 54.
+
+Wait, 54 faces. Let me not worry about exact count. The point is to mark seams.
+
+Let me take the practical approach: mark seams on edges, unwrap, measure islands and overlaps, iterate.
+
+Let me mark seams on all edges that are "sharp" (dihedral angle > 30 degrees), which are the bevel boundary edges. This would separate each flat face from the bevels. Then also mark seams to split into a cross.
+
+Actually, let me step back and think about what gives a clean result.
+
+The simplest robust unwrap for a beveled cube that gives few islands: mark seams along a cross pattern on the OUTER edges.
+
+Let me just try marking seams on the vertical edges and see.
+
+Let me write code to mark seams by edge midpoint and direction.
+
+I'll mark seams on edges that are:
+1. Vertical (parallel to Z) AND at the corners (|x| ≈ 0.25 and |y| ≈ 0.25).
+
+Wait, but the bevel strips are at the corners. The vertical bevel strips have midpoints at x=±0.25, y=±0.25 (the corner lines), spanning z. Actually the bevel strip for a vertical edge is a face whose center is at the corner line.
+
+Hmm, let me just inspect the edges.
+
+Let me write a chunk to print edges with their midpoints and directions, to understand the geometry.
+
+--- tool ---
+run_python({"source": "import bpy\nobj = bpy.data.objects['Crate']\nme = obj.data\n# print edges: midpoint and direction\nfor e in me.edges:\n    v0 = me.vertices[e.vertices[0]].co\n    v1 = me.vertices[e.vertices[1]].co\n    mid = (v0+v1)/2\n    d = v1-v0\n    # dominant axis\n    ax = max(range(3), key=lambda i: abs(d[i]))\n    print(f\"e{e.index} mid=({mid.x:.3f},{mid.y:.3f},{mid.z:.3f}) axis={ax} len={d.length:.3f}\")\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+[2953 earlier characters dropped]
+237,0.230,0.497) axis=0 len=0.015
+e65 mid=(0.243,0.236,0.493) axis=1 len=0.012
+e66 mid=(0.236,0.243,0.493) axis=0 len=0.012
+e67 mid=(0.247,0.230,0.487) axis=2 len=0.015
+e68 mid=(0.247,0.237,0.480) axis=1 len=0.015
+e69 mid=(0.243,0.243,0.486) axis=2 len=0.012
+e70 mid=(0.237,0.247,0.480) axis=0 len=0.015
+e71 mid=(0.230,0.247,0.487) axis=2 len=0.015
+e72 mid=(-0.230,0.000,0.000) axis=1 len=0.460
+e73 mid=(-0.244,0.000,0.006) axis=1 len=0.460
+e74 mid=(-0.250,0.000,0.020) axis=1 len=0.460
+e75 mid=(-0.230,-0.250,0.250) axis=2 len=0.460
+e76 mid=(-0.244,-0.244,0.250) axis=2 len=0.460
+e77 mid=(-0.250,-0.230,0.250) axis=2 len=0.460
+e78 mid=(-0.230,0.000,0.500) axis=1 len=0.460
+e79 mid=(-0.244,0.000,0.494) axis=1 len=0.460
+e80 mid=(-0.250,0.000,0.480) axis=1 len=0.460
+e81 mid=(-0.230,0.250,0.250) axis=2 len=0.460
+e82 mid=(-0.244,0.244,0.250) axis=2 len=0.460
+e83 mid=(-0.250,0.230,0.250) axis=2 len=0.460
+e84 mid=(0.000,0.230,0.000) axis=0 len=0.460
+e85 mid=(0.000,0.244,0.006) axis=0 len=0.460
+e86 mid=(0.000,0.250,0.020) axis=0 len=0.460
+e87 mid=(0.000,0.230,0.500) axis=0 len=0.460
+e88 mid=(0.000,0.244,0.494) axis=0 len=0.460
+e89 mid=(0.000,0.250,0.480) axis=0 len=0.460
+e90 mid=(0.250,0.230,0.250) axis=2 len=0.460
+e91 mid=(0.244,0.244,0.250) axis=2 len=0.460
+e92 mid=(0.230,0.250,0.250) axis=2 len=0.460
+e93 mid=(0.230,0.000,0.000) axis=1 len=0.460
+e94 mid=(0.244,0.000,0.006) axis=1 len=0.460
+e95 mid=(0.250,0.000,0.020) axis=1 len=0.460
+e96 mid=(0.230,0.000,0.500) axis=1 len=0.460
+e97 mid=(0.244,0.000,0.494) axis=1 len=0.460
+e98 mid=(0.250,0.000,0.480) axis=1 len=0.460
+e99 mid=(0.230,-0.250,0.250) axis=2 len=0.460
+e100 mid=(0.244,-0.244,0.250) axis=2 len=0.460
+e101 mid=(0.250,-0.230,0.250) axis=2 len=0.460
+e102 mid=(0.000,-0.230,0.000) axis=0 len=0.460
+e103 mid=(0.000,-0.244,0.006) axis=0 len=0.460
+e104 mid=(0.000,-0.250,0.020) axis=0 len=0.460
+e105 mid=(0.000,-0.230,0.500) axis=0 len=0.460
+e106 mid=(0.000,-0.244,0.494) axis=0 len=0.460
+e107 mid=(0.000,-0.250,0.480) axis=0 len=0.460
+
+--- thinking ---
+The geometry is a beveled cube. The bevel has 2 segments. The edges are complex. Let me understand the structure better.
+
+The cube is 0.5m, bevel 0.02m with 2 segments. The flat faces are at x=±0.25 (but reduced to ±0.23 due to bevel), etc.
+
+Actually, let me look at the structure. The bevel width 0.02 with 2 segments means the bevel region extends 0.02 from each edge, split into 2 segments.
+
+The flat faces: top face at z=0.5, bottom at z=0, sides at x=±0.25, y=±0.25. But the bevel cuts into them, so flat faces are at x=±0.23 (0.25-0.02), etc.
+
+The edges with len=0.460 are the long edges of the flat faces (the flat face is 0.46 wide after bevel). Edges with len ~0.012-0.015 are the bevel segment edges.
+
+This is complex. Let me take a simpler approach to seams.
+
+For a cross unwrap, I want to mark seams along:
+1. The 4 vertical corner bevel strips (at x=±0.25, y=±0.25 corners, running in z).
+2. The top perimeter bevel strips (3 of them, to detach top face from 3 sides).
+
+Actually, let me think about the simplest reliable approach that gives few islands and no overlap.
+
+Alternative approach: mark seams on all "sharp" edges (the boundary between flat faces and bevels), which would give islands = flat faces + bevel strips + corners. That's too many.
+
+Let me think about the cross unwrap more carefully.
+
+The cross unwrap of a plain cube: 1 island. The seams are 7 edges forming a "T" shape on the cube.
+
+For the beveled cube, I want the same cross but the bevels need to be handled. The bevel strips along the seam edges need to be split too.
+
+Actually, a cleaner idea: mark seams along the vertical corner edges (the 4 vertical bevel strips) and along the top edges (the top perimeter bevel strips), leaving the bottom perimeter connected. This creates a cross where:
+- Bottom face + bottom bevels + 4 side faces + side bevels are connected.
+- Top face + top bevels attached to one side.
+
+Hmm wait, let me think about what "connected" means for unwrap. Faces connected by non-seam edges stay in the same island.
+
+Let me define the cross:
+- Bottom face (z=0) is center.
+- 4 side faces fold out.
+- Top face folds out from one side.
+
+Seams:
+- 4 vertical edges (the corners) — separate the 4 sides from each other.
+- 3 top edges — separate top from 3 sides, keep top attached to 1 side.
+
+For the beveled cube, the "vertical edges" are now bevel strips. Each vertical corner has a bevel strip (2 segments wide). To split the sides, I need to mark seams along these vertical bevel strips.
+
+Similarly the top edges are bevel strips.
+
+This is getting complicated. Let me just mark seams on edges and iterate, measuring islands and overlaps each time.
+
+Let me try a first attempt: mark seams on all edges that are "sharp" (dihedral angle > 45°), which separates flat faces from bevels. Then measure.
+
+Actually, let me reconsider. Maybe a simpler target: I don't need 1 island, just under 12 islands. 
+
+A reasonable unwrap: mark seams to create a cross. Let me just try marking seams on the vertical corner edges and top edges and see what happens.
+
+Let me identify the edges to mark. I'll mark seams on edges where:
+- The edge is "vertical-ish" (axis=2) and near a corner (|x|≈0.25 and |y|≈0.25), OR
+- The edge is on the top perimeter (z≈0.5) and horizontal.
+
+Actually, let me use a cleaner method. Let me mark seams based on the sharp angle between faces. The bevel creates smooth-ish transitions but the flat faces meet bevels at ~45°.
+
+Hmm, let me just do the cross approach with explicit edge selection.
+
+Let me think about the cross seams in terms of the beveled cube's edges.
+
+The cube has 12 original edges. After bevel, each original edge is a bevel strip. The 12 original edges:
+- 4 vertical (corners): at (x,y) = (±0.25, ±0.25), running z.
+- 4 top horizontal: at z=0.5, the perimeter.
+- 4 bottom horizontal: at z=0, the perimeter.
+
+For the cross unwrap, I want seams on:
+- 4 vertical corner strips.
+- 3 of the 4 top horizontal strips (leave one to connect top face to a side).
+
+Wait, but actually the top face connects to the sides via the top bevel strips. If I leave one top strip unseamed, the top face connects to one side through that strip.
+
+Let me mark seams on:
+- All 4 vertical corner bevel strips (split the 4 sides).
+- 3 of the 4 top bevel strips.
+
+This should give a cross: bottom + 4 sides + top, all connected through bottom bevels and one top bevel.
+
+But wait, the bevel strips themselves: a vertical corner strip, if I mark a seam along it, splits into... the strip is a face (or 2 faces with 2 segments). Marking a seam on an edge of the strip separates the two faces on either side.
+
+Let me think about which edges to mark as seams. A seam is marked on an EDGE. Two faces sharing a seam edge are separated.
+
+For the vertical corner: the corner bevel strip connects the two adjacent side faces. To separate the two sides, I mark a seam on the edges of the strip that connect to the sides. Actually, the strip is between the two sides. The strip has edges: two long edges (connecting to the two side faces) and short edges (the bevel segments).
+
+Hmm, actually the bevel strip for a vertical edge: it's a vertical strip of faces. With 2 segments, it's 2 faces stacked vertically. Each face connects to the two side faces (left and right) via its two long vertical edges, and to the corner faces (top and bottom) via short edges.
+
+To separate the two sides at this corner, I mark seams on the strip's long edges (the edges shared with the side faces). Then the strip itself becomes its own island (or connects to corner faces).
+
+This is getting really complicated. Let me just try a brute-force approach and measure.
+
+Actually, let me reconsider the whole thing. Maybe I'm overcomplicating. Let me just mark seams on a set of edges and unwrap, then measure islands and overlaps, and iterate based on results.
+
+Let me try: mark seams on all edges with dihedral angle > 30° (sharp edges). This separates flat faces from bevels. Result: 6 flat faces + 12 bevel strips + 8 corners = 26 islands. Too many (>12).
+
+So I need to merge. The cross approach is better.
+
+Let me try the cross approach with explicit edge marking. I'll mark seams on:
+
+1. Vertical corner strips: the 4 vertical bevel strips. To split sides, mark seams on the long edges of these strips.
+
+Actually, let me simplify by marking seams on edges and just measuring. Let me write code that marks seams on edges based on position, then unwrap and measure.
+
+Let me define the seam edges for a cross:
+
+The cross unwrap of a cube: think of it as the bottom face in the center, 4 sides around it, top attached to one side.
+
+Seams (on a plain cube):
+- 4 vertical edges (corners).
+- 3 top edges (top face's 3 edges not shared with the "attached" side).
+
+For the beveled cube, I'll mark seams on:
+- The 4 vertical corner bevel strips: mark seams on ALL edges of these strips that are vertical (axis=2) and at the corners. Actually the strip's long edges are vertical.
+
+Hmm wait, let me look at the edge data. The vertical corner strips: at x=±0.25, y=±0.25. Looking at edges, I see edges like e75 mid=(-0.230,-0.250,0.250) axis=2 len=0.460 — that's a vertical edge at x=-0.23, y=-0.25. And e76 mid=(-0.244,-0.244,0.250) axis=2 len=0.460 — vertical at x=-0.244, y=-0.244. And e77 mid=(-0.250,-0.230,0.250) axis=2 len=0.460 — vertical at x=-0.25, y=-0.23.
+
+So the vertical corner strip at corner (-0.25,-0.25) has 3 vertical edges: at x=-0.23,y=-0.25; x=-0.244,y=-0.244; x=-0.25,y=-0.23. These are the 2-segment bevel strip's edges.
+
+So the bevel strip is 2 segments wide, with 3 vertical edges (2 boundary + 1 middle).
+
+To separate the two sides at this corner, I mark seams on the 2 boundary vertical edges (x=-0.23,y=-0.25 and x=-0.25,y=-0.23). The middle edge (x=-0.244,y=-0.244) is internal to the strip.
+
+Actually, this is getting too detailed. Let me just mark seams on ALL vertical edges at the corners (the 3 per corner = 12 edges), and all top horizontal edges, and measure.
+
+Actually, let me step back and use a much simpler and more robust strategy.
+
+Strategy: Mark seams on all edges, then use a "smart" approach... no.
+
+Let me just try the simplest thing that might work: mark seams on the 4 vertical corner strips and 3 top strips, unwrap, measure. I'll mark seams on edges by their midpoint position.
+
+Let me define:
+- Vertical corner edges: axis=2 (vertical), and |x| > 0.2 and |y| > 0.2 (near corners). This catches the 3 vertical edges per corner = 12 edges.
+
+Wait, but I also need to be careful: the corner faces (at the 8 corners) have vertical edges too? The corner face is a small face at the corner. Its edges are short (len ~0.012-0.015). The vertical edges I want are the long ones (len 0.46).
+
+Let me mark seams on edges with axis=2, len > 0.4, and |x|>0.2 and |y|>0.2. That's the 12 vertical corner edges (3 per corner).
+
+- Top horizontal edges: axis=0 or 1, z > 0.45, len > 0.4. These are the top perimeter edges. There are 3 per top edge (2-segment bevel) × 4 top edges = 12 edges. I want to mark 3 of the 4 top edges (leave one to connect top to a side).
+
+Hmm, this is getting complicated but let me just try marking all vertical corners + all top edges and see the island count.
+
+Actually, let me reconsider. Let me just do a full cross and measure, iterating.
+
+Let me write the seam marking code and unwrap, then measure islands and overlaps.
+
+Let me first clear any existing UVs (none yet), mark seams, unwrap with ANGLE_BASED.
+
+Let me write it.
+
+For marking seams, I'll use bmesh or just set edge.use_seam = True.
+
+Let me write a chunk that:
+1. Marks seams on vertical corner edges (axis=2, len>0.4, |x|>0.2, |y|>0.2).
+2. Marks seams on top horizontal edges (z>0.45, len>0.4, axis in {0,1}) — but only 3 of 4 sides.
+
+Actually, let me first just mark vertical corners + all 4 top edges, unwrap, and measure. Then adjust.
+
+Let me also think: do I need seams on the bottom? No, bottom stays connected to all 4 sides.
+
+Let me write it and measure islands + overlaps.
+
+For measuring overlaps, I'll use the analyzer gate (it reports uv_overlapping_face_pair_count and uv_island_count and uv_out_of_bounds_face_count).
+
+Let me write the chunk.
+
+--- tool ---
+run_python({"source": "import bpy\nobj = bpy.data.objects['Crate']\nme = obj.data\n\n# clear any existing UVs\nfor uv in list(me.uv_layers):\n    me.uv_layers.remove(uv)\n\n# mark seams for a cross unwrap\nfor e in me.edges:\n    v0 = me.vertices[e.vertices[0]].co\n    v1 = me.vertices[e.vertices[1]].co\n    mid = (v0+v1)/2\n    d = v1-v0\n    ax = max(range(3), key=lambda i: abs(d[i]))\n    L = d.length\n    # vertical corner edges (long, near a corner)\n    if ax == 2 and L > 0.4 and abs(mid.x) > 0.2 and abs(mid.y) > 0.2:\n        e.use_seam = True\n    # top horizontal edges (long, near top)\n    if ax in (0,1) and L > 0.4 and mid.z > 0.45:\n        e.use_seam = True\n\nseams = sum(1 for e in me.edges if e.use_seam)\nprint('seams marked:', seams)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+seams marked: 24
+
+--- thinking ---
+24 seams. Now unwrap and measure.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.uv import unwrap_uvs\n\nobj = bpy.data.objects['Crate']\nrep = unwrap_uvs(obj, method='ANGLE_BASED')\nprint(rep)\n", "object_name": "Crate"})
+
+--- result ---
+OK: Crate
+  execute: 1 attempt(s), ok in 0.03s (Blender 5.2.0 LTS)
+  printed:
+UnwrapReport(method='ANGLE_BASED', island_count=2, overlapping_face_pair_count=0, coverage_fraction=0.5984754061046063)
+  gate: PASS (108 tris, 1 components)
+  sheet: _evaluate/renders/iteration44_uv_crate_v10/agent/Crate_sheet.png
+
+--- vision ---
+The asset reads as a single, plain cube in matte gray. The four orthographic views (front, right, back/top, and a fourth flat-on angle) each show it as a slightly rounded-cornered square, and the perspective view at the bottom-left confirms a beveled-edge box with no extra geometry. Proportions look even — roughly equal width, height, and depth with consistent edge lengths across all views. There are no missing parts, no floating elements, no visible intersections or duplicates; just one clean, symmetric cube.
+
+--- thinking ---
+2 islands, 0 overlaps, coverage 0.598. The gate passed. But wait, the gate report shows uv_island_count? Let me check the full gate report. The gate passed with 108 tris, 1 component. But I need to verify the UV requirements: no overlapping faces, no out-of-bounds faces, under 12 islands.
+
+The UnwrapReport shows island_count=2, overlapping_face_pair_count=0. Coverage 0.598. But I need to check out-of-bounds faces. The gate report should show uv_out_of_bounds_face_count. Let me check the full gate report via inspect_object.
+
+Actually the gate passed, which means all budget knobs passed. But the default budget knobs: require_uv_layer=False, allow_uv_overlaps=True, allow_uv_out_of_bounds=True. So the gate might not be checking UV overlaps/out-of-bounds strictly!
+
+Wait, the user's requirements are stricter than the default gate. The user wants:
+- no overlapping faces
+- no faces outside 0-1 UV square
+- under 12 islands
+
+The default gate allows overlaps and out-of-bounds. So I need to verify these myself.
+
+The UnwrapReport gives island_count=2 and overlapping_face_pair_count=0. Good. But I need to check out-of-bounds faces.
+
+Let me check the full gate report to see uv_out_of_bounds_face_count.
+
+Actually, let me inspect the object to getthe full report.
+
+--- tool ---
+inspect_object({"object_name": "Crate"})
+
+--- result ---
+GATE PASS
+{
+ "object_name": "Crate",
+ "triangle_count": 108,
+ "non_manifold_edge_count": 0,
+ "boundary_edge_count": 0,
+ "zero_area_face_count": 0,
+ "non_finite_coordinate_count": 0,
+ "connected_component_count": 1,
+ "duplicate_vertex_pair_count": 0,
+ "self_intersecting_face_pair_count": 0,
+ "flipped_normal_triangle_count": 0,
+ "uv_layer_count": 1,
+ "uv_island_count": 2,
+ "uv_overlapping_face_pair_count": 0,
+ "uv_out_of_bounds_face_count": 0,
+ "uv_coverage_fraction": 0.5984754061046063
+}
+
+--- thinking ---
+The full report:
+- triangle_count: 108 (under 2000 ✓)
+- non_manifold: 0 ✓
+- boundary: 0 ✓
+- components: 1 ✓
+- self-intersections: 0 ✓
+- flipped normals: 0 ✓
+- uv_layer_count: 1 ✓
+- uv_island_count: 2 (under 12 ✓)
+- uv_overlapping_face_pair_count: 0 ✓
+- uv_out_of_bounds_face_count: 0 ✓
+- uv_coverage: 0.598
+
+All requirements met! 2 islands, no overlaps, no out-of-bounds, under 12 islands.
+
+Now I need to:
+1. Assign one material.
+2. Verify it's the only mesh object in the scene.
+
+Let me check the scene for other objects and assign material.
+
+Let me also verify dimensions: 0.5m on each side, sitting at z=0.
+
+Let me assign material and check scene.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.materials import assign_material\n\nobj = bpy.data.objects['Crate']\nassign_material(obj, 'CrateWood', base_color_rgb=(0.72, 0.55, 0.35), roughness=0.8)\n\n# verify dimensions and ground contact\nbpy.context.view_layer.update()\nimport mathutils\ncorners = [obj.matrix_world @ mathutils.Vector(c) for c in obj.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint('world extents X:', round(max(xs)-min(xs),4), 'Y:', round(max(ys)-min(ys),4), 'Z:', round(max(zs)-min(zs),4))\nprint('min z:', round(min(zs),4))\n\n# list all mesh objects in scene\nmeshes = [o.name for o in bpy.context.scene.objects if o.type=='MESH']\nprint('mesh objects in scene:', meshes)\n\n# material slots with non-None contents\nmats = [m for m in obj.data.materials if m is not None]\nprint('materials:', [m.name for m in mats])\n", "object_name": "Crate"})
+
+--- result ---
+OK: Crate
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+world extents X: 0.5 Y: 0.5 Z: 0.5
+min z: 0.0
+mesh objects in scene: ['Crate']
+materials: ['CrateWood']
+  gate: PASS (108 tris, 1 components)
+  sheet: _evaluate/renders/iteration44_uv_crate_v10/agent/Crate_sheet.png
+
+--- vision ---
+The object reads as a simple cube or box with slightly rounded/beveled edges, rendered in a tan/khaki color. The four orthographic views (top row and middle row) all show flat squares of roughly equal size, which is consistent with a cube's silhouette from any side. The perspective view in the bottom-left confirms the boxy form with softened corners and a visible top edge that catches light differently than the side faces, suggesting modest beveling. Proportions look balanced — the box appears roughly equal in width, height, and depth with no obvious distortion. The bottom-right panel is empty/blank, while the other five panels each contain the object centered against a black background. No floating, duplicated, or intersecting parts are visible; it looks like a single, clean, solid object.
+
+--- thinking ---
+Everything checks out:
+- 0.5m on each side ✓
+- min z = 0.0 (sitting on ground) ✓
+- only mesh object 'Crate' in scene ✓
+- one material 'CrateWood' ✓
+- 108 triangles (under 2000) ✓
+- single watertight manifold mesh ✓
+- UV: 2 islands, 0 overlaps, 0 out-of-bounds ✓
+
+Let me do a final render to confirm it looks right. Actually I already have renders showing a beveled cube. The render shows a tan/khaki cube with beveled edges.
+
+Let me verify the UV layout visually? The render doesn't show UVs. But the analyzer confirms 2 islands, 0 overlaps, 0 out-of-bounds. That's a real seam-and-unwrap layout (2 islands = cross split into 2, likely top face separate from the rest, or similar).
+
+Actually wait, 2 islands. A cross unwrap would be 1 island. I got 2 islands. That's because I marked seams on all 4 top edges, so the top face + top bevels became a separate island from the bottom+4 sides. That's fine — under 12 islands, no overlaps, no out-of-bounds.
+
+Everything is done. Let me give the final answer.
+
+Actually, let me double check the UV is a "real seam-and-unwrap layout, not one island per face". 2 islands is definitely not one island per face (which would be 26+ islands). 2 islands is a proper cross-like layout. Good.
+
+All three done criteria met:
+1. Executed ✓
+2. Passed gate ✓ (all fields clean)
+3. Looks right ✓ (beveled cube, correct color, correct size)
+
+I'm done. Let me write the finalanswer.
+
+--- answer ---
+The crate is done. Here's what I built and verified:
+
+**Crate** — a solid wooden crate, 0.5 m on each side, sitting on the ground at z=0, edges beveled 0.02 m.
+
+**Measurements (verified after the last operation):**
+- World extents: X 0.5 m, Y 0.5 m, Z 0.5 m; lowest point at z = 0.0 (flat on the ground)
+- 108 triangles (well under the 2000 budget)
+- Single watertight manifold mesh — 0 non-manifold edges, 0 boundary edges, 1 connected component, 0 self-intersections, 0 flipped normals
+- One material assigned (`CrateWood`, tan/khaki)
+
+**UV layout (the part the gate's defaults don't enforce, so I checked it explicitly):**
+- 1 UV layer, **2 islands** (a real cross-style seam-and-unwrap, not one island per face)
+- **0 overlapping face pairs**
+- **0 faces outside the 0–1 UV square**
+- 59.8% coverage
+
+**Scene hygiene:** `Crate` is the only mesh object left in the scene.
+
+The render confirms a clean, symmetric beveled cube with even proportions and no stray geometry. All three checks pass — it executed, it passed the gate, and it looks right.

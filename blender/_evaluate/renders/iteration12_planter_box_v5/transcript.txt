@@ -1,0 +1,256 @@
+--- thinking ---
+Let me build this planter box. I'll use a box for the outer, subtract an inner box to hollow it, then subtract a cylinder for the drainage hole.
+
+Dimensions: outer 0.3 x 0.2 x 0.25. Wall/floor thickness 0.02. So inner cavity: 0.26 x 0.16 x 0.23 (height 0.25 - 0.02 floor = 0.23).
+
+Drainage hole radius 0.015, through center of floor. Center at x=0, y=0 (center on XY). Floor at z=0 to z=0.02. Hole goes from z=0 up through floor, so cylinder from z=-0.01 to z=0.03 (overlap to be safe).
+
+Let me build step by step.
+
+First, create outer box and inner box, boolean difference. Then cylinder cutter, boolean difference.
+
+Let me write the first chunk.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, add_cylinder, link_into_scene\n\n# Outer dimensions\nWIDTH_M = 0.3\nDEPTH_M = 0.2\nHEIGHT_M = 0.25\nWALL_T = 0.02\n\nouter = add_box(\"PlanterBox\", WIDTH_M, DEPTH_M, HEIGHT_M, (0, 0, HEIGHT_M/2))\nlink_into_scene(outer)\n\n# Inner cavity: walls 0.02 thick, floor 0.02 thick\ninner_w = WIDTH_M - 2*WALL_T\ninner_d = DEPTH_M - 2*WALL_T\ninner_h = HEIGHT_M - WALL_T\ninner = add_box(\"Cavity\", inner_w, inner_d, inner_h, (0, 0, WALL_T + inner_h/2))\nlink_into_scene(inner)\n\nprint(\"outer\", outer.name, \"inner\", inner.name)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+outer PlanterBox inner Cavity
+
+--- thinking ---
+Nowboolean difference.
+
+--- tool ---
+run_python({"source": "from blended.ops.booleans import boolean_difference\nimport bpy\n\nouter = bpy.data.objects[\"PlanterBox\"]\ninner = bpy.data.objects[\"Cavity\"]\nboolean_difference(outer, inner)\nprint(\"after cavity cut, objects:\", [o.name for o in bpy.data.objects])\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+after cavity cut, objects: ['PlanterBox']
+
+--- thinking ---
+Now the drainage hole. Center of floor at x=0, y=0. Floor from z=0 to z=0.02. Cylinder radius 0.015, height enough to go through floor. Cylinder base at location z. add_cylinder base at location_m[2]. So put base at z=-0.01, height 0.04 to go through floor andoverlap.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_difference\nimport bpy\n\nHOLE_R = 0.015\n# cylinder spans from z=-0.01 to z=0.03, through the 0.02 floor\nhole = add_cylinder(\"DrainHole\", HOLE_R, 0.04, 24, (0, 0, -0.01))\nlink_into_scene(hole)\n\nouter = bpy.data.objects[\"PlanterBox\"]\nboolean_difference(outer, hole)\nprint(\"after hole cut, objects:\", [o.name for o in bpy.data.objects])\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+after hole cut, objects: ['PlanterBox']
+
+--- tool ---
+run_python({"source": "from blended.ops.materials import assign_material\nimport bpy\n\nobj = bpy.data.objects[\"PlanterBox\"]\nassign_material(obj, \"PlanterMaterial\", base_color_rgb=(0.55, 0.35, 0.22), roughness=0.8)\nprint(\"material slots:\", [m.name if m else None for m in obj.data.materials])\n", "object_name": "PlanterBox"})
+
+--- result ---
+FAILED at gate: PlanterBox
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+material slots: ['PlanterMaterial']
+  gate: FAIL (24 tris, 2 components)
+    - 2 disconnected components (budget 1)
+  sheet: _evaluate/renders/iteration12_planter_box_v5/agent/PlanterBox_sheet.png
+
+--- vision ---
+The object reads as a simple plain brown box/cube with no additional features, details, or geometry beyond basic box faces. The orthographic views show: a roughly square front face (top-left), a tall narrow side profile (top-right), and wider top/plan views (middle row) — suggesting the object's depth is smaller than its width and height, making it read more as a tall block than a true cube. The perspective view (bottom-left) confirms this is a single solid rectangular prism with three visible faces (top, front, side), shaded with simple lighting that differentiates the planes. No extra parts, floating geometry, intersections, or duplicates are visible — it is one clean box. The bottom-right panel is blank/white.
+
+--- thinking ---
+24 tris, 2 components. The boolean difference left 2 components. This is likely because the cavity cut created a shell but the drainage hole... wait, 24 tris is very low. Actually the issue: the inner cavity box and outer box — the cavity cut should produce a hollow box. But 2 components means something is disconnected.
+
+Wait, 24 tris. A hollow box with a hole should be more. Actually the problem: the inner cavity box top is at z = WALL_T + inner_h/2 = 0.02 + 0.23/2 = 0.02 + 0.115 = 0.135. Outer top at 0.25. So cavity top at 0.135, leaving 0.115 solid above? No wait, inner_h = HEIGHT_M - WALL_T = 0.23. So cavity goes from z=0.02 to z=0.25. That's correct — cavity top at 0.25 = outer top. Good, open top.
+
+But 2 components. Hmm. The boolean difference of a box minus a box that shares the top face exactly (coplanar). The inner box top at z=0.25 exactly coplanar with outer top. That's the coplanar worst case mentioned in conventions.
+
+Actually the cavity top face is exactly at z=0.25, coplanar with outer top face. This causes issues. I should make the inner cavity extend slightly above the top so the subtraction cleanly opens the top.
+
+Let me make inner_h slightly taller, e.g. inner box top at z=0.26 (above outer top by 0.01). Then the cavity cut cleanly removes the top.
+
+Actually the 2 components: the top face of the outer box might be left as a separate floating piece? No. Let me think. 24 tris = 12 quads = 2 boxes worth? Actually a box is 12 triangles. 24 tris = 2 boxes. So the result is essentially two separate boxes? That suggests the boolean difference didn't actually subtract — it left both? No, cavity was consumed.
+
+Wait, actually maybe the boolean difference produced the outer box AND a separate inner shell. Hmm.
+
+Let me reconsider. The issue is likely the coplanar top. Let me rebuild with the cavity extending above the top.
+
+Let me redo cleanly. Remove PlanterBox and rebuild.
+
+Actually, let me just fix: make inner box taller so it pokes above top.
+
+Let me rebuild from scratch with proper overlap.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.materials import assign_material\nimport bpy\n\n# clean slate\nfor o in list(bpy.data.objects):\n    bpy.data.objects.remove(o, do_unlink=True)\n\nWIDTH_M = 0.3\nDEPTH_M = 0.2\nHEIGHT_M = 0.25\nWALL_T = 0.02\nHOLE_R = 0.015\n\nouter = add_box(\"PlanterBox\", WIDTH_M, DEPTH_M, HEIGHT_M, (0, 0, HEIGHT_M/2))\nlink_into_scene(outer)\n\n# cavity pokes 0.01 above the top so the open-top cut is clean (no coplanar faces)\ninner_w = WIDTH_M - 2*WALL_T\ninner_d = DEPTH_M - 2*WALL_T\ninner_h = HEIGHT_M - WALL_T + 0.01\ninner = add_box(\"Cavity\", inner_w, inner_d, inner_h, (0, 0, WALL_T + inner_h/2))\nlink_into_scene(inner)\n\nboolean_difference(outer, inner)\n\nhole = add_cylinder(\"DrainHole\", HOLE_R, 0.04, 24, (0, 0, -0.01))\nlink_into_scene(hole)\nboolean_difference(outer, hole)\n\nassign_material(outer, \"PlanterMaterial\", base_color_rgb=(0.55, 0.35, 0.22), roughness=0.8)\nprint(\"objects:\", [o.name for o in bpy.data.objects])\n", "object_name": "PlanterBox"})
+
+--- result ---
+OK: PlanterBox
+  execute: 1 attempt(s), ok in 0.01s (Blender 5.2.0 LTS)
+  printed:
+objects: ['PlanterBox']
+  gate: PASS (28 tris, 1 components)
+  sheet: _evaluate/renders/iteration12_planter_box_v5/agent/PlanterBox_sheet.png
+
+--- vision ---
+The asset reads as a simple open-top rectangular box or tray, rendered in a flat brown material. Four orthographic views (top-left, top-right, middle-left, middle-right) show silhouette rectangles of varying proportions — one nearly square, one tall-narrow, and two wide — consistent with a box viewed from front, side, and end. The bottom-left perspective view confirms the read: an open rectangular container with visible interior walls and a darker shadowed inside, slightly wider at the top than at the base (a subtle taper). Proportions look reasonable for a shallow box/tray, parts are positioned sensibly, and nothing appears to be floating, duplicated, or intersecting incorrectly.
+
+--- thinking ---
+Gate passed: 28 tris, 1 component. Now I need to verify the drainage hole actually goes all the way through. The render doesn't clearly show the hole. Let me verify with a clear-axis probe and also check dimensions.
+
+Let me verify the hole goes through the floor. I'll check by casting a ray or checking geometry. Actually, let me use a simple approach: check the mesh for a hole at center. I can use the analyzer's approach or just check vertices.
+
+Actually, let me verify the hole is open by checking if there's a face at the center bottom. Better: use a ray cast from below through the center.
+
+Let me write a verification chunk that:
+1. Measures world extents (should be 0.3 x 0.2 x 0.25, base at z=0).
+2. Checks the drainage hole goes through — cast a ray from (0,0,-0.1) upward to (0,0,0.1) and confirm no hit (clear axis).
+
+Let me do that.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\nobj = bpy.data.objects[\"PlanterBox\"]\nbpy.context.view_layer.update()\n\n# world extents\ncorners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world extents X %.3f Y %.3f Z %.3f\" % (max(xs)-min(xs), max(ys)-min(ys), max(zs)-min(zs)))\nprint(\"z range: %.4f .. %.4f\" % (min(zs), max(zs)))\n\n# clear-axis probe through the hole: ray from below center straight up\nmesh = obj.data\nimport bpy\ndeps = bpy.context.evaluated_depsgraph_get()\nev = obj.evaluated_get(deps)\nme = ev.to_mesh()\nme.transform(obj.matrix_world)\n\nfrom mathutils.bvhtree import BVHTree\nbv = BVHTree.FromBMesh(__import__('bmesh').new())\n# build bvh from evaluated mesh\nimport bmesh\nbm = bmesh.new()\nbm.from_mesh(me)\nbv = BVHTree.FromBMesh(bm)\n\norigin = Vector((0, 0, -0.1))\ndirection = Vector((0, 0, 1))\nloc, norm, idx, dist = bv.ray_cast(origin, direction)\nprint(\"ray from below center: hit =\", loc is not None, \"dist\", dist if loc else None)\n\n# also probe slightly off-center (should hit floor)\norigin2 = Vector((0.05, 0, -0.1))\nloc2, n2, i2, d2 = bv.ray_cast(origin2, direction)\nprint(\"ray off-center (0.05,0): hit =\", loc2 is not None, \"dist\", d2 if loc2 else None)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world extents X 0.300 Y 0.200 Z 0.250
+z range: 0.1250 .. 0.3750
+ray from below center: hit = True dist 0.22499999403953552
+ray off-center (0.05,0): hit = True dist 0.22500000894069672
+
+--- thinking ---
+Two problems:
+
+1. The z range is 0.125 to 0.375, not 0 to 0.25. The object is floating 0.125 above the ground! The box was created with location (0,0,HEIGHT_M/2) = (0,0,0.125), so its base is at z=0. But the measured z range is 0.125..0.375. That means the object's origin is at z=0.125 but... wait.
+
+Actually wait. The box add_box with location (0,0,0.125) — the box is centered at z=0.125, so base at z=0. But measured z range is 0.125..0.375, meaning base at 0.125. That's wrong.
+
+Hmm, actually maybe add_box's location is the base, not center? Let me check. The convention says add_cylinder "base at location_m[2]". For add_box, "Create a closed box mesh object of the given outer dimensions" with location. It's ambiguous whether location is center or base.
+
+The measured z range 0.125..0.375 means the box spans from 0.125 to 0.375, i.e., centered at 0.25. So the box is centered at z=0.25, not 0.125. That means add_box location is the BASE (bottom), and I passed 0.125 as base, so it goes 0.125 to 0.375.
+
+Wait, that gives center at 0.25. So add_box location_m is the base/min corner? Actually if location is base at z=0.125 and height 0.25, box spans 0.125 to 0.375. Yes.
+
+So add_box location is the base (min corner), not center. I need to place the box base at z=0.
+
+2. The ray from below center HIT at dist 0.225 — meaning the hole does NOT go through! The ray hit something at z = -0.1 + 0.225 = 0.125. That's the floor bottom. So the hole is sealed.
+
+Wait, but the hole cylinder was at z=-0.01 to 0.03. If the box base is at 0.125 (not 0), then the floor is at 0.125 to 0.145, and the hole cylinder at -0.01 to 0.03 is entirely BELOW the floor, so it didn't cut through the floor at all!
+
+So both issues stem from add_box location being the base. Let me fix: place outer box base at z=0, cavity base at z=WALL_T, hole cylinder spanning the floor.
+
+Let me redo. Outer box base at z=0. Cavity: base at z=WALL_T=0.02, height inner_h = HEIGHT - WALL_T + 0.01 = 0.24. So cavity spans 0.02 to 0.26, poking above top 0.25. Good.
+
+Hole: floor is 0 to 0.02. Cylinder base at z=-0.01, height 0.04 → spans -0.01 to 0.03. Good, cuts through floor.
+
+Let me rebuild.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.materials import assign_material\nimport bpy\n\nfor o in list(bpy.data.objects):\n    bpy.data.objects.remove(o, do_unlink=True)\n\nWIDTH_M = 0.3\nDEPTH_M = 0.2\nHEIGHT_M = 0.25\nWALL_T = 0.02\nHOLE_R = 0.015\n\n# add_box location is the BASE (min corner)\nouter = add_box(\"PlanterBox\", WIDTH_M, DEPTH_M, HEIGHT_M, (0, 0, 0))\nlink_into_scene(outer)\n\ninner_w = WIDTH_M - 2*WALL_T\ninner_d = DEPTH_M - 2*WALL_T\ninner_h = HEIGHT_M - WALL_T + 0.01   # poke above top for clean open-top cut\ninner = add_box(\"Cavity\", inner_w, inner_d, inner_h, (0, 0, WALL_T))\nlink_into_scene(inner)\nboolean_difference(outer, inner)\n\n# floor spans z=0..0.02; hole cylinder spans -0.01..0.03 through it\nhole = add_cylinder(\"DrainHole\", HOLE_R, 0.04, 24, (0, 0, -0.01))\nlink_into_scene(hole)\nboolean_difference(outer, hole)\n\nassign_material(outer, \"PlanterMaterial\", base_color_rgb=(0.55, 0.35, 0.22), roughness=0.8)\nprint(\"objects:\", [o.name for o in bpy.data.objects])\n", "object_name": "PlanterBox"})
+
+--- result ---
+OK: PlanterBox
+  execute: 1 attempt(s), ok in 0.03s (Blender 5.2.0 LTS)
+  printed:
+objects: ['PlanterBox']
+  gate: PASS (128 tris, 1 components)
+  sheet: _evaluate/renders/iteration12_planter_box_v5/agent/PlanterBox_sheet.png
+
+--- vision ---
+asset reads as an open-topped container or planter: a tapered, open box that's wider at the rim and narrower at the base, rendered in flat brown. The bottom-left perspective view clearly shows the trapezoidal silhouette with a visible rim and hollow interior, matching the proportions hinted at by the orthographic views. The middle-row views each show a single small dark circle near the center of a rectangular face, which reads consistently as a drain hole on two opposing sides. The top-row views show plain rectangular faces (likely the closed bottom and one of the slanted sides) with no extra features. Everything is centered in frame, with no floating, duplicated, or intersecting geometry visible.
+
+--- thinking ---
+Now 128 tris (the hole adds geometry). Let me verify the hole goes through and dimensions.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom mathutils import Vector\nfrom mathutils.bvhtree import BVHTree\n\nobj = bpy.data.objects[\"PlanterBox\"]\nbpy.context.view_layer.update()\n\ncorners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world extents X %.3f Y %.3f Z %.3f\" % (max(xs)-min(xs), max(ys)-min(ys), max(zs)-min(zs)))\nprint(\"z range: %.4f .. %.4f\" % (min(zs), max(zs)))\n\ndeps = bpy.context.evaluated_depsgraph_get()\nev = obj.evaluated_get(deps)\nme = ev.to_mesh()\nme.transform(obj.matrix_world)\nbm = bmesh.new(); bm.from_mesh(me)\nbv = BVHTree.FromBMesh(bm)\n\n# clear-axis probe through center from below\nloc, n, i, d = bv.ray_cast(Vector((0,0,-0.1)), Vector((0,0,1)))\nprint(\"center ray from below: hit =\", loc is not None, \"dist\", d if loc else None)\n\n# off-center should hit the floor\nloc2, n2, i2, d2 = bv.ray_cast(Vector((0.05,0,-0.1)), Vector((0,0,1)))\nprint(\"off-center ray: hit =\", loc2 is not None, \"dist\", d2 if loc2 else None)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world extents X 0.300 Y 0.200 Z 0.250
+z range: 0.0000 .. 0.2500
+center ray from below: hit = False dist None
+off-center ray: hit = True dist 0.10000000149011612
+
+--- thinking ---
+Now:
+- World extents correct: 0.3 x 0.2 x 0.25, z range 0 to 0.25 (sitting on ground).
+- Center ray from below: no hit → hole goes all the way through. 
+- Off-center ray hits at dist 0.1 → floor at z=0. 
+
+The hole is open. Dimensions correct. Gate passed (128 tris, 1 component, manifold).
+
+Let me do a final render to confirm visually, and check the hole is visiblefrom top.
+
+--- tool ---
+render_views({"object_name": "PlanterBox", "look_for": "Is the drainage hole open all the way through the floor, visible from both top and bottom? Is the box hollow with an open top and 0.02m walls?"})
+
+--- result ---
+Rendered PlanterBox (solid). Look at the attached contact sheet.
+
+--- vision ---
+**Object:** A rectangular hollow box/planter with an open top, rendered in a matte brown material. It reads clearly as a simple container.
+
+**Proportions:** The box is roughly square in plan view and noticeably shorter in height than its width/depth — a squat container shape, which looks reasonable. The walls in the perspective view appear thin and uniform, consistent with a 0.02 m wall thickness.
+
+**Drainage hole visibility:**
+- **Bottom views (middle row):** The drainage hole is clearly visible as a dark circular cutout, roughly centered in the floor. It looks open and passes through.
+- **Top view (upper-left):** Looking straight down through the open top, I do **not** see a corresponding dark hole on the interior floor. The top view shows a fairly uniform brown fill with no visible opening — the hole does not appear to read through from above.
+- **3D perspective (bottom-left):** The box is clearly hollow with an open top and visible interior walls/floor, but the floor surface looks solid brown with no visible hole from this angle either.
+
+**Other observations:** No floating geometry, no duplicated pieces, no intersections. The four walls and floor are properly joined, and the rim is clean. The main concern is that the drainage hole reads only from below, not from above.
+
+--- thinking ---
+The render's vision model says the hole reads from below but not from above. But my ray probe confirmed the hole goes all the way through (center ray from below passes clean through with no hit). The vision model may just not be able to see the small hole from the top view due to lighting/shadow. The hole is radius 0.015 = 1.5cm, quite small relative to 0.3m box.
+
+The ray probe is definitive: a ray from below at center passes through with no hit, meaning there's a clear path through the floor. And off-center hits the floor. So the hole is genuinely open.
+
+The vision model's inability to see it from above is likely just because the hole is small and the interior is shadowed. Let me verify more rigorously with a full clear-axis sweep to be certain, per the trap note about "parity probe cannot see a blind recess."
+
+Actually my probe already does a clear-axis: ray from below center, no hit at all → the axis is clear through the floor. That's the ClearAxisProbe. It's definitive.
+
+But wait — could the hole be a blind recess from below? No: the ray from below at center returns no hit, meaning it travels from z=-0.1 all the way up without hitting anything. If it were a blind recess (hole from bottom but not through top of floor), the ray would still pass through the recess opening... actually no. A blind recess from below: the floor has a hole from z=0 up to z=0.01, then solid from 0.01 to 0.02. A ray from below at center would enter the recess and hit the solid at z=0.01, returning a hit. Since it returns NO hit, the axis is fully clear through the entire floor. So the hole is a true through-hole.
+
+Actually wait, let me reconsider. The ray goes from z=-0.1 upward. If there's a through hole, the ray passes through the hole and continues up into the cavity, eventually... does it hit the top rim? No, the top is open, and the ray is at center (0,0), going straight up. It would exit through the open top. So no hit. Correct.
+
+If it were a blind recess (sealed at top of floor), ray would hit at z=0.01. So "no hit" definitively means through-hole.
+
+So the hole IS open. The vision model just can't see it from above because it's small and shadowed. Let me confirm with a render using xray or a top-down look specifically. Actually, let me just do a quick render with xray to show the hole clearly, or trust the probe.
+
+Actually, I'm confident. The probe is definitive. But to be thorough and give the user confidence, let me render with xray to reveal the hole.
+
+Actually, let me just do one more render with xray to visually confirm the through-hole.
+
+--- tool ---
+render_views({"object_name": "PlanterBox", "xray": true, "look_for": "Looking through the geometry in X-ray: is there a clear circular hole passing all the way through the floor at the center?"})
+
+--- result ---
+Rendered PlanterBox (x-ray). Look at the attached contact sheet.
+
+--- vision ---
+The asset reads as an open-top box or planter with thin walls, shown in solid brown. From the top and bottom orthographic views (middle row), a clear dark circular hole is visible centered in the floor panel. In the perspective view (bottom-left), the hole is visible from the inside looking down through the floor, confirming it appears to pass through. The opening at the top is unobstructed and the four side walls meet the floor cleanly with no visible floating geometry. Proportions look consistent — walls are uniformly thin and the hole sits centered in the floor. The bottom-right viewport is blank/empty.
+
+--- answer ---
+The planter box is complete and verified. Here's the final report:
+
+## PlanterBox — done
+
+**What I built:** A rectangular garden planter, hollow with an open top, and a single drainage hole through the floor.
+
+**Measurements (verified after the final boolean):**
+- Outer dimensions: **0.300 m × 0.200 m × 0.250 m** (X × Y × Z) — exact
+- Sits on the ground: z-range **0.000 → 0.250 m**
+- Wall and floor thickness: **0.02 m**
+- Drainage hole: radius **0.015 m**, centered in the floor, **confirmed open all the way through** (a clear-axis ray from below the center passes with no hit, while an off-center ray hits the floor — a true through-hole, not a blind recess)
+
+**Gate verdict: PASS**
+- 128 triangles (budget 2000)
+- 1 connected component, manifold, no self-intersections, no flipped normals
+- Material `PlanterMaterial` assigned (terracotta brown)
+- Only one mesh object (`PlanterBox`) remains in the scene
+
+**Two bugs I caught and fixed along the way:**
+1. The cavity's top face was exactly coplanar with the outer top, which the exact boolean solver split into 2 components — fixed by letting the cavity poke 0.01 m above the rim.
+2. `add_box` anchors at its **base**, not center, so my first build floated 0.125 m off the ground and the hole cylinder missed the floor entirely — fixed by base-anchoring all parts.
+
+The X-ray render confirms the hole reads cleanly through the floor from both top and bottom.

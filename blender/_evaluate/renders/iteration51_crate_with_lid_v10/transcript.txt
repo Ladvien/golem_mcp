@@ -1,0 +1,400 @@
+--- thinking ---
+Let me build this. Two objects: CrateBody (hollow open-top crate) and CrateLid (solid slab).
+
+CrateBody: 0.5 x 0.5 x 0.4 m, walls 0.02 m thick, open top, sitting on ground z=0.
+
+I can build this with a box outer and a box inner (cutter) subtracted. Outer box: 0.5 x 0.5 x 0.4. Inner box: 0.46 x 0.46 x 0.4 (walls 0.02 thick), positioned so it cuts out the interior. The inner cutter should extend above the top so the top is open. Actually the inner box height should be 0.4 (full height) so it cuts through the top, leaving an open top. But the floor: walls 0.02 thick, so floor is 0.02 thick too. Inner box from z=0.02 to z=0.4+something.
+
+Let me think. Outer box at z=0 to 0.4. Inner cutter: 0.46 x 0.46, from z=0.02 (floor thickness) up to z=0.42 (above top, to ensure open top). Subtract.
+
+Actually simpler: outer box 0.5x0.5x0.4 at origin (z 0 to 0.4). Inner box 0.46x0.46x0.4, located at z=0.02, so it spans 0.02 to 0.42. Subtract inner from outer. Result: walls 0.02 thick, floor 0.02 thick, open top.
+
+CrateLid: solid slab 0.5 x 0.5 x 0.06, resting on rim. Rim top is at z=0.4. So lid bottom at z=0.4, top at z=0.46. Centered on crate (same XY center).
+
+Let me build.
+
+For the lid, a box 0.5 x 0.5 x 0.06 at z=0.4.
+
+Let me write the code.
+
+I'll use add_box for both, boolean_difference for the body.
+
+Let me do it step by step. First create body outer and inner cutter, subtract. Then create lid.
+
+Actually I can do it in one chunk but let me be careful. Let me write one chunk that builds both, then gate.
+
+Let me write:
+
+```python
+from blended.ops.primitives import add_box, link_into_scene
+from blended.ops.booleans import boolean_difference
+from blended.ops.materials import assign_material
+from blended.ops.transforms import snap_base_to_ground
+
+# CrateBody
+outer = add_box("CrateBody", 0.5, 0.5, 0.4, (0,0,0))
+cutter = add_box("CrateBody_cutter", 0.46, 0.46, 0.4, (0,0,0.02))
+boolean_difference(outer, cutter)
+assign_material(outer, "CrateBody_mat", (0.6, 0.4, 0.2))
+snap_base_to_ground(outer)
+
+# CrateLid
+lid = add_box("CrateLid", 0.5, 0.5, 0.06, (0,0,0.4))
+assign_material(lid, "CrateLid_mat", (0.5, 0.3, 0.15))
+```
+
+Wait, the cutter needs to overlap. The inner box top at 0.42 is above outer top 0.4, good. The inner box bottom at 0.02, outer bottom at 0. Good.
+
+But the cutter is 0.46 wide, outer 0.5, so walls 0.02. Good.
+
+The cutter is consumed by boolean_difference. Good.
+
+Let me check: does add_box create at location with base at location z? The box location is center presumably. add_box location_m is center. So outer box at (0,0,0) spans z -0.2 to 0.2. Hmm, I need to be careful.
+
+Actually the convention: add_cylinder "base at location_m[2]". For add_box, location is center. Let me check. The doc says add_box "Create a closed box mesh object of the given outer dimensions." location_m default (0,0,0). Probably center.
+
+So to have outer box sit on ground z=0 to 0.4, I need location z = 0.2 (center). Let me set location (0,0,0.2).
+
+Cutter: 0.46 x 0.46 x 0.4, center at z = 0.02 + 0.2 = 0.22. So spans 0.02 to 0.42. Good.
+
+Lid: 0.5 x 0.5 x 0.06, center at z = 0.4 + 0.03 = 0.43. Spans 0.4 to 0.46.
+
+Let me use snap_base_to_ground to be safe, but actually I'll just set locations correctly and verify.
+
+Actually, let me just set locations and then verify with measurements. Let me use snap_base_to_ground for the body (moves lowest point to z=0). For the lid, I need it resting on rim at z=0.4, so I'll set location explicitly.
+
+Let me write the chunk and gate both objects. Actually gate takes one object_name. I'll gate CrateBody first, then CrateLid separately, or just run and inspect both.
+
+Let me do it in one chunk, then inspect both objects.
+
+Let me write carefully.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.materials import assign_material\nfrom blended.ops.transforms import snap_base_to_ground\n\n# --- CrateBody: hollow open-top crate ---\n# Outer shell 0.5 x 0.5 x 0.4, centered so it spans z=0..0.4\nouter = add_box(\"CrateBody\", 0.5, 0.5, 0.4, (0.0, 0.0, 0.2))\n# Inner cutter 0.46 x 0.46 x 0.4 -> walls 0.02 thick, floor 0.02 thick\n# centered at z=0.22 so it spans z=0.02..0.42 (cuts through the top)\ncutter = add_box(\"CrateBody_cutter\", 0.46, 0.46, 0.4, (0.0, 0.0, 0.22))\nboolean_difference(outer, cutter)\nassign_material(outer, \"CrateBody_mat\", (0.60, 0.40, 0.20))\nsnap_base_to_ground(outer)\n\n# --- CrateLid: solid slab resting on the rim ---\n# Rim top is at z=0.4; lid 0.06 thick -> spans z=0.4..0.46\nlid = add_box(\"CrateLid\", 0.5, 0.5, 0.06, (0.0, 0.0, 0.43))\nassign_material(lid, \"CrateLid_mat\", (0.50, 0.30, 0.15))\n\nprint(\"scene objects:\", [o.name for o in __import__('bpy').data.objects])\n"})
+
+--- result ---
+FAILED: UnlinkedOperand: boolean target 'CrateBody' is not linked into the scene, so the modifier cannot evaluate it and the result would silently be the unchanged target. Call ops.primitives.link_into_scene('CrateBody''s object) after creating it, before any boolean.
+Traceback (most recent call last):
+  File "/Users/ladvien/blended/src/blended/run/executor.py", line 93, in run_source_in_process
+    exec(compiled, execution_namespace)  # noqa: S102 - the harness's job
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<chat>", line 12, in <module>
+  File "/Users/ladvien/blended/src/blended/ops/booleans.py", line 119, in boolean_difference
+    _apply_boolean(target_object, cutter_object, "DIFFERENCE", solver)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ladvien/blended/src/blended/ops/booleans.py", line 72, in _apply_boolean
+    _require_linked(target_object, "target")
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ladvien/blended/src/blended/ops/booleans.py", line 52, in _require_linked
+    raise UnlinkedOperand(
+    ...<5 lines>...
+    )
+blended.ops.booleans.UnlinkedOperand: boolean target 'CrateBody' is not linked into the scene, so the modifier cannot evaluate it and the result would silently be the unchanged target. Call ops.primitives.link_into_scene('CrateBody''s object) after creating it, before any boolean.
+
+
+--- thinking ---
+I need to link objects into the scene. Let me add link_into_scene calls.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, link_into_scene\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.materials import assign_material\nfrom blended.ops.transforms import snap_base_to_ground\n\n# --- CrateBody: hollow open-top crate ---\nouter = add_box(\"CrateBody\", 0.5, 0.5, 0.4, (0.0, 0.0, 0.2))\nlink_into_scene(outer)\ncutter = add_box(\"CrateBody_cutter\", 0.46, 0.46, 0.4, (0.0, 0.0, 0.22))\nlink_into_scene(cutter)\nboolean_difference(outer, cutter)\nassign_material(outer, \"CrateBody_mat\", (0.60, 0.40, 0.20))\nsnap_base_to_ground(outer)\n\n# --- CrateLid: solid slab resting on the rim ---\nlid = add_box(\"CrateLid\", 0.5, 0.5, 0.06, (0.0, 0.0, 0.43))\nlink_into_scene(lid)\nassign_material(lid, \"CrateLid_mat\", (0.50, 0.30, 0.15))\n\nimport bpy\nprint(\"scene objects:\", [o.name for o in bpy.data.objects])\n"})
+
+--- result ---
+Executed OK in 0.01s.
+printed:
+scene objects: ['CrateBody', 'CrateLid']
+
+--- thinking ---
+Now let me inspect both objects and verify measurements.
+
+--- tool ---
+inspect_object({"object_name": "CrateBody"})
+
+--- result ---
+GATE PASS
+{
+ "object_name": "CrateBody",
+ "triangle_count": 28,
+ "non_manifold_edge_count": 0,
+ "boundary_edge_count": 0,
+ "zero_area_face_count": 0,
+ "non_finite_coordinate_count": 0,
+ "connected_component_count": 1,
+ "duplicate_vertex_pair_count": 0,
+ "self_intersecting_face_pair_count": 0,
+ "flipped_normal_triangle_count": 0,
+ "uv_layer_count": 0,
+ "uv_island_count": 0,
+ "uv_overlapping_face_pair_count": 0,
+ "uv_out_of_bounds_face_count": 0,
+ "uv_coverage_fraction": 0.0
+}
+
+--- tool ---
+inspect_object({"object_name": "CrateLid"})
+
+--- result ---
+GATE PASS
+{
+ "object_name": "CrateLid",
+ "triangle_count": 12,
+ "non_manifold_edge_count": 0,
+ "boundary_edge_count": 0,
+ "zero_area_face_count": 0,
+ "non_finite_coordinate_count": 0,
+ "connected_component_count": 1,
+ "duplicate_vertex_pair_count": 0,
+ "self_intersecting_face_pair_count": 0,
+ "flipped_normal_triangle_count": 0,
+ "uv_layer_count": 0,
+ "uv_island_count": 0,
+ "uv_overlapping_face_pair_count": 0,
+ "uv_out_of_bounds_face_count": 0,
+ "uv_coverage_fraction": 0.0
+}
+
+--- thinking ---
+Both pass. Now let me verify measurements: dimensions and positions. Let me measure world extents and check the lid rests on rim (z=0.4) and body sits at z=0.
+
+Let me print world bounds.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\ndef world_bounds(obj):\n    bpy.context.view_layer.update()\n    mw = obj.matrix_world\n    pts = [mw @ Vector(c) for c in obj.bound_box]\n    xs = [p.x for p in pts]; ys = [p.y for p in pts]; zs = [p.z for p in pts]\n    return (min(xs), max(xs), min(ys), max(ys), min(zs), max(zs))\n\nfor name in (\"CrateBody\", \"CrateLid\"):\n    o = bpy.data.objects[name]\n    x0,x1,y0,y1,z0,z1 = world_bounds(o)\n    print(f\"{name}: X {x0:.3f}..{x1:.3f} (w={x1-x0:.3f}), Y {y0:.3f}..{y1:.3f} (w={y1-y0:.3f}), Z {z0:.3f}..{z1:.3f} (h={z1-z0:.3f})\")\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+CrateBody: X -0.250..0.250 (w=0.500), Y -0.250..0.250 (w=0.500), Z 0.000..0.400 (h=0.400)
+CrateLid: X -0.250..0.250 (w=0.500), Y -0.250..0.250 (w=0.500), Z 0.430..0.490 (h=0.060)
+
+--- thinking ---
+The lid is at z=0.43..0.49, but it should rest on the rim at z=0.4. The rim top is at z=0.4, so the lid bottom should be at z=0.4, spanning 0.4..0.46.
+
+Wait, I set lid location to (0,0,0.43) but it's showing 0.43..0.49. That means the box location is the BOTTOM, not center? Let me check. add_box location (0,0,0.43) gave z 0.43..0.49, so location is the base (bottom), not center.
+
+Wait but for the body, I set outer at (0,0,0.2) and it gave z 0..0.4. So location z=0.2 is... the bottom? No wait, 0.2 bottom would give 0.2..0.6. But it shows 0..0.4.
+
+Hmm, actually snap_base_to_ground moved it. The outer box was at location (0,0,0.2) which if location is center gives 0..0.4. Then snap_base_to_ground moved it to z=0 (already there). So the body is correct.
+
+But the lid: I set (0,0,0.43) expecting center. If location is center, lid spans 0.4..0.46. But it shows 0.43..0.49. So location is NOT center — it's the base/bottom.
+
+Wait, that contradicts. Let me reconsider. For the body, outer box at (0,0,0.2) with height 0.4. If location is bottom, spans 0.2..0.6. Then snap_base_to_ground moves lowest point to 0, so 0..0.4. That's consistent with location being bottom!
+
+So add_box location is the BOTTOM (base), like add_cylinder "base at location_m[2]".
+
+So for the lid, I need bottom at z=0.4. I set 0.43, which is wrong. I need to set location z=0.4.
+
+Let me fix the lid: move it to z=0.4.
+
+Actually let me just move_object_to or set location. Let me use move_object_to(lid, (0,0,0.4)).
+
+Wait, but move_object_to sets world location. If location is the base, then setting location to (0,0,0.4) puts base at 0.4. Good.
+
+Let me fix.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.transforms import move_object_to\n\nlid = bpy.data.objects[\"CrateLid\"]\nmove_object_to(lid, (0.0, 0.0, 0.4))\n\nbpy.context.view_layer.update()\nfrom mathutils import Vector\nmw = lid.matrix_world\npts = [mw @ Vector(c) for c in lid.bound_box]\nzs = [p.z for p in pts]\nprint(f\"CrateLid Z: {min(zs):.3f}..{max(zs):.3f}\")\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+CrateLid Z: 0.830..0.890
+
+--- thinking ---
+Hmm, move_object_to set location to (0,0,0.4) but now it's at 0.83..0.89. That's weird. Wait, maybe move_object_to sets location but the object already had a location of 0.43, and move_object_to... no.
+
+Wait, actually maybe move_object_to is relative? Or maybe the object's origin is not at the base. Let me check the object's location and origin.
+
+Actually, wait. The lid was created with add_box at location (0,0,0.43). If location is the base, then the mesh vertices are at z=0..0.06 relative to origin, and origin at z=0.43. So world z = 0.43..0.49.
+
+Now move_object_to(lid, (0,0,0.4)) sets location to 0.4. Then world z should be 0.4..0.46. But it shows 0.83..0.89.
+
+That's strange. 0.83 = 0.4 + 0.43? No. 0.83 = 0.4 + 0.43. Hmm, 0.4 + 0.43 = 0.83. So it seems move_object_to ADDED 0.4 to the existing 0.43?
+
+Wait, maybe move_object_to is relative (moves by offset). Let me check the signature: "move_object_to(blender_object, location_m) — Set the object's world location in metres, then refresh."
+
+Hmm, it says "Set the object's world location". But the result suggests it added. Actually wait, maybe the issue is that move_object_to reads matrix_world which is stale, or something.
+
+Actually, let me reconsider. Maybe the object's origin is NOT at the base. Let me check where the origin is.
+
+Actually, let me just directly check object.location and the mesh vertices.
+
+Let me debug.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\nlid = bpy.data.objects[\"CrateLid\"]\nprint(\"location:\", tuple(round(v,3) for v in lid.location))\nprint(\"origin (matrix_world translation):\", tuple(round(v,3) for v in lid.matrix_world.translation))\n\n# mesh vertex z range in local space\nmesh = lid.data\nzs = [v.co.z for v in mesh.vertices]\nprint(\"local vertex z range:\", round(min(zs),3), \"..\", round(max(zs),3))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+location: (0.0, 0.0, 0.4)
+origin (matrix_world translation): (0.0, 0.0, 0.4)
+local vertex z range: 0.43 .. 0.49
+
+--- thinking ---
+The local vertex z range is 0.43..0.49. So the mesh vertices are NOT at 0..0.06 relative to origin. The add_box created the box with vertices at z=0.43..0.49 in LOCAL space, and origin at 0.43? Wait no.
+
+Actually, add_box with location (0,0,0.43) — it seems the box's vertices are placed at absolute z=0.43..0.49 in local space, and the origin is at... let me think.
+
+Actually the local vertex z range is 0.43..0.49, and location is 0.4. So world z = 0.43+0.4 .. 0.49+0.4 = 0.83..0.89. That matches.
+
+So add_box placed the box with its base at z=0.43 in LOCAL coordinates (vertices at 0.43..0.49), and the origin at 0 (local). Then location 0.43 shifted it. Wait, but originally location was 0.43 and world was 0.43..0.49? That means origin was at 0 and vertices at 0.43..0.49, location 0.43 → world 0.43..0.49? No: 0.43 + 0.43 = 0.86.
+
+Hmm wait, let me reconsider. Originally I created lid at location (0,0,0.43). The world bounds showed 0.43..0.49. So world = local + location. If local vertices are 0.43..0.49 and location 0.43, world would be 0.86..0.92. But it showed 0.43..0.49.
+
+So originally, location must have been 0, and vertices at 0.43..0.49. That means add_box IGNORED the location argument? Or add_box places vertices at the location directly (absolute), with origin at 0.
+
+Let me check: add_box("CrateLid", 0.5, 0.5, 0.06, (0,0,0.43)). The result: local vertices 0.43..0.49, location 0. So add_box places the box with its base at location_m[2] = 0.43 in LOCAL space, and origin at (0,0,0).
+
+Wait but then for the body, add_box("CrateBody", 0.5,0.5,0.4,(0,0,0.2)) would place vertices at 0.2..0.6 local, origin 0. Then snap_base_to_ground moved it down by 0.2 to get 0..0.4. That's consistent!
+
+So add_box's location_m is the BASE position in local space, and the origin stays at (0,0,0). Actually more precisely, add_box creates the box with its base at location_m, and the object origin at (0,0,0).
+
+Hmm wait, but that's a weird convention. Let me check the body's local vertices.
+
+Actually, the key insight: add_box places the box geometry at the given location (base at location_m[2]), with object origin at world origin (0,0,0). So the object's location is (0,0,0) and the vertices are offset.
+
+So to fix the lid, I should just set the location properly. The lid's local vertices are at 0.43..0.49. I want world z = 0.4..0.46. So I need location z = 0.4 - 0.43 = -0.03.
+
+Actually simpler: just move the object so its base is at 0.4. The base is at local 0.43. So location z = 0.4 - 0.43 = -0.03.
+
+Or even simpler, use snap_base_to_ground? No, that snaps to z=0.
+
+Let me just set location to (0,0,-0.03) so world base = 0.43 + (-0.03) = 0.4.
+
+Actually, let me reconsider the whole approach. The cleanest is to understand add_box: it creates a box with base at location_m, origin at (0,0,0). So the object location is (0,0,0) and geometry is offset.
+
+Actually wait, let me verify by checking the body's local vertices and location.
+
+--- tool ---
+run_python({"source": "import bpy\n\nfor name in (\"CrateBody\", \"CrateLid\"):\n    o = bpy.data.objects[name]\n    zs = [v.co.z for v in o.data.vertices]\n    print(f\"{name}: location={tuple(round(v,3) for v in o.location)}, local z {round(min(zs),3)}..{round(max(zs),3)}\")\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+CrateBody: location=(0.0, 0.0, -0.2), local z 0.2..0.6
+CrateLid: location=(0.0, 0.0, 0.4), local z 0.43..0.49
+
+--- thinking ---
+So add_box places geometry with base at location_m[2] in local space, origin at (0,0,0). The body: local z 0.2..0.6 (base at 0.2), then snap_base_to_ground moved location to -0.2, giving world 0..0.4. Good.
+
+For the lid, I want world base at 0.4. Local base is 0.43. So location z = 0.4 - 0.43 = -0.03.
+
+Let me set location to (0,0,-0.03).
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\nlid = bpy.data.objects[\"CrateLid\"]\n# local base is at z=0.43; want world base at 0.4 -> location z = -0.03\nlid.location = (0.0, 0.0, -0.03)\nbpy.context.view_layer.update()\n\nmw = lid.matrix_world\npts = [mw @ Vector(c) for c in lid.bound_box]\nzs = [p.z for p in pts]\nxs = [p.x for p in pts]; ys = [p.y for p in pts]\nprint(f\"CrateLid: X {min(xs):.3f}..{max(xs):.3f}, Y {min(ys):.3f}..{max(ys):.3f}, Z {min(zs):.3f}..{max(zs):.3f}\")\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+CrateLid: X -0.250..0.250, Y -0.250..0.250, Z 0.400..0.460
+
+--- thinking ---
+Now the lid is at z=0.4..0.46, resting on the rim (rim top at 0.4). Centered on X/Y (-0.25..0.25). Good.
+
+Now let me verify the body's wall thickness and that it's hollow/open-top. Let me check the body's geometry. The body: outer 0.5, inner cutter 0.46, so walls 0.02. Floor 0.02 thick (cutter base at 0.02).
+
+Let me verify by checking the body's local vertices. Actually the gate already passed (manifold, 1 component, no boundary edges). But wait — an open-top crate should have boundary edges at the top rim! The gate says boundary_edge_count = 0. That's suspicious.
+
+Wait, actually the crate is hollow with walls 0.02 thick. The top rim is a flat surface (the top of the walls). The walls have thickness, so the top of each wall is a flat ring face, not a boundary edge. So there are no boundary edges — the top rim is a closed surface (the wall tops are solid faces). That's correct for a watertight manifold.
+
+Actually, a hollow open-top crate: the walls are 0.02 thick, so the top of the walls is a flat annulus (ring) face. The interior is hollow. The mesh is watertight (closed) because the wall tops close it off. So boundary_edge_count = 0 is correct.
+
+Let me verify the wall thickness and hollow interior by measuring. Let me check the inner cavity dimensions.
+
+Actually, let me just render to confirm it looks right, and verify wall thickness via vertex positions.
+
+Let me check: are there vertices at x=0.23 (inner wall) and x=0.25 (outer wall)? Wall thickness 0.02.
+
+Let me print the distinct x values of vertices.
+
+--- tool ---
+run_python({"source": "import bpy\n\nbody = bpy.data.objects[\"CrateBody\"]\nxs = sorted(set(round(v.co.x, 3) for v in body.data.vertices))\nys = sorted(set(round(v.co.y, 3) for v in body.data.vertices))\nzs = sorted(set(round(v.co.z, 3) for v in body.data.vertices))\nprint(\"distinct X:\", xs)\nprint(\"distinct Y:\", ys)\nprint(\"distinct Z:\", zs)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+distinct X: [-0.25, -0.23, 0.23, 0.25]
+distinct Y: [-0.25, -0.23, 0.23, 0.25]
+distinct Z: [0.2, 0.22, 0.6]
+
+--- thinking ---
+Local coordinates (before location offset). X: -0.25, -0.23, 0.23, 0.25 → walls 0.02 thick (0.25-0.23=0.02). Y same. Z: 0.2 (floor bottom), 0.22 (floor top), 0.6 (top of walls). So floor is 0.02 thick (0.2..0.22), walls go up to 0.6 local = 0.4 world. Open top (no vertex at top closing it, the top is at 0.6 local which is the rim).
+
+Wait, but the top of the walls is at z=0.6 local. The wall tops form a flat ring face. The interior cavity is from z=0.22 (floor top) up to 0.6 (open). Good.
+
+Everything checks out:
+- Body: 0.5 x 0.5 x 0.4, walls 0.02, floor 0.02, open top, sitting at z=0.
+- Lid: 0.5 x 0.5 x 0.06, resting at z=0.4..0.46, centered.
+
+Both pass gate. Now render to confirm visually.
+
+--- tool ---
+render_views({"object_name": "CrateBody", "look_for": "hollow open-top crate with 0.02m walls, sitting on ground; is the interior hollow and the top open?"})
+
+--- result ---
+Rendered CrateBody (solid). Look at the attached contact sheet.
+
+--- vision ---
+Looking at these views, the object reads as a roughly cubic box/crate with tan sides. In the top row (front and back orthographic views) and middle-left view, there's a darker brown horizontal band near the top, which could indicate the inner wall surface visible through an opening — but it's subtle and reads almost like a surface seam rather than a clear rim. In the perspective view (bottom-left), the top face appears as a **solid, flat, closed surface** — I do not see down into a hollow interior, nor do I see distinct wall edges/lips sticking up around a void. There is no visible ground plane in any view, so I can't confirm whether it sits flush on the ground. Proportions look roughly cubic (not excessively tall, short, or warped), and I don't see any duplicated geometry, floating parts, or obvious intersections. The main concern matching your question: from this perspective angle the top looks **sealed**, not open — if it is meant to be a 0.02m wall thickness open crate, the rim is not reading as a clear lip and the interior is not visible from any angle shown.
+
+--- tool ---
+render_views({"object_name": "CrateLid", "look_for": "solid slab resting on the crate rim, centered, not overhanging or sunk"})
+
+--- result ---
+Rendered CrateLid (solid). Look at the attached contact sheet.
+
+--- vision ---
+The object reads as a box/crate with a flat lid or slab on top. The five views show: front and side elevations (top row) showing a brown rectangle with a slightly darker band at the top — that's the slab edge meeting the crate wall; top-down (middle-left) and what appears to be another orthographic (middle-right) showing clean brown squares; and a 3D perspective (bottom-left) showing the assembly clearly.
+
+In the perspective view, the top slab appears to sit on the crate and looks roughly centered on the footprint. There is a visible lip/rim around the top edge where the slab meets the crate walls — the slab's top face looks like it extends just to the edge of the crate walls, with no obvious overhang into open air and no sinking into the box interior. The two side elevations show the slab's darker top stripe sitting flush with the upper edge of the crate, suggesting the slab's top surface is level with (or marginally above) the crate rim rather than buried below it. Proportions look reasonable: the crate is roughly cubical with a noticeably thinner slab capping it.
+
+--- thinking ---
+The render of CrateBody shows the top as "sealed" — but that's because the render is of the body alone, and the top rim is a flat ring face. The vision model can't see into the hollow interior from the top-down orthographic view because the wall tops form a flat ring. Actually, the top-down view should show the hollow interior (the cavity) as a darker region inside the ring.
+
+Wait, the concern is whether the crate is actually hollow/open. The geometry measurements confirm: X has -0.25,-0.23,0.23,0.25 (walls), Z has 0.2,0.22,0.6 (floor 0.2..0.22, walls to 0.6). So there IS a hollow interior.
+
+The vision model says the top looks sealed. This might be because the top-down orthographic view shows the flat ring top of the walls, and the interior cavity is dark (shadowed) so it reads as "solid". Let me render with xray to confirm the hollow interior.
+
+Actually, let me render the body with xray to see the hollowinterior clearly.
+
+--- tool ---
+render_views({"object_name": "CrateBody", "xray": true, "look_for": "is the interior hollow (empty cavity) with 0.02m thick walls and an open top, floor 0.02m thick?"})
+
+--- result ---
+Rendered CrateBody (x-ray). Look at the attached contact sheet.
+
+--- vision ---
+The object reads as a brown cube-shaped box or container, viewed from front, side, back, and an isometric perspective. The four orthographic views show flat square faces, which is consistent with looking straight at the box's sides. In the perspective view, the interior is clearly hollow and visible from above — you can see down into the open top, with inner walls and a floor showing through. The wall thickness is visible as a darker rim along the top edge, and the floor is visible at the bottom of the cavity, consistent with the described 0.02m thick walls and floor with an open top. Proportions look like a roughly equal cube with no obvious distortion, floating parts, or misplaced geometry.
+
+--- thinking ---
+The X-ray render confirms the hollow interior, open top, 0.02m walls and floor. Everything is correct.
+
+Both objects pass the gate, dimensions verified, and renders confirm the structure. The scene only has CrateBody and CrateLid (confirmed earlier: scene objects ['CrateBody', 'CrateLid']).
+
+Let me do a final check that only these two objects remainin the scene.
+
+--- tool ---
+list_scene({})
+
+--- result ---
+CrateBody: 28 tris, 0.500 x 0.500 x 0.400 m
+CrateLid: 12 tris, 0.500 x 0.500 x 0.060 m
+
+--- answer ---
+Done. Both objects are built, gated, and verified.
+
+**CrateBody** — hollow open-top crate
+- 0.500 × 0.500 × 0.400 m, sitting on the ground (z = 0.000–0.400)
+- Walls 0.02 m thick (inner faces at ±0.23, outer at ±0.25), floor 0.02 m thick, open top
+- 28 triangles, 1 component, manifold, no boundary edges, no self-intersections, normals outward — **gate passed**
+- Material `CrateBody_mat` (tan)
+
+**CrateLid** — solid slab
+- 0.500 × 0.500 × 0.060 m, resting exactly on the rim (z = 0.400–0.460), centered on the crate footprint (X/Y −0.25…0.25) so no overhang
+- 12 triangles, 1 component, manifold — **gate passed**
+- Material `CrateLid_mat` (darker brown)
+
+The only mesh objects in the scene are `CrateBody` and `CrateLid`. The X-ray render confirms the body's hollow cavity, open top, and 0.02 m wall/floor thickness; the solid render confirms the lid sits flush on the rim, not floating or sunk.
+
+One note: `add_box` places its geometry with the base at the given `location_m` (origin stays at world origin), which is why the lid initially floated 0.03 m — I corrected it to rest on the rim.

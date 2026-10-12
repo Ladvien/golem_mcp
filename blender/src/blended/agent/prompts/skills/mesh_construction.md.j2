@@ -1,0 +1,34 @@
+## Building the mesh, not rebuilding it
+
+These are technique rules for authored geometry — what the
+sanctioned `blended.ops` API supports. Each carries the number that
+measured it, because "overlap shells" teaches nothing and "butting
+welds axis-centre vertices into one vertex on 40 faces" teaches the
+shape of the failure. Imported-geometry rules (weld-before-decimate,
+visibility culling, tris-to-quads, retopology, region protection)
+live in the ingest lane, not here.
+
+## Construction
+
+- Overlap shells, never butt them. Butting welds axis-centre vertices into
+  pinched soup (one vertex on 40 faces); N primitives should give N islands
+  unless you meant them to weld.
+- A weld is an ingest step for imported soup, not cleanup for authored
+  layers — blanket-welding fused layered shells into 88 non-manifold
+  junctions.
+- A centred-section sweep must clear inner_shell_outer + thickness/2, not
+  inner_shell_outer — arithmetic, not taste.
+
+## Measure and report
+
+- Read the EVALUATED mesh when modifiers are in play: a modifier closes
+  boundaries and doubles the vertex count, so any vertex-count ratio must
+  be density-invariant.
+- A position filter cannot name a feature: max(loops, key=len) picked the
+  collar over the hem. Name features structurally.
+- Three appearance metrics, never averaged into one: silhouette IoU catches
+  deleted or shrunken parts, shading RMSE catches faceting, and a coverage
+  metric catches poke-through. They fail independently and a single number
+  hides all three.
+- Prefer the data API to bpy.ops: operators need an active area, a selection
+  and the linked view layer, and fail differently headless.

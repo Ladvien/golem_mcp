@@ -1,0 +1,127 @@
+--- tool ---
+declare_plan({"steps": ["Create 0.5m cube box named Crate and place it on the ground", "Add bevel (0.02m) to edges and apply modifiers", "Unwrap UVs (clear existing, angle-based) and check island/overlap counts", "Assign a material to the crate", "Run gate + inspect + render to verify everything matches spec"]})
+
+--- result ---
+Plan declared:
+  1. Create 0.5m cube box named Crate and place it on the ground
+  2. Add bevel (0.02m) to edges and apply modifiers
+  3. Unwrap UVs (clear existing, angle-based) and check island/overlap counts
+  4. Assign a material to the crate
+  5. Run gate + inspect + render to verify everything matches spec
+
+--- plan ---
+{"steps": ["Create 0.5m cube box named Crate and place it on the ground", "Add bevel (0.02m) to edges and apply modifiers", "Unwrap UVs (clear existing, angle-based) and check island/overlap counts", "Assign a material to the crate", "Run gate + inspect + render to verify everything matches spec"], "current_step": 0}
+
+--- tool ---
+run_python({"plan_step": 1, "object_name": "Crate", "source": "from blended.ops.primitives import add_box, link_into_scene\nfrom blended.ops.transforms import snap_base_to_ground, apply_object_transform\n\nSIDE_M = 0.5  # crate is 0.5m cube per spec\n\ncrate = add_box(\"Crate\", width_m=SIDE_M, depth_m=SIDE_M, height_m=SIDE_M)\nlink_into_scene(crate)\nsnap_base_to_ground(crate)\napply_object_transform(crate)\n\nimport bpy\nbpy.context.view_layer.update()\nprint(crate.dimensions, crate.location)\n"})
+
+--- result ---
+OK: Crate
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+<Vector (0.5000, 0.5000, 0.5000)> <Vector (0.0000, 0.0000, 0.0000)>
+  gate: PASS (12 tris, 1 components)
+  sheet: _evaluate/renders/iteration61_uv_crate_v11/agent/Crate_sheet.png
+
+--- step ---
+1
+
+--- render ---
+_evaluate/renders/iteration61_uv_crate_v11/agent/Crate_sheet.png
+
+--- tool ---
+run_python({"plan_step": 2, "object_name": "Crate", "source": "from blended.ops.modifiers import add_bevel, apply_all_modifiers\nimport bpy\n\ncrate = bpy.data.objects[\"Crate\"]\n\nBEVEL_WIDTH_M = 0.02  # per spec\nBEVEL_SEGMENTS = 3\n\nadd_bevel(crate, width_m=BEVEL_WIDTH_M, segment_count=BEVEL_SEGMENTS)\napply_all_modifiers(crate)\n\nbpy.context.view_layer.update()\nprint(crate.dimensions, len(crate.data.polygons))\n"})
+
+--- result ---
+OK: Crate
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+<Vector (0.5000, 0.5000, 0.5000)> 98
+  gate: PASS (188 tris, 1 components)
+  sheet: _evaluate/renders/iteration61_uv_crate_v11/agent/Crate_sheet.png
+
+--- step ---
+2
+
+--- render ---
+_evaluate/renders/iteration61_uv_crate_v11/agent/Crate_sheet.png
+
+--- tool ---
+run_python({"plan_step": 3, "object_name": "Crate", "source": "import bpy\nfrom blended.ops.uv import unwrap_uvs\n\ncrate = bpy.data.objects[\"Crate\"]\n\n# Clear any pre-existing UVs so unwrap is a pure function of geometry\nwhile crate.data.uv_layers:\n    crate.data.uv_layers.remove(crate.data.uv_layers[0])\n\n# Mark seams for a box-style unwrap using bmesh\nimport bmesh\nimport math\nbm = bmesh.new()\nbm.from_mesh(crate.data)\nbm.edges.ensure_lookup_table()\n\nfor e in bm.edges:\n    e.seam = False\n\nMIN_SEAM_EDGE_LEN_M = 0.3  # only the main box edges are this long; bevel segments are much shorter\nfor e in bm.edges:\n    if len(e.link_faces) == 2:\n        n1 = e.link_faces[0].normal\n        n2 = e.link_faces[1].normal\n        angle = n1.angle(n2)\n        length = e.calc_length()\n        if angle > math.radians(45) and length > MIN_SEAM_EDGE_LEN_M:\n            e.seam = True\n\nbm.to_mesh(crate.data)\nbm.free()\ncrate.data.update()\n\nreport = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(report)\n"})
+
+--- result ---
+OK: Crate
+  execute: 1 attempt(s), ok in 0.01s (Blender 5.2.0 LTS)
+  printed:
+Warning: Unwrap failed to solve 1 of 1 island(s), edge seams may need to be added
+UnwrapReport(method='ANGLE_BASED', island_count=98, overlapping_face_pair_count=0, coverage_fraction=0.7885223866258811)
+  gate: PASS (188 tris, 1 components)
+  sheet: _evaluate/renders/iteration61_uv_crate_v11/agent/Crate_sheet.png
+
+--- step ---
+3
+
+--- render ---
+_evaluate/renders/iteration61_uv_crate_v11/agent/Crate_sheet.png
+
+--- tool ---
+run_python({"plan_step": 3, "object_name": "Crate", "source": "import bpy, bmesh, math\nfrom blended.ops.uv import unwrap_uvs\n\ncrate = bpy.data.objects[\"Crate\"]\n\n# Clear any pre-existing UVs so unwrap is a pure function of geometry\nwhile crate.data.uv_layers:\n    crate.data.uv_layers.remove(crate.data.uv_layers[0])\n\nbm = bmesh.new()\nbm.from_mesh(crate.data)\nbm.faces.ensure_lookup_table()\nbm.edges.ensure_lookup_table()\n\nfor e in bm.edges:\n    e.seam = False\n\n# The six main cube faces survive beveling as the largest flat faces,\n# aligned with a cardinal axis; bevel strips/corners are much smaller.\nareas = [f.calc_area() for f in bm.faces]\nmax_area = max(areas)\nCAP_FACE_AREA_FRACTION = 0.5  # cap faces are near-identical size, much bigger than bevel strips\nis_cap = [a > max_area * CAP_FACE_AREA_FRACTION for a in areas]\nprint('num cap faces', sum(is_cap), 'max_area', max_area)\n\nfor e in bm.edges:\n    faces = e.link_faces\n    if len(faces) == 2:\n        f0, f1 = faces\n        cap0 = is_cap[f0.index]\n        cap1 = is_cap[f1.index]\n        if cap0 != cap1:\n            e.seam = True\n\nseam_count = sum(1 for e in bm.edges if e.seam)\nprint('seam edges', seam_count)\n\nbm.to_mesh(crate.data)\nbm.free()\ncrate.data.update()\n\nreport = unwrap_uvs(crate, method=\"ANGLE_BASED\")\nprint(report)\n"})
+
+--- result ---
+OK: Crate
+  execute: 1 attempt(s), ok in 0.02s (Blender 5.2.0 LTS)
+  printed:
+num cap faces 6 max_area 0.21160000562667847
+seam edges 24
+UnwrapReport(method='ANGLE_BASED', island_count=7, overlapping_face_pair_count=0, coverage_fraction=0.47493576792392456)
+  gate: PASS (188 tris, 1 components)
+  sheet: _evaluate/renders/iteration61_uv_crate_v11/agent/Crate_sheet.png
+
+--- step ---
+3
+
+--- render ---
+_evaluate/renders/iteration61_uv_crate_v11/agent/Crate_sheet.png
+
+--- tool ---
+run_python({"plan_step": 4, "object_name": "Crate", "source": "import bpy\nfrom blended.ops.materials import assign_material\n\ncrate = bpy.data.objects[\"Crate\"]\n\nWOOD_COLOR_RGB = (0.45, 0.28, 0.14)  # warm wood brown\nWOOD_ROUGHNESS = 0.6\n\nassign_material(crate, name=\"CrateWood\", base_color_rgb=WOOD_COLOR_RGB, roughness=WOOD_ROUGHNESS)\nprint(len(crate.data.materials), [m.name if m else None for m in crate.data.materials])\n"})
+
+--- result ---
+OK: Crate
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+1 ['CrateWood']
+  gate: PASS (188 tris, 1 components)
+  sheet: _evaluate/renders/iteration61_uv_crate_v11/agent/Crate_sheet.png
+
+--- step ---
+4
+
+--- render ---
+_evaluate/renders/iteration61_uv_crate_v11/agent/Crate_sheet.png
+
+--- tool ---
+list_scene({})
+
+--- result ---
+Crate: 188 tris, 0.500 x 0.500 x 0.500 m
+
+--- answer ---
+Everything checks out. Final verification summary:
+
+**Build:**
+- 0.5 m cube, edges beveled 0.02 m (3 segments)
+- 188 triangles (well under the 2000 budget)
+- 1 material slot: `CrateWood` (warm wood brown, roughness 0.6)
+
+**Gate:** PASS — 1 connected component, manifold, no self-intersections, normals correct.
+
+**UVs:** After clearing pre-existing UVs and marking seams at the boundary between the 6 main cap faces and the bevel geometry (24 seam edges), ANGLE_BASED unwrap produced **7 islands**, **0 overlapping face pairs**, coverage 47.5% — well under the 12-island limit and a real seam-based layout (not one island per face).
+
+**Dimensions:** confirmed 0.500 × 0.500 × 0.500 m, sitting on the ground (min z = 0, verified via `snap_base_to_ground` + baked transform).
+
+**Scene:** `list_scene` shows exactly one mesh object, `Crate` — nothing else left behind.
+
+**Render:** Wood-brown cube with visibly rounded/beveled edges from all angles, consistent geometry front/right/top/perspective.
+
+The crate is done: a single watertight 0.5 m wooden cube, beveled edges, UV-unwrapped into 7 clean non-overlapping islands, one material, 188 tris, sitting on the ground, alone in the scene.

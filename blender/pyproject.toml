@@ -1,0 +1,86 @@
+[project]
+name = "blended"
+version = "0.1.0"
+description = "A Blender-based harness for agentic modeling of game assets."
+requires-python = ">=3.11"
+dependencies = [
+    "blender-mcp",
+    "jinja2>=3.1.6",
+    "skinclip",
+]
+
+[project.optional-dependencies]
+capture = ["pillow"]
+
+[dependency-groups]
+dev = ["mypy>=2.3.1", "pytest>=8.0", "ruff>=0.16.4"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+blended = ["py.typed", "agent/prompts/*.j2"]
+
+[tool.pytest.ini_options]
+# tests/blender first: its modules skip at import without bpy, leaving no
+# module of the same basename behind to collide with tests/pure's. The other
+# order made a bare `pytest` fail collection (measured 2026-10-07).
+# tests/bench_scripts is deliberately absent: `make test-bench-scripts`.
+testpaths = ["tests/blender", "tests/pure"]
+markers = [
+    "blender: requires a working bpy (Blender-as-module or a live Blender).",
+]
+
+[tool.mypy]
+python_version = "3.11"
+
+# src layout: map src/blended/x.py to `blended.x`, and tests/blender/y.py to
+# `tests.blender.y` (test_harness imports test_retry by that dotted path).
+# Without this mypy names the same test file two ways and bails.
+mypy_path = "src"
+explicit_package_bases = true
+
+# bpy, bmesh and mathutils are compiled C modules that only exist inside a
+# Blender runtime, and they ship no stubs. numpy is bundled by Blender;
+# Pillow is the optional `capture` extra. None are importable from the dev
+# venv, so mypy treats them as Any instead of erroring at every import site.
+[[tool.mypy.overrides]]
+module = ["bpy.*", "bmesh.*", "mathutils.*", "numpy.*", "PIL.*", "skinclip.*"]
+ignore_missing_imports = true
+
+[tool.ruff.lint.flake8-bugbear]
+# Every one of these is @dataclass(frozen=True), so a shared default instance
+# cannot be mutated by a caller. B008/RUF009 assume mutability; rewriting to a
+# None sentinel would add a second code path through every one of these
+# functions to defend against a bug the frozen dataclass already prevents.
+extend-immutable-calls = [
+    "blended.analyze.mesh_checks.MeshBudget",
+    "blended.capture.views.CaptureSettings",
+    "blended.harness.HarnessSettings",
+    "blended.ingest.cleanup.CleanupSettings",
+    "blended.viewport_follow.ViewportFollowConfig",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The example scripts MUST defer their imports: sys.path has to be
+# extended before `blended` is importable at all, and the factory reset
+# has to run before importing modules that touch bpy state. Both are
+# structural requirements of running standalone against bpy, not
+# untidiness, so E402 is silenced for examples only.
+"examples/*.py" = ["E402"]
+# The vendored Blender Lab subtree keeps its upstream style; these mirror the
+# ignores in blender_mcp/mcp/pyproject.toml's own lint policy.
+"blender_mcp/**" = ["UP032", "BLE001", "SIM102", "SIM114", "RUF023"]
+
+[tool.uv.workspace]
+members = [
+    "blender_mcp/mcp",
+]
+
+[tool.uv.sources]
+blender-mcp = { workspace = true, editable = true }
+skinclip = { git = "https://github.com/Ladvien/skinclip.git", tag = "v0.1.2" }

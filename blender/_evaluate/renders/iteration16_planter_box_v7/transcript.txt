@@ -1,0 +1,570 @@
+--- thinking ---
+Let me build this planter box. I'll construct it using boxes and a cylinder for the drainage hole.
+
+Plan:
+- Outer box: 0.3 x 0.2 x 0.25
+- Inner cavity: subtract a box of 0.26 x 0.16 x 0.23 (walls 0.02 thick, floor 0.02 thick). Inner box height = 0.25 - 0.02 = 0.23, positioned so bottom at 0.02.
+- Drainage hole: cylinder radius 0.015, bored through floor center.
+
+Let me build step by step.
+
+Outer box at origin, base at z=0. add_box gives box with location at center? Let me check. add_box(name, width_m, depth_m, height_m, location_m). Location is probably center. So outer box center at (0,0,0.125).
+
+Inner cavity box: width 0.26, depth 0.16, height 0.23. Center at (0,0, 0.02+0.115=0.135). Actually inner cavity should go from z=0.02 to z=0.25 (top open). Height 0.23, center z = 0.02 + 0.115 = 0.135.
+
+Drainage hole cylinder: radius 0.015, height enough to go through floor (0.02 thick). Place at center (0,0), from z=-0.01 to z=0.03 to be safe. Cylinder base at location z. add_cylinder base at location_m[2]. So location (0,0,-0.01), height 0.04.
+
+Let me write the code.
+
+Actually let me be careful about the cylinder convention: "base at location_m[2]". So cylinder extends upward from z = location z. So location (0,0,-0.01), height 0.04 gives from -0.01 to 0.03.
+
+Let me do it.
+
+--- tool ---
+run_python({"source": "from blended.ops.primitives import add_box, add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.materials import assign_material\n\n# Outer shell\nouter = add_box(\"PlanterBox\", width_m=0.3, depth_m=0.2, height_m=0.25, location_m=(0,0,0.125))\nlink_into_scene(outer)\n\n# Inner cavity (walls/floor 0.02 thick)\ncavity = add_box(\"Cavity\", width_m=0.26, depth_m=0.16, height_m=0.23, location_m=(0,0,0.135))\nlink_into_scene(cavity)\n\nboolean_difference(outer, cavity)\n\n# Drainage hole through floor centre\nhole = add_cylinder(\"DrainHole\", radius_m=0.015, height_m=0.04, location_m=(0,0,-0.01))\nlink_into_scene(hole)\n\nboolean_difference(outer, hole)\n\nassign_material(outer, \"PlanterMaterial\", base_color_rgb=(0.72, 0.35, 0.22))\n\nprint(\"objects:\", [o.name for o in __import__('bpy').data.objects])\n", "object_name": "PlanterBox"})
+
+--- result ---
+FAILED at gate: PlanterBox
+  execute: 1 attempt(s), ok in 0.00s (Blender 5.2.0 LTS)
+  printed:
+objects: ['PlanterBox']
+  gate: FAIL (24 tris, 2 components)
+    - 2 disconnected components (budget 1)
+  sheet: _evaluate/renders/iteration16_planter_box_v7/agent/PlanterBox_sheet.png
+
+--- vision ---
+renders as a simple, solid box — a plain cube or near-cubic block in a matte brown/tan color. The five views show two orthographic elevations on top (one slightly wider-than-tall, one taller-than-wide), two wider horizontal orthographic views in the middle (likely top and bottom, or matching plan views), and one 3D perspective at the bottom-left showing three faces meeting at a corner. Proportions look consistent with a cube, and there are no missing parts, floating elements, intersections, or duplicates — it's just a single untextured box.
+
+--- thinking ---
+The boolean difference produced 2 components. The issue: the cavity box and the hole cylinder. The cavity subtraction created a hollow shell, but the hole cylinder subtraction... wait, 24 tris and 2 components. The hole cylinder went through the floor but the cavity subtraction already removed the interior. The hole cylinder at z=-0.01 to 0.03, radius 0.015. The floor is at z=0 to 0.02. The hole goes through the floor. But the cavity is from z=0.02 to 0.25. So the hole cylinder only intersects the floor (z 0 to 0.02), not the cavity interior.
+
+Wait, but 2 components. The hole cylinder subtraction should just cut a hole in the floor. Why 2 components?
+
+Actually the problem: the cavity box is 0.26 x 0.16 x 0.23, and the outer is 0.3 x 0.2 x 0.25. The cavity is centered at (0,0,0.135), so it spans z from 0.02 to 0.25. The outer spans z 0 to 0.25. So the cavity top is exactly at z=0.25, coplanar with outer top. That's fine for a difference (cavity removes interior, leaving walls and floor).
+
+But wait — the cavity top at z=0.25 is coplanar with outer top. The difference removes everything inside the cavity. The cavity's top face is at z=0.25, same as outer top. So the top of the outer box is removed entirely (since cavity reaches the top). That's correct — open top.
+
+The 2 components: maybe the hole cylinder, when subtracted, created a separate ring? No. Actually the issue might be that the cavity subtraction left the floor as a separate piece? No, walls connect to floor.
+
+Hmm, 24 tris is very low. A box is 12 tris. Hollow box with open top: outer box 12 tris, minus cavity... the result should be walls + floor = 5 faces = 10 tris, plus the hole adds more.
+
+Actually 24 tris and 2 components. Let me think. The cavity box top is coplanar with outer top. The EXACT solver with coplanar faces is the worst case (per conventions). The cavity top face at z=0.25 exactly coplanar with outer top face. This might cause the solver to not remove the top properly, or create issues.
+
+Actually the real issue: the cavity is 0.23 tall, from 0.02 to 0.25. The outer top is at 0.25. So cavity top face is coplanar with outer top. This is a coplanar problem.
+
+Better: make the cavity taller so it pokes above the top, e.g. height 0.25, from 0.02 to 0.27, so it clearly cuts through the top. Then the top is open.
+
+Also the hole: the cylinder from -0.01 to 0.03. The floor is 0 to 0.02. The hole goes through. But the cavity interior starts at 0.02. So the hole cylinder top at 0.03 pokes into the cavity interior (which is empty). That's fine.
+
+But 2 components — where's the second component? Possibly the hole subtraction created a floating piece. Actually, let me reconsider: maybe the cavity subtraction failed to fully connect, leaving the floor disconnected from walls.
+
+Let me just make the cavity taller to avoid coplanar top, and re-run. Also make the hole cylinder extend further to be safe.
+
+Actually, let me reconsider the 2 components. With 24 tris total. A hollow open-top box: 4 walls + floor = 5 faces. Each wall is a quad = 2 tris, floor = 2 tris, so 10 tris. Plus hole in floor adds ~8 tris (cylinder hole through floor creates a ring). So ~18 tris. 24 tris suggests something extra.
+
+2 components suggests the floor is disconnected from the walls. Why? Because the cavity box bottom is at z=0.02, and the floor is 0 to 0.02. The cavity removes interior. The walls are the region between outer and cavity on the sides. The floor is 0 to 0.02. These should connect at the bottom edges.
+
+Hmm, but actually maybe the issue is the hole cylinder. The cylinder at z=-0.01 to 0.03. It's subtracted. The cylinder's bottom at -0.01 is below the floor (floor bottom at 0). So the cylinder pokes below. That's fine, it cuts a clean hole.
+
+Wait, actually maybe the 2 components are: the main shell, and a small ring/disc from the hole. When you subtract a cylinder that goes through the floor, the floor gets a hole. But if the cylinder's top at 0.03 is inside the cavity (empty space), and the cylinder only intersects the floor... the subtraction should just make a hole in the floor.
+
+Let me reconsider. Actually maybe the problem is the coplanar cavity top. The EXACT solver on coplanar faces is the worst case. The cavity top at z=0.25 coplanar with outer top. This could cause the solver to leave a thin sliver or fail to remove the top, creating a separate component (the top face floating).
+
+Let me fix by making cavity taller (poke above top) and re-run. Also I'll make the hole cylinder taller to clearly go through.
+
+Let me rebuildcleanly.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.primitives import add_box, add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.materials import assign_material\n\n# clean slate\nfor o in list(bpy.data.objects):\n    bpy.data.objects.remove(o, do_unlink=True)\n\n# Outer shell\nouter = add_box(\"PlanterBox\", width_m=0.3, depth_m=0.2, height_m=0.25, location_m=(0,0,0.125))\nlink_into_scene(outer)\n\n# Inner cavity: poke ABOVE the top so the open top is a clean cut (no coplanar faces)\ncavity = add_box(\"Cavity\", width_m=0.26, depth_m=0.16, height_m=0.30, location_m=(0,0,0.15))\nlink_into_scene(cavity)\n\nboolean_difference(outer, cavity)\n\n# Drainage hole through floor centre, pokes below and above the floor\nhole = add_cylinder(\"DrainHole\", radius_m=0.015, height_m=0.06, location_m=(0,0,-0.02))\nlink_into_scene(hole)\n\nboolean_difference(outer, hole)\n\nassign_material(outer, \"PlanterMaterial\", base_color_rgb=(0.72, 0.35, 0.22))\n\nprint(\"objects:\", [o.name for o in bpy.data.objects])\n", "object_name": "PlanterBox"})
+
+--- result ---
+OK: PlanterBox
+  execute: 1 attempt(s), ok in 0.01s (Blender 5.2.0 LTS)
+  printed:
+objects: ['PlanterBox']
+  gate: PASS (28 tris, 1 components)
+  sheet: _evaluate/renders/iteration16_planter_box_v7/agent/PlanterBox_sheet.png
+
+--- vision ---
+The render shows a simple open-top box or crate in a matte brown/tan color. The four orthographic views (top and middle row) display flat brown rectangles of similar size on black backgrounds, consistent with looking at a box from the front, side, and top. The 3D perspective view (bottom-left) reveals a box with a slightly tapered shape — wider at the top opening and narrower at the base, giving it a subtle trapezoidal profile typical of a crate or planter. The interior cavity is clearly visible from the angled view, and the walls appear to be of uniform thickness on all sides. No floating parts, intersections, or duplicated geometry are apparent; the object reads cleanly as a single hollow open-top container. Proportions look balanced, with the height roughly equal to the width of the base.
+
+--- thinking ---
+Gate passed: 28 tris, 1 component, manifold. Now I need to verify the drainage hole actually goes all the way through. The render doesn't clearly show the hole. Let me verify with a clear-axis probe and also check dimensions.
+
+Let me verify:
+1. Dimensions: 0.3 x 0.2 x 0.25.
+2. Drainage hole goes through floor (clear axis probe).
+3. Wall/floor thickness 0.02.
+
+Let me measure.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom mathutils import Vector\n\nbpy.context.view_layer.update()\nobj = bpy.data.objects[\"PlanterBox\"]\nme = obj.data\n\n# world extents\ncorners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\nxs = [c.x for c in corners]; ys = [c.y for c in corners]; zs = [c.z for c in corners]\nprint(\"world size X:\", round(max(xs)-min(xs),4), \"Y:\", round(max(ys)-min(ys),4), \"Z:\", round(max(zs)-min(zs),4))\nprint(\"lowest z:\", round(min(zs),4))\n\n# Clear-axis probe: ray straight down through the hole centre (x=0,y=0)\n# from above the box to below the floor. If the hole is through, no hit.\nfrom mathutils.bvhtree import BVHTree\nbv = BVHTree.FromBMesh(__import__('bmesh').new())\n# build bmesh from mesh\nimport bmesh\nbm = bmesh.new()\nbm.from_mesh(me)\nbm.transform(obj.matrix_world)\nbvh = BVHTree.FromBMesh(bm)\n\n# ray from (0,0,0.3) downward to (0,0,-0.05)\nloc, norm, idx, dist = bvh.ray_cast(Vector((0,0,0.3)), Vector((0,0,-1)), 0.35)\nprint(\"downward ray through centre hit:\", loc, \"dist\", dist)\n\n# also check a point offset from centre (should hit floor)\nloc2, norm2, idx2, dist2 = bvh.ray_cast(Vector((0.05,0,0.3)), Vector((0,0,-1)), 0.35)\nprint(\"offset ray (0.05,0) hit:\", loc2, \"dist\", dist2)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+world size X: 0.3 Y: 0.2 Z: 0.25
+lowest z: 0.125
+downward ray through centre hit: <Vector (0.0000, 0.0000, 0.1500)> dist 0.15000000596046448
+offset ray (0.05,0) hit: <Vector (0.0500, 0.0000, 0.1500)> dist 0.15000000596046448
+
+--- thinking ---
+Wait, the lowest z is 0.125? That's wrong. The box should sit at z=0. And the ray hit at z=0.15 for both centre and offset. That means the object is NOT at the ground — it's floating.
+
+Wait, the world size Z is 0.25, lowest z 0.125. That means the box is centered at z=0.25? No wait. lowest z = 0.125 means the box bottom is at 0.125, top at 0.375.
+
+Hmm, that's strange. The add_box location (0,0,0.125) should put the center at 0.125, so bottom at 0, top at 0.25.
+
+But the measurement says lowest z = 0.125. That means the box is centered at 0.25, bottom at 0.125.
+
+Wait, maybe the boolean operations changed the location? Or maybe add_box's location is the base, not center?
+
+Actually wait — the ray hit at z=0.15 for the centre ray. If the hole were through, the centre ray should NOT hit (or hit at the bottom). It hit at 0.15. And offset ray also hit at 0.15. Both hit at the same z=0.15.
+
+Hmm, this suggests the floor is at z=0.15, not z=0.02. And the box bottom is at 0.125.
+
+Wait, let me reconsider. The ray goes from z=0.3 downward. It hits at z=0.15. If the box top is at 0.375, then... no wait, the ray starts at 0.3 which is inside the box (if box is 0.125 to 0.375).
+
+Actually this is confusing. Let me reconsider the add_box location convention. Maybe location is the CENTER, and I set it to 0.125, so center at 0.125, bottom at 0, top at 0.25. That's what I intended.
+
+But the measurement shows lowest z = 0.125. So the box is actually at bottom 0.125.
+
+Wait, maybe the boolean difference moved the object. Or maybe add_box location is the BOTTOM corner (min corner), not center.
+
+Let me check: if add_box location is the min corner (0,0,0.125), then box spans z 0.125 to 0.375. That matches lowest z = 0.125!
+
+So add_box's location is the MINIMUM corner, not the center. Let me verify by checking the docs... The signature says "location_m" but doesn't specify. The cylinder says "base at location_m[2]". For box, it's ambiguous.
+
+Actually wait, let me reconsider. The render showed the box sitting... the render description said "slightly tapered" which is odd. But the key issue: the box is floating at z=0.125, not sitting on ground.
+
+Actually, let me check the actual convention. Let me just measure a fresh box.
+
+Actually, the simplest fix: use snap_base_to_ground to put it at z=0. But first I need to understand the location convention.
+
+Let me check: the world size is correct (0.3 x 0.2 x 0.25). The lowest z is 0.125. So the box bottom is at 0.125.
+
+If add_box location is the center, then center at 0.125 → bottom at 0. But we got bottom at 0.125. So location must be the min corner (bottom).
+
+Wait, but actually maybe the boolean operations reset the origin. Let me think about what happened.
+
+Actually, let me just check the convention directly with a quicktest.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.primitives import add_box, link_into_scene\nfrom mathutils import Vector\n\nb = add_box(\"Probe\", width_m=0.3, depth_m=0.2, height_m=0.25, location_m=(0,0,0.125))\nlink_into_scene(b)\nbpy.context.view_layer.update()\ncorners = [b.matrix_world @ Vector(c) for c in b.bound_box]\nzs = [c.z for c in corners]\nprint(\"probe box lowest z:\", min(zs), \"highest z:\", max(zs))\nprint(\"probe location:\", b.location)\nbpy.data.objects.remove(b, do_unlink=True)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+probe box lowest z: 0.125 highest z: 0.375
+probe location: <Vector (0.0000, 0.0000, 0.0000)>
+
+--- thinking ---
+So add_box's location_m is the MINIMUM corner (bottom), not the center. The box spans from location to location + dimensions. So location (0,0,0.125) gives bottom at 0.125, top at 0.375.
+
+So I need to set the outer box location to (0,0,0) to sit on the ground.
+
+Let me redo with correct locations:
+- Outer box: location (0,0,0), so bottom at 0, top at 0.25. ✓
+- Cavity: should be the interior. Interior spans x from 0.02 to 0.28, y from 0.02 to 0.18, z from 0.02 to 0.25 (open top). So cavity box min corner at (0.02, 0.02, 0.02), size 0.26 x 0.16 x 0.23. But to avoid coplanar top, poke above: height 0.30, so z from 0.02 to 0.32.
+
+Actually wait, let me reconsider. The cavity needs to be centered in X and Y. Outer is 0.3 wide, walls 0.02 each side, so interior width 0.26, from x=0.02 to 0.28. So cavity min corner x = 0.02. Similarly y = 0.02. z = 0.02 (floor thickness).
+
+So cavity location (0.02, 0.02, 0.02), size 0.26 x 0.16 x 0.30 (poke above top).
+
+- Hole cylinder: base at location z. Cylinder base at location_m[2]. So location (0,0,-0.02), height 0.06 → from -0.02 to 0.04. Center x=0, y=0. ✓
+
+Let me rebuild.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.primitives import add_box, add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.materials import assign_material\n\nfor o in list(bpy.data.objects):\n    bpy.data.objects.remove(o, do_unlink=True)\n\n# Outer shell: min corner at origin -> sits on ground\nouter = add_box(\"PlanterBox\", width_m=0.3, depth_m=0.2, height_m=0.25, location_m=(0,0,0))\nlink_into_scene(outer)\n\n# Inner cavity: interior region, pokes above top for a clean open cut\ncavity = add_box(\"Cavity\", width_m=0.26, depth_m=0.16, height_m=0.30, location_m=(0.02,0.02,0.02))\nlink_into_scene(cavity)\n\nboolean_difference(outer, cavity)\n\n# Drainage hole through floor centre\nhole = add_cylinder(\"DrainHole\", radius_m=0.015, height_m=0.06, location_m=(0,0,-0.02))\nlink_into_scene(hole)\n\nboolean_difference(outer, hole)\n\nassign_material(outer, \"PlanterMaterial\", base_color_rgb=(0.72, 0.35, 0.22))\n\nprint(\"objects:\", [o.name for o in bpy.data.objects])\n", "object_name": "PlanterBox"})
+
+--- result ---
+OK: PlanterBox
+  execute: 1 attempt(s), ok in 0.03s (Blender 5.2.0 LTS)
+  printed:
+objects: ['PlanterBox']
+  gate: PASS (124 tris, 1 components)
+  sheet: _evaluate/renders/iteration16_planter_box_v7/agent/PlanterBox_sheet.png
+
+--- vision ---
+The views show a single brown object rendered against a black background. The top two panels (front and side orthographic views) display flat brown rectangles — the front view is roughly square while the side view is narrower and taller, indicating the object is wider than it is deep. The middle two panels (top and bottom orthographic views) show wide brown rectangles each with a small black circular feature near the center, suggesting either a small hole or a peg/marker on those faces. The bottom-left perspective view reveals the actual 3D form: a chunky wedge or ramp-like structure with a triangular profile, where one side rises to a peak and the other slopes down to a flat base — it reads as a low, angular ramp or wedge block rather than a recognizable specialized object. Proportions look consistent across views (the depth is clearly less than the width and length), no parts appear to be floating or duplicated, and the geometry is clean with sharp edges. The central black dot in the top/bottom views is a little ambiguous from these angles alone, but in context it appears to be a deliberate small feature on those faces rather than an error.
+
+--- thinking ---
+Now 124 tris (more than before because the hole is now properly cut through the floor, creating a ring). The render shows a black circular feature near center in top/bottom views — that's the drainage hole. Good.
+
+But wait, the render description says "chunky wedge or ramp-like structure with a triangular profile". That's odd. Let me verify the actual geometry with measurements.
+
+Let me verify:
+1. Dimensions 0.3 x 0.2 x 0.25, sitting at z=0.
+2. Hole goes through floor (clear axis probe).
+3. Wall/floor thickness 0.02.
+
+Let me measure.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom mathutils import Vector\nfrom mathutils.bvhtree import BVHTree\n\nbpy.context.view_layer.update()\nobj = bpy.data.objects[\"PlanterBox\"]\nme = obj.data\n\ncorners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]\nxs=[c.x for c in corners]; ys=[c.y for c in corners]; zs=[c.z for c in corners]\nprint(\"size X:\", round(max(xs)-min(xs),4), \"Y:\", round(max(ys)-min(ys),4), \"Z:\", round(max(zs)-min(zs),4))\nprint(\"lowest z:\", round(min(zs),4), \"highest z:\", round(max(zs),4))\n\nbm = bmesh.new(); bm.from_mesh(me); bm.transform(obj.matrix_world)\nbvh = BVHTree.FromBMesh(bm)\n\n# clear-axis probe straight down through centre (0,0): must NOT hit if hole is through\nloc, norm, idx, dist = bvh.ray_cast(Vector((0,0,0.3)), Vector((0,0,-1)), 0.35)\nprint(\"centre downward ray hit:\", loc, \"dist\", dist)\n\n# offset point (0.05,0) should hit the floor\nloc2, norm2, idx2, dist2 = bvh.ray_cast(Vector((0.05,0,0.3)), Vector((0,0,-1)), 0.35)\nprint(\"offset (0.05,0) ray hit:\", loc2, \"dist\", dist2)\n\n# wall thickness: measure x extent of solid at mid-height, y=0\n# sample a horizontal ray along +x at z=0.1, y=0 from inside\nloc3, n3, i3, d3 = bvh.ray_cast(Vector((0.0,0,0.1)), Vector((1,0,0)), 0.3)\nprint(\"inner wall hit from centre +x:\", loc3, \"dist\", d3)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+size X: 0.3 Y: 0.2 Z: 0.25
+lowest z: 0.0 highest z: 0.25
+centre downward ray hit: None dist None
+offset (0.05,0) ray hit: <Vector (0.0500, 0.0000, 0.0200)> dist 0.2799999713897705
+inner wall hit from centre +x: None dist None
+
+--- thinking ---
+- Size: 0.3 x 0.2 x 0.25 ✓
+- Lowest z = 0.0, highest 0.25 ✓ (sitting on ground)
+- Centre downward ray: None → hole goes all the way through ✓
+- Offset (0.05,0) ray hits at z=0.02 → floor top at 0.02, so floor thickness 0.02 ✓
+- Inner wall hit from centre +x: None. Hmm, that's because at z=0.1, y=0, the ray from centre (0,0,0.1) going +x should hit the inner wall at x=0.28. But it returned None.
+
+Wait, why None? The ray starts at (0,0,0.1) which is inside the cavity (empty). Going +x, it should hit the inner wall face at x=0.28. But BVHTree ray_cast from inside a solid... actually the ray starts in empty space (cavity), goes through empty, hits the wall at x=0.28. That should return a hit.
+
+Hmm, but it returned None. Maybe the ray direction or the max distance. Max distance 0.3, from x=0 to x=0.3. The wall inner face is at x=0.28. So it should hit at 0.28 within 0.3.
+
+Wait, actually maybe the issue is that ray_cast from inside the mesh's bounding... no. Let me reconsider. Actually the ray starts at (0,0,0.1). Is that inside the cavity? The cavity is x from 0.02 to 0.28, y 0.02 to 0.18, z 0.02 to 0.25. So (0,0,0.1) — x=0 is outside the cavity (cavity starts at x=0.02). So (0,0,0.1) is inside the WALL (x from 0 to 0.02 is the left wall).
+
+So the ray starts inside the left wall (solid), going +x. It exits the wall at x=0.02 (inner face), travels through cavity, hits inner face of right wall at x=0.28.
+
+But ray_cast from inside a solid: BVHTree ray_cast returns the first hit. Starting inside a solid, the first hit would be... actually BVHTree ray_cast doesn't handle "inside" well — it returns the first triangle intersection along the ray. Starting inside the left wall, the ray would first hit the inner face of the left wall at x=0.02 (exiting). Actually it should return that.
+
+Hmm, but it returned None. This is the known BVHTree coplanar/inside issue? No.
+
+Actually, let me not overthink. The key measurements are all correct:
+- Size correct
+- Sitting on ground (z=0)
+- Hole through (centre ray None)
+- Floor thickness 0.02 (offset ray hits at z=0.02)
+
+The wall thickness: let me verify differently. Let me just check the wall thickness by measuring the inner cavity dimensions. Actually, I can verify wall thickness by checking the geometry more carefully.
+
+Actually, let me verify wall thickness with a cleaner probe. The left wall is x from 0 to 0.02. Let me ray from outside.
+
+Actually, the important checks are done. Let me verify wall thickness properly. The wall on +x side: outer face at x=0.3, inner face at x=0.28. Thickness 0.02.
+
+Let me do a ray from outside going -x at z=0.1, y=0: start at (0.35, 0, 0.1), direction (-1,0,0). First hit outer face at x=0.3, then... ray_cast returns first hit only. To measure thickness I'd need to continue.
+
+Simpler: just check the inner cavity dimensions by sampling. Actually, let me just verify the wall thickness is 0.02 by checking a horizontal cross-section.
+
+Actually, I'm confident enough. The cavity box was 0.26 x 0.16 placed at (0.02, 0.02), so walls are 0.02 on each side. The floor is 0.02 (cavity z starts at 0.02). The measurements confirm floor at 0.02.
+
+Let me do one more check on wall thickness to be thorough, using a ray that starts outside and measures the gap.
+
+Actually, let me just verify the inner wall position. Ray from (0.15, 0, 0.1) going +x (starting in cavity, x=0.15 is inside cavity since cavity is 0.02 to 0.28). It should hit inner wall at x=0.28.
+
+Wait, earlier I used (0,0,0.1) which is in the left wall. Let me use (0.15, 0, 0.1).
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom mathutils import Vector\nfrom mathutils.bvhtree import BVHTree\n\nbpy.context.view_layer.update()\nobj = bpy.data.objects[\"PlanterBox\"]\nbm = bmesh.new(); bm.from_mesh(obj.data); bm.transform(obj.matrix_world)\nbvh = BVHTree.FromBMesh(bm)\n\n# from inside cavity (0.15,0,0.1) going +x -> inner face of right wall\nloc, n, i, d = bvh.ray_cast(Vector((0.15,0,0.1)), Vector((1,0,0)), 0.3)\nprint(\"inner +x wall face at:\", loc, \"-> wall thickness =\", round(0.3 - loc.x, 4) if loc else None)\n\n# from inside cavity going -x -> inner face of left wall\nloc2, n2, i2, d2 = bvh.ray_cast(Vector((0.15,0,0.1)), Vector((-1,0,0)), 0.3)\nprint(\"inner -x wall face at:\", loc2, \"-> wall thickness =\", round(loc2.x, 4) if loc2 else None)\n\n# floor thickness already confirmed: offset ray hit at z=0.02\nprint(\"triangles:\", len(obj.data.polygons))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+inner +x wall face at: None -> wall thickness = None
+inner -x wall face at: <Vector (-0.1100, 0.0000, 0.1000)> -> wall thickness = -0.11
+triangles: 35
+
+--- thinking ---
+Something is off. The ray from (0.15, 0, 0.1) going -x hit at x=-0.11?? That's outside the box (box is 0 to 0.3). And going +x returned None.
+
+Wait, this is very strange. The ray from (0.15,0,0.1) going -x should hit the inner face of the left wall at x=0.02. But it hit at x=-0.11.
+
+Hmm, wait. Actually maybe the mesh is not what I think. Let me reconsider. The render said "chunky wedge or ramp-like structure with a triangular profile". That's suspicious.
+
+Wait, maybe the boolean operations produced something weird. Let me actually inspect the mesh more carefully. Let me list the vertices.
+
+Actually, wait. The ray_cast from (0.15,0,0.1) going -x hit at (-0.11, 0, 0.1). That means there's geometry at x=-0.11. That's outside the box. That's very wrong.
+
+Hold on. Let me reconsider. Maybe the issue is that the cavity box, when I set location (0.02,0.02,0.02), the add_box location is the MIN corner. So cavity spans x 0.02 to 0.28, y 0.02 to 0.18, z 0.02 to 0.32. That's correct.
+
+But wait, the hole cylinder: add_cylinder location (0,0,-0.02), base at z=-0.02, height 0.06, so z from -0.02 to 0.04. Radius 0.015. Centered at x=0, y=0.
+
+Hmm, but the ray hit at x=-0.11. That's weird.
+
+Actually, wait — maybe the issue is that the boolean difference with the cylinder created a problem. Or maybe my ray_cast is hitting something unexpected.
+
+Let me actually dump the mesh vertices to understand the geometry.
+
+Actually, let me step back. The gate passed (124 tris, 1 component, manifold). The render shows a box with a hole. The measurements show correct size and correct floor. But my wall thickness probe is giving weird results.
+
+Let me reconsider the ray_cast. Actually, maybe the problem is that ray_cast with a ray STARTING inside the mesh (inside a solid) gives unreliable results. The point (0.15, 0, 0.1): is it inside a solid or in the cavity?
+
+Cavity: x 0.02-0.28, y 0.02-0.18, z 0.02-0.25. Point (0.15, 0, 0.1): y=0 is OUTSIDE the cavity (cavity y starts at 0.02). So (0.15, 0, 0.1) is inside the FRONT wall (y from 0 to 0.02).
+
+So the ray from (0.15,0,0.1) going -x is inside the front wall, traveling along x. It would hit... the front wall is a thin slab y 0-0.02, x 0-0.3. Going -x from x=0.15, it stays in the front wall until x=0, then exits at x=0 (the left edge). But it hit at x=-0.11, which is outside.
+
+This is getting confusing. The ray_cast results are unreliable because I'm starting rays inside solids.
+
+Let me take a cleaner approach: just dump the mesh and check the actual geometry. Or better, use a proper measurement: check the inner cavity by looking at where the floor is and where walls are.
+
+Actually, the simplest robust check: the object passed the gate (manifold, 1 component, no self-intersections, normals outward). The dimensions are correct. The floor is at 0.02 (confirmed). The hole goes through (confirmed). 
+
+For wall thickness, let me just verify by checking the mesh vertices directly — find the min/max x of the inner wall faces.
+
+Actually, let me reconsider whether the geometry is actually correct. The render description mentioned "wedge/ramp" which is concerning. Let me look at the actual render more carefully, or dump vertices.
+
+Let me dump the bounding info and check the cavity is actually hollow and walls are 0.02.
+
+Let me do a clean check: sample points and determine solid vs empty.
+
+Actually, a cleaner approach: use the fact that the mesh is manifold. Let me check the inner wall positions by finding vertices.
+
+Let me just print all vertices with their coordinates to understand.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom mathutils import Vector\n\nbpy.context.view_layer.update()\nobj = bpy.data.objects[\"PlanterBox\"]\nbm = bmesh.new(); bm.from_mesh(obj.data); bm.transform(obj.matrix_world)\n\n# collect unique vertex coords\nverts = sorted(set((round(v.co.x,4), round(v.co.y,4), round(v.co.z,4)) for v in bm.verts))\nprint(\"vertex count:\", len(verts))\nxs = sorted(set(v[0] for v in verts))\nys = sorted(set(v[1] for v in verts))\nzs = sorted(set(v[2] for v in verts))\nprint(\"distinct X:\", xs)\nprint(\"distinct Y:\", ys)\nprint(\"distinct Z:\", zs)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+vertex count: 62
+distinct X: [-0.15, -0.11, -0.015, -0.0145, -0.013, -0.0106, -0.0075, -0.0039, 0.0, 0.0039, 0.0075, 0.0106, 0.013, 0.0145, 0.015, 0.15]
+distinct Y: [-0.1, -0.06, -0.015, -0.0145, -0.013, -0.0106, -0.0075, -0.0039, 0.0, 0.0039, 0.0075, 0.0106, 0.013, 0.0145, 0.015, 0.1]
+distinct Z: [0.0, 0.02, 0.25]
+
+--- thinking ---
+Now I see the problem. The distinct X values are centered around 0: -0.15 to 0.15. So the box is centered at x=0, spanning -0.15 to 0.15. Similarly Y: -0.1 to 0.1.
+
+But wait, earlier the bound_box measurement said size X 0.3, lowest z 0.0. And the box spans -0.15 to 0.15 in X, -0.1 to 0.1 in Y, 0 to 0.25 in Z.
+
+So the box is centered at origin in X and Y, but sits on ground in Z (0 to 0.25). That's actually fine! The box is centered on X/Y origin, sitting on ground. That's a perfectly valid placement.
+
+Wait, but I set the outer box location to (0,0,0) thinking it was the min corner. But actually the probe test showed location (0,0,0.125) gave lowest z 0.125. So location IS the min corner.
+
+But now the box spans -0.15 to 0.15 in X. That means the box is centered at x=0, not min corner at x=0.
+
+Hmm wait, that contradicts. Let me reconsider.
+
+Oh! I see. The boolean operations. When I did boolean_difference, the resulting mesh might have been re-centered, OR the object's origin changed.
+
+Actually wait. Let me reconsider. The distinct X values: -0.15 to 0.15. The box is 0.3 wide. So it spans -0.15 to 0.15, centered at 0.
+
+But I placed the outer box at location (0,0,0) with the min corner convention. So it should span 0 to 0.3 in X.
+
+Unless... the boolean difference re-centered the object. Or the add_box actually centers on X/Y but uses min corner for Z?
+
+Wait, let me reconsider the probe test. I did add_box location (0,0,0.125) and got lowest z 0.125, highest 0.375. So for Z, location is the min corner (bottom).
+
+But for X and Y, maybe location is the center? Let me check: the probe box was 0.3 x 0.2 x 0.25 at location (0,0,0.125). If X/Y are centered, it spans -0.15 to 0.15 in X, -0.1 to 0.1 in Y. And Z min corner at 0.125.
+
+Actually that's a weird convention. Let me check the actual add_box behavior more carefully.
+
+Actually, looking at the current result: the box spans X -0.15 to 0.15, Y -0.1 to 0.1, Z 0 to 0.25. So X and Y are centered at origin, Z has min at 0.
+
+This means add_box centers X and Y at location_m[0] and location_m[1], but uses location_m[2] as the min corner (bottom) for Z.
+
+Hmm, that's inconsistent but let me verify. Actually, wait — maybe the boolean operations re-centered the object on X/Y.
+
+Actually, let me check the convention directly. Let me look at what add_box does. Actually, the key question is: is the current geometry CORRECT?
+
+Current geometry:
+- X: -0.15 to 0.15 (0.3 wide) ✓
+- Y: -0.1 to 0.1 (0.2 deep) ✓
+- Z: 0 to 0.25 (0.25 tall, sitting on ground) ✓
+- Floor at z=0.02 ✓
+- Hole at center (0,0) ✓
+
+The walls: inner faces. The cavity was placed at (0.02, 0.02, 0.02) with size 0.26 x 0.16 x 0.30. If add_box centers X/Y, then cavity location (0.02, 0.02) means cavity centered at x=0.02, y=0.02, spanning x -0.11 to 0.15, y -0.06 to 0.1.
+
+That explains the weird values! The distinct X includes -0.11 and 0.15 (cavity inner faces), and -0.15, 0.15 (outer faces). And -0.06, 0.1 for Y.
+
+So the cavity is NOT centered! The cavity is offset. The cavity spans x -0.11 to 0.15 (width 0.26), but the outer box spans -0.15 to 0.15. So the left wall is 0.04 thick (from -0.15 to -0.11) and the right wall is 0.0 thick (0.15 to 0.15)!
+
+That's the bug. The cavity is offset because add_box centers X/Y at the location, not min corner.
+
+So the walls are NOT uniform 0.02. The left wall is 0.04, right wall is 0.0 (or nearly), front/back similarly offset.
+
+Wait, let me check: cavity location (0.02, 0.02), centered. So cavity X spans 0.02 - 0.13 = -0.11 to 0.02 + 0.13 = 0.15. Outer X spans -0.15 to 0.15. So left wall = -0.15 to -0.11 = 0.04 thick. Right wall = 0.15 to 0.15 = 0 thick!
+
+That's a problem. The right wall is zero thickness — the cavity touches the outer wall.
+
+Similarly Y: cavity spans 0.02 - 0.08 = -0.06 to 0.02 + 0.08 = 0.1. Outer Y -0.1 to 0.1. Front wall (y=-0.1 to -0.06) = 0.04, back wall (0.1 to 0.1) = 0.
+
+So the walls are wrong. The cavity is offset by 0.02 in +x and +y, making walls 0.04 on one side and 0 on the other.
+
+This is because add_box centers X/Y at location but I assumed min corner.
+
+So I need to understand the add_box convention correctly. Let me check the actual source or test more carefully.
+
+From the probe: add_box location (0,0,0.125), size 0.3x0.2x0.25. Result: lowest z 0.125, highest 0.375. So Z: min corner at location z.
+
+For X/Y, I need to test. Let me test add_box with location (1,2,0) and see the X/Y extent.
+
+Actually, from the current result, the outer box at location (0,0,0) spans X -0.15 to 0.15. So X is CENTERED at location x=0. And Z min at location z=0.
+
+So the convention is: X and Y are centered at location_m[0], location_m[1], but Z uses location_m[2] as the bottom (min).
+
+Wait, that's really weird. Let me verify by checking the actual add_box implementation.
+
+Actually, let me just check the source ofadd_box.
+
+--- tool ---
+run_python({"source": "import inspect\nfrom blended.ops import primitives\nprint(inspect.getsource(primitives.add_box))\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+def add_box(
+    name: str,
+    width_m: float,
+    depth_m: float,
+    height_m: float,
+    location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
+):
+    """Create a closed box mesh object of the given outer dimensions.
+
+    The box is centered on X/Y and sits with its base at location_m[2],
+    which matches the game-asset convention of feet/base at z=0.
+    """
+    import bmesh
+    import bpy
+
+    remove_object_and_mesh(name)
+    mesh_data = bpy.data.meshes.new(name)
+    box_object = bpy.data.objects.new(name, mesh_data)
+
+    working_mesh = bmesh.new()
+    try:
+        bmesh.ops.create_cube(working_mesh, size=1.0)
+        half_height_offset_m = height_m / 2.0
+        for vertex in working_mesh.verts:
+            vertex.co.x = vertex.co.x * width_m + location_m[0]
+            vertex.co.y = vertex.co.y * depth_m + location_m[1]
+            vertex.co.z = vertex.co.z * height_m + location_m[2] + half_height_offset_m
+        working_mesh.to_mesh(mesh_data)
+    finally:
+        working_mesh.free()
+
+    return box_object
+
+--- thinking ---
+Now I understand the convention clearly:
+
+- X: `vertex.co.x * width_m + location_m[0]` → centered at location_m[0], spans location_m[0] ± width/2.
+- Y: centered at location_m[1].
+- Z: `vertex.co.z * height_m + location_m[2] + half_height_offset_m` → base at location_m[2], spans location_m[2] to location_m[2] + height.
+
+So X/Y are CENTERED, Z is BASE.
+
+So my cavity placement was wrong. I placed cavity at (0.02, 0.02, 0.02), which centers it at x=0.02, y=0.02. But I wanted the cavity centered at x=0, y=0 (same as outer box).
+
+So the cavity should be at location (0, 0, 0.02) with size 0.26 x 0.16 x 0.30.
+
+Let me fix: cavity location (0, 0, 0.02), centered on X/Y at origin, base at z=0.02.
+
+The hole cylinder: add_cylinder location (0,0,-0.02), base at z=-0.02. The cylinder is centered at x=0, y=0 (presumably). Let me check add_cylinder convention too, but likely centered on X/Y, base at z.
+
+Let me rebuild with correct cavity placement.
+
+Cavity: location (0, 0, 0.02), width 0.26, depth 0.16, height 0.30 (poke above top).
+
+This gives cavity X -0.13 to 0.13, Y -0.08 to 0.08, Z 0.02 to 0.32. Walls: 0.02 on each side (0.15-0.13=0.02). ✓Let me rebuild.
+
+--- tool ---
+run_python({"source": "import bpy\nfrom blended.ops.primitives import add_box, add_cylinder, link_into_scene\nfrom blended.ops.booleans import boolean_difference\nfrom blended.ops.materials import assign_material\n\nfor o in list(bpy.data.objects):\n    bpy.data.objects.remove(o, do_unlink=True)\n\n# Outer shell: X/Y centred at origin, base at z=0\nouter = add_box(\"PlanterBox\", width_m=0.3, depth_m=0.2, height_m=0.25, location_m=(0,0,0))\nlink_into_scene(outer)\n\n# Inner cavity: centred on X/Y (same as outer), base at z=0.02 (floor thickness)\ncavity = add_box(\"Cavity\", width_m=0.26, depth_m=0.16, height_m=0.30, location_m=(0,0,0.02))\nlink_into_scene(cavity)\n\nboolean_difference(outer, cavity)\n\n# Drainage hole through floor centre\nhole = add_cylinder(\"DrainHole\", radius_m=0.015, height_m=0.06, location_m=(0,0,-0.02))\nlink_into_scene(hole)\n\nboolean_difference(outer, hole)\n\nassign_material(outer, \"PlanterMaterial\", base_color_rgb=(0.72, 0.35, 0.22))\n\nprint(\"objects:\", [o.name for o in bpy.data.objects])\n", "object_name": "PlanterBox"})
+
+--- result ---
+OK: PlanterBox
+  execute: 1 attempt(s), ok in 0.03s (Blender 5.2.0 LTS)
+  printed:
+objects: ['PlanterBox']
+  gate: PASS (128 tris, 1 components)
+  sheet: _evaluate/renders/iteration16_planter_box_v7/agent/PlanterBox_sheet.png
+
+--- vision ---
+The asset reads as an open-topped box or planter, shown in five views (orthographic front, side, back, and another side, plus one perspective). The 3D view (bottom-left) clearly shows a hollow container with thicker walls, a rim, and a slightly trapezoidal shape where the top opening appears wider than the base — proportions look reasonable for a crate or flowerpot. The four orthographic views show flat brown rectangles (slightly taller than wide on the sides, wider than tall on front/back) centered in the frame, which is consistent with the perspective. The small black dots near the center of the two middle orthographic views are puzzling — they look like tiny holes or a vertex pinhole rather than a feature of the model itself, possibly worth investigating as an unintended artifact. Nothing appears to be floating, duplicated, or intersecting; the box looks like a single coherent object with clean outer silhouette.
+
+--- thinking ---
+Now let me verify the geometry properly.
+
+--- tool ---
+run_python({"source": "import bpy, bmesh\nfrom mathutils import Vector\nfrom mathutils.bvhtree import BVHTree\n\nbpy.context.view_layer.update()\nobj = bpy.data.objects[\"PlanterBox\"]\nbm = bmesh.new(); bm.from_mesh(obj.data); bm.transform(obj.matrix_world)\n\nverts = sorted(set((round(v.co.x,4), round(v.co.y,4), round(v.co.z,4)) for v in bm.verts))\nxs = sorted(set(v[0] for v in verts)); ys = sorted(set(v[1] for v in verts)); zs = sorted(set(v[2] for v in verts))\nprint(\"distinct X:\", xs)\nprint(\"distinct Y:\", ys)\nprint(\"distinct Z:\", zs)\n\nbvh = BVHTree.FromBMesh(bm)\n# hole through centre?\nloc, n, i, d = bvh.ray_cast(Vector((0,0,0.3)), Vector((0,0,-1)), 0.35)\nprint(\"centre downward ray (hole):\", loc)\n# floor at offset\nloc2, n2, i2, d2 = bvh.ray_cast(Vector((0.05,0,0.3)), Vector((0,0,-1)), 0.35)\nprint(\"offset floor hit z:\", round(loc2.z,4) if loc2 else None)\n"})
+
+--- result ---
+Executed OK in 0.00s.
+printed:
+distinct X: [-0.15, -0.13, -0.015, -0.0145, -0.013, -0.0106, -0.0075, -0.0039, 0.0, 0.0039, 0.0075, 0.0106, 0.013, 0.0145, 0.015, 0.13, 0.15]
+distinct Y: [-0.1, -0.08, -0.015, -0.0145, -0.013, -0.0106, -0.0075, -0.0039, 0.0, 0.0039, 0.0075, 0.0106, 0.013, 0.0145, 0.015, 0.08, 0.1]
+distinct Z: [0.0, 0.02, 0.25]
+centre downward ray (hole): None
+offset floor hit z: 0.02
+
+--- thinking ---
+Now the geometry is correct:
+
+- X: -0.15 to 0.15 (0.3 wide), inner walls at -0.13 and 0.13 → wall thickness 0.02 ✓
+- Y: -0.1 to 0.1 (0.2 deep), inner walls at -0.08 and 0.08 → wall thickness 0.02 ✓
+- Z: 0 to 0.25, floor at 0.02 → floor thickness 0.02 ✓
+- Hole: centre downward ray returns None → hole goes all the way through ✓
+- Offset floor hit at z=0.02 ✓
+
+The hole radius: distinct X values show -0.015 to 0.015 (the hole ring vertices), so radius 0.015 ✓.
+
+Everything checks out. The gate passed: 128 tris, 1 component, manifold.
+
+Let me do a final render to confirm it looks right, and verify the hole is visible from the bottom.
+
+Actually, I already have renders. The render shows the box with a hole (black dot in the middle views). The description mentioned "slightly trapezoidal" which is just perspective distortion in the render.
+
+Let me do a final render with xray to confirm the hole goes through and the cavity is hollow.
+
+Actually, let me just do a final render to confirm the drainage hole is openfrom the bottom.
+
+--- tool ---
+render_views({"object_name": "PlanterBox", "look_for": "Is the drainage hole open all the way through the floor (visible from both top and bottom)? Are the walls uniform 0.02m thick and the interior hollow?"})
+
+--- result ---
+Rendered PlanterBox (solid). Look at the attached contact sheet.
+
+--- vision ---
+The object reads as a rectangular planter or container box with thick walls and a hollow interior — clearly visible as an open-topped cavity in the 3D perspective view.
+
+**Orthographic views:** The top-left and top-right show flat rectangles (likely top/side). The middle-left and middle-right both show a similar wider rectangle with a small dark circular hole near the center. The top-left view appears solid with no visible hole, which is notable — if this is the top-down view of the floor, the drainage hole isn't visually apparent from above at this scale.
+
+**Drainage hole:** Yes, a hole is clearly visible in both middle views (appearing as a small dark circle), consistent with passing through the floor. However, I cannot confirm it's visible from the true bottom view since the top-left square looks solid — though this could be the front or side projection.
+
+**Walls and interior:** In the 3D perspective, the walls look visually uniform in thickness and the interior is unambiguously hollow (you can see straight down into the cavity through the open top). Proportions look balanced — neither excessively thick nor thin. No floating, duplicated, or intersecting geometry is apparent.
+
+--- thinking ---
+The render confirms the hole is visible and the interior is hollow. The measurements confirm:
+- Size 0.3 x 0.2 x 0.25 ✓
+- Sitting on ground z=0 ✓
+- Walls/floor 0.02 thick ✓
+- Hole radius 0.015 through floor ✓
+- Single manifold mesh, 128 tris, 1 component ✓
+- Material assigned ✓
+- Only mesh object in scene ✓
+
+Everything is done. Let me give the final answer.
+
+Actually, let me double check the material is actually assigned (not just an empty slot). The gate doesn't check material. Let me verify quickly. Actually, assign_material was called and it's the sanctioned way. But let me verify the material slot has a non-None material.
+
+Actually, I'm confident. assign_material creates a material and assigns it. The gate passed. Let me just do a final confirmation of the material and triangle count, then report.
+
+Actually I already have all the info. Let me report.
+
+Final measurements:
+- 128 triangles, 1 component, manifold, gate PASS
+- Size 0.3 x 0.2 x 0.25 m
+- Walls and floor 0.02 m thick
+- Drainage hole radius 0.015 m through floor center
+- Material assigned
+- Only object inscene
+
+--- answer ---
+The planter box is complete and verified. Here's what I built and measured:
+
+**PlanterBox** — a hollow, open-topped rectangular planter:
+- **Dimensions:** 0.3 m (X) × 0.2 m (Y) × 0.25 m (Z), sitting on the ground at z=0
+- **Walls & floor:** 0.02 m thick (verified — inner faces at ±0.13 on X, ±0.08 on Y, floor top at z=0.02)
+- **Drainage hole:** radius 0.015 m, bored straight down through the floor centre. A clear-axis ray probe straight down the centre returns *no hit*, confirming it passes all the way through so water can drain.
+- **Material:** assigned (terracotta base colour).
+
+**Gate verdict:** PASS — 128 triangles, 1 connected component, manifold, no self-intersections, outward normals. It is the only mesh object left in the scene.
+
+The render confirms the open top, hollow interior, uniform wall thickness, and the drainage hole visible through the floor.
+
+One note on the build: the `add_box` op centres X/Y at its location but uses the location's Z as the *base* (not centre), so I placed the cavity centred at the origin with its base at z=0.02 to get uniform 0.02 m walls and floor.
