@@ -372,7 +372,8 @@ def main() -> int:
     # soles 2.9 cm under the floor with the pelvis held at rest and 5.2 cm with the clip's bob. Whenever the pelvis is
     # keyed, it is lifted on any frame where the sole would go below its rest height. The sole is the character's own
     # skin - the lower half of each foot, every vertex carried rigidly by the foot bone that weighs it most - because
-    # the toe joints and a heel point under the ankle missed the foot's roll by 2 cm. Lifting only: a jump keeps its air.
+    # the toe joints and a heel point under the ankle missed the foot's roll by 2 cm. Lifting only: a jump keeps its
+    # air.
     foot_bones = {n for side in ("Left", "Right")
                   for n in (f"mixamorig:{side}Foot", f"mixamorig:{side}ToeBase", f"mixamorig:{side}Toe_End")
                   if n in tgt.data.bones}
