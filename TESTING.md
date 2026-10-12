@@ -7,7 +7,7 @@ fixture per tool would test each in isolation and miss exactly the handoffs that
 break in practice.
 
 ```bash
-/home/ladvien/trellis/.venv/bin/python scripts/pipeline_smoke_test.py
+/home/ladvien/golem_mcp/.venv/bin/python scripts/pipeline_smoke_test.py
 ```
 
 It records failures and keeps going, unlike the tools themselves, which fail

@@ -3,9 +3,9 @@
 
     pipeline_smoke_test.py [--name emberwake_herald] [--skip generate_orbit_views]
 
-Run with the TRELLIS venv, which is where the server package lives:
+Run with the golem venv, which is where the server package lives:
 
-    /home/ladvien/trellis/.venv/bin/python scripts/pipeline_smoke_test.py
+    /home/ladvien/golem_mcp/.venv/bin/python scripts/pipeline_smoke_test.py
 
 WHY ONE PROMPT AND NOT A FIXTURE PER TOOL
 -----------------------------------------
