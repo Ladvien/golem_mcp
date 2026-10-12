@@ -24,8 +24,12 @@
 #   WORKTREE=$(scripts/freeze_worktree.sh HEAD) scripts/bench_chain.sh
 set -u
 
-: ${FREEZE_ROOT:=$HOME/blended-worktrees}
+: ${FREEZE_ROOT:=$HOME/golem_mcp-worktrees}
 REPOSITORY=${REPOSITORY:-$(cd "$(dirname "$0")/.." && pwd)}
+# blended is the blender/ directory of the golem_mcp repository: a freeze is a worktree of the whole
+# repository, and the frozen blended tree (what this script prints) is the same directory inside it.
+PREFIX=$(git -C "$REPOSITORY" rev-parse --show-prefix 2>/dev/null)
+PREFIX=${PREFIX%/}
 
 # A freeze is "in use" when any process has a file open under it, or its
 # cwd there. Checked with lsof rather than pgrep: a Blender started from
@@ -74,13 +78,15 @@ esac
 
 COMMIT=$(git -C "$REPOSITORY" rev-parse --short "$1") || exit 2
 TREE=$FREEZE_ROOT/$COMMIT
+FROZEN=${PREFIX:+$TREE/$PREFIX}
+FROZEN=${FROZEN:-$TREE}
 
 if [ -d "$TREE" ]; then
   # Same commit, same directory: reuse rather than fork. This is the rule
   # that stops the sprawl, because a second roll at the same commit is a
   # second roll, not a second tree.
   note "reusing $TREE (already frozen at $COMMIT)"
-  echo "$TREE"
+  echo "$FROZEN"
   exit 0
 fi
 
@@ -91,10 +97,10 @@ note "froze $COMMIT at $TREE; installing its venv"
 # venv would defeat the freeze the first time a dependency moved.
 # A failed sync must not leave $TREE behind: the reuse branch above trusts
 # any directory it finds, so a venv-less tree would be handed out as frozen.
-(cd "$TREE" && uv sync -q) || {
+(cd "$FROZEN" && uv sync -q) || {
   git -C "$REPOSITORY" worktree remove --force "$TREE"
   note "uv sync FAILED in $TREE; the half-built freeze was removed"
   exit 2
 }
 note "ready"
-echo "$TREE"
+echo "$FROZEN"

@@ -34,10 +34,10 @@ set -u
 : ${EYE:=}
 : ${BENCH_ROOT:=/Users/ladvien/3dcodebench}
 : ${INSTANCES:=$WORKTREE/bench_sets/instances_holdout.txt}
-: ${OUT:=/Users/ladvien/blended/outputs/bench}
+: ${OUT:=/Users/ladvien/golem_mcp/blender/outputs/bench}
 : ${TIMEOUT:=1500}
 : ${TOOLS:=$WORKTREE}   # the tree whose bake/diagnose scripts run (an incumbent tree predates them)
-: ${FREEZE_ROOT:=$HOME/blended-worktrees}
+: ${FREEZE_ROOT:=$HOME/golem_mcp-worktrees}
 : ${REFERENCE_IMAGES:=}   # the image-to-3D track's view root, or text-only when empty
 
 # The roll runs from a FREEZE NAMED BY ITS COMMIT, or not at all (OT-37).

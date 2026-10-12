@@ -68,7 +68,7 @@ docs/            specification, roadmap, plans, research
 
 ## Chat (Claude Code over MCP)
 
-The agent is Claude Code driving Blender through the `blended` MCP
+The agent is Claude Code driving Blender through the `golem` MCP
 server: Blender Lab's `blender_mcp` (GPL-3.0-or-later, vendored as a git
 subtree at `blender_mcp/`) extended to serve blended's full tool surface
 (`TOOL_SCHEMAS`) through `dispatch_tool`, with the plan gate and a
@@ -79,12 +79,14 @@ make install-mcp-addon         # once: symlink the `mcp` extension into Blender,
                                # enable it, allow online access (its socket needs it)
 open -a Blender                # the add-on listens on localhost:9876
 claude                         # in this directory; .mcp.json registers
-                               # .venv/bin/blender-mcp as server `blended`
+                               # .venv/bin/blender-mcp as server `golem`
 ```
 
-`.mcp.json` and `.omp/mcp.json` name this machine's absolute path
-(`/Users/ladvien/blended/.venv/bin/blender-mcp`); a checkout elsewhere must
-edit both files before the server starts.
+`.mcp.json` names this machine's absolute path
+(`/Users/ladvien/golem_mcp/blender/.venv/bin/blender-mcp`); a checkout elsewhere
+must edit it before the server starts. The server is named `golem` because it also
+serves every tool of the golem server on big (`GOLEM_REMOTE_URL`, default
+`http://192.168.1.110:9786/mcp`), which run there and skip the plan gate.
 
 The add-on executes any code sent to localhost:9876.
 

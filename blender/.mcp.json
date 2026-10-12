@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "blended": {
+    "golem": {
       "type": "stdio",
-      "command": "/Users/ladvien/blended/.venv/bin/blender-mcp",
+      "command": "/Users/ladvien/golem_mcp/blender/.venv/bin/blender-mcp",
       "args": []
     }
   }

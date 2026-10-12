@@ -65,7 +65,7 @@ NOT_MEASURED_IMAGE_SIMILARITY = (
     (
         "`3dcodebench/metrics/image_similarity.py` needs `torch` and "
         "`transformers`, and neither is installed in "
-        "`/Users/ladvien/3dcodebench/.venv` or `/Users/ladvien/blended/.venv`."
+        "`/Users/ladvien/3dcodebench/.venv` or `/Users/ladvien/golem_mcp/blender/.venv`."
     ),
     (
         "No reference images exist to compare against: there is no "
