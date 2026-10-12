@@ -59,10 +59,11 @@ load-bearing (see below), and the six distinct materials give the segmenter part
 to find and the PBR channels something to differentiate.
 
 THE T-POSE IS NOT COSMETIC. Every Mixamo and UE5 clip is authored against a T-pose
-rest, and the retarget preserves the character's own rest offset. An arm hanging
-at the side is nearly parallel to the axis a walk clip rotates it about, so most
-of the clip becomes twist instead of swing. Measured on this exact pipeline, same
-rig code, same clip, differing only in the pose of the reference image:
+rest. The retarget turns each limb onto the clip's rest before applying the clip
+(`rest_correction_deg` in apply_animation's result), so an A-pose rig animates too,
+but an arm resting against the torso is skinned against it. Measured before that
+correction existed, same rig code, same clip, differing only in the pose of the
+reference image:
 
     A-pose reference   rest laterality +0.41   gait -0.295   arm swing 23%
     T-pose reference   rest laterality +0.98   gait -0.939   arm swing 78%

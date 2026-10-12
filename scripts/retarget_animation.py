@@ -224,7 +224,7 @@ def main() -> int:
     args = ap.parse_args()
 
     import bpy
-    from mathutils import Matrix, Quaternion
+    from mathutils import Matrix, Quaternion, Vector
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=args.character)
@@ -358,10 +358,14 @@ def main() -> int:
 
     source_action_name = act.name       # captured before the stale actions are freed
     start, end = (int(round(v)) for v in act.frame_range)
-    # In place with the bob: only the pelvis's travel along OUR up survives. The full alignment (not the yaw)
-    # maps it, so the clip's up lands on ours.
+    # In place with the bob: only the pelvis's travel along the WORLD vertical survives, read in each rig's own
+    # armature space. Neither the body frames nor their alignment may carry it: their up is the spine's, which leans,
+    # so a clip that walks forward (Kimodo's BVH keeps its root travel) leaked that travel into height and the walker
+    # sank 9 cm in 84 frames through a 2.6-degree alignment.
     bob = args.hip_bob and not args.root_motion and src_hips_rest is not None and tgt_hips_rest is not None
-    up_t = tgt_frame.col[1].normalized()
+    world_up = Vector((0.0, 0.0, 1.0))
+    up_s = src.matrix_world.to_quaternion().inverted() @ world_up
+    up_t = tgt.matrix_world.to_quaternion().inverted() @ world_up
 
     for frame in range(start, end + 1):
         bpy.context.scene.frame_set(frame)
@@ -378,8 +382,8 @@ def main() -> int:
                 off = align_yaw @ (spb.matrix.translation - src_hips_rest)
                 loc = tgt_hips_rest + off * height_ratio
             elif bob and t == hips:
-                off = align_q @ (spb.matrix.translation - src_hips_rest)
-                loc = tgt_hips_rest + up_t * (off.dot(up_t) * height_ratio)
+                rise = (spb.matrix.translation - src_hips_rest).dot(up_s)
+                loc = tgt_hips_rest + up_t * (rise * height_ratio)
             tpb.matrix = Matrix.LocRotScale(loc, want, cur.to_scale())
             bpy.context.view_layer.update()
         for t in order:

@@ -144,6 +144,9 @@ HAND_LEN = 0.171
 # Mixamo's upper arm is 29.7% of leg and its forearm 34.6%, so the elbow sits at
 # 46% of the shoulder-to-wrist span, not the midpoint the fitter assumed.
 ELBOW_SPLIT = 0.461
+# Least gap between consecutive joints of an extra chain, as a fraction of skeleton height: twice TokenRig's token
+# grid (the bbox over 256), so the skinning pass cannot merge two of them.
+EXTRA_MIN_SPACING_FRAC = 2 / 256
 
 
 
@@ -416,7 +419,6 @@ def mixamo_from_generated(rigged_glb, links=3):
     hips_up = float(pos[hips_i, UP])
     height = c["height"]
     lat_axis = c["lat_axis"]
-    ctr = c["lat_center"]
 
     # Legs first: leg length sets the arm proportions below, so it has to exist
     # before the arms are sampled.
@@ -458,9 +460,19 @@ def mixamo_from_generated(rigged_glb, links=3):
         limb[tag][1][0][lat_axis] += femur_recentre
     femur_mid = (limb["Left"][1][0] + limb["Right"][1][0]) / 2
 
+    # The body's midline is the knees' (the femoral heads were just centred on it). TokenRig's generated spine can
+    # wander off it: on one A-pose villager its root node sat 14-23 cm to one side in three landmark passes
+    # (2026-10-12) while the knees, shoulders and head top stayed on the mesh's centre, and a spine sampled from it
+    # put mixamorig:Spine 12 cm off and leaned `up` by 36 degrees. A standing rest has a laterally straight spine, so
+    # every torso joint goes on the midline and `up` loses the lateral lean.
+    midline = float(knee_mid[lat_axis])
+    up_body = up_v.copy()
+    up_body[lat_axis] = 0.0
+    up_body = up_body / max(float(np.linalg.norm(up_body)), 1e-9)
+
     for tag, arm_b in (("Left", arms[0]), ("Right", arms[1])):
         arm_line = longest_line(c, arm_b)
-        t_sh = t_where(pos, arm_line, lambda q: abs(float(q[lat_axis]) - ctr),
+        t_sh = t_where(pos, arm_line, lambda q: abs(float(q[lat_axis]) - midline),
                        SHOULDER_LAT * leg_len)
         t_sh = min(max(t_sh, 0.02), 0.45)
         # Wrist one hand-length back from the chain end, rather than a fixed
@@ -480,13 +492,16 @@ def mixamo_from_generated(rigged_glb, links=3):
         spec.append((name, order[parent] if parent else -1, np.asarray(pos_, float)))
 
     t = resample(pos, torso, [0.0, 0.33, 0.66, 1.0])
+    u = resample(pos, upper, [0.25, 0.6, 1.0])
+    spine_recentre = max(abs(float(p_[lat_axis]) - midline) for p_ in (*t, *u))
+    for p_ in (*t, *u):
+        p_[lat_axis] = midline
     # Pelvis against the femoral heads, not at the spine node the legs branch from -
     # that node is up inside the belly.
-    add("mixamorig:Hips", None, femur_mid + up_v * (HIP_ABOVE_FEMUR * leg_len))
+    add("mixamorig:Hips", None, femur_mid + up_body * (HIP_ABOVE_FEMUR * leg_len))
     add("mixamorig:Spine", "mixamorig:Hips", t[1])
     add("mixamorig:Spine1", "mixamorig:Spine", t[2])
     add("mixamorig:Spine2", "mixamorig:Spine1", t[3])
-    u = resample(pos, upper, [0.25, 0.6, 1.0])
     add("mixamorig:Neck", "mixamorig:Spine2", u[0])
     add("mixamorig:Head", "mixamorig:Neck", u[1])
     add("mixamorig:HeadTop_End", "mixamorig:Head", u[2])
@@ -506,10 +521,10 @@ def mixamo_from_generated(rigged_glb, links=3):
         # The leg chain ends at the toe, so the tip is extrapolated along the foot, levelled: a tip following a
         # foot that points down into the ground ends below the floor.
         step = g[3] - g[2]
-        step = step - float(step @ up_v) * up_v
+        step = step - float(step @ up_body) * up_body
         nrm = float(np.linalg.norm(step))
         fwd_n = float(np.linalg.norm(toe_v))
-        step = step / nrm if nrm > 1e-9 else (toe_v / fwd_n if fwd_n > 1e-9 else -up_v)
+        step = step / nrm if nrm > 1e-9 else (toe_v / fwd_n if fwd_n > 1e-9 else -up_body)
         add(f"mixamorig:{tag}Toe_End", f"mixamorig:{tag}ToeBase",
             g[3] + step * (TOE_TIP_FRAC * leg_len))
 
@@ -558,10 +573,17 @@ def mixamo_from_generated(rigged_glb, links=3):
         pts = resample(pos, longest_line(c, b), list(np.linspace(0, 1, links + 1))[1:])
         parent = anchor
         base = sum(1 for e in extras if e[0].startswith(kind))
-        for k, q in enumerate(pts):
-            nm = f"{kind}_{base + k + 1:02d}"
+        # TokenRig merges joints closer than its token grid (height / 256), so a chain of coincident joints - a
+        # single-joint branch resampled to `links` points - came back short and broke the rename-by-index restore
+        # (36 joints in, 32 out; 30 in, 29 out; 2026-10-12). A joint is kept only clear of the one before it.
+        last = spec[order[anchor]][2]
+        for q in pts:
+            if float(np.linalg.norm(q - last)) < EXTRA_MIN_SPACING_FRAC * c["height"]:
+                continue
+            nm = f"{kind}_{base + 1:02d}"
+            base += 1
             add(nm, parent, q)
-            parent = nm
+            parent, last = nm, q
             extras.append((nm, kind))
 
     names = [x[0] for x in spec]
@@ -569,7 +591,7 @@ def mixamo_from_generated(rigged_glb, links=3):
     joints = np.stack([x[2] for x in spec]).astype(np.float32)
     report = {"source_rig": rigged_glb, "generated_joints": int(len(parents)),
               "spine_len": len(spine), "extras": [e[0] for e in extras],
-              "femur_recentre_m": round(femur_recentre, 4)}
+              "femur_recentre_m": round(femur_recentre, 4), "spine_recentre_m": round(spine_recentre, 4)}
     return names, par, joints, report
 
 

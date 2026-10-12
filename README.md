@@ -588,10 +588,18 @@ at `00b1361`.
   +Z, positive toward +X) and `root_path` (up to 32 `{time_s, x_m, z_m, heading_deg?}`
   waypoints in Kimodo's world frame; needs `root_motion=true`). Kimodo's other
   constraints (full-body, hands, feet) are not exposed. Retargeting scales root motion
-  by the hips-height ratio of the character to Kimodo's skeleton and turns it by the
-  yaw of the body-frame alignment only (the pitch and roll of that alignment used to
-  leak forward travel into height: a walker sank 1 m in 8 s), so a path is walked at
-  `path * height_ratio` on a character shorter than Kimodo's 1.7 m.
+  by the hips-height ratio of the character to Kimodo's skeleton (each rig's hips height
+  above its toes) and turns it by the yaw of the body-frame alignment only (the pitch
+  and roll of that alignment used to leak forward travel into height: a walker sank 1 m
+  in 8 s), so a path is walked at `path * height_ratio` on a character shorter than
+  Kimodo's 1.7 m.
+- **Rest pose and hands** (here and in `apply_animation`): the retarget turns each arm
+  and leg segment onto the clip's rest direction before applying the clip
+  (`rest_correction_deg` per bone), because a T-pose clip on an A-pose rig crossed the
+  hands over the body. Every sample reports `crossed_hand_frames` (frames whose hands
+  are on the wrong side of the midline) and `min_hand_separation_pct_hip_width`.
+- `hip_bob` (default true) keeps the pelvis's travel along the world vertical in an
+  in-place cycle, scaled by the height ratio; `root_motion` overrides it.
 - **Self-intersection gate** (`golem_mcp.motion_gate`, on
   [skinclip](https://github.com/Ladvien/skinclip)): every sample's own skinned mesh is
   posed with its own animation and the length of the contour where its triangles cross

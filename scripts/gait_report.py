@@ -18,8 +18,10 @@ that sees it.
            and a mirrored rig is not a rotation, so no retarget can fix it.
   gait     corr(left hand fwd, left foot fwd). NEGATIVE = contralateral = correct.
   offset   mean hand position along forward, % of leg length. Source walk: +19.2.
-  swing    peak-to-peak of the same. Source walk: 74.4. Ours runs ~75% of source -
-           a known, unexplained damping.
+  swing    peak-to-peak of the same. Source walk: 74.4. Ours ran ~75% of source until the
+           retarget's rest correction (2026-10-12): a clip's delta had been applied to a rest
+           that was not the clip's. On the UAL walk it took an A-pose villager from 26.1 to
+           61.6 and the near-T-pose ember_tpose_mv from 39.2 to 46.8.
 
 TWO MEASUREMENT BUGS WORTH NOT REPEATING
 ----------------------------------------

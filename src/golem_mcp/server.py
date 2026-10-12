@@ -804,8 +804,12 @@ def _rest_pose_check(gltf: dict, joints: list[int]) -> dict[str, Any]:
     lat = unit(np.cross(up, fwd))
     arm = unit(p["mixamorig:LeftHand"] - p["mixamorig:LeftShoulder"])
     leg_len = float(np.linalg.norm(p["mixamorig:LeftUpLeg"] - p["mixamorig:LeftFoot"]))
+    # Along the pelvis's own side-to-side axis, not `lat`: lat leans on the toes, and on a rig whose feet point down
+    # (ankle 6 cm above the toe base) it turned 15 degrees and read the thighs' forward slant as a 3.4% offset.
+    hip_ax = p["mixamorig:LeftUpLeg"] - p["mixamorig:RightUpLeg"]
+    hip_ax = unit(hip_ax - float(hip_ax @ up) * up)
     off = abs(float((((p["mixamorig:LeftUpLeg"] + p["mixamorig:RightUpLeg"])
-                      - (p["mixamorig:LeftLeg"] + p["mixamorig:RightLeg"])) / 2) @ lat))
+                      - (p["mixamorig:LeftLeg"] + p["mixamorig:RightLeg"])) / 2) @ hip_ax))
     return {
         "rest_arm_laterality": round(float(arm @ lat), 3),
         "hip_midline_offset_pct_leg": round(100 * off / leg_len, 1) if leg_len > 1e-9 else None,

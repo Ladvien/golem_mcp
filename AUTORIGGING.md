@@ -210,7 +210,11 @@ All measured, all on a fresh asset built end to end by the current pipeline.
 | **Arm swing** | 0.605 -> **0.703** of source. Joint rotation magnitudes match the source to 98%, so the deficit was lever arm, not retargeting |
 | **Appendage sides** | succubus_warden now resolves wing_L, which the `size < 2` filter had been dropping. Sides come from mirrored pairs rather than the sign of a near-zero lateral mean |
 | **generate_orbit_views** | the documented BiRefNet dtype bug had never been REACHED - the VRAM preflight refused first every time. With the card free it fails at "Input type (float) and bias type (c10::Half)"; BiRefNet's config declares fp16 and newer transformers honours it. Forced to float32, in the checkout and in install_mvadapter.sh's edits list. Returns all six azimuths |
-| **generate_garment** | no code defect at all. It succeeds whenever there is RAM; it had only ever been run under memory pressure |
+| **generate_garment** | no code defect at all. It succeeds whenever there is RAM; it had only ever been run under memory pressure. Correction, 2026-10-12: its cloth pass never reached the output (the export matched shrinkwrap alone to 0.15 mm), diverged on female_base_v5 and ran past the timeout on a dressed body; it was removed, and the fitted garment is now skinned to the body (`skinned_glb`) |
+| **Crossed arms on A-pose rigs** (2026-10-12) | the retarget applied a T-pose clip's delta to an A-pose rest, so "arms down" carried the arm 29 degrees past vertical: both hands crossed the midline on the A-pose villager's walk. `rest_corrections` turns each limb onto the clip's rest first; `crossed_hand_frames` 0, hand swing 26.1% -> **61.6%** of leg |
+| **Off-centre torso** (2026-10-12) | TokenRig's landmark spine sat 14-23 cm to one side in three passes on one villager while knees, shoulders and head top stayed centred. Femoral heads are centred on the knees and every torso joint put on that midline; `hip_midline_offset_pct_leg` 13.1-36.8% -> **0.0-0.8%** |
+| **Toe tips below the floor** (2026-10-12) | the tip followed a foot pointing into the ground (Toe_End 0.9 cm under the sole); it is levelled and lifted to the sole |
+| **Coincident extra joints** (2026-10-12) | a single-joint extra branch was resampled into three joints at one point; TokenRig's skinning pass merged them and the rename-by-index restore failed (36 -> 32, 30 -> 29 joints). Extra joints closer than two token cells are dropped |
 
 Final acceptance on a fresh asset: handedness LeftArm +17.5% / LeftUpLeg +10.5%
 (both must be positive), femur separation 20.1% against 19.9%, Hips->UpLeg gap
@@ -223,10 +227,13 @@ Final acceptance on a fresh asset: handedness LeftArm +17.5% / LeftUpLeg +10.5%
 
 - ~~Skin tearing~~ — **fixed**, see §2b.
 - ~~Femoral heads too far apart~~ — **fixed**, see §2b.
-- **Arm swing amplitude** — improved to ~0.64-0.70 of the source but not closed.
-  Rotation magnitude (98% of source) and lever arm (0.947 of source) are both
-  eliminated as causes, so roughly a quarter of the deficit remains unexplained.
-  Hand mean offset is exact (+19.0% vs +19.2%).
+- **Arm swing amplitude** — improved to ~0.64-0.70 of the source, then most of the rest
+  found in the retarget, not the rig: a clip's delta was applied to a rest that was not
+  the clip's, so an A-pose arm landed past where the clip put it (on an A-pose villager,
+  across the body). `retarget_animation.rest_corrections` (2026-10-12) turns each limb
+  onto the clip's rest first; on the UAL walk hand swing went from 39.2% to 46.8% of leg
+  on ember_tpose_mv and from 22.0% to 39.0% on the A-pose ember_final. Whether that
+  closes the gap to the source is not measured yet.
 - **Appendage classifier** — `wing_L` is fixed, but `horn_R` still over-splits into
   15 chains on `succubus_warden`, and horned characters get NO extras at all
   because the highest leaf is a horn tip, so the horn is absorbed into the spine.
