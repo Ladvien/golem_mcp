@@ -569,6 +569,71 @@ onto the skin and still left 30.9% of them inside.
 
 ---
 
+## Text-to-motion (`animate_mesh`)
+
+Text-to-motion with NVIDIA Kimodo (`Kimodo-SOMA-RP-v1.1`), retargeted onto a
+canonically rigged (`mixamorig:*`, T-pose) GLB such as `rig_model`'s output. It was
+the separate `kimodo-mcp` server until it was merged here from `Ladvien/bevy_kimodo`
+at `00b1361`.
+
+- Generation runs in a per-job worker (`golem_mcp.motion_worker`) under a `gpu-tenant`
+  lease; the 8B LLM2Vec text encoder runs on the CPU and prompt embeddings are cached
+  in `$KIMODO_CACHE_DIR/embeddings`.
+- Retargeting is `scripts/retarget_animation.py` (`--source-map soma`, `.bvh` clips),
+  run in SegviGen's bpy venv.
+- Optional generation controls: `text_cfg_weight` / `constraint_cfg_weight` (0-10,
+  default 2.0), `transition_frames` (1-15, default 5), `start_heading_deg` (0 = facing
+  +Z, positive toward +X) and `root_path` (up to 32 `{time_s, x_m, z_m, heading_deg?}`
+  waypoints in Kimodo's world frame; needs `root_motion=true`). Kimodo's other
+  constraints (full-body, hands, feet) are not exposed. Retargeting scales root motion
+  by the hips-height ratio of the character to Kimodo's skeleton and turns it by the
+  yaw of the body-frame alignment only (the pitch and roll of that alignment used to
+  leak forward travel into height: a walker sank 1 m in 8 s), so a path is walked at
+  `path * height_ratio` on a character shorter than Kimodo's 1.7 m.
+- **Self-intersection gate** (`golem_mcp.motion_gate`, on
+  [skinclip](https://github.com/Ladvien/skinclip)): every sample's own skinned mesh is
+  posed with its own animation and the length of the contour where its triangles cross
+  is measured. `self_intersection` is `off`, `score` or `repair` (default): `repair`
+  turns the arms and legs of a failing sample off the body (rotation keys only, UE5 or
+  mixamo humanoid rigs), keeps the original beside it as `<name>_unrepaired.glb` and
+  checks again. `max_rerolls` (0-5, default 0) re-rolls the seed (`seed + 100 * n`)
+  while no sample is clean, since each costs a generation; `contour_limit_cm` (default
+  4) is the longest contour a frame may have; `cloth_materials` names loose-cloth
+  materials whose self-contact is not counted. Each sample carries its
+  `self_intersection` verdict, and the answer gains `attempts`, `passed` and
+  `best_sample` (null when `off`). `health_check` reports `skinclip_installed`.
+- The text encoder loads from `$TEXT_ENCODERS_DIR` (default
+  `/home/ladvien/kimodo/text_encoders`), populated from the ungated
+  `NousResearch/Meta-Llama-3-8B-Instruct` mirror plus the
+  `McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp{,-supervised}` adapters, with each
+  adapter's `adapter_config.json` `base_model_name_or_path` pointed at the mirror
+  directory (the Llama 3 Community License still applies).
+- Output goes to `$KIMODO_OUTPUT_DIR` (default `~/kimodo/output`) and is published to
+  `/mnt/codex_fs/models/kimodo/`.
+
+---
+
+## Connecting clients
+
+golem serves streamable HTTP at `http://192.168.1.110:9786/mcp`. `ufw` on big drops
+everything not allowed, so the port is open to the LAN only:
+
+```bash
+sudo ufw allow from 192.168.1.0/24 to any port 9786 proto tcp
+```
+
+| Client | Setup |
+|---|---|
+| Claude Code | `claude mcp add --scope user --transport http golem http://192.168.1.110:9786/mcp` |
+| omp | `~/.omp/agent/mcp.json`: `"golem": {"type": "http", "url": "http://192.168.1.110:9786/mcp", "timeout": 3600000}` |
+| opencode | `~/.config/opencode/opencode.json`, under `mcp`: `"golem": {"type": "remote", "url": "http://192.168.1.110:9786/mcp", "enabled": true}` |
+| Claude Desktop | `claude_desktop_config.json`, under `mcpServers`: `"golem": {"command": "npx", "args": ["-y", "mcp-remote", "http://192.168.1.110:9786/mcp", "--allow-http"]}` |
+
+A call waits for the GPU queue (up to 20 minutes) and then runs, so give the client an
+hour-long tool timeout (omp's `timeout` is in milliseconds).
+
+---
+
 ## GPU leases
 
 Every GPU job (`generate_3d`, `generate_3d_multi_image`, `generate_orbit_views`,
