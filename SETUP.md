@@ -12,16 +12,17 @@ None needs root.
 
 | Env | Path | Python | torch | Purpose | Installer |
 |---|---|---|---|---|---|
-| **TRELLIS** | `/home/ladvien/trellis` | 3.10 | 2.6.0+cu124 | image → 3D. **Hosts the MCP server itself** | manual (see below) |
+| **golem** | `/home/ladvien/golem_mcp/.venv` | 3.11 | 2.11.0+cu128 | the MCP server itself, and text-to-motion (`animate_mesh`, Kimodo) | `uv sync --python 3.11 --extra dev` |
 | **SkinTokens** | `/home/ladvien/skintokens` | 3.11 | 2.7.0+cu128 | rigging (`rig_model`) | `scripts/install_skintokens.sh` |
 | **MV-Adapter** | `/home/ladvien/mvadapter` | 3.11 | 2.13.0+cu130 | orbit views (`generate_orbit_views`) | `scripts/install_mvadapter.sh` |
 | **TRELLIS.2** | `/home/ladvien/segvigen/.venv` | 3.11 | 2.13.0+cu130 | part segmentation (`segment_mesh`) **and** garment generation (`generate_garment`) | `scripts/install_segvigen.sh` |
 
-Roughly 42 GB on disk in total. The MCP server runs inside the **TRELLIS** env
-(`trellis2-mcp.service`), which is why that one is special — everything else is a
-subprocess target.
+Roughly 42 GB on disk in total. The MCP server runs in the **golem** env
+(`golem-mcp.service`, a user unit), which is why that one is special — everything
+else is a subprocess target. `/home/ladvien/trellis` still holds the output
+directory (`TRELLIS_OUTPUT_DIR`); its TRELLIS 1 venv and models are no longer used.
 
-Only one may hold the GPU at a time; see "GPU hot-swapping" in the README.
+Every GPU job runs under a `gpu-tenant` lease; see "GPU leases" in the README.
 
 ## Why they can't be merged
 
@@ -114,37 +115,34 @@ before "fixing" an apparent oddity.
 `scripts/segvigen-patches/*.patch` on top, so an upstream change cannot silently
 drift out from under the patch. It fails loudly if a patch no longer applies.
 
-### TRELLIS (hosts the server)
-
-Not scripted here; it predates this repo. To recreate:
+### golem (hosts the server)
 
 ```bash
-git clone https://github.com/microsoft/TRELLIS.git /home/ladvien/trellis/repo
-uv venv --python 3.10 /home/ladvien/trellis/.venv
-source /home/ladvien/trellis/.venv/bin/activate
-cd /home/ladvien/trellis/repo
-. ./setup.sh --basic --xformers --flash-attn --diffoctreerast --spconv --mipgaussian --nvdiffrast
-hf download JeffreyXiang/TRELLIS-image-large \
-    --local-dir /home/ladvien/trellis/models/TRELLIS-image-large
-cd /home/ladvien/trellis2_mcp && uv pip install --python /home/ladvien/trellis/.venv/bin/python -e .
+git clone git@github.com:Ladvien/golem_mcp.git /home/ladvien/golem_mcp
+cd /home/ladvien/golem_mcp
+uv sync --python 3.11 --extra dev
 ```
 
-The MCP package is installed **editable**, so a `systemctl restart trellis2-mcp`
-picks up source changes with no reinstall.
+The package is installed **editable**, so a `systemctl --user restart golem-mcp`
+picks up source changes with no reinstall. `motion_correction` (Kimodo's foot-contact
+correction) is a compiled module that is not on PyPI or in `uv.lock`: copy its
+directory from an existing environment into `.venv/lib/python3.11/site-packages/`.
+`health_check` reports `motion_correction_installed`.
 
 ## The service
 
 ```bash
-sudo cp trellis2-mcp.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now trellis2-mcp
+cp golem-mcp.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now golem-mcp
 ```
 
-Serves SSE on `0.0.0.0:9786`. **After changing server code you must restart it** —
-a running instance keeps serving the old code, and that has caused confusion more
-than once.
+A **user** unit, because `gpu-tenant run` uses `systemd-run --user`. Serves streamable
+HTTP on `0.0.0.0:9786`. **After changing server code you must restart it**
+(`systemctl --user restart golem-mcp`) — a running instance keeps serving the old
+code, and that has caused confusion more than once.
 
-Clients connect to `http://<big-ip>:9786/sse`. On macOS, Claude Desktop needs
+Clients connect to `http://<big-ip>:9786/mcp`. On macOS, Claude Desktop needs
 **Local Network** permission (System Settings → Privacy & Security), or its
 connection fails with `EHOSTUNREACH` while a shell `curl` from the same machine
 succeeds.

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import gc
 import hashlib
 import io
 import json
@@ -9,23 +8,22 @@ import os
 import re
 import shlex
 import shutil
-import signal
 import struct
 import subprocess
-import sys
 import threading
 import time
 import traceback
 from pathlib import Path
 from typing import Annotated, Any
 
-import torch
-from fastmcp import FastMCP
 from PIL import Image
 from pydantic import Field
 
-TRELLIS_REPO = os.environ.get("TRELLIS_REPO", "/home/ladvien/trellis/repo")
-TRELLIS_MODEL = os.environ.get("TRELLIS_MODEL", "/home/ladvien/trellis/models/TRELLIS-image-large")
+from golem_mcp.app import mcp
+from golem_mcp.gpu import gpu_status, run_gpu_job
+from golem_mcp.motion import motion_health
+from golem_mcp.paths import RETARGET_DRIVER, SCRIPTS, SEGVIGEN_PYTHON
+
 OUTPUT_DIR = Path(os.environ.get("TRELLIS_OUTPUT_DIR", "/home/ladvien/trellis/output"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_OUTPUT_DIR = OUTPUT_DIR / "images"
@@ -86,21 +84,19 @@ MVADAPTER_VRAM_REQUIRED = 19e9
 # export remeshes the asset away, so scripts/segvigen_segment.py stops before that
 # and writes face labels instead.
 SEGVIGEN_REPO = Path(os.environ.get("SEGVIGEN_REPO", "/home/ladvien/segvigen/repo"))
-SEGVIGEN_PYTHON = Path(os.environ.get("SEGVIGEN_PYTHON", "/home/ladvien/segvigen/.venv/bin/python"))
-_SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
-SEGVIGEN_DRIVER = _SCRIPTS / "segvigen_segment.py"
+SEGVIGEN_DRIVER = SCRIPTS / "segvigen_segment.py"
 # Garment generation shares the SegviGen environment because that is where
 # TRELLIS.2 lives - it was installed as SegviGen's backbone and became runnable
 # once the SDPA attention backend landed. generate_3d still runs TRELLIS 1, which
 # cannot represent an open surface and would seal a garment shut.
-GARMENT_DRIVER = _SCRIPTS / "trellis2_garment.py"
-CHARACTER_DRIVER = _SCRIPTS / "trellis2_character.py"
-MULTI_IMAGE_DRIVER = _SCRIPTS / "trellis2_multi_image.py"
-VIEW_CONSISTENCY_DRIVER = _SCRIPTS / "view_consistency.py"
+GARMENT_DRIVER = SCRIPTS / "trellis2_garment.py"
+CHARACTER_DRIVER = SCRIPTS / "trellis2_character.py"
+MULTI_IMAGE_DRIVER = SCRIPTS / "trellis2_multi_image.py"
+VIEW_CONSISTENCY_DRIVER = SCRIPTS / "view_consistency.py"
 # Measured 14.47 GB peak for a pipeline_type=512 character on a 3090, against the
 # 3.4 GB a garment costs - a character is remeshed and textured at 2048.
 CHARACTER_VRAM_REQUIRED = 16e9
-GARMENT_FIT_DRIVER = _SCRIPTS / "garment_fit.py"
+GARMENT_FIT_DRIVER = SCRIPTS / "garment_fit.py"
 # Measured 3.4 GB peak for TRELLIS.2 image-to-3D at pipeline_type=512, against the
 # 24 GB its README asks for. Sized to the measurement with headroom.
 GARMENT_VRAM_REQUIRED = 6e9
@@ -112,10 +108,10 @@ SEGVIGEN_VRAM_REQUIRED = 18e9
 # Canonical rigging and animation. canonical_skeleton.py needs SkinTokens' Asset
 # and BpyParser (it imports them from the repo root, hence the cwd) but runs on
 # SegviGen's bpy 4.5.9; retarget_animation.py is pure bpy.
-CANONICAL_DRIVER = _SCRIPTS / "canonical_skeleton.py"
-ORIENT_DRIVER = _SCRIPTS / "orient_bones.py"
-SMOOTH_DRIVER = _SCRIPTS / "smooth_weights.py"
-RIG_PROXY_DRIVER = _SCRIPTS / "rig_proxy.py"
+CANONICAL_DRIVER = SCRIPTS / "canonical_skeleton.py"
+ORIENT_DRIVER = SCRIPTS / "orient_bones.py"
+SMOOTH_DRIVER = SCRIPTS / "smooth_weights.py"
+RIG_PROXY_DRIVER = SCRIPTS / "rig_proxy.py"
 # TokenRig's training mixture is 1k-20k vertices and TRELLIS.2 ships ~90k, so the
 # mesh that gets rigged and the mesh that gets shipped are no longer the same one.
 #
@@ -132,8 +128,7 @@ RIG_PROXY_DRIVER = _SCRIPTS / "rig_proxy.py"
 # the defect had been hidden by a damped 55% swing that never rotated them far
 # enough to show it.
 PROXY_VERTEX_TARGET = 18_000
-RETARGET_DRIVER = _SCRIPTS / "retarget_animation.py"
-ANIMATION_LIBRARY_DRIVER = _SCRIPTS / "animation_library.py"
+ANIMATION_LIBRARY_DRIVER = SCRIPTS / "animation_library.py"
 ANIMATION_ROOTS = tuple(
     Path(p) for p in os.environ.get(
         "ANIMATION_ROOTS",
@@ -153,12 +148,6 @@ ASSET_TYPES = ("characters", "props", "environments", "garments")
 BMB_HOST = os.environ.get("BMB_HOST", "bmb")
 BMB_MFLUX_PYTHON = os.environ.get("BMB_MFLUX_PYTHON", "~/mflux-venv/bin/python3")
 BMB_MFLUX_OUTPUT = os.environ.get("BMB_MFLUX_OUTPUT", "~/mflux-output")
-
-os.environ.setdefault("SPCONV_ALGO", "native")
-os.environ.setdefault("ATTN_BACKEND", "xformers")
-
-if TRELLIS_REPO not in sys.path:
-    sys.path.insert(0, TRELLIS_REPO)
 
 MFLUX_MODELS = [
     "flux2-klein-4b",
@@ -195,80 +184,12 @@ FLUX2_DISTILLED_MODELS = frozenset(
     }
 )
 
-mcp = FastMCP(
-    "trellis2",
-    instructions=(
-        "Image -> 3D -> rigged-character pipeline. "
-        "generate_image (FLUX via mflux on bmb) produces a reference image; "
-        "generate_3d / generate_3d_multi_image turn images into a textured .glb via TRELLIS; "
-        "rig_model adds a skeleton and skin weights via SkinTokens/TokenRig. "
-        "TRELLIS and the rigger share one RTX 3090 and hot-swap automatically - "
-        "calls serialize on the GPU, so run them one at a time. "
-        "IMPORTANT: TRELLIS normalizes every asset into a unit cube, so output is ~1 m tall "
-        "regardless of subject. Pass target_height_m, or scale downstream, before using any "
-        "measurement in metres. Check geometry.dimensions_m in the response."
-    ),
-    version="0.4.0",
-)
-
-# --- GPU arbiter -----------------------------------------------------------
+# --- rig lock --------------------------------------------------------------
 #
-# One RTX 3090, two models that each want most of it. Exactly one holds the GPU
-# at a time and every GPU tool serializes on _gpu_lock.
-#
-# TRELLIS is an in-process pipeline, so it stays resident between generations
-# (a reload costs ~30s) and is evicted only when the rigger needs the card.
-# TokenRig runs as a subprocess, so its VRAM is reclaimed when that process
-# exits - nothing to evict on the way back.
-_gpu_lock = threading.RLock()
-
-# Rigging no longer contends for this card - it runs on RIG_HOST - but two rigs at
-# once would collide over there on the shared temp dir and bpy_server's fixed port
-# 59876. So the rig chain takes its own lock, and a rig can now overlap a
-# generate_3d instead of evicting TRELLIS and forcing a ~30s reload afterwards.
+# Rigging holds no GPU lease: it runs on RIG_HOST. Two rigs at once would collide
+# over there on the shared temp dir and bpy_server's fixed port 59876, so the rig
+# chain takes its own lock.
 _rig_lock = threading.RLock()
-_pipeline: Any = None
-
-
-def _get_pipeline():
-    """Load TRELLIS onto the GPU, or return the already-resident pipeline.
-
-    Caller must hold _gpu_lock.
-    """
-    global _pipeline
-    if _pipeline is None:
-        from trellis.pipelines import TrellisImageTo3DPipeline
-
-        _pipeline = TrellisImageTo3DPipeline.from_pretrained(TRELLIS_MODEL)
-        _pipeline.cuda()
-    return _pipeline
-
-
-def _evict_trellis() -> bool:
-    """Drop TRELLIS from VRAM. Returns True if it was resident.
-
-    Caller must hold _gpu_lock.
-    """
-    global _pipeline
-    if _pipeline is None:
-        return False
-    _pipeline.cpu()
-    _pipeline = None
-    gc.collect()
-    torch.cuda.empty_cache()
-    return True
-
-
-def _vram() -> dict[str, float]:
-    if not torch.cuda.is_available():
-        return {}
-    free, total = torch.cuda.mem_get_info(0)
-    return {
-        "vram_total_gb": round(total / 1e9, 1),
-        "vram_free_gb": round(free / 1e9, 1),
-        "vram_allocated_gb": round(torch.cuda.memory_allocated(0) / 1e9, 2),
-        "vram_reserved_gb": round(torch.cuda.memory_reserved(0) / 1e9, 2),
-    }
 
 
 # --- codex_fs publishing ----------------------------------------------------
@@ -344,31 +265,6 @@ def _decode_image(source: str) -> Image.Image:
     return Image.open(io.BytesIO(base64.b64decode(source))).convert("RGBA")
 
 
-# --- mesh + texture bake ----------------------------------------------------
-#
-# This inlines trellis.utils.postprocessing_utils.to_glb. Upstream hardcodes the
-# two values that actually cap texture quality:
-#
-#     observations, ... = render_multiview(app_rep, resolution=1024, nviews=100)
-#     texture = bake_texture(..., lambda_tv=0.01)
-#
-# so asking to_glb for a 2048 texture bakes it from 1024px observations - four
-# times the file size carrying no additional real detail. Calling the same
-# internals directly turns those into parameters.
-#
-# bake_texture's 'opt' mode moves EVERY view's observation, mask, uv and
-# uv-derivative buffer onto the GPU at once and holds them for all 2500
-# optimizer steps, so VRAM scales as nviews * resolution^2:
-#     observation f32 3ch (12) + mask bool (1) + uv f32 2ch (8) + uv_dr f32 4ch (16)
-_BAKE_BYTES_PER_PIXEL_PER_VIEW = 37
-# Rasterization context, the texture itself, Adam state, and fragmentation.
-_BAKE_VRAM_MARGIN = 1.5e9
-
-
-def _bake_vram_estimate(render_resolution: int, nviews: int) -> float:
-    return nviews * render_resolution * render_resolution * _BAKE_BYTES_PER_PIXEL_PER_VIEW
-
-
 def _dims(extents) -> dict[str, float]:
     """Bounding-box extents as metres. Y is up (the mesh is rotated z-up -> y-up)."""
     return {
@@ -376,165 +272,6 @@ def _dims(extents) -> dict[str, float]:
         "height": round(float(extents[1]), 4),
         "depth": round(float(extents[2]), 4),
     }
-
-
-def _check_bake_params(texture_size: int, render_resolution: int, nviews: int) -> str | None:
-    """Reject impossible bake settings up front. Returns an error message, or None."""
-    if texture_size > render_resolution:
-        return (
-            f"texture_size={texture_size} exceeds render_resolution={render_resolution}. The texture is "
-            f"baked from renders at render_resolution, so a larger texture only upsamples - bigger file, "
-            f"no extra detail. Either lower texture_size to {render_resolution}, or raise render_resolution."
-        )
-
-    needed = _bake_vram_estimate(render_resolution, nviews) + _BAKE_VRAM_MARGIN
-    _free, total = torch.cuda.mem_get_info(0)
-    if needed > total * 0.85:
-        max_views = int((total * 0.85 - _BAKE_VRAM_MARGIN) // (render_resolution**2 * _BAKE_BYTES_PER_PIXEL_PER_VIEW))
-        return (
-            f"Baking at {render_resolution}px x {nviews} views needs ~{needed / 1e9:.1f} GB VRAM, which "
-            f"exceeds this GPU's {total / 1e9:.1f} GB under any conditions. At {render_resolution}px the "
-            f"ceiling is about {max_views} views."
-        )
-    return None
-
-
-def _preflight_bake_vram(render_resolution: int, nviews: int) -> None:
-    """Refuse a bake that will not fit, before minutes of decimation and UV unwrap."""
-    needed = _bake_vram_estimate(render_resolution, nviews) + _BAKE_VRAM_MARGIN
-    free, _total = torch.cuda.mem_get_info(0)
-    if needed <= free:
-        return
-
-    max_views = int((free - _BAKE_VRAM_MARGIN) // (render_resolution**2 * _BAKE_BYTES_PER_PIXEL_PER_VIEW))
-    remedy = f"drop nviews to {max_views}" if max_views >= 1 else f"lower render_resolution below {render_resolution}"
-    resident = (
-        " TRELLIS is still resident; pass evict_trellis_for_bake=true to release it for the bake."
-        if _pipeline is not None
-        else ""
-    )
-    raise RuntimeError(
-        f"Texture bake at {render_resolution}px x {nviews} views needs ~{needed / 1e9:.1f} GB VRAM but only "
-        f"{free / 1e9:.1f} GB is free. Either {remedy}.{resident}"
-    )
-
-
-def _save_outputs(
-    outputs: dict,
-    stem: str,
-    simplify: float,
-    fill_holes: bool,
-    fill_holes_max_size: float,
-    texture_size: int,
-    render_resolution: int,
-    nviews: int,
-    lambda_tv: float,
-    target_height_m: float,
-    evict_trellis_for_bake: bool,
-) -> dict[str, Any]:
-    import numpy as np
-    import trimesh
-    from trellis.utils.postprocessing_utils import bake_texture, parametrize_mesh, postprocess_mesh
-    from trellis.utils.render_utils import render_multiview
-
-    files: dict[str, str] = {}
-    geometry: dict[str, Any] = {}
-
-    if "gaussian" in outputs and "mesh" in outputs:
-        app_rep = outputs["gaussian"][0]
-        mesh = outputs["mesh"][0]
-
-        # The pipeline weights play no part in baking - the gaussian and mesh are
-        # standalone GPU tensors. Releasing TRELLIS here is what makes 2048px
-        # baking reachable at all on a 24 GB card.
-        if evict_trellis_for_bake:
-            _evict_trellis()
-
-        _preflight_bake_vram(render_resolution, nviews)
-
-        vertices = mesh.vertices.cpu().numpy()
-        faces = mesh.faces.cpu().numpy()
-
-        vertices, faces = postprocess_mesh(
-            vertices,
-            faces,
-            simplify=simplify > 0,
-            simplify_ratio=simplify,
-            fill_holes=fill_holes,
-            fill_holes_max_hole_size=fill_holes_max_size,
-            fill_holes_max_hole_nbe=int(250 * np.sqrt(1 - simplify)),
-            fill_holes_resolution=1024,
-            fill_holes_num_views=1000,
-            debug=False,
-            verbose=False,
-        )
-        vertices, faces, uvs = parametrize_mesh(vertices, faces)
-
-        observations, extrinsics, intrinsics = render_multiview(
-            app_rep, resolution=render_resolution, nviews=nviews
-        )
-        masks = [np.any(observation > 0, axis=-1) for observation in observations]
-        extrinsics = [extrinsics[i].cpu().numpy() for i in range(len(extrinsics))]
-        intrinsics = [intrinsics[i].cpu().numpy() for i in range(len(intrinsics))]
-
-        texture = bake_texture(
-            vertices,
-            faces,
-            uvs,
-            observations,
-            masks,
-            extrinsics,
-            intrinsics,
-            texture_size=texture_size,
-            mode="opt",
-            lambda_tv=lambda_tv,
-            verbose=False,
-        )
-
-        # Baking allocates enormous transient buffers (15.5 GB at 2048x100). Once
-        # bake_texture returns they are free but still held by torch's caching
-        # allocator, so the process keeps squatting on them between calls and
-        # starves every other process on the GPU. Hand them back to the driver.
-        gc.collect()
-        torch.cuda.empty_cache()
-
-        # z-up -> y-up, so height is the Y extent from here on.
-        vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
-        material = trimesh.visual.material.PBRMaterial(
-            roughnessFactor=1.0,
-            baseColorTexture=Image.fromarray(texture),
-            baseColorFactor=np.array([255, 255, 255, 255], dtype=np.uint8),
-        )
-        glb = trimesh.Trimesh(vertices, faces, visual=trimesh.visual.TextureVisuals(uv=uvs, material=material))
-
-        extents = glb.bounds[1] - glb.bounds[0]
-        geometry["normalized_dimensions_m"] = _dims(extents)
-
-        if target_height_m > 0:
-            factor = target_height_m / float(extents[1])
-            glb.apply_scale(factor)
-            extents = glb.bounds[1] - glb.bounds[0]
-            geometry["scale_factor_applied"] = round(factor, 4)
-
-        geometry["dimensions_m"] = _dims(extents)
-        geometry["triangles"] = int(len(glb.faces))
-        geometry["scale_note"] = (
-            "TRELLIS normalizes every asset into a unit cube, so height is ~1 m regardless of subject. "
-            "Pass target_height_m to scale at export, or scale downstream before using any metric measurement."
-        )
-
-        glb_path = OUTPUT_DIR / f"{stem}.glb"
-        glb.export(str(glb_path))
-        files["glb"] = str(glb_path)
-
-    if "gaussian" in outputs:
-        ply_path = OUTPUT_DIR / f"{stem}.ply"
-        outputs["gaussian"][0].save_ply(str(ply_path))
-        files["ply"] = str(ply_path)
-        if target_height_m > 0:
-            geometry["ply_note"] = "The .ply Gaussian splat is exported at TRELLIS's normalized scale, unscaled."
-
-    return {"files": files, "geometry": geometry}
 
 
 @mcp.tool
@@ -569,7 +306,10 @@ def generate_3d(
     source_image_model: Annotated[
         str, Field(description="Image model that produced the reference (e.g. flux2-klein-9b)")
     ] = "",
-    timeout: Annotated[int, Field(description="Hard limit in seconds", ge=60, le=7200)] = 1800,
+    timeout: Annotated[
+        int,
+        Field(description="Seconds the job may run once the GPU is granted; waiting adds up to 20 min", ge=60, le=7200),
+    ] = 1800,
 ) -> dict[str, Any]:
     """Generate a textured, PBR 3D asset from a single image using TRELLIS.2.
 
@@ -608,33 +348,21 @@ def generate_3d(
         img.save(source_png)
 
         started = time.time()
-        with _gpu_lock:
-            # TRELLIS 1 may still be resident from a tool that has not been
-            # migrated (generate_garment's bake path, segment_mesh).
-            evicted = _evict_trellis()
-            gc.collect()
-            torch.cuda.empty_cache()
-            free, _total = torch.cuda.mem_get_info(0)
-            if free < CHARACTER_VRAM_REQUIRED:
-                raise RuntimeError(
-                    f"TRELLIS.2 needs ~{CHARACTER_VRAM_REQUIRED / 1e9:.0f} GB VRAM but only "
-                    f"{free / 1e9:.1f} GB is free, even after evicting TRELLIS. Something else "
-                    "is holding the GPU."
-                )
-            _run_script(
-                SEGVIGEN_PYTHON, CHARACTER_DRIVER,
-                [
-                    "--image", str(source_png),
-                    "--out-dir", str(OUTPUT_DIR),
-                    "--name", output_name,
-                    "--seed", str(seed),
-                    "--pipeline-type", pipeline_type,
-                    "--simplify-target", str(simplify_target),
-                    "--decimation-target", str(decimation_target),
-                    "--texture-size", str(texture_size),
-                ],
-                timeout, "CHARACTER_OK", "TRELLIS.2 character generation",
-            )
+        _run_gpu_script(
+            SEGVIGEN_PYTHON, CHARACTER_DRIVER,
+            [
+                "--image", str(source_png),
+                "--out-dir", str(OUTPUT_DIR),
+                "--name", output_name,
+                "--seed", str(seed),
+                "--pipeline-type", pipeline_type,
+                "--simplify-target", str(simplify_target),
+                "--decimation-target", str(decimation_target),
+                "--texture-size", str(texture_size),
+            ],
+            timeout, "CHARACTER_OK", "TRELLIS.2 character generation",
+            note=f"generate_3d {output_name}", need_bytes=CHARACTER_VRAM_REQUIRED,
+        )
         elapsed = round(time.time() - started, 1)
 
         glb = OUTPUT_DIR / f"{output_name}.glb"
@@ -678,7 +406,6 @@ def generate_3d(
             "reference_image": str(source_png),
             "size_bytes": glb.stat().st_size,
             "elapsed_seconds": elapsed,
-            "trellis_evicted": evicted,
             "faces": report["topology"]["as_shipped"]["faces"],
             "materials": report["materials"],
             "topology": report["topology"],
@@ -701,8 +428,6 @@ def generate_3d(
         }
 
     except Exception as e:
-        with _gpu_lock:
-            _evict_trellis()
         return {
             "success": False,
             "error": str(e),
@@ -749,7 +474,10 @@ def generate_3d_multi_image(
     source_image_model: Annotated[
         str, Field(description="Image model that produced the references (e.g. flux2-klein-9b)")
     ] = "",
-    timeout: Annotated[int, Field(description="Seconds before the driver is killed", ge=60, le=7200)] = 1800,
+    timeout: Annotated[
+        int,
+        Field(description="Seconds the job may run once the GPU is granted; waiting adds up to 20 min", ge=60, le=7200),
+    ] = 1800,
 ) -> dict[str, Any]:
     """Generate a 3D asset from multiple images (multi-view conditioning).
 
@@ -810,33 +538,22 @@ def generate_3d_multi_image(
             output_name = f"trellis_multi_{int(time.time())}"
 
         started = time.time()
-        with _gpu_lock:
-            # TRELLIS 1 may still be resident from another tool.
-            evicted = _evict_trellis()
-            gc.collect()
-            torch.cuda.empty_cache()
-            free, _total = torch.cuda.mem_get_info(0)
-            if free < CHARACTER_VRAM_REQUIRED:
-                raise RuntimeError(
-                    f"TRELLIS.2 needs ~{CHARACTER_VRAM_REQUIRED / 1e9:.0f} GB VRAM but only "
-                    f"{free / 1e9:.1f} GB is free, even after evicting TRELLIS. Something else "
-                    "is holding the GPU."
-                )
-            _run_script(
-                SEGVIGEN_PYTHON, MULTI_IMAGE_DRIVER,
-                [
-                    "--images", *image_paths,
-                    "--out-dir", str(OUTPUT_DIR),
-                    "--name", output_name,
-                    "--seed", str(seed),
-                    "--mode", mode,
-                    "--pipeline-type", pipeline_type,
-                    "--simplify-target", str(simplify_target),
-                    "--decimation-target", str(decimation_target),
-                    "--texture-size", str(texture_size),
-                ],
-                timeout, "MULTI_IMAGE_OK", "TRELLIS.2 multi-image generation",
-            )
+        _run_gpu_script(
+            SEGVIGEN_PYTHON, MULTI_IMAGE_DRIVER,
+            [
+                "--images", *image_paths,
+                "--out-dir", str(OUTPUT_DIR),
+                "--name", output_name,
+                "--seed", str(seed),
+                "--mode", mode,
+                "--pipeline-type", pipeline_type,
+                "--simplify-target", str(simplify_target),
+                "--decimation-target", str(decimation_target),
+                "--texture-size", str(texture_size),
+            ],
+            timeout, "MULTI_IMAGE_OK", "TRELLIS.2 multi-image generation",
+            note=f"generate_3d_multi_image {output_name}", need_bytes=CHARACTER_VRAM_REQUIRED,
+        )
         elapsed = round(time.time() - started, 1)
 
         glb = OUTPUT_DIR / f"{output_name}.glb"
@@ -896,7 +613,6 @@ def generate_3d_multi_image(
             "blend_mode": mode,
             "multi_view_steps": report["multi_view_steps"],
             "view_consistency": consistency,
-            "trellis_evicted": evicted,
             "elapsed_seconds": elapsed,
             "geometry": {
                 "triangles": welded["faces"],
@@ -909,8 +625,6 @@ def generate_3d_multi_image(
         }
 
     except Exception as e:
-        with _gpu_lock:
-            _evict_trellis()
         return {
             "success": False,
             "error": str(e),
@@ -1448,6 +1162,14 @@ def _canonical_preflight() -> None:
         )
 
 
+def _marker_stdout(proc: subprocess.CompletedProcess[str], marker: str, label: str) -> str:
+    """The driver's stdout, once its success marker is confirmed in it."""
+    if marker not in proc.stdout:
+        tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-30:])
+        raise RuntimeError(f"{label} failed (exit {proc.returncode}). Output:\n{tail}")
+    return proc.stdout
+
+
 def _run_script(
     python: Path, script: Path, argv: list[str], timeout: int, marker: str, label: str,
 ) -> str:
@@ -1462,10 +1184,22 @@ def _run_script(
         cwd=str(SKINTOKENS_REPO), env=_rig_env(),
         capture_output=True, text=True, timeout=timeout,
     )
-    if marker not in proc.stdout:
-        tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-30:])
-        raise RuntimeError(f"{label} failed (exit {proc.returncode}). Output:\n{tail}")
-    return proc.stdout
+    return _marker_stdout(proc, marker, label)
+
+
+def _run_gpu_script(
+    python: Path, script: Path, argv: list[str], timeout: int, marker: str, label: str,
+    *, note: str, need_bytes: float,
+) -> str:
+    """`_run_script` for a driver that needs the GPU: it runs under a gpu-tenant lease, after a VRAM check.
+
+    `timeout` counts from the moment the GPU is granted; waiting for it adds up to 20 minutes.
+    """
+    proc = run_gpu_job(
+        [str(python), str(script), *argv], label=label, note=note, need_bytes=need_bytes,
+        timeout_s=timeout, cwd=SKINTOKENS_REPO, env=_rig_env(),
+    )
+    return _marker_stdout(proc, marker, label)
 
 
 def _demo_pass(
@@ -1981,7 +1715,10 @@ def segment_mesh(
     preview: Annotated[
         bool, Field(description="Also write a part-coloured preview GLB for eyeballing")
     ] = True,
-    timeout: Annotated[int, Field(description="Hard limit in seconds", ge=60, le=7200)] = 3600,
+    timeout: Annotated[
+        int,
+        Field(description="Seconds the job may run once the GPU is granted; waiting adds up to 20 min", ge=60, le=7200),
+    ] = 3600,
 ) -> dict[str, Any]:
     """Label every face of a mesh with a part id, without touching the mesh.
 
@@ -2001,8 +1738,8 @@ def segment_mesh(
     not a semantic identity: it changes with the seed and means nothing across
     meshes. Only the partition matters.
 
-    Hot-swaps the GPU: TRELLIS is evicted first, then SegviGen runs in its own
-    Python 3.11 environment and releases the card when it exits.
+    Runs under a gpu-tenant lease: llama-swap models are unloaded first, and the card
+    is released when SegviGen exits in its own Python 3.11 environment.
     """
     try:
         _segment_preflight()
@@ -2043,36 +1780,17 @@ def segment_mesh(
 
         started = time.time()
 
-        with _gpu_lock:
-            evicted = _evict_trellis()
-            gc.collect()
-            torch.cuda.empty_cache()
-
-            free, _total = torch.cuda.mem_get_info(0)
-            if free < SEGVIGEN_VRAM_REQUIRED:
-                raise RuntimeError(
-                    f"SegviGen needs ~{SEGVIGEN_VRAM_REQUIRED / 1e9:.0f} GB VRAM but only "
-                    f"{free / 1e9:.1f} GB is free, even after evicting TRELLIS. Something else is "
-                    "holding the GPU."
-                )
-
-            # The driver chdirs into the repo itself, but inference_full.py opens
-            # microsoft/TRELLIS.2-4B/pipeline.json relatively, so cwd must be the
-            # repo from the start.
-            env = dict(os.environ)
-            env["ATTN_BACKEND"] = "sdpa"
-            env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-            proc = subprocess.Popen(
-                cmd, cwd=str(SEGVIGEN_REPO), env=env,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, start_new_session=True,
-            )
-            try:
-                log, _ = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.wait()
-                raise TimeoutError(f"Segmentation exceeded {timeout}s and was killed.") from None
+        # The driver chdirs into the repo itself, but inference_full.py opens
+        # microsoft/TRELLIS.2-4B/pipeline.json relatively, so cwd must be the
+        # repo from the start.
+        env = dict(os.environ)
+        env["ATTN_BACKEND"] = "sdpa"
+        env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+        proc = run_gpu_job(
+            cmd, label="Segmentation", note=f"segment_mesh {output_name}",
+            need_bytes=SEGVIGEN_VRAM_REQUIRED, timeout_s=timeout, cwd=SEGVIGEN_REPO, env=env,
+        )
+        log = f"{proc.stdout}\n{proc.stderr}"
 
         elapsed = round(time.time() - started, 1)
         tail = "\n".join(log.strip().splitlines()[-40:]) if log else ""
@@ -2132,7 +1850,6 @@ def segment_mesh(
                 report["lookup"]["max_distance_normalized"] / report["lookup"]["voxel_size_normalized"], 2
             ),
             "elapsed_seconds": elapsed,
-            "trellis_evicted": evicted,
             "seed": seed,
             "mesh_diagnostics": mesh_diag,
             "warnings": warnings,
@@ -2292,22 +2009,13 @@ def generate_garment(
         env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
         # 2. Mesh it. This is the only GPU stage.
-        with _gpu_lock:
-            evicted = _evict_trellis()
-            gc.collect()
-            torch.cuda.empty_cache()
-            free, _total = torch.cuda.mem_get_info(0)
-            if free < GARMENT_VRAM_REQUIRED:
-                raise RuntimeError(
-                    f"Garment generation needs ~{GARMENT_VRAM_REQUIRED / 1e9:.0f} GB VRAM but only "
-                    f"{free / 1e9:.1f} GB is free, even after evicting TRELLIS."
-                )
-            gen = subprocess.run(
-                [str(SEGVIGEN_PYTHON), str(GARMENT_DRIVER),
-                 "--image", reference, "--out-dir", str(work), "--name", output_name,
-                 "--seed", str(seed), "--preview"],
-                cwd=str(SEGVIGEN_REPO), env=env, capture_output=True, text=True, timeout=timeout,
-            )
+        gen = run_gpu_job(
+            [str(SEGVIGEN_PYTHON), str(GARMENT_DRIVER),
+             "--image", reference, "--out-dir", str(work), "--name", output_name,
+             "--seed", str(seed), "--preview"],
+            label="Garment generation", note=f"generate_garment {output_name}",
+            need_bytes=GARMENT_VRAM_REQUIRED, timeout_s=timeout, cwd=SEGVIGEN_REPO, env=env,
+        )
         garment_report_path = work / f"{output_name}_garment.json"
         if not garment_report_path.is_file():
             return {
@@ -2376,7 +2084,6 @@ def generate_garment(
             "penetration": penetration,
             "faces": garment_report["faces"],
             "peak_vram_gb": garment_report["peak_vram_gb"],
-            "trellis_evicted": evicted,
             "elapsed_seconds": elapsed,
             "warnings": warnings,
             "fit": fit_report,
@@ -2683,44 +2390,24 @@ def apply_animation(
 
 
 @mcp.tool
-def free_gpu() -> dict[str, Any]:
-    """Evict TRELLIS from VRAM and report free memory.
-
-    TRELLIS stays resident between generations so repeat calls are fast. Use this
-    to hand the card back to something else without running a rig job.
-    """
-    with _gpu_lock:
-        evicted = _evict_trellis()
-        # Always release cached blocks, not just when TRELLIS was resident. After a
-        # large bake the allocator can hold many GB with almost nothing allocated,
-        # and returning early would report success while freeing nothing.
-        gc.collect()
-        torch.cuda.empty_cache()
-        return {"success": True, "trellis_evicted": evicted, "gpu": _vram()}
-
-
-@mcp.tool
 def health_check() -> dict[str, Any]:
-    """Check server readiness, GPU status, and whether the rigger is installed."""
+    """Check server readiness: the GPU lease state, the rigger, and the text-to-motion pipeline."""
     try:
-        gpu_info = {}
-        if torch.cuda.is_available():
-            gpu_info = {"device": torch.cuda.get_device_name(0), **_vram()}
-
         try:
             _rig_preflight()
             rigging = {"installed": True, "repo": str(SKINTOKENS_REPO)}
         except RuntimeError as e:
             rigging = {"installed": False, "reason": str(e)}
 
+        motion = motion_health()
         outputs = list(OUTPUT_DIR.glob("*"))
         recent = sorted(outputs, key=os.path.getmtime, reverse=True)[:10]
 
         return {
-            "status": "healthy",
-            "trellis_resident": _pipeline is not None,
-            "gpu": gpu_info,
+            "status": "healthy" if rigging["installed"] and not motion["problems"] else "error",
+            "gpu": gpu_status(),
             "rigging": rigging,
+            "motion": motion,
             "output_dir": str(OUTPUT_DIR),
             "rig_output_dir": str(RIG_OUTPUT_DIR),
             "recent_outputs": [str(p.name) for p in recent],
@@ -2936,7 +2623,10 @@ def generate_orbit_views(
     remove_bg: Annotated[
         bool, Field(description="Segment the subject out of its background before conditioning")
     ] = True,
-    timeout: Annotated[int, Field(description="Hard limit in seconds", ge=60, le=3600)] = 1800,
+    timeout: Annotated[
+        int,
+        Field(description="Seconds the job may run once the GPU is granted; waiting adds up to 20 min", ge=60, le=3600),
+    ] = 1800,
 ) -> dict[str, Any]:
     """Generate 6 geometrically consistent orbit views from one reference image.
 
@@ -2944,8 +2634,8 @@ def generate_orbit_views(
     klein will not do at any prompt, and the reason generate_views defaults to
     front+back only. Views come out at azimuths 0, 45, 90, 180, 270, 315.
 
-    Hot-swaps the GPU: TRELLIS is evicted first, then MV-Adapter runs in its own
-    Python 3.11 environment and releases the card when it exits.
+    Runs under a gpu-tenant lease: llama-swap models are unloaded first, and the card
+    is released when MV-Adapter exits in its own Python 3.11 environment.
 
     Feed the returned images_json straight to generate_3d_multi_image.
     """
@@ -2976,29 +2666,11 @@ def generate_orbit_views(
         if remove_bg:
             cmd.append("--remove_bg")
 
-        with _gpu_lock:
-            evicted = _evict_trellis()
-            gc.collect()
-            torch.cuda.empty_cache()
-
-            free, _total = torch.cuda.mem_get_info(0)
-            if free < MVADAPTER_VRAM_REQUIRED:
-                raise RuntimeError(
-                    f"MV-Adapter needs ~{MVADAPTER_VRAM_REQUIRED / 1e9:.0f} GB VRAM but only "
-                    f"{free / 1e9:.1f} GB is free, even after evicting TRELLIS. Something else is "
-                    "holding the GPU."
-                )
-
-            proc = subprocess.Popen(
-                cmd, cwd=str(MVADAPTER_REPO), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, start_new_session=True,
-            )
-            try:
-                log, _ = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.wait()
-                raise TimeoutError(f"MV-Adapter exceeded {timeout}s and was killed.") from None
+        proc = run_gpu_job(
+            cmd, label="MV-Adapter", note=f"generate_orbit_views {output_name}",
+            need_bytes=MVADAPTER_VRAM_REQUIRED, timeout_s=timeout, cwd=MVADAPTER_REPO,
+        )
+        log = f"{proc.stdout}\n{proc.stderr}"
 
         tail = "\n".join(log.strip().splitlines()[-30:]) if log else ""
         if not grid_path.is_file() or grid_path.stat().st_size == 0:
@@ -3038,7 +2710,6 @@ def generate_orbit_views(
             "view_size_px": view_w,
             "azimuths_deg": list(MVADAPTER_AZIMUTHS),
             "reference_dir": reference_dir,
-            "trellis_evicted": evicted,
             "elapsed_seconds": round(time.time() - started, 1),
             "next_step": (
                 "generate_3d_multi_image(images=<images_json>, source_prompt=<the original prompt>, "
@@ -3337,11 +3008,3 @@ def list_image_models() -> dict[str, Any]:
             "Use quantize=8 for best quality, quantize=4 for lower VRAM."
         ),
     }
-
-
-def main():
-    mcp.run(transport="sse", host="0.0.0.0", port=9786)
-
-
-if __name__ == "__main__":
-    main()

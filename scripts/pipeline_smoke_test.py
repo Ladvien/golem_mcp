@@ -46,7 +46,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/ladvien/trellis2_mcp/src")
+sys.path.insert(0, "/home/ladvien/golem_mcp/src")
 
 SUBJECT = (
     "an emberwake herald, a horned fire-priestess with pale ash-grey skin, "
@@ -95,7 +95,7 @@ def main() -> int:
     ap.add_argument("--views", nargs="*", default=[], help="reuse these view images")
     args = ap.parse_args()
 
-    from trellis2_mcp import server
+    from golem_mcp import server
 
     def call(tool, **kw):
         fn = getattr(server, tool)
@@ -155,8 +155,8 @@ def main() -> int:
         view_paths = list(views["views"].values()) if views else []
         views_json = views.get("images_json") if views else None
 
-    # generate_3d runs TRELLIS.2 now: no bake stage, so no evict_trellis_for_bake,
-    # and none of TRELLIS 1's sampler knobs. It emits baseColor + metallicRoughness
+    # generate_3d runs TRELLIS.2 under a gpu-tenant lease: no bake stage, and none of
+    # TRELLIS 1's sampler knobs. It emits baseColor + metallicRoughness
     # at 2048 and ~97k triangles, which is why rig_model decimates a proxy.
     stage("generate_3d", lambda: call(
         "generate_3d", image=hero_png, output_name=name)
@@ -167,7 +167,7 @@ def main() -> int:
     # "the JSON object must be str, bytes or bytearray, not list".
     stage("generate_3d_multi_image", lambda: call(
         "generate_3d_multi_image", images=views_json or json.dumps(view_paths),
-        output_name=f"{name}_mv", evict_trellis_for_bake=True)  # still TRELLIS 1
+        output_name=f"{name}_mv")
         if view_paths else {"success": False, "error": "no view set"})
 
     # Known broken: inference_i2mv_sdxl.py does birefnet.to(device) with no dtype
@@ -207,7 +207,6 @@ def main() -> int:
 
     stage("split_by_parts", split)
     stage("list_outputs", lambda: call("list_outputs", limit=10))
-    stage("free_gpu", lambda: call("free_gpu"))
 
     failed = [k for k in order if not results[k].get("ok", True)
               and not results[k].get("skipped")]

@@ -1,7 +1,7 @@
 # Agent test prompt
 
 Paste everything in the fenced block below to any agent connected to the
-`trellis2-mcp` server on the LAN. It exercises every tool, in dependency order,
+`golem-mcp` server on the LAN. It exercises every tool, in dependency order,
 and ends with renders to look at.
 
 Everything after the fence is written for the agent, not for you.
@@ -27,7 +27,7 @@ drop the prefix.
 ---
 
 ```
-You have access to an MCP server called trellis2-mcp that generates rigged,
+You have access to an MCP server called golem-mcp that generates rigged,
 animated, game-ready 3D characters. Run a full end-to-end test and report what
 works.
 
@@ -214,7 +214,7 @@ THE STEPS
 12. MEASURE THE GAIT on both outputs. The repo ships the measurement:
 
       ssh big '/home/ladvien/segvigen/.venv/bin/python \
-        /home/ladvien/trellis2_mcp/scripts/gait_report.py -- \
+        /home/ladvien/golem_mcp/scripts/gait_report.py -- \
         <animated glb> /tmp/gait_<name>'
 
     It prints a GAIT line and writes eight renders. Acceptance, against the
@@ -246,7 +246,7 @@ THE STEPS
     and the RIGGED REST pose too. If those are clean and only the animated one is
     broken, it is the weights, not generation and not the bind.
 
-14. list_outputs and free_gpu.
+14. list_outputs.
 
 15. REPORT. A pass/fail table over every tool called, then:
       - the four gait numbers for both clips, against the acceptance values

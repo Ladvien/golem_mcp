@@ -1,19 +1,21 @@
-# trellis2-mcp
+# golem-mcp
 
-An MCP server for the **image → 3D → rigged character** pipeline.
+An MCP server for the **image → 3D → rigged character → animation** pipeline
+(formerly `trellis2-mcp`, with the Kimodo text-to-motion server merged in).
 
-Generate a reference image with FLUX, turn it into a textured mesh with TRELLIS,
-then generate a skeleton and skin weights with SkinTokens/TokenRig — all as MCP
-tools, driven from a single conversation.
+Generate a reference image with FLUX, turn it into a textured mesh with TRELLIS.2,
+generate a skeleton and skin weights with SkinTokens/TokenRig, then animate the
+rig from a text prompt with Kimodo — all as MCP tools, driven from a single
+conversation.
 
 ```
-  generate_image          generate_3d              rig_model
-  FLUX.2 / mflux    →     TRELLIS           →      SkinTokens / TokenRig
-  (bmb, Apple MLX)        (big, RTX 3090)          (big, RTX 3090)
-       .png                 .glb + .ply              rigged .glb
+  generate_image      generate_3d         rig_model                animate_mesh
+  FLUX.2 / mflux  →   TRELLIS.2       →   SkinTokens / TokenRig →  Kimodo + retarget
+  (bmb, Apple MLX)    (big, RTX 3090)     (bmb, Apple MPS)         (big, RTX 3090)
+       .png               .glb               rigged .glb              animated .glb
 ```
 
-The two GPU stages **hot-swap on one RTX 3090** — see [GPU hot-swapping](#gpu-hot-swapping).
+Every GPU job takes a `gpu-tenant` lease — see [GPU leases](#gpu-leases).
 
 ---
 
@@ -23,7 +25,7 @@ The two GPU stages **hot-swap on one RTX 3090** — see [GPU hot-swapping](#gpu-
 |---|---|
 | `generate_image` | FLUX.2 text-to-image (or img2img) via mflux on `bmb`, copied back to `big` |
 | `generate_views` | A consistent front/back/left/right set from one prompt, for multi-view conditioning |
-| `generate_3d` | Single image → textured `.glb` + Gaussian `.ply` via TRELLIS |
+| `generate_3d` | Single image → textured `.glb` via TRELLIS.2 |
 | `generate_3d_multi_image` | Multi-view conditioning (2–6 images of one object) |
 | `generate_orbit_views` | 6 geometrically consistent orbit views from one reference image, via MV-Adapter |
 | `rig_model` | Mesh → rigged `.glb` carrying the canonical Mixamo skeleton, via TokenRig |
@@ -31,8 +33,8 @@ The two GPU stages **hot-swap on one RTX 3090** — see [GPU hot-swapping](#gpu-
 | `generate_garment` | Garment description → its own open-surface `.glb`, fitted and draped onto a target body |
 | `list_animations` | The animation clips on disk, and which of them can drive our rigs |
 | `apply_animation` | Retarget a clip onto a canonically rigged character; no GPU, no per-character setup |
-| `free_gpu` | Evict TRELLIS from VRAM and report free memory |
-| `health_check` | Readiness, GPU state, and whether the rigger is installed |
+| `animate_mesh` | Text prompt → motion (Kimodo, SOMA skeleton) retargeted onto a canonically rigged `.glb`, checked for self-intersection |
+| `health_check` | Readiness, `gpu-tenant` status, the rigger and the text-to-motion pipeline |
 | `list_outputs` | Recent outputs across 3D, rigged, and image dirs |
 
 `generate_3d` returns an `output_name`; pass it straight to `rig_model`:
@@ -49,54 +51,33 @@ plumbing is needed between the two stages.
 
 ## Installation
 
-Three independent installs. The MCP server itself runs inside the **TRELLIS**
-venv; the rigger runs as a subprocess in its own.
+Three independent installs. The MCP server itself runs in a **Python 3.11** venv
+made with `uv`; every GPU job and the rigger run as subprocesses in their own.
 
-> **The two GPU environments cannot be merged.** TRELLIS needs Python 3.10 with
-> torch 2.6.0+cu124; SkinTokens needs Python 3.11 with torch 2.7.0+cu128
-> (`open3d` ships no cp313 wheel, and `bpy >= 5.1` is cp313-only). This is why
-> `rig_model` shells out instead of importing.
+> **The GPU environments cannot be merged.** SegviGen (which also hosts TRELLIS.2)
+> and SkinTokens each need their own Python 3.11 venv and torch build (`open3d`
+> ships no cp313 wheel, and `bpy >= 5.1` is cp313-only). This is why the tools
+> shell out instead of importing.
 
 ### Prerequisites
 
 - NVIDIA GPU, ≥ 14 GB VRAM for rigging (a 24 GB 3090 has comfortable headroom)
 - NVIDIA driver ≥ 525, CUDA toolkit ≥ 12.1
 - [`uv`](https://docs.astral.sh/uv/)
+- `gpu-tenant` on the GPU host (`~/.local/bin/gpu-tenant`)
 - An SSH alias to a Mac running mflux, if you want `generate_image`
 
-### 1. TRELLIS (Python 3.10) — hosts the MCP server
+### 1. golem (Python 3.11) — hosts the MCP server
 
 ```bash
-git clone https://github.com/microsoft/TRELLIS.git /home/ladvien/trellis/repo
-cd /home/ladvien/trellis/repo
-
-uv venv --python 3.10 /home/ladvien/trellis/.venv
-source /home/ladvien/trellis/.venv/bin/activate
-
-# TRELLIS's own installer pulls the heavy CUDA extensions
-# (spconv, xformers, flash-attn, nvdiffrast, diffoctreerast, ...).
-. ./setup.sh --basic --xformers --flash-attn --diffoctreerast --spconv --mipgaussian --nvdiffrast
+git clone git@github.com:Ladvien/golem_mcp.git /home/ladvien/golem_mcp
+cd /home/ladvien/golem_mcp
+uv sync --python 3.11 --extra dev
 ```
 
-This deployment runs torch 2.6.0+cu124 and xformers 0.0.29.post3.
-
-**Download the TRELLIS model:**
-
-```bash
-uv pip install huggingface_hub
-hf download JeffreyXiang/TRELLIS-image-large \
-    --local-dir /home/ladvien/trellis/models/TRELLIS-image-large
-```
-
-You should end up with `pipeline.json` and a `ckpts/` directory holding the
-sparse-structure and SLAT encoder/decoder/flow safetensors.
-
-**Install this server into that venv:**
-
-```bash
-cd /home/ladvien/trellis2_mcp
-uv pip install --python /home/ladvien/trellis/.venv/bin/python -e .
-```
+`animate_mesh` also needs `motion_correction`, a compiled module that is not on
+PyPI. Copy it into the venv's `site-packages`; `health_check` reports
+`motion_correction_installed` and the worker refuses to run without it.
 
 ### 2. SkinTokens / TokenRig (Python 3.11) — the rigger
 
@@ -160,30 +141,36 @@ All paths are environment variables with the defaults below.
 
 | Variable | Default |
 |---|---|
-| `TRELLIS_REPO` | `/home/ladvien/trellis/repo` |
-| `TRELLIS_MODEL` | `/home/ladvien/trellis/models/TRELLIS-image-large` |
+| `GOLEM_MCP_PORT` | `9786` |
+| `GPU_TENANT` | `/home/ladvien/.local/bin/gpu-tenant` |
 | `TRELLIS_OUTPUT_DIR` | `/home/ladvien/trellis/output` |
+| `SEGVIGEN_PYTHON` | `/home/ladvien/segvigen/.venv/bin/python` |
 | `SKINTOKENS_REPO` | `/home/ladvien/skintokens/repo` |
 | `SKINTOKENS_PYTHON` | `/home/ladvien/skintokens/.venv/bin/python` |
 | `ANIMATION_ROOTS` | `/mnt/codex_fs/game_assets/animation:/mnt/codex_fs/game_assets/SCP-610` |
 | `BMB_HOST` | `bmb` |
 | `BMB_MFLUX_PYTHON` | `~/mflux-venv/bin/python3` |
 | `BMB_MFLUX_OUTPUT` | `~/mflux-output` |
-| `SPCONV_ALGO` | `native` |
-| `ATTN_BACKEND` | `xformers` |
+| `KIMODO_OUTPUT_DIR` | `/home/ladvien/kimodo/output` |
+| `KIMODO_CACHE_DIR` | `/home/ladvien/kimodo/cache` |
+| `TEXT_ENCODERS_DIR` | `/home/ladvien/kimodo/text_encoders` |
+| `KIMODO_RAW_PUBLISH_DIR` | `/mnt/codex_fs/models/kimodo` |
 
 Outputs land in `$TRELLIS_OUTPUT_DIR`, with `images/` and `rigged/` beneath it.
 
 ## Running
 
+golem is a **user** unit, because `gpu-tenant run` uses `systemd-run --user`:
+
 ```bash
-sudo cp trellis2-mcp.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now trellis2-mcp
+cp golem-mcp.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now golem-mcp
 ```
 
-Serves SSE on `0.0.0.0:9786`. After changing server code, restart the unit —
-a running instance keeps serving the old code.
+Serves streamable HTTP on `0.0.0.0:9786` at `/mcp` (`GOLEM_MCP_PORT` changes the
+port). After changing server code, restart the unit — a running instance keeps
+serving the old code.
 
 ---
 
@@ -582,26 +569,36 @@ onto the skin and still left 30.9% of them inside.
 
 ---
 
-## GPU hot-swapping
+## GPU leases
 
-TRELLIS and TokenRig each want most of a 24 GB card, so exactly one holds the GPU
-at a time. Every GPU tool serializes on a single lock:
+Every GPU job (`generate_3d`, `generate_3d_multi_image`, `generate_orbit_views`,
+`segment_mesh`, `generate_garment` and `animate_mesh`) runs under a `gpu-tenant`
+lease on big's RTX 3090. The server process holds no VRAM: each job is a
+subprocess (TRELLIS.2, SegviGen and garments in SegviGen's venv, MV-Adapter in its
+own, Kimodo in this venv), so there is nothing to keep resident or evict.
 
-- **TRELLIS stays resident** between generations — a reload costs ~30 s, so
-  repeated `generate_3d` calls are fast.
-- **`rig_model`, `generate_orbit_views` and `segment_mesh` evict TRELLIS first**,
-  then run in their own subprocess. That process's VRAM is reclaimed by the OS
-  when it exits, so there is nothing to unload on the way back. `segment_mesh`
-  peaks around 16.6 GB and refuses to start below 18 GB free.
-- The next `generate_3d` reloads TRELLIS automatically. `trellis_evicted` in the
-  `rig_model` response tells you whether a swap actually happened.
-- `free_gpu` hands the card back manually.
+`gpu-tenant run 3d --who golem-mcp@big --mem 22G --wait --timeout 20m` unloads
+every llama-swap model, queues behind other holders for up to 20 minutes, caps the
+job's RAM at 22 GB and releases the card when the job exits. A tool's `timeout` is
+how long the job may run once the GPU is granted; the queue wait comes on top.
 
-Measured on a 3090 with a desktop session running: 18.0 GB free → 12.2 GB with
-TRELLIS resident → back to 18.0 GB after eviction.
+Before the job starts, `golem_mcp.vram_gate` reads free VRAM through torch (NVML is
+not used) and refuses with "needs ~N GB VRAM but M GB is free under the lease" when
+a resident outside gpu-tenant (voice-serve, ollama, hs-serve-distill, laya-sidecar)
+holds the card. The VRAM each job needs is a measured peak plus headroom:
 
-Because the lock lives in the server process, **run one GPU tool at a time**;
-a second process bypasses it entirely.
+| Job | Needs |
+|---|---|
+| `generate_3d`, `generate_3d_multi_image` | 16 GB |
+| `generate_garment` | 6 GB |
+| `segment_mesh` | 18 GB |
+| `generate_orbit_views` | 19 GB |
+| `animate_mesh` | 2 GB (peak 1.33 GiB; the text encoder runs on the CPU) |
+
+golem serialises its own jobs with a lock, because gpu-tenant refuses a second
+waiter from the same `who`. `rig_model` runs on `bmb` and takes no lease.
+
+`health_check` reports `gpu-tenant status`.
 
 ---
 

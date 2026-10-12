@@ -153,10 +153,10 @@ def main() -> int:
     stem = args.name or paths[0].stem
     out_glb = out_dir / f"{stem}.glb"
 
-    # ASSIGNED, not setdefault - see trellis2_character.py. The MCP server sets
-    # ATTN_BACKEND=xformers at import for TRELLIS 1 and a subprocess inherits it,
-    # so setdefault silently keeps the wrong backend and this fails with an empty
-    # error when run through the tool but works by hand.
+    # ASSIGNED, not setdefault - see trellis2_character.py. The MCP server used to set
+    # ATTN_BACKEND=xformers at import (for TRELLIS 1, since removed) and a subprocess
+    # inherited it, so setdefault silently kept the wrong backend and this failed with
+    # an empty error when run through the tool but worked by hand.
     os.environ["ATTN_BACKEND"] = "sdpa"
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")

@@ -1,7 +1,7 @@
-"""Kimodo MCP server: text prompts -> motion, retargeted onto a canonically rigged GLB.
+"""Kimodo text-to-motion tools: text prompts -> motion, retargeted onto a canonically rigged GLB.
 
-This process imports no torch/kimodo. Generation runs in a per-job worker subprocess under
-`gpu-tenant run`; retargeting runs in the bpy venv (CPU) via trellis2's `retarget_animation.py`.
+This process imports no torch/kimodo. Generation runs in a per-job worker subprocess under a gpu-tenant lease
+(golem_mcp.gpu); retargeting runs in the bpy venv (CPU) via `scripts/retarget_animation.py`.
 """
 
 import base64
@@ -15,7 +15,6 @@ import secrets
 import shutil
 import subprocess
 import sys
-import threading
 import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor
@@ -23,8 +22,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastmcp import FastMCP
 from pydantic import BaseModel, Field
+
+from golem_mcp.app import mcp
+from golem_mcp.gpu import GPU_TENANT, run_gpu_job
+from golem_mcp.paths import RETARGET_DRIVER, SEGVIGEN_PYTHON
 
 KIMODO_OUTPUT_DIR = Path(os.environ.get("KIMODO_OUTPUT_DIR", "/home/ladvien/kimodo/output"))
 KIMODO_CACHE_DIR = Path(os.environ.get("KIMODO_CACHE_DIR", "/home/ladvien/kimodo/cache"))
@@ -33,19 +35,9 @@ KIMODO_CACHE_DIR = Path(os.environ.get("KIMODO_CACHE_DIR", "/home/ladvien/kimodo
 TEXT_ENCODERS_DIR = Path(os.environ.get("TEXT_ENCODERS_DIR", "/home/ladvien/kimodo/text_encoders"))
 # Raw generative output is published only under /mnt/codex_fs/models/ (host convention).
 KIMODO_RAW_PUBLISH_DIR = Path(os.environ.get("KIMODO_RAW_PUBLISH_DIR", "/mnt/codex_fs/models/kimodo"))
-BPY_PYTHON = Path(os.environ.get("BPY_PYTHON", "/home/ladvien/segvigen/.venv/bin/python"))
-RETARGET_SCRIPT = Path(
-    os.environ.get("RETARGET_SCRIPT", "/home/ladvien/trellis2_mcp/scripts/retarget_animation.py")
-)
-GPU_TENANT = Path(os.environ.get("GPU_TENANT", "/home/ladvien/.local/bin/gpu-tenant"))
 EMBEDDING_CACHE_DIR = KIMODO_CACHE_DIR / "embeddings"
 
-GPU_TENANT_WHO = "kimodo-mcp@big"
-GPU_TENANT_FOCUS = "3d"
-WORKER_MEM_MAX = "22G"
-GPU_QUEUE_TIMEOUT = "20m"
-MCP_HOST = "0.0.0.0"
-MCP_PORT = 9787
+MOTION_VRAM_REQUIRED = 2e9  # peak 1.33 GiB over 210 jobs, 2026-10-12 (the 8B text encoder runs on the CPU)
 KIMODO_MODEL_KEY = "kimodo-soma-rp-v1.1"
 KIMODO_COMMIT = "58e781898b3d7e328a676a75d3e338c45dce3ad9"
 MIN_SEGMENT_DURATION_S = 1.0
@@ -81,27 +73,6 @@ WORKER_ENV = {
 
 KIMODO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 KIMODO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-mcp = FastMCP(
-    "kimodo",
-    instructions=(
-        "Text-to-motion for rigged characters (NVIDIA Kimodo, SOMA skeleton) retargeted onto your GLB. "
-        "The input must be a canonically rigged GLB (mixamorig:* skeleton, e.g. from trellis2 rig_model) "
-        "in T-pose. Prompts should start with 'A person ...', one or two behaviours per segment, at most "
-        "10 s each. There is no finger or face animation. Output is in place unless root_motion is set. "
-        "A job takes ~1-3 min, including the GPU queue and loading the CPU text encoder on a cache miss. "
-        "Optional controls: root_path (waypoints; needs root_motion), start_heading_deg, "
-        "text_cfg_weight / constraint_cfg_weight (default 2.0), transition_frames (default 5). "
-        "Every sample is checked for its own surface passing through itself (self_intersection: off | score | "
-        "repair, default repair: a crossing sample has its arms and legs turned off the body and the original is "
-        "kept as <name>_unrepaired.glb); max_rerolls (default 0) re-rolls the seed while no sample is clean, "
-        "contour_limit_cm (default 4) is how long a frame's intersection contour may be, and cloth_materials "
-        "names loose-cloth materials whose self-contact is not counted."
-    ),
-    version="0.1.0",
-)
-
-_job_lock = threading.Lock()
 
 
 class MotionSegment(BaseModel):
@@ -192,7 +163,9 @@ def _load_character(character_path: str, character_base64: str) -> tuple[bytes, 
 def _preflight() -> None:
     missing = [
         f"{name}={path}"
-        for name, path in (("BPY_PYTHON", BPY_PYTHON), ("RETARGET_SCRIPT", RETARGET_SCRIPT), ("GPU_TENANT", GPU_TENANT))
+        for name, path in (
+            ("SEGVIGEN_PYTHON", SEGVIGEN_PYTHON), ("RETARGET_DRIVER", RETARGET_DRIVER), ("GPU_TENANT", GPU_TENANT),
+        )
         if not path.exists()
     ]
     if not KIMODO_RAW_PUBLISH_DIR.parent.is_dir():
@@ -207,33 +180,25 @@ def _tail(text: str) -> str:
 
 
 def _run_worker(job_json: Path, report: Path, job_dir: Path, stem: str, timeout: int) -> dict[str, Any]:
-    cmd = [
-        str(GPU_TENANT), "run", GPU_TENANT_FOCUS,
-        "--who", GPU_TENANT_WHO, "--mem", WORKER_MEM_MAX,
-        "--wait", "--timeout", GPU_QUEUE_TIMEOUT, "--note", f"kimodo {stem}",
-        "--", sys.executable, "-m", "golem_mcp.motion_worker", "--job", str(job_json), "--report", str(report),
-    ]
-    try:
-        proc = subprocess.run(cmd, env={**os.environ, **WORKER_ENV}, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired as e:
-        raise RuntimeError(f"worker exceeded timeout={timeout}s (GPU queue + generation)") from e
+    # One job at a time on the card (two would each load a 16 GB encoder and could OOM the host): run_gpu_job serialises.
+    proc = run_gpu_job(
+        [sys.executable, "-m", "golem_mcp.motion_worker", "--job", str(job_json), "--report", str(report)],
+        label="Kimodo generation", note=f"animate_mesh {stem}", need_bytes=MOTION_VRAM_REQUIRED,
+        timeout_s=timeout, env={**os.environ, **WORKER_ENV},
+    )
     log = f"{proc.stdout}\n--- stderr ---\n{proc.stderr}"
     (job_dir / "worker.log").write_text(log)
     if WORKER_MARKER in proc.stdout and report.exists():
         result: dict[str, Any] = json.loads(report.read_text())
         return result
-    hint = {
-        2: "GPU queue timed out after 20m - see `gpu-tenant status`",
-        137: f"worker OOM-killed at MemoryMax={WORKER_MEM_MAX}",
-    }.get(proc.returncode, "")
-    raise RuntimeError(f"worker failed (exit {proc.returncode}) {hint}\n{_tail(log)}".rstrip())
+    raise RuntimeError(f"worker failed (exit {proc.returncode})\n{_tail(log)}".rstrip())
 
 
 def _retarget(job_dir: Path, slug: str, index: int, bvh: str, root_motion: bool) -> tuple[Path, dict[str, Any]]:
     out = job_dir / f"{slug}_{index:02d}.glb"
     report = job_dir / f"{slug}_{index:02d}_retarget.json"
     cmd = [
-        str(BPY_PYTHON), str(RETARGET_SCRIPT),
+        str(SEGVIGEN_PYTHON), str(RETARGET_DRIVER),
         "--character", str(job_dir / "character.glb"), "--clip", bvh, "--out", str(out),
         "--source-map", RETARGET_SOURCE_MAP, "--report", str(report),
     ]
@@ -275,7 +240,7 @@ class _Request:
 
 def _assess_all(samples: list[dict[str, Any]], request: _Request) -> None:
     """Adds `self_intersection` to every sample: its glb checked (and, in repair mode, repaired) by
-    `gate.assess_sample`, one process per sample (a fresh interpreter each: this server has threads, and forking it is
+    `motion_gate.assess_sample`, one process per sample (a fresh interpreter each: this server has threads, and forking it is
     not safe). A sample whose assessment raises gets `{"passed": None, "error": ...}` and does not fail the job."""
     if request.self_intersection == "off":
         for s in samples:
@@ -330,9 +295,7 @@ def _attempt(
         "transition_frames": request.transition_frames, "start_heading_deg": request.start_heading_deg,
         "root_path": request.root_path_job,
     }, indent=2))
-    # One worker at a time: two would each load a 16 GB encoder and could OOM the host.
-    with _job_lock:
-        report = _run_worker(job_json, job_dir / "worker_report.json", job_dir, stem, request.timeout)
+    report = _run_worker(job_json, job_dir / "worker_report.json", job_dir, stem, request.timeout)
 
     samples = []
     for s in report["samples"]:
@@ -436,7 +399,11 @@ def animate_mesh(
                     "limb through the body",
     )] = [],  # noqa: B006 - pydantic copies the default per call
     timeout: Annotated[
-        int, Field(ge=300, le=7200, description="Seconds covering GPU queue plus generation")
+        int,
+        Field(
+            ge=300, le=7200,
+            description="Seconds generation may run once the GPU is granted; waiting for the GPU adds up to 20 min",
+        ),
     ] = 1800,
 ) -> dict[str, Any]:
     """Generate motion from text with Kimodo and retarget it onto a rigged GLB character.
@@ -501,19 +468,18 @@ def animate_mesh(
         }
 
 
-@mcp.tool
-def health_check() -> dict[str, Any]:
-    """Report whether the Kimodo pipeline's dependencies are in place."""
+def motion_health() -> dict[str, Any]:
+    """Whether the Kimodo pipeline's dependencies are in place: `checks` (name -> value) and `problems` (failed names)."""
     checks: dict[str, Any] = {
         "kimodo_installed": importlib.util.find_spec("kimodo") is not None,
         "motion_correction_installed": importlib.util.find_spec("motion_correction") is not None,
         "skinclip_installed": importlib.util.find_spec("skinclip") is not None,
-        "bpy_python": BPY_PYTHON.exists(),
-        "retarget_script": RETARGET_SCRIPT.exists(),
+        "bpy_python": SEGVIGEN_PYTHON.exists(),
+        "retarget_script": RETARGET_DRIVER.exists(),
         "gpu_tenant": GPU_TENANT.exists(),
     }
     try:
-        proc = subprocess.run([str(BPY_PYTHON), str(RETARGET_SCRIPT), "--help"],
+        proc = subprocess.run([str(SEGVIGEN_PYTHON), str(RETARGET_DRIVER), "--help"],
                               capture_output=True, text=True, timeout=120)
         checks["retarget_supports_soma"] = "soma" in proc.stdout
     except (OSError, subprocess.TimeoutExpired):
@@ -529,15 +495,5 @@ def health_check() -> dict[str, Any]:
     checks["embedding_cache_entries"] = (
         len(list(EMBEDDING_CACHE_DIR.glob("*.pt"))) if EMBEDDING_CACHE_DIR.is_dir() else 0
     )
-    try:
-        checks["gpu_tenant_status"] = subprocess.run(
-            [str(GPU_TENANT), "status"], capture_output=True, text=True, timeout=30
-        ).stdout
-    except (OSError, subprocess.TimeoutExpired) as e:
-        checks["gpu_tenant_status"] = f"unavailable: {e}"
     problems = [k for k, v in checks.items() if isinstance(v, bool) and not v]
-    return {"status": "error" if problems else "healthy", "checks": checks, "problems": problems}
-
-
-def main() -> None:
-    mcp.run(transport="http", host=MCP_HOST, port=MCP_PORT)
+    return {"checks": checks, "problems": problems}

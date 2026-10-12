@@ -154,11 +154,12 @@ def main() -> int:
     # its build reads FLASH_ATTN_CUDA_ARCHS rather than TORCH_CUDA_ARCH_LIST and
     # compiles for every architecture for hours. SDPA was verified against a
     # block-diagonal reference instead.
-    # ASSIGNED, not setdefault. The MCP server sets ATTN_BACKEND=xformers at import
-    # for TRELLIS 1, a subprocess inherits it, and setdefault then silently keeps the
-    # inherited value - so this driver worked when run by hand and failed through the
-    # tool with an empty error. TRELLIS.2 needs sdpa here: flash_attn is not built on
-    # this box and xformers does not carry it.
+    # ASSIGNED, not setdefault. The MCP server used to set ATTN_BACKEND=xformers at
+    # import (for TRELLIS 1, since removed) and a subprocess inherited it; setdefault
+    # then silently kept the inherited value, so this driver worked when run by hand
+    # and failed through the tool with an empty error. Assigning keeps any inherited
+    # value from choosing the backend. TRELLIS.2 needs sdpa here: flash_attn is not
+    # built on this box and xformers does not carry it.
     os.environ["ATTN_BACKEND"] = "sdpa"
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
