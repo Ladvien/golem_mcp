@@ -367,6 +367,38 @@ def main() -> int:
     up_s = src.matrix_world.to_quaternion().inverted() @ world_up
     up_t = tgt.matrix_world.to_quaternion().inverted() @ world_up
 
+    # The floor. A clip's pelvis height is right for the clip's legs, not ours: with the limbs turned onto the clip's
+    # rest, a splayed A-stance leg stands straighter and reaches lower, and the walk on a generated villager put its
+    # soles 2.9 cm under the floor with the pelvis held at rest and 5.2 cm with the clip's bob. Whenever the pelvis is
+    # keyed, it is lifted on any frame where the sole would go below its rest height. The sole is the character's own
+    # skin - the lower half of each foot, every vertex carried rigidly by the foot bone that weighs it most - because
+    # the toe joints and a heel point under the ankle missed the foot's roll by 2 cm. Lifting only: a jump keeps its air.
+    foot_bones = {n for side in ("Left", "Right")
+                  for n in (f"mixamorig:{side}Foot", f"mixamorig:{side}ToeBase", f"mixamorig:{side}Toe_End")
+                  if n in tgt.data.bones}
+    to_arm = tgt.matrix_world.inverted()
+    skin = []
+    for ob in [o for o in bpy.context.scene.objects if o.type == "MESH" and o.find_armature() is tgt]:
+        groups = {g.index: g.name for g in ob.vertex_groups if g.name in foot_bones}
+        m = to_arm @ ob.matrix_world
+        for v in ob.data.vertices:
+            best = max(((g.weight, groups[g.group]) for g in v.groups if g.group in groups), default=None)
+            if best is not None and best[0] >= 0.5:
+                skin.append((best[1], m @ v.co))
+    floor = min((p.dot(up_t) for _b, p in skin), default=None)
+    soles = []
+    if floor is not None:
+        ankle = max((tgt.data.bones[n].head_local.dot(up_t) for n in foot_bones if n.endswith("Foot")), default=floor)
+        band = floor + 0.5 * (ankle - floor)
+        low = [(b, p) for b, p in skin if p.dot(up_t) <= band]
+        stride = max(1, len(low) // 4000)
+        soles = [(b, tgt.data.bones[b].matrix_local.inverted() @ p) for b, p in low[::stride]]
+    ground = (args.root_motion or bob) and bool(soles) and hips in tgt_bones
+    lifts = []
+
+    def lowest_sole() -> float:
+        return min((tgt.pose.bones[b].matrix @ p).dot(up_t) for b, p in soles)
+
     for frame in range(start, end + 1):
         bpy.context.scene.frame_set(frame)
         bpy.context.view_layer.update()
@@ -386,6 +418,14 @@ def main() -> int:
                 loc = tgt_hips_rest + up_t * (rise * height_ratio)
             tpb.matrix = Matrix.LocRotScale(loc, want, cur.to_scale())
             bpy.context.view_layer.update()
+        if ground:
+            sink = floor - lowest_sole()
+            lifts.append(max(sink, 0.0))
+            if sink > 0.0:
+                hpb = tgt.pose.bones[hips]
+                m = hpb.matrix.copy()
+                hpb.matrix = Matrix.LocRotScale(m.translation + up_t * sink, m.to_quaternion(), m.to_scale())
+                bpy.context.view_layer.update()
         for t in order:
             tgt.pose.bones[t].keyframe_insert("rotation_quaternion", frame=frame)
         if args.root_motion or bob:
@@ -433,6 +473,9 @@ def main() -> int:
         "rest_correction_deg": {t: round(math.degrees(q.angle), 1) for t, q in corr.items()},
         "crossed_hand_frames": crossed_hand_frames,
         "min_hand_separation_pct_hip_width": min_hand_sep_pct,
+        "grounded": bool(ground),
+        "floor_lift_max": round(max(lifts), 4) if lifts else None,
+        "floor_lifted_frames": sum(1 for v in lifts if v > 1e-4) if lifts else None,
     }
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2) + "\n")

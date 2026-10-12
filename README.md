@@ -599,7 +599,12 @@ at `00b1361`.
   hands over the body. Every sample reports `crossed_hand_frames` (frames whose hands
   are on the wrong side of the midline) and `min_hand_separation_pct_hip_width`.
 - `hip_bob` (default true) keeps the pelvis's travel along the world vertical in an
-  in-place cycle, scaled by the height ratio; `root_motion` overrides it.
+  in-place cycle, scaled by the height ratio; `root_motion` overrides it. Whenever the
+  pelvis is keyed (`hip_bob` or `root_motion`) it is lifted on any frame where the
+  character's own sole skin would go below its rest height: the clip's pelvis height
+  fits the clip's legs, and on generated A-stance characters the soles went 3-5 cm
+  under the floor. The retarget report carries `floor_lift_max` and
+  `floor_lifted_frames`.
 - **Self-intersection gate** (`golem_mcp.motion_gate`, on
   [skinclip](https://github.com/Ladvien/skinclip)): every sample's own skinned mesh is
   posed with its own animation and the length of the contour where its triangles cross
