@@ -19,8 +19,8 @@ None needs root.
 
 Roughly 42 GB on disk in total. The MCP server runs in the **golem** env
 (`golem-mcp.service`, a user unit), which is why that one is special — everything
-else is a subprocess target. `/home/ladvien/trellis` still holds the output
-directory (`TRELLIS_OUTPUT_DIR`); its TRELLIS 1 venv and models are no longer used.
+else is a subprocess target. `/home/ladvien/trellis` now holds only the output
+directory (`TRELLIS_OUTPUT_DIR`); the TRELLIS 1 venv, repo and models were deleted.
 
 Every GPU job runs under a `gpu-tenant` lease; see "GPU leases" in the README.
 
