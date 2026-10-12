@@ -206,7 +206,7 @@ OPENROUTER_API_KEY_PREFIX = "sk-or-"
 # OpenRouter attributes usage to an app through these two headers; they
 # are optional on the wire and show up on the dashboard.
 OPENROUTER_APP_HEADERS = {
-    "HTTP-Referer": "https://github.com/ladvien/blended",
+    "HTTP-Referer": "https://github.com/ladvien/golem_mcp",
     "X-Title": "blended",
 }
 # One model's PER-PROVIDER endpoints. OpenRouter fronts many upstreams
