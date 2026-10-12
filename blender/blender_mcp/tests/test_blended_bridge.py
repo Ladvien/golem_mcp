@@ -277,7 +277,10 @@ class TestWatcherIsOptIn(unittest.TestCase):
         )
 
     def test_project_configs_opt_in_only_for_omp(self) -> None:
-        # Ground truth is the config each client reads, not the default.
+        # Ground truth is the config each client reads. The project's own
+        # .omp/mcp.json registers nothing (the global ~/.omp/agent/mcp.json
+        # carries `golem` with the watcher on); Claude Code's .mcp.json
+        # registers `golem` without it.
         claude_code = json.loads(
             (blended_bridge.REPOSITORY_ROOT / ".mcp.json").read_text(encoding="utf-8")
         )
@@ -288,12 +291,12 @@ class TestWatcherIsOptIn(unittest.TestCase):
         )
         self.assertNotIn(
             "--exit-on-source-change",
-            claude_code["mcpServers"]["blended"].get("args", []),
+            claude_code["mcpServers"]["golem"].get("args", []),
         )
-        self.assertIn("--exit-on-source-change", omp["mcpServers"]["blended"]["args"])
-        self.assertEqual(
-            omp["mcpServers"]["blended"]["command"],
-            claude_code["mcpServers"]["blended"]["command"],
+        self.assertNotIn("golem", omp["mcpServers"])
+        self.assertNotIn("blended", omp["mcpServers"])
+        self.assertTrue(
+            claude_code["mcpServers"]["golem"]["command"].endswith("/blender-mcp")
         )
 
 
