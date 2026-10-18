@@ -78,8 +78,13 @@ esac
 
 COMMIT=$(git -C "$REPOSITORY" rev-parse --short "$1") || exit 2
 TREE=$FREEZE_ROOT/$COMMIT
-FROZEN=${PREFIX:+$TREE/$PREFIX}
-FROZEN=${FROZEN:-$TREE}
+# A commit from before blended was imported under blender/ (40b027d) has its
+# tree at the repository root; freeze those at the root of the worktree.
+if [ -n "$PREFIX" ] && git -C "$REPOSITORY" cat-file -e "$COMMIT:$PREFIX" 2>/dev/null; then
+  FROZEN=$TREE/$PREFIX
+else
+  FROZEN=$TREE
+fi
 
 if [ -d "$TREE" ]; then
   # Same commit, same directory: reuse rather than fork. This is the rule
