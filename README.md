@@ -53,8 +53,8 @@ plumbing is needed between the two stages.
 
 `blender-mcp` is registered as `golem` and also proxies every tool of the server on big (`GOLEM_REMOTE_URL`, default `http://192.168.1.110:9786/mcp`), so a client sees the Blender tools and the tools above through one MCP. The golem calls run on big and never touch the Blender scene, so they skip the plan gate and need no open Blender. With big unreachable the server starts with the Blender tools only, and a golem call answers `golem on big is unreachable at <url>`.
 
-- Install: `cd blender && uv sync`, then `make install-mcp-addon` links the add-on into Blender's user extensions and enables it. Restart Blender once so it loads the linked add-on.
-- Tests: `make test-pure test-mcp` in `blender/` (`test-mcp` points the remote at a closed port, so it does not depend on big).
+- Install: `make sync` at the root (the Mac half's venv is `blender/.venv`, Python 3.13), then `make -C blender install-mcp-addon` links the add-on into Blender's user extensions and enables it. Restart Blender once so it loads the linked add-on.
+- Tests: `make test` at the root runs the golem unit tests and the blender pure and MCP layers (`test-mcp` points the remote at a closed port, so it does not depend on big); `make test-blender-full` adds the Blender layers.
 - Big ignores `blender/`: the golem service and its wheel are built from `src/golem_mcp` only.
 
 ---
@@ -82,7 +82,7 @@ made with `uv`; every GPU job and the rigger run as subprocesses in their own.
 ```bash
 git clone git@github.com:Ladvien/golem_mcp.git /home/ladvien/golem_mcp
 cd /home/ladvien/golem_mcp
-uv sync --python 3.11 --extra dev
+make sync-golem
 ```
 
 `animate_mesh` also needs `motion_correction`, a compiled module that is not on

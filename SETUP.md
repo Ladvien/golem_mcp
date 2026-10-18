@@ -12,7 +12,7 @@ None needs root.
 
 | Env | Path | Python | torch | Purpose | Installer |
 |---|---|---|---|---|---|
-| **golem** | `/home/ladvien/golem_mcp/.venv` | 3.11 | 2.11.0+cu128 | the MCP server itself, and text-to-motion (`animate_mesh`, Kimodo) | `uv sync --python 3.11 --extra dev` |
+| **golem** | `/home/ladvien/golem_mcp/.venv` | 3.11 | 2.11.0+cu128 | the MCP server itself, and text-to-motion (`animate_mesh`, Kimodo) | `make sync-golem` |
 | **SkinTokens** | `/home/ladvien/skintokens` | 3.11 | 2.7.0+cu128 | rigging (`rig_model`) | `scripts/install_skintokens.sh` |
 | **MV-Adapter** | `/home/ladvien/mvadapter` | 3.11 | 2.13.0+cu130 | orbit views (`generate_orbit_views`) | `scripts/install_mvadapter.sh` |
 | **TRELLIS.2** | `/home/ladvien/segvigen/.venv` | 3.11 | 2.13.0+cu130 | part segmentation (`segment_mesh`) **and** garment generation (`generate_garment`) | `scripts/install_segvigen.sh` |
@@ -120,7 +120,7 @@ drift out from under the patch. It fails loudly if a patch no longer applies.
 ```bash
 git clone git@github.com:Ladvien/golem_mcp.git /home/ladvien/golem_mcp
 cd /home/ladvien/golem_mcp
-uv sync --python 3.11 --extra dev
+make sync-golem
 ```
 
 The package is installed **editable**, so a `systemctl --user restart golem-mcp`

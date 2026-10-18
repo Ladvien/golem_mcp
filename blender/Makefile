@@ -1,8 +1,13 @@
-.PHONY: test test-pure test-blender test-blender-app converge converge-local \
+.PHONY: sync test test-pure test-blender test-blender-app converge converge-local \
 	replay calibrate-eye calibrate-visual-gate pin-golden-views converge-auto \
 	mine-ops pin bench-3dcode chat-e2e photo-to-model provider-smoke test-repro \
 	test-mcp test-mcp-blender install-mcp-addon test-viewport-gui test-bench-scripts
 PY ?= .venv/bin/python
+
+# uv sync is exact by default and uninstalls op plugins installed out of band
+# (spyrite_tile_ops, from spyrit_tile's `make install-golem-plugin`).
+sync:
+	uv sync --inexact
 BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 
 

@@ -10,9 +10,9 @@ dependencies = [
     "numpy>=1.26",
     "scipy>=1.11",
     "trimesh>=4",
-    "torch>=2.4",
+    "torch>=2.4; sys_platform == 'linux'",
     "skinclip @ git+https://github.com/Ladvien/skinclip.git@v0.1.2",
-    "kimodo @ git+https://github.com/nv-tlabs/kimodo.git@58e781898b3d7e328a676a75d3e338c45dce3ad9",
+    "kimodo @ git+https://github.com/nv-tlabs/kimodo.git@58e781898b3d7e328a676a75d3e338c45dce3ad9 ; sys_platform == 'linux'",
 ]
 [project.optional-dependencies]
 dev = ["ruff>=0.8", "mypy>=1.10", "pytest>=8"]
