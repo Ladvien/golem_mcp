@@ -28,6 +28,7 @@ OP_MODULE_NAMES = (
     "arrays",
     "legs",
     "transforms",
+    "assets",
     "modifiers",
     "heal",
     "uv",

@@ -6,6 +6,12 @@ from golem_blender.ops.animation import (
     set_frame_range,
 )
 from golem_blender.ops.arrays import linear_array
+from golem_blender.ops.assets import (
+    AssetReport,
+    duplicate_object,
+    import_generated_asset,
+    import_glb_piece,
+)
 from golem_blender.ops.booleans import (
     BooleanNoOp,
     UnlinkedOperand,
@@ -96,6 +102,7 @@ from golem_blender.ops.weights import (
 __all__ = [
     "AnimationReport",
     "ArmatureRotationModeError",
+    "AssetReport",
     "BodyCapsulesReport",
     "BoneSpec",
     "BooleanNoOp",
@@ -145,6 +152,9 @@ __all__ = [
     "deforming_bone_names",
     "depth_axis_extent_rank",
     "depth_axis_holds_middle_extent",
+    "duplicate_object",
+    "import_generated_asset",
+    "import_glb_piece",
     "keyframe_object_transform",
     "keyframe_pose_bone_rotation",
     "linear_array",

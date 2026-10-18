@@ -42,6 +42,7 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         "roughness",
         "scale",
         "weight",
+        "triangle_count",
         "island_margin",
         "base_color_rgb",
         "color_a_rgb",
