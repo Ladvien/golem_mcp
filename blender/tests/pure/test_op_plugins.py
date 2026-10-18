@@ -1,4 +1,4 @@
-"""Op plugins (`blended.plugins`): installed distributions extend the facade.
+"""Op plugins (`golem_blender.plugins`): installed distributions extend the facade.
 
 The entry-point lookup is faked, so these run with no plugin installed and
 leave the pinned core tool set alone (tests/conftest.py disables real
@@ -11,9 +11,9 @@ import types
 
 import pytest
 
-from blended import plugins
-from blended.agent.tool_schemas import build_tool_schemas
-from blended.ops._contract import changes_scene, facade_ops
+from golem_blender import plugins
+from golem_blender.agent.tool_schemas import build_tool_schemas
+from golem_blender.ops._contract import changes_scene, facade_ops
 
 FAKE_MODULE = "_fake_plugin_ops"
 READER = "fake_plugin_reading"
@@ -21,7 +21,7 @@ EDITOR = "fake_plugin_edit"
 
 
 def _install_entry_points(monkeypatch, *values: tuple[str, str]) -> None:
-    """Make `blended.ops` entry-point discovery return `values` (name, module)."""
+    """Make `golem_blender.ops` entry-point discovery return `values` (name, module)."""
     monkeypatch.delenv(plugins.DISABLE_ENVIRONMENT_VARIABLE, raising=False)
 
     def fake_entry_points(*, group):

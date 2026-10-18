@@ -8,7 +8,7 @@ here is a rate this experiment reports.
 
 from __future__ import annotations
 
-from blended.evaluate.raw_bpy_arm import extract_python, parses
+from golem_blender.evaluate.raw_bpy_arm import extract_python, parses
 
 SCRIPT = "import bpy\n\nbpy.ops.mesh.primitive_cube_add(size=2.0)\n"
 

@@ -35,9 +35,9 @@ def empty_scene():
 
 def _rigged_pair():
     """A box bound to a two-bone armature, weights on both bones."""
-    from blended.ops.primitives import add_box, link_into_scene
-    from blended.ops.rigging import BoneSpec, add_armature, bind_mesh_to_armature
-    from blended.ops.weights import assign_weights_by_height
+    from golem_blender.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.rigging import BoneSpec, add_armature, bind_mesh_to_armature
+    from golem_blender.ops.weights import assign_weights_by_height
 
     box = add_box("Subject", 0.3, 0.3, 1.0)
     link_into_scene(box)
@@ -58,7 +58,7 @@ def _rigged_pair():
 
 
 def _armature_modifier(mesh_object):
-    from blended.ops.rigging import ARMATURE_MODIFIER_TYPE
+    from golem_blender.ops.rigging import ARMATURE_MODIFIER_TYPE
 
     for modifier in mesh_object.modifiers:
         if modifier.type == ARMATURE_MODIFIER_TYPE:
@@ -67,7 +67,7 @@ def _armature_modifier(mesh_object):
 
 
 def test_a_disabled_armature_modifier_is_not_a_binding(empty_scene):
-    from blended.ops.rigging import rig_report
+    from golem_blender.ops.rigging import rig_report
 
     box, armature = _rigged_pair()
     assert rig_report(armature).bound_mesh_names == ("Subject",)
@@ -85,7 +85,7 @@ def test_a_disabled_armature_modifier_is_not_a_binding(empty_scene):
 def test_a_render_disabled_modifier_is_not_a_binding_either(empty_scene):
     """`show_render` alone is enough: the rig would vanish from every
     render even though the viewport looks correct."""
-    from blended.ops.rigging import rig_report
+    from golem_blender.ops.rigging import rig_report
 
     box, armature = _rigged_pair()
     _armature_modifier(bpy.data.objects[box]).show_render = False
@@ -98,7 +98,7 @@ def test_a_render_disabled_modifier_is_not_a_binding_either(empty_scene):
 def test_a_vertex_group_that_names_no_bone_is_reported(empty_scene):
     """The typo case: weights that drive nothing still count as weights
     in `nonzero_weight_counts`, so the cross-check is the only signal."""
-    from blended.ops.weights import assign_weights_by_height, weight_report
+    from golem_blender.ops.weights import assign_weights_by_height, weight_report
 
     box, _ = _rigged_pair()
     clean = weight_report(box)
@@ -114,9 +114,9 @@ def test_a_vertex_group_that_names_no_bone_is_reported(empty_scene):
 
 
 def test_a_bone_no_group_names_is_reported(empty_scene):
-    from blended.ops.primitives import add_box, link_into_scene
-    from blended.ops.rigging import BoneSpec, add_armature, bind_mesh_to_armature
-    from blended.ops.weights import assign_weights_by_height, weight_report
+    from golem_blender.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.rigging import BoneSpec, add_armature, bind_mesh_to_armature
+    from golem_blender.ops.weights import assign_weights_by_height, weight_report
 
     box = add_box("Subject", 0.3, 0.3, 1.0)
     link_into_scene(box)
@@ -141,8 +141,8 @@ def test_a_bone_no_group_names_is_reported(empty_scene):
 def test_an_unrigged_mesh_is_not_accused_of_dead_groups(empty_scene):
     """With no armature there is nothing to compare against, and
     guessing would invent failures on ordinary modelling work."""
-    from blended.ops.primitives import add_box, link_into_scene
-    from blended.ops.weights import assign_vertex_group_weights, weight_report
+    from golem_blender.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.weights import assign_vertex_group_weights, weight_report
 
     box = add_box("Plain", 1.0, 1.0, 1.0)
     link_into_scene(box)
@@ -154,8 +154,8 @@ def test_an_unrigged_mesh_is_not_accused_of_dead_groups(empty_scene):
 
 
 def _animated_box():
-    from blended.ops.animation import keyframe_object_transform, set_frame_range
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.animation import keyframe_object_transform, set_frame_range
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     box = add_box("Mover", 0.5, 0.5, 0.5)
     link_into_scene(box)
@@ -169,7 +169,7 @@ def test_a_muted_fcurve_is_reported(empty_scene):
     # `_action_fcurves` is the module's own accessor for Blender 5.2's
     # SLOTTED actions: `Action.fcurves` no longer exists there, which is
     # why the report never touches it either.
-    from blended.ops.animation import _action_fcurves, animation_report
+    from golem_blender.ops.animation import _action_fcurves, animation_report
 
     box = _animated_box()
     clean = animation_report(box)
@@ -188,7 +188,7 @@ def test_a_muted_fcurve_is_reported(empty_scene):
 def test_keyframes_outside_the_frame_range_are_reported(empty_scene):
     """An action keyed past frame_end reports keyframes and plays
     nothing."""
-    from blended.ops.animation import animation_report, keyframe_object_transform
+    from golem_blender.ops.animation import animation_report, keyframe_object_transform
 
     box = _animated_box()
     assert animation_report(box).keyframes_outside_frame_range_count == 0
@@ -203,8 +203,8 @@ def test_keyframes_outside_the_frame_range_are_reported(empty_scene):
 def test_inspect_domain_surfaces_the_new_fields(empty_scene, tmp_path):
     """The writer only ever sees these through the tool, so the tool has
     to carry them."""
-    from blended.agent.tools import dispatch_tool
-    from blended.ops.weights import assign_weights_by_height
+    from golem_blender.agent.tools import dispatch_tool
+    from golem_blender.ops.weights import assign_weights_by_height
 
     box, _ = _rigged_pair()
     assign_weights_by_height(box, "Tp", 0.5, 1.0, WEIGHT)

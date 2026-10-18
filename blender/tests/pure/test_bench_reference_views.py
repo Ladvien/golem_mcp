@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from blended.evaluate.bench_reference_views import (
+from golem_blender.evaluate.bench_reference_views import (
     REFERENCE_VIEW_FILENAMES,
     reference_view_paths,
 )

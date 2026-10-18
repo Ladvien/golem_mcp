@@ -7,8 +7,8 @@ import dataclasses
 
 import pytest
 
-from blended.agent.claude_code import TurnCost
-from blended.agent.context_preflight import (
+from golem_blender.agent.claude_code import TurnCost
+from golem_blender.agent.context_preflight import (
     CHARS_PER_TOKEN_ESTIMATE,
     ContextExceeded,
     ReplyTruncated,
@@ -16,7 +16,7 @@ from blended.agent.context_preflight import (
     estimate_tokens,
     preflight,
 )
-from blended.agent.loop import (
+from golem_blender.agent.loop import (
     BMB_ENDPOINT,
     CLAUDE_CODE_CONTEXT_TOKENS,
     CLAUDE_CODE_ENDPOINT,
@@ -25,7 +25,7 @@ from blended.agent.loop import (
     AgentSession,
     ModelConfig,
 )
-from blended.agent.outcome import ToolOutcome
+from golem_blender.agent.outcome import ToolOutcome
 
 
 def test_context_tokens_come_from_each_lanes_own_number():
@@ -176,7 +176,7 @@ def test_an_unmeasured_lane_is_reported_once_and_still_runs(tmp_path):
 
 
 def test_an_attached_image_counts_as_an_image_not_as_its_base64():
-    from blended.agent.context_preflight import (
+    from golem_blender.agent.context_preflight import (
         TOKENS_PER_IMAGE_ESTIMATE,
         estimate_request_tokens,
     )
@@ -194,7 +194,7 @@ def test_an_attached_image_counts_as_an_image_not_as_its_base64():
 
 def _daemon(monkeypatch, model_info):
     """A daemon that answers /api/show with `model_info` and pings back."""
-    from blended.agent.loop import SHOW_PATH, OllamaClient
+    from golem_blender.agent.loop import SHOW_PATH, OllamaClient
 
     calls = []
 
@@ -209,7 +209,7 @@ def _daemon(monkeypatch, model_info):
 
 
 def test_the_ollama_lane_learns_its_window_from_the_daemon(monkeypatch):
-    from blended.agent.loop import SHOW_PATH, OllamaClient
+    from golem_blender.agent.loop import SHOW_PATH, OllamaClient
 
     calls = _daemon(
         monkeypatch,
@@ -238,7 +238,7 @@ def test_the_ollama_lane_learns_its_window_from_the_daemon(monkeypatch):
 
 
 def test_a_daemon_that_cannot_say_its_window_is_refused(monkeypatch):
-    from blended.agent.loop import OllamaClient
+    from golem_blender.agent.loop import OllamaClient
 
     _daemon(monkeypatch, {"deepseek4.embedding_length": 4096})
     client = OllamaClient(
@@ -254,7 +254,7 @@ def test_a_daemon_that_cannot_say_its_window_is_refused(monkeypatch):
 
 
 def test_an_ollama_chat_before_discovery_is_refused_not_guessed():
-    from blended.agent.loop import ContextUndiscovered, OllamaClient
+    from golem_blender.agent.loop import ContextUndiscovered, OllamaClient
 
     client = OllamaClient(
         ModelConfig(model="anything", endpoint=LOCAL_ENDPOINT, vision_model="")
@@ -283,7 +283,7 @@ def test_an_empty_reply_is_a_dropped_turn_not_an_answer():
     as the final answer and the run was scored on the geometry that
     happened to exist. Nothing was truncated — there was simply nothing
     to say, so ReplyTruncated cannot catch it."""
-    from blended.agent.context_preflight import EmptyReply, check_reply_is_a_turn
+    from golem_blender.agent.context_preflight import EmptyReply, check_reply_is_a_turn
 
     with pytest.raises(EmptyReply) as refusal:
         check_reply_is_a_turn(
@@ -316,7 +316,7 @@ def test_both_spellings_of_the_thinking_channel_are_read():
     """llama-swap passes DeepSeek's `reasoning_content` through;
     OpenRouter normalizes the same field to `reasoning`. Reading only the
     first threw the whole channel away on the metered lane."""
-    from blended.agent.loop import _assistant_message_from_openai
+    from golem_blender.agent.loop import _assistant_message_from_openai
 
     swap = _assistant_message_from_openai(
         {

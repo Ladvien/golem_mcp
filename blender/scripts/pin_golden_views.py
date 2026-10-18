@@ -60,18 +60,18 @@ def parse_arguments(argv):
 def main(argv) -> int:
     import bpy
 
-    from blended.agent.prompt_versions import get_revision
-    from blended.capture import CaptureSettings, capture_views
-    from blended.evaluate.briefs import get_brief
-    from blended.evaluate.replay import load_record, replay_record
-    from blended.version import assert_supported_blender
+    from golem_blender.agent.prompt_versions import get_revision
+    from golem_blender.capture import CaptureSettings, capture_views
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.evaluate.replay import load_record, replay_record
+    from golem_blender.version import assert_supported_blender
 
     arguments = parse_arguments(argv)
     assert_supported_blender()
 
     revision = get_revision(arguments.revision)
-    from blended.evaluate.briefs import BRIEFS
-    from blended.evaluate.iteration_log import (
+    from golem_blender.evaluate.briefs import BRIEFS
+    from golem_blender.evaluate.iteration_log import (
         IterationLog,
         clean_cycle_for_identity,
     )
@@ -147,6 +147,6 @@ def main(argv) -> int:
 extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
 # Blender exits 0 on an uncaught Python exception, so a run that
 # died would read as a success (OT-32).
-from blended.run.script_exit import run_script_main
+from golem_blender.run.script_exit import run_script_main
 
 raise SystemExit(run_script_main(main, extra_arguments))

@@ -36,7 +36,7 @@ def _populate_scene():
 
 
 def test_reset_scene_empties_the_scene_and_pins_the_fps(empty_scene):
-    from blended.reset import CANONICAL_FPS, reset_scene
+    from golem_blender.reset import CANONICAL_FPS, reset_scene
 
     _populate_scene()
     bpy.context.scene.render.fps = NON_CANONICAL_FPS
@@ -52,7 +52,7 @@ def test_reset_scene_empties_the_scene_and_pins_the_fps(empty_scene):
 
 def test_a_leftover_object_is_not_a_clean_scene(empty_scene):
     """The assertion, not the wipe, is what a rebuild trusts."""
-    from blended.reset import SceneNotClean, assert_clean_scene, reset_scene
+    from golem_blender.reset import SceneNotClean, assert_clean_scene, reset_scene
 
     reset_scene()
     assert_clean_scene()  # the wipe's own postcondition, run twice on purpose
@@ -66,7 +66,7 @@ def test_a_leftover_object_is_not_a_clean_scene(empty_scene):
 def test_a_rewritten_fps_is_not_a_clean_scene(empty_scene):
     """An FBX import rewrites scene.render.fps and resamples every clip,
     so fps is part of "clean" rather than a rendering preference."""
-    from blended.reset import SceneNotClean, assert_clean_scene, reset_scene
+    from golem_blender.reset import SceneNotClean, assert_clean_scene, reset_scene
 
     reset_scene()
     bpy.context.scene.render.fps = NON_CANONICAL_FPS
@@ -78,7 +78,7 @@ def test_a_rewritten_fps_is_not_a_clean_scene(empty_scene):
 
 def test_every_problem_is_reported_in_one_raise(empty_scene):
     """One problem per raise costs a Blender launch per problem."""
-    from blended.reset import SceneNotClean, assert_clean_scene, reset_scene
+    from golem_blender.reset import SceneNotClean, assert_clean_scene, reset_scene
 
     reset_scene()
     _populate_scene()
@@ -102,7 +102,7 @@ def test_every_wipe_collection_name_resolves_on_bpy_data(empty_scene):
     ``"grease_pencils_v3"`` in WIPE_COLLECTIONS — the assert below
     fails with AttributeError because getattr returns None.
     """
-    from blended.reset import MUST_BE_EMPTY, WIPE_COLLECTIONS
+    from golem_blender.reset import MUST_BE_EMPTY, WIPE_COLLECTIONS
 
     for name in WIPE_COLLECTIONS:
         assert getattr(bpy.data, name, None) is not None, (
@@ -119,7 +119,7 @@ def test_a_grease_pencil_datablock_is_wiped_by_reset_scene(empty_scene):
     Measured in Blender 5.2: the RNA name is ``grease_pencils`` (type
     BlendDataGreasePencilsV3), not ``grease_pencils_v3``.
     """
-    from blended.reset import reset_scene
+    from golem_blender.reset import reset_scene
 
     bpy.data.grease_pencils.new("ResidueGreasePencil")
     assert len(bpy.data.grease_pencils) == 1

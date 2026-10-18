@@ -49,7 +49,7 @@ plumbing is needed between the two stages.
 
 ## Live Blender on the Mac (`blender/`)
 
-`blender/` is the former `Ladvien/blended`, imported with its history. It runs on the Mac beside an open Blender 5.2: a Blender add-on that execs code in the open session, the `blended` harness (ops, mesh analyzer, plan gate) that runs inside Blender's Python, and `blender-mcp`, the stdio server in front of both.
+`blender/` is golem's Mac half (Python package `golem_blender`; formerly the separate repo `Ladvien/blended`, imported with its history in `40b027d`). History from before the import is under the old root paths: `git log -- src/blended/<file>` for what is now `blender/src/golem_blender/<file>`. It runs beside an open Blender 5.2: a Blender add-on that execs code in the open session, the `golem_blender` harness (ops, mesh analyzer, plan gate) that runs inside Blender's Python, and `blender-mcp`, the stdio server in front of both.
 
 `blender-mcp` is registered as `golem` and also proxies every tool of the server on big (`GOLEM_REMOTE_URL`, default `http://192.168.1.110:9786/mcp`), so a client sees the Blender tools and the tools above through one MCP. The golem calls run on big and never touch the Blender scene, so they skip the plan gate and need no open Blender. With big unreachable the server starts with the Blender tools only, and a golem call answers `golem on big is unreachable at <url>`.
 

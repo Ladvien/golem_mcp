@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from blended.agent import prompt_search, prompt_versions
-from blended.agent.context_budget import write_spec_row
+from golem_blender.agent import prompt_search, prompt_versions
+from golem_blender.agent.context_budget import write_spec_row
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-SOURCE_PACKAGE = REPOSITORY_ROOT / "src" / "blended"
+SOURCE_PACKAGE = REPOSITORY_ROOT / "src" / "golem_blender"
 
 # Text the old writer corrupted: a double quote ends the literal, a
 # backslash-n becomes a real newline, a hyphen break or an overlong word
@@ -32,7 +32,7 @@ def _evaluate_literal(source: str) -> str:
 
 
 def _package_copy(tmp_path: Path) -> Path:
-    destination = tmp_path / "src" / "blended"
+    destination = tmp_path / "src" / "golem_blender"
     shutil.copytree(
         SOURCE_PACKAGE, destination, ignore=shutil.ignore_patterns("__pycache__")
     )
@@ -94,7 +94,7 @@ def test_write_spec_row_names_the_missing_anchor(tmp_path):
 
 
 def test_a_missing_bmb_key_file_is_a_tokenizer_failure_not_a_file_error(tmp_path):
-    from blended.agent.context_budget import TokenizerUnreachable, bmb_tokenizer
+    from golem_blender.agent.context_budget import TokenizerUnreachable, bmb_tokenizer
 
     with pytest.raises(TokenizerUnreachable, match="bmb api key"):
         bmb_tokenizer("http://127.0.0.1:1", tmp_path / "no_such_key_file")

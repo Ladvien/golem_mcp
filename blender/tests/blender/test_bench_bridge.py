@@ -81,11 +81,11 @@ PLANTER_CALLS = [
 
 
 def test_an_op_built_brief_re_bakes_from_the_standalone_script(tmp_path):
-    from blended.agent.tools import dispatch_tool
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.bench_bridge import RecordedCall, prelude, standalone_script
-    from blended.evaluate.briefs import get_brief
-    from blended.run.executor import run_source_in_process
+    from golem_blender.agent.tools import dispatch_tool
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.bench_bridge import RecordedCall, prelude, standalone_script
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.run.executor import run_source_in_process
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     recorded = []
@@ -140,9 +140,9 @@ def test_a_chunk_that_built_then_raised_is_replayed_so_later_calls_find_its_obje
     no object named 'Spoon'`. Here the same shape must survive the round
     trip.
     """
-    from blended.agent.tools import dispatch_tool
-    from blended.evaluate.bench_bridge import RecordedCall, prelude, standalone_script
-    from blended.run.executor import run_source_in_process
+    from golem_blender.agent.tools import dispatch_tool
+    from golem_blender.evaluate.bench_bridge import RecordedCall, prelude, standalone_script
+    from golem_blender.run.executor import run_source_in_process
 
     # Builds a cube named Handle, then dies — exactly the recorded shape.
     half_built = (

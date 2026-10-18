@@ -11,9 +11,9 @@ on, so the rule is measured against the history it describes.
 from dataclasses import replace
 from pathlib import Path
 
-from blended.agent import prompt_versions
-from blended.evaluate.briefs import BRIEFS
-from blended.evaluate.iteration_log import (
+from golem_blender.agent import prompt_versions
+from golem_blender.evaluate.briefs import BRIEFS
+from golem_blender.evaluate.iteration_log import (
     IterationLog,
     IterationRecord,
     IterationVerdict,
@@ -260,7 +260,7 @@ def test_the_preflight_refuses_an_examiner_that_flags_clean_runs(monkeypatch):
     import sys
     from types import SimpleNamespace
 
-    from blended.evaluate import examiner as examiner_module
+    from golem_blender.evaluate import examiner as examiner_module
 
     specification = importlib.util.spec_from_file_location(
         "converge_auto_under_test",

@@ -1,11 +1,11 @@
 """A stale import inside a bpy-only module is invisible to ``make
 test-pure`` and only detonates minutes into the app tier — the exact
 class that hid 37 failures and 36 errors behind a deferred suite in the
-old repo's reorg.  This test parses every ``.py`` under ``src/blended``,
+old repo's reorg.  This test parses every ``.py`` under ``src/golem_blender``,
 ``tests``, ``scripts``, and ``blender_mcp/mcp/blmcp`` with ``ast`` (no execution,
-so no bpy needed) and asserts that every import rooted at ``blended``
+so no bpy needed) and asserts that every import rooted at ``golem_blender``
 resolves to a module or package that exists on disk, and that every
-``from <blended package> import <name>`` names a submodule or a name
+``from <golem_blender package> import <name>`` names a submodule or a name
 bound in the package's ``__init__.py``.
 
 Parsed, not imported: the whole point is that a broken import must
@@ -29,7 +29,7 @@ import os
 from pathlib import Path
 
 # The probe must have found work to do. Measured 2026-09-06: 708
-# blended-rooted imports across 190 Python files; measured 2026-09-26
+# golem_blender-rooted imports across 190 Python files; measured 2026-09-26
 # after the chat-client deletion (blender_addon/ out, the MCP bridge in):
 # 1002. 200 is the floor, so a tree prune that erases them turns this
 # gate red instead of green.
@@ -39,10 +39,10 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = _REPOSITORY_ROOT / "src"
 
 # Directories to walk for Python sources. ``blender_mcp/mcp/blmcp/`` is
-# included because the MCP bridge tool-code imports ``blended`` deferred,
+# included because the MCP bridge tool-code imports ``golem_blender`` deferred,
 # inside ``main()``, in Blender's process: a stale import there surfaces
 # only as a traceback string returned over the socket at call time.
-_SCAN_DIRS = ("src/blended", "tests", "scripts", "blender_mcp/mcp/blmcp")
+_SCAN_DIRS = ("src/golem_blender", "tests", "scripts", "blender_mcp/mcp/blmcp")
 
 # Files whose names start with these prefixes are skipped (macOS
 # resource-fork artefacts, etc.).
@@ -72,13 +72,13 @@ def _resolve_relative_import(
     """Resolve a relative import (``level > 0``) to an absolute dotted path.
 
     ``level`` is the number of leading dots: 1 = current package, 2 =
-    parent, etc.  For files under ``src/blended`` the directory parts are
-    mapped from ``src/blended/...`` to ``blended...`` so the result is
-    rooted at ``blended`` and the caller's ``root == 'blended'`` check
+    parent, etc.  For files under ``src/golem_blender`` the directory parts are
+    mapped from ``src/golem_blender/...`` to ``golem_blender...`` so the result is
+    rooted at ``golem_blender`` and the caller's ``root == 'golem_blender'`` check
     fires.  Without that mapping the resolver returns a ``src``-rooted
-    path, the caller's ``root == 'blended'`` check is skipped, and
+    path, the caller's ``root == 'golem_blender'`` check is skipped, and
     ``_module_exists_on_disk`` short-circuits via its ``parts[0] !=
-    'blended'`` early return — so the relative-import branch is entirely
+    'golem_blender'`` early return — so the relative-import branch is entirely
     dead even though the docstring advertises the coverage.
     """
     try:
@@ -88,10 +88,10 @@ def _resolve_relative_import(
     parts = list(rel.parts)
     # The file's directory is the package.
     dir_parts = parts[:-1]
-    # Map src/blended -> blended so relative imports resolve to
-    # ``blended.*`` rather than ``src.blended.*``.
-    if len(dir_parts) >= 2 and dir_parts[0] == "src" and dir_parts[1] == "blended":
-        dir_parts = ["blended"] + list(dir_parts[2:])
+    # Map src/golem_blender -> golem_blender so relative imports resolve to
+    # ``golem_blender.*`` rather than ``src.golem_blender.*``.
+    if len(dir_parts) >= 2 and dir_parts[0] == "src" and dir_parts[1] == "golem_blender":
+        dir_parts = ["golem_blender"] + list(dir_parts[2:])
     # level=1 means current package (dir_parts), level=2 means parent, etc.
     if level > len(dir_parts):
         return None
@@ -108,11 +108,11 @@ def _module_exists_on_disk(dotted: str) -> bool:
     if not dotted:
         return False
     parts = dotted.split(".")
-    if parts[0] != "blended":
-        # We only assert blended-rooted imports; other roots (bpy, numpy,
+    if parts[0] != "golem_blender":
+        # We only assert golem_blender-rooted imports; other roots (bpy, numpy,
         # stdlib) are not on disk under src/.
         return True
-    # blended.foo.bar -> src/blended/foo/bar.py or src/blended/foo/bar/__init__.py
+    # golem_blender.foo.bar -> src/golem_blender/foo/bar.py or src/golem_blender/foo/bar/__init__.py
     rel_parts = ["src"] + parts
     base = _REPOSITORY_ROOT.joinpath(*rel_parts)
     return base.with_suffix(".py").is_file() or (base / "__init__.py").is_file()
@@ -127,7 +127,7 @@ def _module_level_names(dotted: str) -> set[str]:
     ``foo/bar.py``, not in ``foo/__init__.py``.
     """
     parts = dotted.split(".")
-    if parts[0] != "blended":
+    if parts[0] != "golem_blender":
         return set()
     base = _REPOSITORY_ROOT.joinpath("src", *parts)
     if base.is_dir() and (base / "__init__.py").is_file():
@@ -182,7 +182,7 @@ def _names_from_file(path: Path) -> set[str]:
 def _package_submodules(package_dotted: str) -> set[str]:
     """Return the set of submodule names visible on disk for a package."""
     parts = package_dotted.split(".")
-    if parts[0] != "blended":
+    if parts[0] != "golem_blender":
         return set()
     pkg_dir = _REPOSITORY_ROOT.joinpath("src", *parts)
     if not pkg_dir.is_dir():
@@ -196,17 +196,17 @@ def _package_submodules(package_dotted: str) -> set[str]:
     return submodules
 
 
-def test_all_blended_imports_resolve():
-    """Every import rooted at ``blended`` must point to a module on disk.
+def test_all_golem_blender_imports_resolve():
+    """Every import rooted at ``golem_blender`` must point to a module on disk.
 
-    Coverage gaps, named honestly: (1) ``from blended.x import *`` star
+    Coverage gaps, named honestly: (1) ``from golem_blender.x import *`` star
     imports are skipped — the names they pull in are unknowable without
     executing the module, which this test never does.  (2) The
     relative-import branch (``level > 0``) is exercised only if the tree
     contains relative imports; as of 2026-09-06 the tree has zero, so the
     branch is latent coverage advertised by the docstring but not yet
-    proven by live data.  The resolver maps ``src/blended`` to
-    ``blended`` so the branch will fire when relative imports appear.
+    proven by live data.  The resolver maps ``src/golem_blender`` to
+    ``golem_blender`` so the branch will fire when relative imports appear.
     """
     problems: list[str] = []
     checked = 0
@@ -222,7 +222,7 @@ def test_all_blended_imports_resolve():
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     root = alias.name.split(".")[0]
-                    if root == "blended":
+                    if root == "golem_blender":
                         checked += 1
                         if not _module_exists_on_disk(alias.name):
                             problems.append(
@@ -237,7 +237,7 @@ def test_all_blended_imports_resolve():
                     if resolved is None:
                         continue
                     root = resolved.split(".")[0]
-                    if root == "blended":
+                    if root == "golem_blender":
                         # For relative imports, check the module itself.
                         checked += 1
                         if not _module_exists_on_disk(resolved):
@@ -257,7 +257,7 @@ def test_all_blended_imports_resolve():
                                     f"{alias.name} — not a submodule or bound name in "
                                     f"{resolved}"
                                 )
-                elif node.module and node.module.split(".")[0] == "blended":
+                elif node.module and node.module.split(".")[0] == "golem_blender":
                     checked += 1
                     if not _module_exists_on_disk(node.module):
                         problems.append(
@@ -275,12 +275,12 @@ def test_all_blended_imports_resolve():
                             )
 
     assert checked >= MINIMUM_IMPORTS_CHECKED, (
-        f"only {checked} blended-rooted imports checked; the floor is "
+        f"only {checked} golem_blender-rooted imports checked; the floor is "
         f"{MINIMUM_IMPORTS_CHECKED} so a tree prune that erases them "
         f"turns this gate red instead of green"
     )
     assert not problems, (
-        f"{len(problems)} unresolvable blended imports:\n  "
+        f"{len(problems)} unresolvable golem_blender imports:\n  "
         + "\n  ".join(problems[:30])
         + (f"\n  … and {len(problems) - 30} more" if len(problems) > 30 else "")
     )
@@ -300,13 +300,13 @@ def _imported_name_exists(module_dotted: str, name: str) -> bool:
 
 
 def test_the_harness_imports_first_in_a_fresh_interpreter():
-    """`blended.harness` must be importable BEFORE anything under
-    `blended.run`, in a process that has imported nothing else.
+    """`golem_blender.harness` must be importable BEFORE anything under
+    `golem_blender.run`, in a process that has imported nothing else.
 
     Measured 2026-09-10 (OT-4): a stage-vocabulary module placed under
-    `blended.run` made `harness -> run.stages -> run/__init__ -> run.batch
+    `golem_blender.run` made `harness -> run.stages -> run/__init__ -> run.batch
     -> harness` a cycle. The pure suite never saw it because an earlier
-    test had already imported `blended.run.executor`; the agent-loop
+    test had already imported `golem_blender.run.executor`; the agent-loop
     tests inside Blender, which import the harness first, did. A fresh
     interpreter is the only honest probe of import order.
     """
@@ -317,7 +317,7 @@ def test_the_harness_imports_first_in_a_fresh_interpreter():
     # src tree explicitly so the probe does not depend on an editable install.
     environment = {**os.environ, "PYTHONPATH": str(_SRC_ROOT)}
     completed = subprocess.run(
-        [sys.executable, "-c", "import blended.harness; import blended.agent.tools"],
+        [sys.executable, "-c", "import golem_blender.harness; import golem_blender.agent.tools"],
         capture_output=True,
         text=True,
         check=False,

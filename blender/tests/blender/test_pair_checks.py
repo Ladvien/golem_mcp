@@ -128,7 +128,7 @@ def test_separation_is_measured_on_the_surface(empty_scene):
     """Two 1 m cubes whose faces sit 0.01 m apart must report a
     minimum separation within 1e-3 of 0.01 — a nearest-vertex
     implementation reads roughly the cube diagonal instead."""
-    from blended.analyze.pair_checks import analyze_pair
+    from golem_blender.analyze.pair_checks import analyze_pair
 
     first = _unit_cube("First", (-1.005, 0.0))
     second = _unit_cube("Second", (0.005, 0.0))
@@ -143,7 +143,7 @@ def test_separation_is_measured_on_the_surface(empty_scene):
 
 
 def test_overlapping_cubes_report_intersecting_pairs(empty_scene):
-    from blended.analyze.pair_checks import analyze_pair
+    from golem_blender.analyze.pair_checks import analyze_pair
 
     first = _unit_cube("OverlapA", (-0.25, 0.0))
     second = _unit_cube("OverlapB", (0.25, 0.0))
@@ -197,7 +197,7 @@ def _one_directional_minimum_m(query_object, target_object):
     """The pre-fix measurement: sample only the query object's own
     vertices. Kept here, not in the module, so the asymmetry this file
     guards against stays reproducible."""
-    from blended.analyze.pair_checks import _sampled_minimum_distance_m
+    from golem_blender.analyze.pair_checks import _sampled_minimum_distance_m
 
     dependency_graph = bpy.context.evaluated_depsgraph_get()
     query_evaluated = query_object.evaluated_get(dependency_graph)
@@ -218,7 +218,7 @@ def test_separation_does_not_depend_on_argument_order(empty_scene):
     """A separation measure that changes when the arguments swap is not
     a measure. Asserts the pair is genuinely density-asymmetric first,
     so the symmetry assertion cannot pass vacuously."""
-    from blended.analyze.pair_checks import analyze_pair
+    from golem_blender.analyze.pair_checks import analyze_pair
 
     cube = _unit_cube("SymmetryCube", (0.0, 0.0))
     cylinder = _cylinder("SymmetryCylinder", (CYLINDER_CENTER_X_M, 0.0))
@@ -245,7 +245,7 @@ def test_aabb_penetration_depth_is_reported(empty_scene):
     """The depth that gates the face-pair count is now visible: it
     matches the AABB overlap on a deep crossing and is zero on a pair
     that is apart."""
-    from blended.analyze.pair_checks import analyze_pair
+    from golem_blender.analyze.pair_checks import analyze_pair
 
     cube = _unit_cube("DepthCube", (0.0, 0.0))
     cylinder = _cylinder("DepthCylinder", (CYLINDER_CENTER_X_M, 0.0))
@@ -296,7 +296,7 @@ def test_a_shallow_crossing_is_visible_only_in_the_depth(empty_scene):
     This is also the measured proof that minimum_separation_m is an
     upper bound on the true separation, which here is exactly 0.
     """
-    from blended.analyze.pair_checks import (
+    from golem_blender.analyze.pair_checks import (
         CONTACT_DEPTH_TOLERANCE_M,
         analyze_pair,
     )

@@ -20,14 +20,14 @@ from pathlib import Path
 
 import pytest
 
-import blended.ops as ops_facade
-from blended.manifest import OP_MODULE_NAMES, _public_functions
+import golem_blender.ops as ops_facade
+from golem_blender.manifest import OP_MODULE_NAMES, _public_functions
 
-SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "blended"
+SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "golem_blender"
 BUILDERS_ROOT = SOURCE_ROOT / "builders"
-# A builder reaching past the facade: `from blended.ops.<module> import`.
+# A builder reaching past the facade: `from golem_blender.ops.<module> import`.
 _SUBMODULE_IMPORT_PATTERN = re.compile(
-    r"^\s*from blended\.ops\.\w+ import", re.MULTILINE
+    r"^\s*from golem_blender\.ops\.\w+ import", re.MULTILINE
 )
 
 # The vocabulary an agent is handed. Every entry must be the only way
@@ -45,7 +45,7 @@ FORBIDDEN_DOCSTRING_MARKERS = (
 
 def _all_operations():
     for module_name in OP_MODULE_NAMES:
-        module = importlib.import_module(f"blended.ops.{module_name}")
+        module = importlib.import_module(f"golem_blender.ops.{module_name}")
         for signature, summary in _public_functions(module):
             yield module_name, signature, summary
 
@@ -58,7 +58,7 @@ def test_the_op_vocabulary_is_not_empty():
 @pytest.mark.parametrize("marker", FORBIDDEN_DOCSTRING_MARKERS)
 def test_no_operation_advertises_a_second_path(marker):
     offenders = [
-        f"blended.ops.{module_name}.{signature.split('(')[0]}: {summary}"
+        f"golem_blender.ops.{module_name}.{signature.split('(')[0]}: {summary}"
         for module_name, signature, summary in _all_operations()
         if marker in summary.lower()
     ]
@@ -82,7 +82,7 @@ def _op_module_names_on_disk():
 def _public_symbols_defined_in_ops():
     """Every public function or class whose home is an ops submodule."""
     for module_name in sorted(_op_module_names_on_disk()):
-        module = importlib.import_module(f"blended.ops.{module_name}")
+        module = importlib.import_module(f"golem_blender.ops.{module_name}")
         for symbol_name, symbol in vars(module).items():
             if symbol_name.startswith("_"):
                 continue
@@ -96,7 +96,7 @@ def _public_symbols_defined_in_ops():
 def test_every_ops_submodule_is_in_the_manifest():
     on_disk = _op_module_names_on_disk()
     assert on_disk == set(OP_MODULE_NAMES), (
-        "OP_MODULE_NAMES and src/blended/ops/*.py disagree: a module the "
+        "OP_MODULE_NAMES and src/golem_blender/ops/*.py disagree: a module the "
         "manifest never introspects is a vocabulary the agent never sees."
     )
 
@@ -104,13 +104,13 @@ def test_every_ops_submodule_is_in_the_manifest():
 def test_every_public_op_is_reachable_from_the_facade():
     """OT-1: the whitelist is the facade, so the facade must be whole."""
     missing = sorted(
-        f"blended.ops.{module_name}.{symbol_name}"
+        f"golem_blender.ops.{module_name}.{symbol_name}"
         for module_name, symbol_name in _public_symbols_defined_in_ops()
         if symbol_name not in ops_facade.__all__
         or getattr(ops_facade, symbol_name, None) is None
     )
     assert not missing, (
-        f"public ops not re-exported by blended.ops: {missing}. "
+        f"public ops not re-exported by golem_blender.ops: {missing}. "
         f"Anything off the facade is invisible to the agent and to the "
         f"schema generator."
     )
@@ -149,5 +149,5 @@ def test_builders_import_only_the_facade(builder_path):
     offending = _SUBMODULE_IMPORT_PATTERN.findall(builder_path.read_text())
     assert not offending, (
         f"{builder_path.name} imports an ops submodule directly: "
-        f"{offending}. Builders use `from blended.ops import ...` only."
+        f"{offending}. Builders use `from golem_blender.ops import ...` only."
     )

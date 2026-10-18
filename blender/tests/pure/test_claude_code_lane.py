@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from blended.agent.claude_code import (
+from golem_blender.agent.claude_code import (
     ASSISTANT_LABEL,
     CLAUDE_CODE_DEFAULT_EFFORT,
     CLAUDE_CODE_ENDPOINT,
@@ -35,7 +35,7 @@ from blended.agent.claude_code import (
     render_call,
     resolve_binary,
 )
-from blended.agent.loop import (
+from golem_blender.agent.loop import (
     API_KEY_ENVIRONMENT_VARIABLE,
     BIG_ENDPOINT,
     LOCAL_ENDPOINT,
@@ -45,7 +45,7 @@ from blended.agent.loop import (
     _implied_api_key,
     _implied_endpoint,
 )
-from blended.agent.tools import TOOL_SCHEMAS
+from golem_blender.agent.tools import TOOL_SCHEMAS
 
 WRITER_MODEL = "claude-code:sonnet"
 EYE_MODEL = "claude-code:haiku"
@@ -607,7 +607,7 @@ def test_the_system_prompt_is_byte_stable_across_builds():
     scene state. Measured cost of getting this wrong: the 12,241-token
     prefix moves from a 0.1x read to a 1.25x write on every turn.
     """
-    from blended.agent.system_prompt import build_system_prompt
+    from golem_blender.agent.system_prompt import build_system_prompt
 
     assert build_system_prompt() == build_system_prompt()
 
@@ -619,7 +619,7 @@ def test_one_harness_turn_reports_every_api_call_it_made():
     A cost record that assumed one call per turn would under-report the
     single largest inefficiency in the loop by half.
     """
-    from blended.agent.claude_code import parse_turn_cost
+    from golem_blender.agent.claude_code import parse_turn_cost
 
     cost = parse_turn_cost(
         {

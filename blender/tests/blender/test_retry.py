@@ -11,7 +11,7 @@ pytestmark = pytest.mark.blender
 BROKEN_SMOOTH_CRATE_SOURCE = """
 import sys
 sys.path.insert(0, "src")
-from blended.builders import CrateBuilder, CrateParameters
+from golem_blender.builders import CrateBuilder, CrateParameters
 
 crate_object = CrateBuilder(CrateParameters(name="RetryCrate")).build()
 crate_object.data.use_auto_smooth = True
@@ -21,7 +21,7 @@ crate_object.data.use_auto_smooth = True
 FIXED_SMOOTH_CRATE_SOURCE = """
 import sys
 sys.path.insert(0, "src")
-from blended.builders import CrateBuilder, CrateParameters
+from golem_blender.builders import CrateBuilder, CrateParameters
 
 crate_object = CrateBuilder(CrateParameters(name="RetryCrate")).build()
 for polygon in crate_object.data.polygons:
@@ -42,7 +42,7 @@ def _scripted_fixer(source_code: str, result) -> str:
 
 
 def test_retry_fixes_drift_failure_on_first_retry(empty_scene):
-    from blended.run.retry import run_with_retries
+    from golem_blender.run.retry import run_with_retries
 
     outcome = run_with_retries(BROKEN_SMOOTH_CRATE_SOURCE, _scripted_fixer)
 
@@ -61,7 +61,7 @@ def test_retry_fixes_drift_failure_on_first_retry(empty_scene):
 
 
 def test_retry_gives_up_after_cap(empty_scene):
-    from blended.run.retry import run_with_retries
+    from golem_blender.run.retry import run_with_retries
 
     def hopeless_fixer(source_code: str, result) -> str:
         return "raise RuntimeError('still broken')"

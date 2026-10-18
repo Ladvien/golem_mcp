@@ -19,7 +19,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
-from blended.evaluate.candidate_ops import (
+from golem_blender.evaluate.candidate_ops import (
     UnminableRecord,
     hatch_events_from_transcript,
     load_records,

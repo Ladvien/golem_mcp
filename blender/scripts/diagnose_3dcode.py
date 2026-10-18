@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-instance 3DCodeBench chamfer diagnostic for one blended model row.
+"""Per-instance 3DCodeBench chamfer diagnostic for one golem_blender model row.
 
 Replicates the scorer's numbers by IMPORTING its own functions
 (<bench>/metrics/shape_chamfer.py) rather than reimplementing them, adds a

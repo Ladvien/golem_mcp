@@ -80,7 +80,7 @@ CONSTRUCTION_ORDER_REL_TOL = 1.0e-6
 
 
 def _builders():
-    from blended.builders import (
+    from golem_blender.builders import (
         BarrelBuilder,
         BarrelParameters,
         CrateBuilder,
@@ -118,7 +118,7 @@ def _scale_lengths(parameters, factor):
 
 def _uniform_scale_relation(factor, z_absolute_residue_m):
     """Every extent scales; topology does not move."""
-    from blended.analyze import all_of, grew_by, scaled_by, unchanged
+    from golem_blender.analyze import all_of, grew_by, scaled_by, unchanged
 
     def relation(before, after):
         return all_of(
@@ -167,7 +167,7 @@ def _uniform_scale_relation(factor, z_absolute_residue_m):
 
 def _refinement_relation(before, after):
     """More segments: more triangles, same size."""
-    from blended.analyze import all_of, strictly_increased, unchanged
+    from golem_blender.analyze import all_of, strictly_increased, unchanged
 
     return all_of(
         strictly_increased(
@@ -187,7 +187,7 @@ def _refinement_relation(before, after):
 
 def _topology_relation(before, after):
     """Scale is not allowed to change what the mesh IS."""
-    from blended.analyze import all_of, unchanged
+    from golem_blender.analyze import all_of, unchanged
 
     return all_of(
         *[
@@ -214,7 +214,7 @@ def _construction_order_relation(before, after):
     deliberately NOT asserted here, and the module docstring records the
     falsified first version rather than leaving it to be retried.
     """
-    from blended.analyze import all_of, measured_the_same, unchanged
+    from golem_blender.analyze import all_of, measured_the_same, unchanged
 
     return all_of(
         *[
@@ -239,8 +239,8 @@ def _construction_order_relation(before, after):
 
 
 def _relations_for(builder_name, parameters):
-    from blended.analyze import Relation
-    from blended.builders.pallet import BOOLEAN_EMBED_M
+    from golem_blender.analyze import Relation
+    from golem_blender.builders.pallet import BOOLEAN_EMBED_M
 
     z_residue_m = BOOLEAN_EMBED_M if builder_name == "pallet" else 0.0
     small_factor = (
@@ -312,7 +312,7 @@ def _relations_for(builder_name, parameters):
 
 @pytest.mark.parametrize("builder_name", sorted(REFINED_COUNTS))
 def test_builders_satisfy_their_metamorphic_relations(builder_name):
-    from blended.analyze import probe
+    from golem_blender.analyze import probe
 
     builder_class, parameters = _builders()[builder_name]
     relations = _relations_for(builder_name, parameters)
@@ -331,7 +331,7 @@ def test_builders_satisfy_their_metamorphic_relations(builder_name):
 
 def test_a_relation_without_a_justification_is_refused():
     """A relation nobody can justify is a relation nobody can falsify."""
-    from blended.analyze import Relation, all_of, probe, unchanged
+    from golem_blender.analyze import Relation, all_of, probe, unchanged
 
     unjustified = Relation(
         name="unjustified",
@@ -355,7 +355,7 @@ def test_a_relation_without_a_justification_is_refused():
 
 def test_a_broken_relation_fails_instead_of_being_swallowed():
     """A relation that raises is not a relation that passed."""
-    from blended.analyze import Relation, probe
+    from golem_blender.analyze import Relation, probe
 
     def raise_instead(before, after):
         raise RuntimeError("the relation itself is broken")
@@ -387,7 +387,7 @@ def test_the_scale_relation_can_actually_fail():
     scales only ONE axis' parameter, which is exactly the defect class
     the relation exists to catch (a length applied as an absolute).
     """
-    from blended.analyze import Relation, probe
+    from golem_blender.analyze import Relation, probe
 
     builder_class, parameters = _builders()["crate"]
     half_scaled = Relation(

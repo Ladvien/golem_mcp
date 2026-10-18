@@ -24,7 +24,7 @@ THREE INSTRUMENTS, and the difference between them is the finding:
   did.
 * `<inst>/<inst>.py` is the BAKED script: `# --- chunk N ---` and
   `# --- op N: name ---` labels are exactly what the bridge collected
-  (`blended.evaluate.bench_bridge.standalone_script`). This is what the
+  (`golem_blender.evaluate.bench_bridge.standalone_script`). This is what the
   score saw.
 * `<inst>/.agent_meta.json` carries `n_chunks_included` and
   `n_op_calls_included`, which phase A used. Both are biased, measured
@@ -60,11 +60,11 @@ from finetune_decision_thresholds import EXCLUDED_CODES, model_directory
 from finetune_phase_a import PHASE_A_DIRECTORY, WORKING_DIRECTORY, included_model_dirs
 from finetune_phase_b import completions
 
-from blended.agent.tool_disclosure import core_ops, offered_tools
-from blended.agent.tool_schemas import tool_schemas_fingerprint
-from blended.agent.tools import SERVICE_TOOL_NAMES, TOOL_SCHEMAS
-from blended.evaluate.bench_bridge import HATCH_TOOL_NAME
-from blended.ops._contract import changes_scene, facade_ops
+from golem_blender.agent.tool_disclosure import core_ops, offered_tools
+from golem_blender.agent.tool_schemas import tool_schemas_fingerprint
+from golem_blender.agent.tools import SERVICE_TOOL_NAMES, TOOL_SCHEMAS
+from golem_blender.evaluate.bench_bridge import HATCH_TOOL_NAME
+from golem_blender.ops._contract import changes_scene, facade_ops
 
 MEASURED_PATH = WORKING_DIRECTORY / "hatch_mechanism.json"
 SUMMARY_PATH = PHASE_A_DIRECTORY / "hatch_mechanism.md"

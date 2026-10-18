@@ -12,7 +12,7 @@ BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 
 
 # Three layers: the pure suite in the dev venv, the Blender suite inside
-# the installed Blender (the environment blended runs in over MCP), and
+# the installed Blender (the environment golem_blender runs in over MCP), and
 # the MCP server's unit layer. A bare `pytest tests/blender` with no bpy
 # wheel skips every module and exits 5 (nothing ran), which is not a pass.
 test: test-pure test-blender-app test-bench-scripts test-mcp
@@ -33,26 +33,26 @@ test-bench-scripts:
 test-blender:
 	$(PY) -m pytest tests/blender -q
 
-# Blender layer inside the INSTALLED Blender — the environment blended's
+# Blender layer inside the INSTALLED Blender — the environment golem_blender's
 # code runs in over MCP (bundled numpy, no Pillow, no pip).
 test-blender-app:
 	$(BLENDER) --background --factory-startup \
 		--python scripts/run_tests_in_blender.py -- $(ARGS)
 
-# The MCP server's unit layer (blender_mcp/ subtree + blended bridge):
+# The MCP server's unit layer (blender_mcp/ subtree + golem_blender bridge):
 # no Blender required. The golem server on big is pointed at a port nothing
 # listens on, so the tool lists these tests compare never depend on whether
 # big is up (TestGolemRemote covers the remote half with a fake).
-MCP_TEST_ENV = BLENDED_DISABLE_PLUGINS=1 GOLEM_REMOTE_URL=http://127.0.0.1:9/mcp
+MCP_TEST_ENV = GOLEM_BLENDER_DISABLE_PLUGINS=1 GOLEM_REMOTE_URL=http://127.0.0.1:9/mcp
 test-mcp:
 	$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_mcp_server.py && \
 		$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_tool_listing.py && \
-		$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_blended_bridge.py && \
+		$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_golem_blender_bridge.py && \
 		$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_rst_parse.py && \
 		$(MCP_TEST_ENV) $(PY) blender_mcp/tests/test_rst_search.py
 
 # The MCP server against a real background Blender: client -> server ->
-# socket -> add-on main-thread exec -> blended's dispatch_tool. Only the
+# socket -> add-on main-thread exec -> golem_blender's dispatch_tool. Only the
 # background class runs: foreground and interactive need Weston (Linux).
 test-mcp-blender:
 	$(MCP_TEST_ENV) BLENDER_BIN=$(BLENDER) BLENDER_MCP=$(CURDIR)/.venv/bin/blender-mcp \

@@ -9,7 +9,7 @@ between user and agent, not an approval gate (DOI
 10.48550/arxiv.2604.14228 — ≈93 % of permission prompts are approved).
 
 The test uses a scripted client (no network) and binds ONE live module
-object — ``from blended.agent import loop as live_loop`` — for both the
+object — ``from golem_blender.agent import loop as live_loop`` — for both the
 monkeypatch target and construction.
 """
 
@@ -20,10 +20,10 @@ import json
 
 import pytest
 
-from blended.agent import loop as live_loop
-from blended.agent.claude_code import TurnCost
-from blended.agent.outcome import ToolOutcome
-from blended.agent.plan import (
+from golem_blender.agent import loop as live_loop
+from golem_blender.agent.claude_code import TurnCost
+from golem_blender.agent.outcome import ToolOutcome
+from golem_blender.agent.plan import (
     MAXIMUM_PLAN_STEPS,
     MISSING_PLAN_REFUSAL,
     TurnPlan,
@@ -402,7 +402,7 @@ def test_render_event_emitted_in_images_to_writer_config(tmp_path):
 
 
 def test_dispatch_tool_declare_plan_returns_failure_for_empty_list():
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     outcome = dispatch_tool("declare_plan", {"steps": []})
     result = outcome.text
@@ -412,7 +412,7 @@ def test_dispatch_tool_declare_plan_returns_failure_for_empty_list():
 
 
 def test_dispatch_tool_declare_plan_returns_failure_for_too_many():
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     outcome = dispatch_tool(
         "declare_plan", {"steps": [f"s{i}" for i in range(MAXIMUM_PLAN_STEPS + 1)]}
@@ -424,7 +424,7 @@ def test_dispatch_tool_declare_plan_returns_failure_for_too_many():
 
 
 def test_dispatch_tool_declare_plan_returns_failure_for_blank_step():
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     outcome = dispatch_tool("declare_plan", {"steps": ["build", "   "]})
     result = outcome.text
@@ -434,7 +434,7 @@ def test_dispatch_tool_declare_plan_returns_failure_for_blank_step():
 
 
 def test_dispatch_tool_declare_plan_echoes_steps():
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     outcome = dispatch_tool("declare_plan", {"steps": ["build", "export"]})
     result = outcome.text
@@ -447,8 +447,8 @@ def test_dispatch_tool_declare_plan_echoes_steps():
 
 
 def test_plan_required_tools_are_run_python_and_every_scene_changing_op():
-    from blended.agent.plan import PLAN_REQUIRED_TOOLS
-    from blended.ops._contract import changes_scene, facade_ops
+    from golem_blender.agent.plan import PLAN_REQUIRED_TOOLS
+    from golem_blender.ops._contract import changes_scene, facade_ops
 
     assert PLAN_REQUIRED_TOOLS[0] == "run_python"
     assert set(PLAN_REQUIRED_TOOLS[1:]) == {
@@ -527,7 +527,7 @@ def test_an_op_tool_call_with_plan_step_reports_progress(tmp_path):
 def test_dispatch_strips_plan_step_before_binding():
     """plan_step is the harness's argument: the op never sees it, and a
     reader called with it is not refused as 'unknown parameter'."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     text = dispatch_tool(
         "middle_extent_m", {"extents_m": [0.3, 0.2, 0.25], "plan_step": 2}, None

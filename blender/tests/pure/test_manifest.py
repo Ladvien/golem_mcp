@@ -1,6 +1,6 @@
 """The manifest must describe the code that actually exists."""
 
-from blended.manifest import build_manifest
+from golem_blender.manifest import build_manifest
 
 
 def test_manifest_lists_real_operations():

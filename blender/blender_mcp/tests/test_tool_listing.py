@@ -16,13 +16,13 @@ import unittest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from blended.agent.tools import TOOL_SCHEMAS
+from golem_blender.agent.tools import TOOL_SCHEMAS
 
 # Root of the repository.
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# The tools blended serves beside the upstream ones.
-_BLENDED_TOOL_NAMES = frozenset(schema["function"]["name"] for schema in TOOL_SCHEMAS)
+# The tools golem_blender serves beside the upstream ones.
+_GOLEM_BLENDER_TOOL_NAMES = frozenset(schema["function"]["name"] for schema in TOOL_SCHEMAS)
 
 # Complete expected tool listing.
 # When a tool is added, changed, or removed this must be updated.
@@ -337,7 +337,7 @@ EXPECTED_TOOLS = [
         "description": "\n"
         "Move the 3D viewport to focus on an object by *name*.\n"
         "\n"
-        "blended's scene-changing tools frame the objects they touched on\n"
+        "golem's scene-changing tools frame the objects they touched on\n"
         "their own. Call this to show the user a different part, or one a\n"
         "`run_python` chunk changed without naming it.\n"
         "\n"
@@ -526,7 +526,7 @@ def _list_tools() -> list[dict[str, object]]:
         ):
             await session.initialize()
             result = await session.list_tools()
-            # blended's surface is pinned by TOOL_SCHEMAS_FINGERPRINT;
+            # golem_blender's surface is pinned by TOOL_SCHEMAS_FINGERPRINT;
             # this snapshot pins the upstream tools only.
             return [
                 {
@@ -535,7 +535,7 @@ def _list_tools() -> list[dict[str, object]]:
                     "inputSchema": t.inputSchema,
                 }
                 for t in result.tools
-                if t.name not in _BLENDED_TOOL_NAMES
+                if t.name not in _GOLEM_BLENDER_TOOL_NAMES
             ]
 
     return asyncio.run(_run())

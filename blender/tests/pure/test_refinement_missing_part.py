@@ -4,13 +4,13 @@ never an exception that loses the record (measured 2026-09-10, iteration
 
 from __future__ import annotations
 
-from blended.evaluate.acceptance import (
+from golem_blender.evaluate.acceptance import (
     AcceptanceReport,
     DimensionMeasurement,
     PartReport,
     RefinementOutcome,
 )
-from blended.evaluate.briefs import get_brief
+from golem_blender.evaluate.briefs import get_brief
 
 
 def test_a_missing_dimension_after_the_edit_is_reported_not_raised():

@@ -1,6 +1,6 @@
 """Transcript logging: pure, no bpy."""
 
-from blended.agent.transcript import ChatTranscript, default_log_directory
+from golem_blender.agent.transcript import ChatTranscript, default_log_directory
 
 
 def test_writes_both_formats_with_a_header(tmp_path):
@@ -8,7 +8,7 @@ def test_writes_both_formats_with_a_header(tmp_path):
     assert transcript.jsonl_path.exists()
     assert transcript.markdown_path.exists()
     header = transcript.markdown_path.read_text()
-    assert "blended session — s1" in header
+    assert "golem_blender session — s1" in header
     assert "Routing: w/e" in header
 
 
@@ -72,7 +72,7 @@ def test_reopening_continues_the_event_numbering(tmp_path):
 def test_default_log_directory_prefers_the_repository(tmp_path):
     assert default_log_directory(tmp_path) == tmp_path / "logs"
     fallback = default_log_directory(None)
-    assert fallback.parts[-2:] == (".blended", "logs")
+    assert fallback.parts[-2:] == (".golem", "logs")
 
 
 def test_schema_two_stores_the_tool_event_under_data(tmp_path):
@@ -80,8 +80,8 @@ def test_schema_two_stores_the_tool_event_under_data(tmp_path):
     data null; the Markdown does not repeat the machine copy."""
     import json
 
-    from blended.agent.tool_event import TOOL_EVENT_KIND, ToolEvent, encode_tool_event
-    from blended.agent.transcript import TRANSCRIPT_SCHEMA_VERSION
+    from golem_blender.agent.tool_event import TOOL_EVENT_KIND, ToolEvent, encode_tool_event
+    from golem_blender.agent.transcript import TRANSCRIPT_SCHEMA_VERSION
 
     assert TRANSCRIPT_SCHEMA_VERSION == 2
     transcript = ChatTranscript(tmp_path, session_name="s")

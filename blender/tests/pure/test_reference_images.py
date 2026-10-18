@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from blended.agent.loop import (
+from golem_blender.agent.loop import (
     REFERENCE_PHOTO_LEAD_IN,
     REFERENCE_PHOTO_READ_PROMPT,
     AgentSession,

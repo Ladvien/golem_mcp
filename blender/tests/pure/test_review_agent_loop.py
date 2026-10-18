@@ -9,9 +9,9 @@ import json
 
 import pytest
 
-from blended.agent.claude_code import TurnCost
-from blended.agent.outcome import ToolOutcome
-from blended.stages import STAGE_GATE
+from golem_blender.agent.claude_code import TurnCost
+from golem_blender.agent.outcome import ToolOutcome
+from golem_blender.stages import STAGE_GATE
 
 LIST_SCENE_TOOL = {
     "type": "function",
@@ -24,7 +24,7 @@ LIST_SCENE_TOOL = {
 
 
 def _constrained_client(monkeypatch, content: str):
-    from blended.agent.loop import ModelConfig, OllamaClient
+    from golem_blender.agent.loop import ModelConfig, OllamaClient
 
     monkeypatch.delenv("OLLAMA_HOST", raising=False)
     config = ModelConfig.from_environment(model="blenderllm")
@@ -68,7 +68,7 @@ def test_a_real_envelope_is_still_decoded_into_tool_calls(monkeypatch):
 def test_a_toolless_reply_on_the_constrained_lane_is_plain_text(monkeypatch):
     """No tools means no response_format was sent, so the reply is not an
     envelope even when its text happens to look like one."""
-    from blended.agent.loop import ModelConfig
+    from golem_blender.agent.loop import ModelConfig
 
     client = _constrained_client(monkeypatch, '{"message": "hi", "tool_calls": []}')
     assert "response_format" not in client._chat_payload(
@@ -81,7 +81,7 @@ def test_a_toolless_reply_on_the_constrained_lane_is_plain_text(monkeypatch):
 
 def test_the_local_llama_server_gets_the_long_ceiling(monkeypatch):
     """ISSUES M3: the lane fell back to the 300 s cloud ceiling."""
-    from blended.agent import loop
+    from golem_blender.agent import loop
 
     monkeypatch.delenv("OLLAMA_HOST", raising=False)
     for model in loop.LOCAL_LLAMA_SERVER_MODEL_IDS:
@@ -97,7 +97,7 @@ def test_the_local_llama_server_gets_the_long_ceiling(monkeypatch):
 def test_constrained_lane_matches_by_containment_like_the_protocol_check(spelling):
     """ISSUES Mi1: a trailing slash took the OpenAI wire but sent wire
     `tools` to a model that cannot emit them."""
-    from blended.agent.loop import ModelConfig
+    from golem_blender.agent.loop import ModelConfig
 
     config = ModelConfig(model="blenderllm", endpoint=spelling)
     assert config.uses_openai_protocol
@@ -105,7 +105,7 @@ def test_constrained_lane_matches_by_containment_like_the_protocol_check(spellin
 
 
 def _scripted(replies):
-    from blended.agent.loop import ModelConfig
+    from golem_blender.agent.loop import ModelConfig
 
     class Scripted:
         def __init__(self):
@@ -139,7 +139,7 @@ def test_malformed_arguments_are_refused_not_raised(tmp_path, raw_arguments):
     """The OpenAI wire hands arguments over as the model's own JSON string.
     A truncated one raised JSONDecodeError out of send() and stranded the
     assistant message's call with no result."""
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     dispatched = []
     session = AgentSession(
@@ -160,7 +160,7 @@ def test_malformed_arguments_are_refused_not_raised(tmp_path, raw_arguments):
 
 
 def test_arguments_sent_as_a_json_string_still_dispatch(tmp_path):
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     seen = []
 
@@ -180,7 +180,7 @@ def test_arguments_sent_as_a_json_string_still_dispatch(tmp_path):
 def test_a_malformed_plan_step_is_reported_after_the_tool_ran(tmp_path):
     """plan_step_of raised ValueError out of send() AFTER the tool ran and
     before its result was appended."""
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     session = AgentSession(
         client=_scripted(
@@ -201,7 +201,7 @@ def test_a_malformed_plan_step_is_reported_after_the_tool_ran(tmp_path):
 def test_the_gate_cap_answers_queued_calls_before_it_renders(tmp_path):
     """A render_views dispatch that raises at the cap must not leave the
     assistant's queued calls without results."""
-    from blended.agent.loop import GATE_CAP_TOOL_RESULT, AgentSession
+    from golem_blender.agent.loop import GATE_CAP_TOOL_RESULT, AgentSession
 
     failing = ToolOutcome(
         "FAILED",
@@ -243,8 +243,8 @@ def test_an_eye_call_that_fails_after_billing_still_counts_against_the_run(
 ):
     """The eye's spend was folded into the run's record only on success, so
     a reply cut after it was billed escaped the NFR-27 cap."""
-    from blended.agent.context_preflight import ReplyTruncated
-    from blended.agent.loop import ModelConfig, OllamaClient, VisionDescriber
+    from golem_blender.agent.context_preflight import ReplyTruncated
+    from golem_blender.agent.loop import ModelConfig, OllamaClient, VisionDescriber
 
     truncated_body = {
         "choices": [{"message": {"content": "cut"}, "finish_reason": "length"}],

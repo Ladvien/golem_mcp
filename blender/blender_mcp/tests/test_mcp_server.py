@@ -22,14 +22,14 @@ import unittest
 from typing import Any
 
 import yaml
-from blmcp.tools_helpers.blended_bridge import (
+from blmcp.tools_helpers.golem_blender_bridge import (
     CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS,
     MCP_INSTRUCTIONS_HEAD,
 )
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from blended.agent.tools import TOOL_SCHEMAS
+from golem_blender.agent.tools import TOOL_SCHEMAS
 
 # Root of the repository.
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

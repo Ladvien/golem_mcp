@@ -49,7 +49,7 @@ from bench_proportion_headroom import N_POINTS, SEED, extents_at_percentiles
 from bench_surface_metrics import pca_frame
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from blended.evaluate.bench_reference_views import REFERENCE_VIEW_FILENAMES
+from golem_blender.evaluate.bench_reference_views import REFERENCE_VIEW_FILENAMES
 
 DEFAULT_ENDPOINT = "http://localhost:11434"
 DEFAULT_MODEL = "deepseek-v4-pro:cloud"

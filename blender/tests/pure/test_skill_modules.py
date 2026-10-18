@@ -15,7 +15,7 @@ import hashlib
 
 import pytest
 
-from blended.agent import prompt_templates, skill_modules
+from golem_blender.agent import prompt_templates, skill_modules
 
 JINJA_DELIMITERS = ("{{", "}}", "{%", "%}", "{#", "#}")
 
@@ -91,7 +91,7 @@ def test_the_default_session_carries_no_skill():
     a session built with no lane must render the converged text and
     nothing else, or every earlier measurement silently changes meaning.
     """
-    from blended.agent.system_prompt import build_system_prompt
+    from golem_blender.agent.system_prompt import build_system_prompt
 
     default = build_system_prompt()
     for entry in skill_modules.SKILL_MODULES:
@@ -103,7 +103,7 @@ def test_the_default_session_carries_no_skill():
 
 @pytest.mark.parametrize("lane", sorted(skill_modules.LANE_MODULES))
 def test_a_lane_loads_exactly_its_modules(lane):
-    from blended.agent.system_prompt import build_system_prompt
+    from golem_blender.agent.system_prompt import build_system_prompt
 
     prompt = build_system_prompt(lane=lane)
     selected = {entry.name for entry in skill_modules.select_modules(lane)}

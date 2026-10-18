@@ -6,13 +6,13 @@ from __future__ import annotations
 
 import dataclasses
 
-from blended.agent.claude_code import TurnCost
-from blended.agent.outcome import ToolOutcome
-from blended.stages import STAGE_DONE, STAGE_GATE
+from golem_blender.agent.claude_code import TurnCost
+from golem_blender.agent.outcome import ToolOutcome
+from golem_blender.stages import STAGE_DONE, STAGE_GATE
 
 
 def _client(replies):
-    from blended.agent.loop import ModelConfig
+    from golem_blender.agent.loop import ModelConfig
 
     class Scripted:
         def __init__(self):
@@ -72,7 +72,7 @@ def _passing_gate(object_name: str) -> ToolOutcome:
 
 
 def test_three_consecutive_gate_failures_stop_the_turn_with_a_sheet(tmp_path):
-    from blended.agent.loop import (
+    from golem_blender.agent.loop import (
         GATE_CAP_TOOL_RESULT,
         MAXIMUM_GATE_FAILURES_PER_OBJECT,
         AgentSession,
@@ -109,7 +109,7 @@ def test_three_consecutive_gate_failures_stop_the_turn_with_a_sheet(tmp_path):
 
 
 def test_a_passing_verdict_resets_the_count(tmp_path):
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     verdicts = iter(
         [
@@ -139,7 +139,7 @@ def test_a_passing_verdict_resets_the_count(tmp_path):
 def test_queued_calls_after_the_cap_get_a_not_run_result(tmp_path):
     """A reply carrying several calls: the cap fires on the second, the
     third is answered 'not run' so the protocol stays consistent."""
-    from blended.agent.loop import GATE_CAP_TOOL_RESULT, AgentSession
+    from golem_blender.agent.loop import GATE_CAP_TOOL_RESULT, AgentSession
 
     def dispatch(tool_name, arguments, output_directory):
         if tool_name == "render_views":
@@ -172,8 +172,8 @@ def test_queued_calls_after_the_cap_get_a_not_run_result(tmp_path):
 
 
 def test_a_disabled_tool_is_neither_offered_nor_dispatched(tmp_path):
-    from blended.agent.loop import DISABLED_TOOL_REFUSAL, AgentSession
-    from blended.agent.tool_event import TOOL_EVENT_KIND, decode_tool_event
+    from golem_blender.agent.loop import DISABLED_TOOL_REFUSAL, AgentSession
+    from golem_blender.agent.tool_event import TOOL_EVENT_KIND, decode_tool_event
 
     offered = []
 
@@ -181,7 +181,7 @@ def test_a_disabled_tool_is_neither_offered_nor_dispatched(tmp_path):
         def __init__(self, replies):
             self.replies = list(replies)
             self.spent = TurnCost()
-            from blended.agent.loop import ModelConfig
+            from golem_blender.agent.loop import ModelConfig
 
             self.config = dataclasses.replace(
                 ModelConfig.from_environment(), model="scripted", vision_model=""

@@ -16,7 +16,7 @@ import math
 
 import pytest
 
-from blended.ops.canonical_orientation import (
+from golem_blender.ops.canonical_orientation import (
     DEGENERATE_EXTENT_M,
     DEPTH_AXIS_EXTENT_RANK,
     DEPTH_AXIS_INDEX,

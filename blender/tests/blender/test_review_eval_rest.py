@@ -1,6 +1,6 @@
 """The visual gate's pixel comparison, measured against hand-computed
 answers, and its refusal of a frame with no pixels at all (review of
-`blended.evaluate.visual_diff`)."""
+`golem_blender.evaluate.visual_diff`)."""
 
 import math
 
@@ -8,7 +8,7 @@ import pytest
 
 numpy = pytest.importorskip("numpy", reason="requires Blender's bundled numpy")
 
-from blended.evaluate.visual_diff import EmptyFrame, compare_view_arrays
+from golem_blender.evaluate.visual_diff import EmptyFrame, compare_view_arrays
 
 pytestmark = pytest.mark.blender
 

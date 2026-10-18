@@ -8,15 +8,15 @@ authorship rules are asserted here.
 
 import pytest
 
-from blended.drift.catalog import DRIFT_ENTRIES
-from blended.evaluate.iteration_log import (
+from golem_blender.drift.catalog import DRIFT_ENTRIES
+from golem_blender.evaluate.iteration_log import (
     HUMAN_EXAMINER,
     InvalidVerdict,
     IterationVerdict,
     VerdictLog,
 )
-from blended.run.executor import RunResult
-from blended.run.session_log import SessionLog
+from golem_blender.run.executor import RunResult
+from golem_blender.run.session_log import SessionLog
 
 
 def _failed_result() -> RunResult:

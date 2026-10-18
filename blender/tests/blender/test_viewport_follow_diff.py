@@ -45,13 +45,13 @@ def _add_cube(name, location=(0.0, 0.0, 0.0)):
 
 
 def _changed_since(before):
-    from blended.viewport_follow import changed_object_names
+    from golem_blender.viewport_follow import changed_object_names
 
     return changed_object_names(before)
 
 
 def test_an_unchanged_scene_changes_nothing(scene):
-    from blended.viewport_follow import snapshot_scene
+    from golem_blender.viewport_follow import snapshot_scene
 
     _add_cube("A")
     before = snapshot_scene()
@@ -60,7 +60,7 @@ def test_an_unchanged_scene_changes_nothing(scene):
 
 
 def test_a_created_object_is_changed_and_a_bystander_is_not(scene):
-    from blended.viewport_follow import snapshot_scene
+    from golem_blender.viewport_follow import snapshot_scene
 
     _add_cube("Bystander")
     before = snapshot_scene()
@@ -72,7 +72,7 @@ def test_a_created_object_is_changed_and_a_bystander_is_not(scene):
 def test_a_moved_object_is_changed_without_a_view_layer_update(scene):
     """matrix_world is stale after `obj.location = ...` until the depsgraph runs;
     the snapshot must refresh it, or a pure move reads as no change."""
-    from blended.viewport_follow import snapshot_scene
+    from golem_blender.viewport_follow import snapshot_scene
 
     mover = _add_cube("Mover")
     _add_cube("Bystander", (5.0, 0.0, 0.0))
@@ -84,7 +84,7 @@ def test_a_moved_object_is_changed_without_a_view_layer_update(scene):
 
 def test_an_in_place_vertex_edit_is_changed(scene):
     """Same name, same transform, same counts: only a coordinate moved."""
-    from blended.viewport_follow import snapshot_scene
+    from golem_blender.viewport_follow import snapshot_scene
 
     edited = _add_cube("Edited")
     _add_cube("Bystander", (5.0, 0.0, 0.0))
@@ -95,7 +95,7 @@ def test_an_in_place_vertex_edit_is_changed(scene):
 
 
 def test_a_material_assigned_is_changed(scene):
-    from blended.viewport_follow import snapshot_scene
+    from golem_blender.viewport_follow import snapshot_scene
 
     painted = _add_cube("Painted")
     before = snapshot_scene()
@@ -109,7 +109,7 @@ def test_a_modifier_setting_changed_is_changed(scene):
     which grows the evaluated bounding box. (A bevel width would not: a bevel
     leaves a cube's bounds as they were, and the snapshot says it cannot see
     a setting that does.)"""
-    from blended.viewport_follow import snapshot_scene
+    from golem_blender.viewport_follow import snapshot_scene
 
     repeated = _add_cube("Repeated")
     modifier = repeated.modifiers.new("Array", "ARRAY")
@@ -121,7 +121,7 @@ def test_a_modifier_setting_changed_is_changed(scene):
 
 
 def test_a_reparented_object_is_changed(scene):
-    from blended.viewport_follow import snapshot_scene
+    from golem_blender.viewport_follow import snapshot_scene
 
     parent = _add_cube("Parent")
     child = _add_cube("Child", (3.0, 0.0, 0.0))
@@ -133,8 +133,8 @@ def test_a_reparented_object_is_changed(scene):
 
 def test_the_names_to_frame_are_the_outcome_names_then_the_diff(scene):
     """A gated `Hole` the outcome names, plus an unnamed `Stray` the chunk moved."""
-    from blended.agent.outcome import ToolOutcome
-    from blended.viewport_follow import names_to_frame, snapshot_scene
+    from golem_blender.agent.outcome import ToolOutcome
+    from golem_blender.viewport_follow import names_to_frame, snapshot_scene
 
     _add_cube("Hole")
     stray = _add_cube("Stray", (4.0, 0.0, 0.0))

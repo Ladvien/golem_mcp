@@ -1,6 +1,6 @@
-# blended
+# golem_blender
 
-blended is part of golem (`Ladvien/golem_mcp`, directory `blender/`); its MCP server is registered as `golem` and also serves big's golem tools.
+golem_blender is part of golem (`Ladvien/golem_mcp`, directory `blender/`); its MCP server is registered as `golem` and also serves big's golem tools.
 
 The agent's artifact is a **program** (`Parameters` + `Builder` Python
 modules), not a mesh. The harness's job is to make the environment tell
@@ -11,8 +11,8 @@ inspection. Rendered critique advises; the analyzer decides.
 ## One call
 
 ```python
-from blended.builders import BarrelBuilder, BarrelParameters
-from blended.harness import HarnessSettings, run_builder
+from golem_blender.builders import BarrelBuilder, BarrelParameters
+from golem_blender.harness import HarnessSettings, run_builder
 
 result = run_builder(
     BarrelBuilder(BarrelParameters()),
@@ -33,7 +33,7 @@ review is a failure you will repeat.
 ## Layout
 
 ```
-src/blended/
+src/golem_blender/
   harness.py     run_chunk / run_builder - the one-call loop
   stages.py      the one stage vocabulary (execute, locate, gate, export, done)
   task.py        the 3-round agent task loop with agent-shaped failure feedback
@@ -70,7 +70,7 @@ docs/            specification, roadmap, plans, research
 
 The agent is Claude Code driving Blender through the `golem` MCP
 server: Blender Lab's `blender_mcp` (GPL-3.0-or-later, vendored as a git
-subtree at `blender_mcp/`) extended to serve blended's full tool surface
+subtree at `blender_mcp/`) extended to serve golem_blender's full tool surface
 (`TOOL_SCHEMAS`) through `dispatch_tool`, with the plan gate and a
 schema-2 `logs/mcp-*.jsonl` per session.
 
@@ -91,14 +91,14 @@ serves every tool of the golem server on big (`GOLEM_REMOTE_URL`, default
 The add-on executes any code sent to localhost:9876.
 
 **What the agent is told.** Claude Code delivers only the first 2,048
-characters of an MCP server's instructions (measured 2026-10-07: blended
+characters of an MCP server's instructions (measured 2026-10-07: golem_blender
 sends 24,721). So the instructions open with a must-read head
-(`MCP_INSTRUCTIONS_HEAD`, 2,047 characters of the 2,048 allowed; it was
+(`MCP_INSTRUCTIONS_HEAD`, 2,041 characters of the 2,048 allowed; it was
 1,981 before OT-50 added the rule that every export ships its .blend) that condenses
 working-agreement revision 10; the full text follows it. A test fails
 when the active revision moves, so the head gets reviewed along with it.
 
-**The user's view.** After every scene-changing blended call, the server
+**The user's view.** After every scene-changing golem_blender call, the server
 frames the objects that call touched in every 3D viewport. Their result
 ends with a `viewport:` line saying what was framed, or why nothing was:
 background Blender, no 3D viewport, or nothing in the scene yet. An
@@ -109,8 +109,8 @@ mode and the view rotation stay as they were.
 `make test-viewport-gui` checks the result against Blender's own
 projection in a GUI Blender; a window opens for a few seconds.
 
-**Source edits.** Edits under `src/blended` take effect on the next call
-without restarting Blender: Blender purges and re-imports `blended` when
+**Source edits.** Edits under `src/golem_blender` take effect on the next call
+without restarting Blender: Blender purges and re-imports `golem_blender` when
 the call's source fingerprint changes. What the server loaded at start
 stays until the server restarts: tools, descriptions, parameters,
 defaults, plan gating (`reads_only`), the outcome wire format, any
@@ -120,7 +120,7 @@ runs the edited code.
 
 Restarting on a source edit is opt-in: `--exit-on-source-change`, stdio
 only. It is right only for a client that restarts a server that exits.
-omp does, and `.omp/mcp.json` gives it its own `blended` entry with the
+omp does, and `.omp/mcp.json` gives it its own `golem_blender` entry with the
 flag. Measured: omp spawned that entry, not the one in `.mcp.json`. The
 server exits once the sources have held still for 2 s, no call is in
 flight, and the last response has had 2 s to drain. Before exiting, it
@@ -131,7 +131,7 @@ than 60 s, or a malformed one, is refused on stderr.
 
 Claude Code (`.mcp.json`) and Claude Desktop
 (`~/Library/Application Support/Claude/claude_desktop_config.json`, entry
-`blended`) run without the watcher, because neither restarts a stdio
+`golem_blender`) run without the watcher, because neither restarts a stdio
 server that exits. After an edit to anything loaded at start, run `/mcp`
 in Claude Code, or quit and reopen Desktop (⌘Q). Add-on edits
 (`blender_mcp/addon`) still need a Blender restart. `.omp/mcp.json` also
@@ -141,7 +141,7 @@ since it would talk to the same port.
 
 ## Skinned motion (skinclip)
 
-`blended.ops.motion` checks and repairs skinned animation: whether a clip passes its
+`golem_blender.ops.motion` checks and repairs skinned animation: whether a clip passes its
 character through itself (`clip_self_intersection_report`), the body capsules of a humanoid
 rig (`body_capsules_report`), a limb repair (`repair_limb_penetration`) and a baked ring of
 skirt bone chains (`bake_cloth_chains`). The numerics are the numpy-only package
@@ -157,24 +157,24 @@ OPS-26 and OPS-27 state what they refuse.
 ## Op plugins
 
 An installed distribution can add ops to the facade without a change here:
-declare an entry point in the `blended.ops` group naming a module whose
-`__all__` lists its op functions (`blended.plugins`).
+declare an entry point in the `golem_blender.ops` group naming a module whose
+`__all__` lists its op functions (`golem_blender.plugins`).
 
 ```toml
-[project.entry-points."blended.ops"]
+[project.entry-points."golem_blender.ops"]
 my_ops = "my_package.ops"
 ```
 
 Plugin ops follow the core ops, satisfy the same contract
-(`blended.ops._contract`), and reach the tool schemas, the plan gate and
+(`golem_blender.ops._contract`), and reach the tool schemas, the plan gate and
 `search_ops` through `facade_ops()`. A name that collides with an existing
 op is refused at import. A plugin must be a package installed into the
-`blended` venv, so its entry point is discoverable from Blender
+`golem_blender` venv, so its entry point is discoverable from Blender
 (`uv pip install --python .venv/bin/python -e path/to/plugin`): the MCP
 server hands Blender the package's source directory, and a source change
-re-imports the plugin together with `blended`. `uv sync` removes a plugin
+re-imports the plugin together with `golem_blender`. `uv sync` removes a plugin
 installed this way; run the install again after it. The test suite sets
-`BLENDED_DISABLE_PLUGINS=1`, because the pinned tool-schema fingerprint
+`GOLEM_BLENDER_DISABLE_PLUGINS=1`, because the pinned tool-schema fingerprint
 describes the core set.
 
 ## Run
@@ -186,7 +186,7 @@ make test-blender-app          # build → analyze → render, inside the
                                # 3.13, bundled numpy, no pip)
 make test-mcp                  # the MCP server's unit layer (no Blender)
 make test-mcp-blender          # MCP client -> server -> real background
-                               # Blender -> blended's dispatch_tool
+                               # Blender -> golem_blender's dispatch_tool
 make test-viewport-gui         # viewport framing in a GUI Blender (opens
                                # a window for a few seconds)
 make test-bench-scripts        # tests/bench_scripts in a throwaway env with

@@ -14,7 +14,7 @@ def empty_scene():
 
 
 def test_chunk_calling_sys_exit_is_reported_in_process(empty_scene):
-    from blended.run.executor import run_source_in_process
+    from golem_blender.run.executor import run_source_in_process
 
     result = run_source_in_process("import sys\nsys.exit(3)")
     assert not result.ok

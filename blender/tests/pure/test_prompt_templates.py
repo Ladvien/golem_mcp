@@ -11,9 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from blended import manifest
-from blended.agent import prompt_templates, prompt_versions, system_prompt
-from blended.drift import catalog
+from golem_blender import manifest
+from golem_blender.agent import prompt_templates, prompt_versions, system_prompt
+from golem_blender.drift import catalog
+from golem_blender.version import PACKAGE_NAME, RECORDED_PACKAGE_NAME
 
 # The identity of the revision the convergence loop signed off, read from
 # the artifact the pin itself writes (`scripts/pin_revision.py`) rather
@@ -191,7 +192,9 @@ def test_the_template_file_is_the_body_byte_for_byte():
         )
         raw = path.read_text(encoding="utf-8")
         assert raw == entry.body, path.name
-        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+        # Identities hash the text as it was recorded, under the old package name.
+        recorded = raw.replace(PACKAGE_NAME, RECORDED_PACKAGE_NAME)
+        digest = hashlib.sha256(recorded.encode("utf-8")).hexdigest()[:12]
         assert entry.identity.endswith(digest)
 
 
@@ -236,7 +239,7 @@ def test_the_shipped_configuration_is_the_converged_configuration():
     this suite — and the append-only log is the evidence, where a
     constant equal to another constant is not.
     """
-    from blended.agent.loop import AgentSession, ModelConfig
+    from golem_blender.agent.loop import AgentSession, ModelConfig
 
     assert AgentSession().maximum_tool_calls_per_turn == (
         prompt_versions.CONVERGENCE_TOOL_CALL_BUDGET
@@ -245,7 +248,7 @@ def test_the_shipped_configuration_is_the_converged_configuration():
         "the default eye drifted from the licensed examiner"
     )
     swept = _briefs_swept_clean_by(ModelConfig().model)
-    from blended.evaluate.briefs import BRIEFS
+    from golem_blender.evaluate.briefs import BRIEFS
 
     missing = sorted(set(BRIEFS) - swept)
     assert not missing, (
@@ -253,7 +256,7 @@ def test_the_shipped_configuration_is_the_converged_configuration():
         f"run for {missing} in {WRITER_QUALIFICATION_PATH.name} — a writer nobody "
         f"ran this suite with may not be the default"
     )
-    from blended.agent.system_prompt import build_system_prompt
+    from golem_blender.agent.system_prompt import build_system_prompt
 
     assert (
         prompt_versions.get_revision(prompt_versions.PINNED_PROMPT_REVISION).body
@@ -268,12 +271,12 @@ def test_the_prompt_describes_no_op_twice():
     """OT-24: the generated tool schemas are the one description of each
     op; the manifest's operations section no longer rides in the prompt,
     while conventions, the gate's fields and the drift catalog still do."""
-    from blended.agent.system_prompt import (
+    from golem_blender.agent.system_prompt import (
         GATE_HEADING,
         OUTPUT_CONTRACT_HEADING,
         build_system_prompt,
     )
-    from blended.ops._contract import facade_ops
+    from golem_blender.ops._contract import facade_ops
 
     prompt = build_system_prompt(revision=14)
     for name, _ in facade_ops():

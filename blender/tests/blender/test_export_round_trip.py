@@ -14,8 +14,8 @@ def empty_scene():
 
 
 def test_pallet_round_trips_clean(empty_scene, tmp_path):
-    from blended.builders import PalletBuilder, PalletParameters
-    from blended.export import export_glb
+    from golem_blender.builders import PalletBuilder, PalletParameters
+    from golem_blender.export import export_glb
 
     pallet_object = PalletBuilder(PalletParameters()).build()
     export_report = export_glb(
@@ -34,8 +34,8 @@ def test_pallet_round_trips_clean(empty_scene, tmp_path):
 
 
 def test_barrel_round_trips_clean(empty_scene, tmp_path):
-    from blended.builders import BarrelBuilder, BarrelParameters
-    from blended.export import export_glb
+    from golem_blender.builders import BarrelBuilder, BarrelParameters
+    from golem_blender.export import export_glb
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
     export_report = export_glb(
@@ -49,8 +49,8 @@ def test_defective_mesh_is_flagged_before_export(empty_scene, tmp_path):
     leads with the pre-export gate failure."""
     import bmesh
 
-    from blended.export import export_glb
-    from blended.ops import add_box, link_into_scene
+    from golem_blender.export import export_glb
+    from golem_blender.ops import add_box, link_into_scene
 
     open_box = bpy.data.objects[add_box("OpenExport", 1.0, 1.0, 1.0)]
     link_into_scene(open_box.name)

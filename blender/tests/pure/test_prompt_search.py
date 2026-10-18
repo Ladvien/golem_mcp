@@ -12,15 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from blended.agent import prompt_search, prompt_versions
+from golem_blender.agent import prompt_search, prompt_versions
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-SOURCE_PACKAGE = REPOSITORY_ROOT / "src" / "blended"
+SOURCE_PACKAGE = REPOSITORY_ROOT / "src" / "golem_blender"
 
 
 def _package_copy(tmp_path: Path) -> Path:
     """A throwaway copy of the whole package, importable in a subprocess."""
-    destination = tmp_path / "src" / "blended"
+    destination = tmp_path / "src" / "golem_blender"
     shutil.copytree(
         SOURCE_PACKAGE,
         destination,
@@ -187,7 +187,7 @@ def test_record_outcome_on_a_filled_entry_raises(tmp_path):
 def test_gate_evidence_quotes_only_measurements():
     """The gradient must never see the examiner's tags: correction on an
     unverified judgement degrades (10.48550/arXiv.2310.01798)."""
-    from blended.evaluate.iteration_log import IterationRecord
+    from golem_blender.evaluate.iteration_log import IterationRecord
 
     failing = IterationRecord(
         iteration=31,

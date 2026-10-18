@@ -1,6 +1,6 @@
 """Pure layer: no bpy anywhere in these imports."""
 
-from blended.drift.catalog import DRIFT_ENTRIES, match_traceback, validate_catalog
+from golem_blender.drift.catalog import DRIFT_ENTRIES, match_traceback, validate_catalog
 
 
 def test_catalog_is_schema_valid():

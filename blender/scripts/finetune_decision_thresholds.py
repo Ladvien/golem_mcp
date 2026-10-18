@@ -6,7 +6,7 @@ spec is `docs/research/2026-09-19-finetune-decision-experiment.md`; its
 §3 decision rules read the four deltas computed from these numbers, so
 re-choosing one after seeing a result would be selection on the test set.
 
-Stdlib-only and importing nothing from `blended`, for the same reason
+Stdlib-only and importing nothing from `golem_blender`, for the same reason
 `bench_thresholds` is: the analysis runs under two different venvs (this
 repository's `.venv` for the arm runner, 3DCodeBench's own venv for
 anything that touches `trimesh`/`scipy`), and a threshold quoted by both

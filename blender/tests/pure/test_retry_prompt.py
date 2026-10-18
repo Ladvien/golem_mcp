@@ -1,8 +1,8 @@
 """Pure layer: prompt building needs no bpy."""
 
-from blended.drift.catalog import DRIFT_ENTRIES
-from blended.run.executor import RunResult
-from blended.run.retry import build_retry_prompt
+from golem_blender.drift.catalog import DRIFT_ENTRIES
+from golem_blender.run.executor import RunResult
+from golem_blender.run.retry import build_retry_prompt
 
 
 def _failed_result_with_drift() -> RunResult:

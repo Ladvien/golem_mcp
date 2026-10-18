@@ -4,10 +4,10 @@ import sys
 
 import pytest
 
-from blended.harness import HarnessResult
-from blended.run.executor import execute_captured
-from blended.run.retry import run_with_retries
-from blended.task import AgentTask, build_gate_feedback, run_agent_task
+from golem_blender.harness import HarnessResult
+from golem_blender.run.executor import execute_captured
+from golem_blender.run.retry import run_with_retries
+from golem_blender.task import AgentTask, build_gate_feedback, run_agent_task
 
 TASK = AgentTask(object_name="Widget", description="Build a widget.")
 

@@ -31,7 +31,7 @@ def empty_scene():
 
 
 def _subject(extents_m=SUBJECT_EXTENTS_M):
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     box = add_box("Subject", *extents_m)
     link_into_scene(box)
@@ -55,7 +55,7 @@ def _world_extents_m(object_name):
 
 
 def test_the_middle_extent_ends_up_on_the_depth_axis(empty_scene):
-    from blended.ops.canonical_orientation import apply_canonical_depth_axis
+    from golem_blender.ops.canonical_orientation import apply_canonical_depth_axis
 
     box = _subject()
     record = apply_canonical_depth_axis()
@@ -69,8 +69,8 @@ def test_the_middle_extent_ends_up_on_the_depth_axis(empty_scene):
 
 def test_a_writers_own_rotation_is_composed_not_discarded(empty_scene):
     """The writer already turned the box; the epilogue corrects from there."""
-    from blended.ops.canonical_orientation import apply_canonical_depth_axis
-    from blended.ops.transforms import rotate_object_euler
+    from golem_blender.ops.canonical_orientation import apply_canonical_depth_axis
+    from golem_blender.ops.transforms import rotate_object_euler
 
     box = _subject()
     # A quarter turn about X puts the 1.0 m extent on Y already: the rule
@@ -87,7 +87,7 @@ def test_a_writers_own_rotation_is_composed_not_discarded(empty_scene):
 
 def test_a_second_call_is_a_no_op(empty_scene):
     """The emitted script is re-baked; the epilogue must be idempotent."""
-    from blended.ops.canonical_orientation import apply_canonical_depth_axis
+    from golem_blender.ops.canonical_orientation import apply_canonical_depth_axis
 
     box = _subject()
     apply_canonical_depth_axis()
@@ -102,9 +102,9 @@ def test_a_second_call_is_a_no_op(empty_scene):
 
 def test_every_mesh_turns_together(empty_scene):
     """A run that leaves two meshes is scored as one exported cloud."""
-    from blended.ops.canonical_orientation import apply_canonical_depth_axis
-    from blended.ops.primitives import add_box, link_into_scene
-    from blended.ops.transforms import move_object_to
+    from golem_blender.ops.canonical_orientation import apply_canonical_depth_axis
+    from golem_blender.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.transforms import move_object_to
 
     first = _subject()
     second = add_box("Second", 0.2, 0.2, 0.2)
@@ -125,7 +125,7 @@ def test_every_mesh_turns_together(empty_scene):
 
 
 def test_a_named_object_can_be_targeted(empty_scene):
-    from blended.ops.canonical_orientation import apply_canonical_depth_axis
+    from golem_blender.ops.canonical_orientation import apply_canonical_depth_axis
 
     _subject()
     record = apply_canonical_depth_axis("Subject")
@@ -133,14 +133,14 @@ def test_a_named_object_can_be_targeted(empty_scene):
 
 
 def test_an_empty_scene_fails_loud(empty_scene):
-    from blended.ops.canonical_orientation import apply_canonical_depth_axis
+    from golem_blender.ops.canonical_orientation import apply_canonical_depth_axis
 
     with pytest.raises(RuntimeError):
         apply_canonical_depth_axis()
 
 
 def test_a_missing_name_fails_loud(empty_scene):
-    from blended.ops.canonical_orientation import apply_canonical_depth_axis
+    from golem_blender.ops.canonical_orientation import apply_canonical_depth_axis
 
     _subject()
     with pytest.raises(RuntimeError):

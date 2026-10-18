@@ -3,7 +3,7 @@
 1. `orientation_policy_sim.py` imported `signed_permutations` from
    `diagnose_3dcode`, which stopped defining it when OT-36 moved the helper
    into `bench_surface_metrics`: ImportError on the first line that ran.
-   `tests/pure/test_import_integrity.py` only resolves `blended`-rooted
+   `tests/pure/test_import_integrity.py` only resolves `golem_blender`-rooted
    imports, so a sibling-script import rotted unseen.
 2. `bench_render_references.render_instance` judged success from
    `render_log.json` on disk. Under `--overwrite` a Blender that died before
@@ -25,7 +25,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 import bench_render_references
 
-from blended.evaluate.bench_reference_views import REFERENCE_VIEW_FILENAMES
+from golem_blender.evaluate.bench_reference_views import REFERENCE_VIEW_FILENAMES
 
 # Names bound at a script's module level, by whatever statement binds them.
 _BINDING_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)

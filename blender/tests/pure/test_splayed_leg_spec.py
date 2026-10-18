@@ -13,8 +13,8 @@ import math
 
 import pytest
 
-from blended.evaluate import briefs
-from blended.ops.legs import (
+from golem_blender.evaluate import briefs
+from golem_blender.ops.legs import (
     DEFAULT_SOLE_CLEARANCE_MARGIN_M,
     ImpossibleLeg,
     SplayedLegSpec,

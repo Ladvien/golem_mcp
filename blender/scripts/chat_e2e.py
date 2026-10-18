@@ -134,7 +134,7 @@ def _check_on_ground(obj) -> list[str]:
 
 
 def _check_gate(obj) -> list[str]:
-    from blended.analyze import MeshBudget, analyze_object
+    from golem_blender.analyze import MeshBudget, analyze_object
 
     return [f"{obj.name} gate: {f}" for f in analyze_object(obj).failures(MeshBudget())]
 
@@ -167,7 +167,7 @@ def check_object() -> list[str]:
 def _bone_backed_groups(mesh_object, report) -> list[str]:
     """Vertex groups that name a bone of the deforming armature AND
     carry weight — the only groups that move anything."""
-    from blended.ops.weights import deforming_bone_names
+    from golem_blender.ops.weights import deforming_bone_names
 
     return [
         name
@@ -177,7 +177,7 @@ def _bone_backed_groups(mesh_object, report) -> list[str]:
 
 
 def check_rig() -> list[str]:
-    from blended.ops import rig_report, weight_report
+    from golem_blender.ops import rig_report, weight_report
 
     def run():
         body = _object("Body", "MESH")
@@ -219,7 +219,7 @@ def check_rig() -> list[str]:
 
 
 def check_weights() -> list[str]:
-    from blended.ops import weight_report
+    from golem_blender.ops import weight_report
 
     def run():
         body = _object("Body", "MESH")
@@ -256,7 +256,7 @@ def check_weights() -> list[str]:
 def check_animation() -> list[str]:
     import bpy
 
-    from blended.ops import animation_report
+    from golem_blender.ops import animation_report
 
     def run():
         cube = _object("Cube", "MESH")
@@ -296,7 +296,7 @@ def check_animation() -> list[str]:
 
 
 def check_material() -> list[str]:
-    from blended.ops import material_report
+    from golem_blender.ops import material_report
 
     def run():
         tile = _object("Tile", "MESH")
@@ -400,9 +400,9 @@ def run_scenario(
 ) -> ScenarioResult:
     import bpy
 
-    from blended.agent.loop import AgentSession, ModelConfig, OllamaClient
-    from blended.agent.system_prompt import build_system_prompt
-    from blended.agent.tool_event import TOOL_EVENT_KIND
+    from golem_blender.agent.loop import AgentSession, ModelConfig, OllamaClient
+    from golem_blender.agent.system_prompt import build_system_prompt
+    from golem_blender.agent.tool_event import TOOL_EVENT_KIND
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     result = ScenarioResult(name=scenario.name, passed=False)
@@ -529,6 +529,6 @@ if __name__ == "__main__":
     extra = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     # Blender exits 0 on an uncaught Python exception, so a run that
     # died would read as a success (OT-32).
-    from blended.run.script_exit import run_script_main
+    from golem_blender.run.script_exit import run_script_main
 
     raise SystemExit(run_script_main(main, extra))

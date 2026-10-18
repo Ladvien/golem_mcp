@@ -87,7 +87,7 @@ def test_record_for_run_finds_the_exact_run(monkeypatch):
 def test_replace_runs_rewrites_the_real_registry_block(monkeypatch):
     pin = _load_script("pin_revision", monkeypatch)
     text = (
-        REPOSITORY_ROOT / "src" / "blended" / "agent" / "prompt_versions.py"
+        REPOSITORY_ROOT / "src" / "golem_blender" / "agent" / "prompt_versions.py"
     ).read_text(encoding="utf-8")
     rewritten = pin._replace_runs(text, [(901, "alpha"), (902, "beta")])
     block = rewritten.split("CONVERGENCE_RUNS = ", 1)[1].split("\n)\n", 1)[0] + "\n)"
@@ -109,7 +109,7 @@ def test_replace_assignment_does_not_read_backslashes_as_escapes(monkeypatch):
 
 def test_pin_refuses_a_proposal_that_names_no_writer_model(monkeypatch, tmp_path):
     pin = _load_script("pin_revision", monkeypatch)
-    from blended.agent.prompt_versions import PINNED_PROMPT_REVISION, get_revision
+    from golem_blender.agent.prompt_versions import PINNED_PROMPT_REVISION, get_revision
 
     # Work on a copy: if the refusal ever regressed, main would rewrite
     # the registry, and that must hit the scratch copy, not the source.

@@ -34,5 +34,5 @@ outputs/
 .serena/
 logs/*
 # Default scratch output of the harness, examples and agent render tools
-# (src/blended/harness.py DEFAULT_OUTPUT_DIRECTORY, src/blended/agent/tools.py).
+# (src/golem_blender/harness.py DEFAULT_OUTPUT_DIRECTORY, src/golem_blender/agent/tools.py).
 _renders/

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from blended.agent.context_budget import (
+from golem_blender.agent.context_budget import (
     SPEC_ROW_LABEL,
     TokenizerUnreachable,
     bmb_tokenizer,
@@ -15,7 +15,7 @@ from blended.agent.context_budget import (
     spec_row,
     write_spec_row,
 )
-from blended.agent.tools import TOOL_SCHEMAS
+from golem_blender.agent.tools import TOOL_SCHEMAS
 
 
 def _words(text: str) -> int:

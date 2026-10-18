@@ -2,7 +2,7 @@
 
 import pytest
 
-from blended.builders.crate import CrateParameters
+from golem_blender.builders.crate import CrateParameters
 
 
 def test_default_parameters_validate():

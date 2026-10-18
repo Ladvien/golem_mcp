@@ -7,7 +7,7 @@ uncalibrated refusal are testable in the pure tier.
 
 import pytest
 
-from blended.evaluate.visual_diff import (
+from golem_blender.evaluate.visual_diff import (
     ViewComparison,
     VisualGateNotCalibrated,
     VisualGateThresholds,

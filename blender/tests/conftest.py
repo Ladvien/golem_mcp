@@ -3,9 +3,9 @@ import sys
 from pathlib import Path
 
 # The pinned tool-schema fingerprint and the ungated-op allowlist describe the
-# CORE op set. An op plugin installed in this venv (blended.plugins) would
-# change both, so the suite runs core-only. Set before any blended import.
-os.environ["BLENDED_DISABLE_PLUGINS"] = "1"
+# CORE op set. An op plugin installed in this venv (golem_blender.plugins) would
+# change both, so the suite runs core-only. Set before any golem_blender import.
+os.environ["GOLEM_BLENDER_DISABLE_PLUGINS"] = "1"
 
 # src-layout without requiring an editable install.
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent

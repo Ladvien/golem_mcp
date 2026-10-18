@@ -10,17 +10,17 @@ It supports running arbitrary Python code within Blender. This allows for advanc
 
 ## Installation
 
-In this repository the server is a workspace member of the root `pyproject.toml`, installed editable into `.venv` (entry point `blender-mcp`); this fork also serves blended's own tool surface, which the upstream package lacks. It requires an add-on in Blender for this to work.
+In this repository the server is a workspace member of the root `pyproject.toml`, installed editable into `.venv` (entry point `blender-mcp`); this fork also serves golem_blender's own tool surface, which the upstream package lacks. It requires an add-on in Blender for this to work.
 
 ### Add-on
 * Run `make install-mcp-addon` from the repository root: it symlinks `blender_mcp/addon/blender_mcp_addon` into Blender, enables it and allows online access (its socket needs it).
 * The add-on listens on `localhost:9876` (override with `BLENDER_MCP_HOST` / `BLENDER_MCP_PORT` on the server).
 * The server only ever uses that open Blender. Every tool looks for it first; when nothing answers, the result is an error that starts with `PAUSED:` and tells the agent to stop and tell you. No tool starts a headless Blender, so `BLENDER_PATH` is gone. The five `*_for_cli` tools answer from the open Blender when it has that file open (unsaved edits count) and otherwise pause naming the file it has. The three docs-only tools do not need Blender and never pause.
-* After every scene-changing blended call the 3D viewport is re-centred on what the call created or changed (the scene is compared before and after, so a `run_python` chunk that names nothing is covered), and the result ends with a `viewport:` line.
+* After every scene-changing golem_blender call the 3D viewport is re-centred on what the call created or changed (the scene is compared before and after, so a `run_python` chunk that names nothing is covered), and the result ends with a `viewport:` line.
 
 ### Server options
 * `--transport stdio|http` (default `stdio`); `--host` / `--port` apply to `http` only. `--host` must be a loopback address (`127.0.0.1`, `localhost`, `::1`): the tools run arbitrary Python in Blender with no authentication, so any other host exits with an error, and the HTTP transport rejects non-loopback `Host` and `Origin` headers (DNS-rebinding protection).
-* `--exit-on-source-change` / `--no-exit-on-source-change` (default: off): exit once `src/blended` or `blmcp` changed and held still, so a client that restarts a server that exits (omp) re-lists fresh tools. Needs `--transport stdio`.
+* `--exit-on-source-change` / `--no-exit-on-source-change` (default: off): exit once `src/golem_blender` or `blmcp` changed and held still, so a client that restarts a server that exits (omp) re-lists fresh tools. Needs `--transport stdio`.
 
 ## Examples
 

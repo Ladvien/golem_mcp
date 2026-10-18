@@ -14,8 +14,8 @@ def empty_scene():
 
 
 def test_barrel_passes_the_gate(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.builders import BarrelBuilder, BarrelParameters
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.builders import BarrelBuilder, BarrelParameters
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
     report = analyze_object(barrel_object)
@@ -30,7 +30,7 @@ def test_barrel_passes_the_gate(empty_scene):
 
 def test_barrel_widest_at_the_middle(empty_scene):
     """The bulge is real geometry: mid-height extent beats end extent."""
-    from blended.builders import BarrelBuilder, BarrelParameters
+    from golem_blender.builders import BarrelBuilder, BarrelParameters
 
     parameters = BarrelParameters()
     barrel_object = BarrelBuilder(parameters).build()

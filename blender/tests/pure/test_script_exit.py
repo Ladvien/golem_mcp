@@ -7,7 +7,7 @@ gates on exit codes, including the closing rule for a backlog item, so a
 crash that reads as a success is the worst possible failure mode.
 """
 
-from blended.run.script_exit import UNCAUGHT_EXCEPTION_EXIT_CODE, run_script_main
+from golem_blender.run.script_exit import UNCAUGHT_EXCEPTION_EXIT_CODE, run_script_main
 
 
 def test_a_clean_run_keeps_its_own_status():

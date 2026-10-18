@@ -14,7 +14,7 @@ from dataclasses import replace
 
 import pytest
 
-from blended.agent.loop import (
+from golem_blender.agent.loop import (
     BIG_ENDPOINT,
     BMB_ENDPOINT,
     ModelConfig,
@@ -26,11 +26,11 @@ TOOL_CALL_ID = "call_abc123"
 
 @pytest.fixture(autouse=True)
 def isolated_lane_environment(monkeypatch):
-    """Config construction reads ~/.blended/bmb_api_key for bmb models,
+    """Config construction reads ~/.golem_blender/bmb_api_key for bmb models,
     and OLLAMA_HOST overrides every model's implied server. These tests
     must pass on a machine with either set and never touch the real key.
     Tests that care set them again."""
-    monkeypatch.setattr("blended.agent.loop._read_bmb_api_key", lambda: "a" * 64)
+    monkeypatch.setattr("golem_blender.agent.loop._read_bmb_api_key", lambda: "a" * 64)
     monkeypatch.delenv("OLLAMA_HOST", raising=False)
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
 
@@ -117,7 +117,7 @@ def test_a_llama_swap_turn_gets_the_long_ceiling_and_the_cloud_keeps_the_short_o
     completion tokens before returning a valid tool call (measured
     twice, 2026-09-03). `chat` must hand `_request` the ceiling the
     LANE needs, not one constant for every server."""
-    from blended.agent import loop as live_loop
+    from golem_blender.agent import loop as live_loop
 
     timeouts: list[int] = []
 
@@ -189,7 +189,7 @@ def test_tool_result_round_trip_carries_the_call_id(openai_payloads):
 def test_images_travel_as_openai_image_url_parts(monkeypatch, tmp_path):
     """The bmb lane is the eye lane for qwen3.8 too: an Ollama `images`
     field must become OpenAI image_url content parts, not be dropped."""
-    from blended.agent.loop import _encode_images
+    from golem_blender.agent.loop import _encode_images
 
     payloads: list[dict] = []
 
@@ -330,7 +330,7 @@ def test_the_bmb_key_file_feeds_bmb_models_only(monkeypatch):
     llama-swap and vice versa)."""
     fake_bmb_key = "c" * 64
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
-    monkeypatch.setattr("blended.agent.loop._read_bmb_api_key", lambda: fake_bmb_key)
+    monkeypatch.setattr("golem_blender.agent.loop._read_bmb_api_key", lambda: fake_bmb_key)
 
     bmb_config = ModelConfig.from_environment(model="qwen3.8-27b", api_key="")
     assert bmb_config.api_key == fake_bmb_key
@@ -361,7 +361,7 @@ def test_the_eye_rides_the_daemon_when_the_writer_rides_bmb(monkeypatch):
     assert eye.model == "kimi-k2.7-code:cloud"
     # The vision describer follows the same rule: its call lands on the
     # daemon, not on the writer's bmb endpoint.
-    from blended.agent import loop as live_loop
+    from golem_blender.agent import loop as live_loop
 
     captured: list[tuple[str, str]] = []
 
@@ -414,7 +414,7 @@ def test_the_qwen3_8_eye_rides_the_bmb_lane(monkeypatch):
     assert eye.uses_openai_protocol
     # The describer routes the same way: a cloud writer's describer call
     # leaves the daemon for bmb.
-    from blended.agent import loop as live_loop
+    from golem_blender.agent import loop as live_loop
 
     captured: list[str] = []
 
@@ -476,7 +476,7 @@ def test_the_local_eye_rides_bigs_llama_swap(monkeypatch):
     # The describer uses the same rule, not a second copy of it. The
     # class and the patch target come from one module object, so the
     # patched _request is the one that runs and nothing reaches big.
-    from blended.agent import loop as live_loop
+    from golem_blender.agent import loop as live_loop
 
     captured: list[str] = []
 
@@ -498,7 +498,7 @@ def test_the_local_qwen_pair_splits_across_two_hosts(monkeypatch):
     list and must never receive one."""
     # Bind ONE module object for the patch AND the construction, so the
     # fake key file is the one the constructor reads.
-    from blended.agent import loop as live_loop
+    from golem_blender.agent import loop as live_loop
 
     monkeypatch.setattr(live_loop, "_read_bmb_api_key", lambda: "a" * 64)
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
@@ -519,7 +519,7 @@ def test_a_cloud_writers_key_never_rides_to_a_llama_swap_eye(monkeypatch):
     """The eye's credential follows the eye's SERVER. A cloud writer's
     Ollama key sent to bmb 401s, and bmb's key has no business on
     big."""
-    from blended.agent import loop as live_loop
+    from golem_blender.agent import loop as live_loop
 
     monkeypatch.setenv("OLLAMA_API_KEY", "cloud-key")
     monkeypatch.delenv("OLLAMA_HOST", raising=False)
@@ -587,7 +587,7 @@ def test_a_vendor_slash_model_rides_openrouter_with_its_own_key(monkeypatch, tmp
     reported, not waited on for 900 s), reads its own key file — in
     either the bare or the `OPENROUTER_API_KEY=` form — and never the
     Ollama env key."""
-    from blended.agent import loop as live_loop
+    from golem_blender.agent import loop as live_loop
 
     key_file = tmp_path / "openrouter_api_key"
     key_file.write_text("OPENROUTER_API_KEY=sk-or-v1-deadbeef\n")
@@ -626,7 +626,7 @@ def test_a_vendor_slash_model_rides_openrouter_with_its_own_key(monkeypatch, tmp
 def test_the_completion_cap_is_per_config_so_a_metered_lane_can_bound_spend(
     monkeypatch,
 ):
-    from blended.agent import loop as live_loop
+    from golem_blender.agent import loop as live_loop
 
     payloads: list[dict] = []
 
@@ -660,7 +660,7 @@ def test_the_assistant_tool_calls_travel_with_their_results():
     """
     import json as _json
 
-    from blended.agent.loop import _to_openai_messages
+    from golem_blender.agent.loop import _to_openai_messages
 
     converted = _to_openai_messages(
         [

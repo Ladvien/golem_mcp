@@ -97,23 +97,23 @@ def parse_arguments(argv):
 def main(argv) -> int:
     import bpy
 
-    from blended.agent.loop import (
+    from golem_blender.agent.loop import (
         AgentSession,
         EyeUnreachable,
         ModelConfig,
         OllamaClient,
         VisionDescriber,
     )
-    from blended.agent.system_prompt import build_system_prompt
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.capture import CaptureSettings, capture_contact_sheet
-    from blended.capture.reference_photo import normalize_reference_photo
-    from blended.evaluate.examiner import (
+    from golem_blender.agent.system_prompt import build_system_prompt
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.capture import CaptureSettings, capture_contact_sheet
+    from golem_blender.capture.reference_photo import normalize_reference_photo
+    from golem_blender.evaluate.examiner import (
         CANNOT_TELL_TAG,
         HALTING_DEVIATION_TAGS,
         examine_view,
     )
-    from blended.export.gltf import export_glb
+    from golem_blender.export.gltf import export_glb
 
     arguments = parse_arguments(argv)
     overrides: dict = {}
@@ -319,6 +319,6 @@ if __name__ == "__main__":
     argv = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     # Blender exits 0 on an uncaught Python exception, so a run that
     # died would read as a success (OT-32).
-    from blended.run.script_exit import run_script_main
+    from golem_blender.run.script_exit import run_script_main
 
     raise SystemExit(run_script_main(main, argv))

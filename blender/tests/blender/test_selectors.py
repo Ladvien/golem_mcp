@@ -22,7 +22,7 @@ TOP_SLOT_INDEX = 1
 
 @pytest.fixture()
 def box_with_top_marked():
-    from blended.ops import add_box, assign_material, link_into_scene
+    from golem_blender.ops import add_box, assign_material, link_into_scene
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     add_box("Fixture", 1.0, 1.0, 1.0)
@@ -41,7 +41,7 @@ def box_with_top_marked():
 
 
 def test_edge_selectors_resolve_each_kind(box_with_top_marked):
-    from blended.ops import EdgeSelector, select_edges
+    from golem_blender.ops import EdgeSelector, select_edges
 
     assert (
         len(select_edges(box_with_top_marked, EdgeSelector(kind="all")))
@@ -92,7 +92,7 @@ def test_edge_selectors_resolve_each_kind(box_with_top_marked):
 
 
 def test_face_selectors_resolve_each_kind(box_with_top_marked):
-    from blended.ops import FaceSelector, select_faces
+    from golem_blender.ops import FaceSelector, select_faces
 
     fixture = bpy.data.objects[box_with_top_marked]
     top = max(fixture.data.polygons, key=lambda polygon: polygon.center.z).index
@@ -122,7 +122,7 @@ def test_face_selectors_resolve_each_kind(box_with_top_marked):
 
 
 def test_vertex_selectors_resolve_each_kind(box_with_top_marked):
-    from blended.ops import VertexSelector, select_vertices
+    from golem_blender.ops import VertexSelector, select_vertices
 
     assert (
         len(select_vertices(box_with_top_marked, VertexSelector(kind="all")))
@@ -157,7 +157,7 @@ def test_vertex_selectors_resolve_each_kind(box_with_top_marked):
 
 def test_weights_take_a_selector_not_indices(box_with_top_marked):
     """The one existing subset op switches from indices to a selector (OT-14)."""
-    from blended.ops import VertexSelector, assign_vertex_group_weights, weight_report
+    from golem_blender.ops import VertexSelector, assign_vertex_group_weights, weight_report
 
     assign_vertex_group_weights(
         box_with_top_marked,
@@ -179,7 +179,7 @@ def test_weights_take_a_selector_not_indices(box_with_top_marked):
 def test_a_selector_dispatches_as_a_tool_argument(box_with_top_marked, tmp_path):
     """The selector round-trips through the tool surface: JSON in, enum
     validated, dataclass bound, indices out."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     outcome = dispatch_tool(
         "select_faces",

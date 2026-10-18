@@ -9,7 +9,7 @@ whose answers can be checked by hand.
 
 The tool lives in `scripts/` and is deliberately stdlib-only (it runs
 under the benchmark's own venv and under a bare `python3`), so it is
-imported by path rather than as a `blended.*` module.
+imported by path rather than as a `golem_blender.*` module.
 """
 
 import json

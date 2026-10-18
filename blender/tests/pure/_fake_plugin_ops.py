@@ -1,12 +1,12 @@
 """Fixture for test_op_plugins: a plugin module with one reader and one
 scene-changing op, both satisfying the op contract. Not an op module of
-blended; nothing imports it except the test that fakes an entry point."""
+golem_blender; nothing imports it except the test that fakes an entry point."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from blended.ops._contract import op
+from golem_blender.ops._contract import op
 
 __all__ = ("fake_plugin_edit", "fake_plugin_reading")
 

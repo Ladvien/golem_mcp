@@ -14,9 +14,9 @@ def empty_scene():
 
 
 def test_unwrapped_mesh_reports_uvs(empty_scene):
-    from blended.analyze import analyze_object
-    from blended.builders import CrateBuilder, CrateParameters
-    from blended.ops import unwrap_uvs
+    from golem_blender.analyze import analyze_object
+    from golem_blender.builders import CrateBuilder, CrateParameters
+    from golem_blender.ops import unwrap_uvs
 
     crate_object = CrateBuilder(CrateParameters()).build()
     assert analyze_object(crate_object).uv_layer_count == 0
@@ -30,9 +30,9 @@ def test_unwrapped_mesh_reports_uvs(empty_scene):
 
 
 def test_require_uv_budget_fails_without_unwrap(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.builders import CrateBuilder, CrateParameters
-    from blended.ops import unwrap_uvs
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.builders import CrateBuilder, CrateParameters
+    from golem_blender.ops import unwrap_uvs
 
     textured_budget = MeshBudget(require_uv_layer=True)
     crate_object = CrateBuilder(CrateParameters()).build()
@@ -47,8 +47,8 @@ def test_require_uv_budget_fails_without_unwrap(empty_scene):
 def test_geometry_budget_ignores_missing_uvs(empty_scene):
     """UV requirements are opt-in: blockout stages must not be forced to
     carry a layout."""
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.builders import CrateBuilder, CrateParameters
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.builders import CrateBuilder, CrateParameters
 
     crate_object = CrateBuilder(CrateParameters()).build()
     assert analyze_object(crate_object).failures(MeshBudget()) == []
@@ -57,8 +57,8 @@ def test_geometry_budget_ignores_missing_uvs(empty_scene):
 def test_stacked_uvs_are_detected_as_overlaps(empty_scene):
     """Two islands occupying the same UV space share texels — detected,
     and gated when the budget forbids it."""
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.ops import add_box, link_into_scene, unwrap_uvs
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.ops import add_box, link_into_scene, unwrap_uvs
 
     box_object = bpy.data.objects[add_box("StackedUVs", 1.0, 1.0, 1.0)]
     link_into_scene(box_object.name)
@@ -82,8 +82,8 @@ def test_stacked_uvs_are_detected_as_overlaps(empty_scene):
 
 
 def test_out_of_bounds_uvs_are_detected(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.ops import add_box, link_into_scene, unwrap_uvs
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.ops import add_box, link_into_scene, unwrap_uvs
 
     box_object = bpy.data.objects[add_box("OutOfBoundsUVs", 1.0, 1.0, 1.0)]
     link_into_scene(box_object.name)
@@ -101,9 +101,9 @@ def test_out_of_bounds_uvs_are_detected(empty_scene):
 
 
 def test_island_budget_catches_seam_heavy_layouts(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.builders import BarrelBuilder, BarrelParameters
-    from blended.ops import unwrap_uvs
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.builders import BarrelBuilder, BarrelParameters
+    from golem_blender.ops import unwrap_uvs
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
     unwrap_uvs(barrel_object.name)
@@ -117,7 +117,7 @@ def test_island_budget_catches_seam_heavy_layouts(empty_scene):
 
 
 def _pillow_available():
-    from blended.capture.compose import pillow_available
+    from golem_blender.capture.compose import pillow_available
 
     return pillow_available()
 
@@ -130,9 +130,9 @@ def _pillow_available():
     ),
 )
 def test_uv_layout_render_produces_an_image(empty_scene, tmp_path):
-    from blended.builders import BarrelBuilder, BarrelParameters
-    from blended.capture import render_uv_layout
-    from blended.ops import unwrap_uvs
+    from golem_blender.builders import BarrelBuilder, BarrelParameters
+    from golem_blender.capture import render_uv_layout
+    from golem_blender.ops import unwrap_uvs
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
     unwrap_uvs(barrel_object.name)
@@ -156,10 +156,10 @@ def test_uv_layout_render_reports_the_missing_dependency(
     for. It must say so plainly instead of failing somewhere obscure —
     and this test runs everywhere, including where Pillow exists.
     """
-    import blended.capture.compose as compose_module
-    from blended.builders import BarrelBuilder, BarrelParameters
-    from blended.capture import render_uv_layout
-    from blended.ops import unwrap_uvs
+    import golem_blender.capture.compose as compose_module
+    from golem_blender.builders import BarrelBuilder, BarrelParameters
+    from golem_blender.capture import render_uv_layout
+    from golem_blender.ops import unwrap_uvs
 
     monkeypatch.setattr(compose_module, "pillow_available", lambda: False)
     barrel_object = BarrelBuilder(BarrelParameters()).build()
@@ -172,8 +172,8 @@ def test_uv_layout_render_reports_the_missing_dependency(
 def test_default_unwrap_is_clean_on_curved_geometry(empty_scene):
     """The measured reason ANGLE_BASED is the default: smart_project
     overlaps badly on a lathe, angle-based does not."""
-    from blended.builders import BarrelBuilder, BarrelParameters
-    from blended.ops.uv import SMART_PROJECT, unwrap_uvs
+    from golem_blender.builders import BarrelBuilder, BarrelParameters
+    from golem_blender.ops.uv import SMART_PROJECT, unwrap_uvs
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
 
@@ -188,8 +188,8 @@ def test_default_unwrap_is_clean_on_curved_geometry(empty_scene):
 
 
 def test_unwrap_report_surfaces_overlaps_at_the_call_site(empty_scene):
-    from blended.builders import CrateBuilder, CrateParameters
-    from blended.ops.uv import CUBE_PROJECT, unwrap_uvs
+    from golem_blender.builders import CrateBuilder, CrateParameters
+    from golem_blender.ops.uv import CUBE_PROJECT, unwrap_uvs
 
     crate_object = CrateBuilder(CrateParameters()).build()
     cube_report = unwrap_uvs(crate_object.name, method=CUBE_PROJECT)
@@ -200,8 +200,8 @@ def test_unwrap_report_surfaces_overlaps_at_the_call_site(empty_scene):
 def test_unknown_method_is_rejected(empty_scene):
     import pytest as pytest_module
 
-    from blended.builders import CrateBuilder, CrateParameters
-    from blended.ops.uv import unwrap_uvs
+    from golem_blender.builders import CrateBuilder, CrateParameters
+    from golem_blender.ops.uv import unwrap_uvs
 
     crate_object = CrateBuilder(CrateParameters()).build()
     with pytest_module.raises(ValueError):
@@ -211,8 +211,8 @@ def test_unknown_method_is_rejected(empty_scene):
 def test_unwrap_is_deterministic_regardless_of_prior_uvs(empty_scene):
     """Unwrapping must be a pure function of the geometry: a prior
     layout must not leak into the next one."""
-    from blended.builders import BarrelBuilder, BarrelParameters
-    from blended.ops.uv import SMART_PROJECT, unwrap_uvs
+    from golem_blender.builders import BarrelBuilder, BarrelParameters
+    from golem_blender.ops.uv import SMART_PROJECT, unwrap_uvs
 
     barrel_object = BarrelBuilder(BarrelParameters()).build()
 

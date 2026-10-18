@@ -33,7 +33,7 @@ NOTES_TEMPLATE = """\
   ({reference_ok}/{reference_total} baked; the rest are excluded from the
   instance list because an instance with no reference mesh cannot be
   Chamfer-scored).
-- blended's emitted scripts carry a sys.path prelude making `blended.ops`
+- golem_blender's emitted scripts carry a sys.path prelude making `golem_blender.ops`
   importable; baseline scripts are pure bpy.
 - Published leaderboard numbers are **not** comparable to this table: they were
   produced on Blender 5.0 on other hardware. Both rows here pass through the
@@ -41,7 +41,7 @@ NOTES_TEMPLATE = """\
   them comparable to each other.
 - **`mean_duration_s` and `mean_turns` are NOT comparable across rows.**
   `exec_pass_rate` and the Chamfer columns are re-measured here on one
-  machine, which is the whole point of the table. Cost is not: blended's
+  machine, which is the whole point of the table. Cost is not: golem_blender's
   durations were measured live on this machine against a cloud writer,
   while a baseline row's come from the published log's own `latency_s` and
   `num_turns`, recorded on the benchmark authors' hardware. Read those two
@@ -207,7 +207,7 @@ def main(argv) -> int:
 
     document = "\n".join(
         [
-            "# 3DCodeBench — blended vs baseline",
+            "# 3DCodeBench — golem_blender vs baseline",
             "",
             "Executability and Chamfer distance, both produced by 3DCodeBench's own",
             "unmodified scorers on this machine over one frozen instance subset.",

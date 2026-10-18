@@ -8,7 +8,7 @@ The golem server on ``big``, served through this MCP server.
 golem (image -> 3D -> rigged character, Kimodo motion) runs on Linux with the
 GPU and speaks streamable HTTP; this server runs on the Mac beside the user's
 open Blender. A client registers this one server as ``golem`` and sees both
-halves' tools: ``BlendedFastMCP`` lists the remote tools after its own and
+halves' tools: ``GolemBlenderFastMCP`` lists the remote tools after its own and
 forwards their calls here, unchanged.
 
 golem is stateless (one HTTP request answers one call), so every call opens a

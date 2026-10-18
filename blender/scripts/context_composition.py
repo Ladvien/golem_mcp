@@ -18,7 +18,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
-from blended.agent.context_budget import (
+from golem_blender.agent.context_budget import (
     TokenizerUnreachable,
     bmb_tokenizer,
     composition,
@@ -26,9 +26,9 @@ from blended.agent.context_budget import (
     spec_row,
     write_spec_row,
 )
-from blended.agent.loop import BMB_API_KEY_FILE, BMB_ENDPOINT
-from blended.agent.tool_disclosure import core_ops, offered_tools
-from blended.agent.tools import SERVICE_TOOL_NAMES, TOOL_SCHEMAS
+from golem_blender.agent.loop import BMB_API_KEY_FILE, BMB_ENDPOINT
+from golem_blender.agent.tool_disclosure import core_ops, offered_tools
+from golem_blender.agent.tools import SERVICE_TOOL_NAMES, TOOL_SCHEMAS
 
 SPEC_PATH = REPOSITORY_ROOT / "docs" / "2026-09-10-specification-and-requirements.md"
 TOKENIZER_NAME = "bmb qwen3.8-27b tokenizer"

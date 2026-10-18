@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from blended.evaluate.acceptance import (
+from golem_blender.evaluate.acceptance import (
     AcceptanceReport,
     DimensionMeasurement,
     GroundContactMeasurement,
@@ -21,20 +21,20 @@ from blended.evaluate.acceptance import (
     RefinementOutcome,
     signed_angle_difference_deg,
 )
-from blended.evaluate.briefs import (
+from golem_blender.evaluate.briefs import (
     AssetBrief,
     DimensionSpec,
     GroundContactProbe,
     PartSpec,
     RefinementStep,
 )
-from blended.evaluate.examiner import (
+from golem_blender.evaluate.examiner import (
     EXAMINED_VIEW_NAMES,
     GoldenReferenceMismatch,
     parse_tags,
     verify_golden_manifest,
 )
-from blended.evaluate.iteration_log import (
+from golem_blender.evaluate.iteration_log import (
     IterationLog,
     IterationRecord,
     IterationVerdict,

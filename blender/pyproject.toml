@@ -1,7 +1,7 @@
 [project]
-name = "blended"
+name = "golem-blender"
 version = "0.1.0"
-description = "A Blender-based harness for agentic modeling of game assets."
+description = "golem's Mac half: the Blender harness, op vocabulary and MCP front door beside an open Blender."
 requires-python = ">=3.11"
 dependencies = [
     "blender-mcp",
@@ -23,7 +23,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-blended = ["py.typed", "agent/prompts/*.j2"]
+golem_blender = ["py.typed", "agent/prompts/*.j2"]
 
 [tool.pytest.ini_options]
 # tests/blender first: its modules skip at import without bpy, leaving no
@@ -38,7 +38,7 @@ markers = [
 [tool.mypy]
 python_version = "3.11"
 
-# src layout: map src/blended/x.py to `blended.x`, and tests/blender/y.py to
+# src layout: map src/golem_blender/x.py to `golem_blender.x`, and tests/blender/y.py to
 # `tests.blender.y` (test_harness imports test_retry by that dotted path).
 # Without this mypy names the same test file two ways and bails.
 mypy_path = "src"
@@ -58,16 +58,16 @@ ignore_missing_imports = true
 # None sentinel would add a second code path through every one of these
 # functions to defend against a bug the frozen dataclass already prevents.
 extend-immutable-calls = [
-    "blended.analyze.mesh_checks.MeshBudget",
-    "blended.capture.views.CaptureSettings",
-    "blended.harness.HarnessSettings",
-    "blended.ingest.cleanup.CleanupSettings",
-    "blended.viewport_follow.ViewportFollowConfig",
+    "golem_blender.analyze.mesh_checks.MeshBudget",
+    "golem_blender.capture.views.CaptureSettings",
+    "golem_blender.harness.HarnessSettings",
+    "golem_blender.ingest.cleanup.CleanupSettings",
+    "golem_blender.viewport_follow.ViewportFollowConfig",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 # The example scripts MUST defer their imports: sys.path has to be
-# extended before `blended` is importable at all, and the factory reset
+# extended before `golem_blender` is importable at all, and the factory reset
 # has to run before importing modules that touch bpy state. Both are
 # structural requirements of running standalone against bpy, not
 # untidiness, so E402 is silenced for examples only.

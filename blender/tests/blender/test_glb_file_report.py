@@ -21,8 +21,8 @@ def empty_scene():
 
 
 def test_file_and_welded_reimport_agree(empty_scene, tmp_path):
-    from blended.builders import PalletBuilder, PalletParameters
-    from blended.export import export_glb
+    from golem_blender.builders import PalletBuilder, PalletParameters
+    from golem_blender.export import export_glb
 
     pallet_object = PalletBuilder(PalletParameters()).build()
     export_report = export_glb(

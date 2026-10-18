@@ -14,7 +14,7 @@ Builds practice of varying the environment between builds rather than
 repeating it.
 
 The comparison is exact string equality on quantized semantic
-components (`blended.evaluate.digest`), reported per component so a
+components (`golem_blender.evaluate.digest`), reported per component so a
 failure names the drifted datablock.
 
 Two measured details about driving Blender this way:
@@ -112,7 +112,7 @@ def child_arguments(arguments) -> list[str]:
 
 def build_builder(builder_name: str):
     """One build of the named builder with DEFAULT parameters."""
-    from blended.builders import (
+    from golem_blender.builders import (
         BarrelBuilder,
         BarrelParameters,
         CrateBuilder,
@@ -137,16 +137,16 @@ def digest_in_this_process(arguments) -> dict:
     the whole scene, because an agent-authored build decides for itself
     how many objects it leaves behind.
     """
-    from blended.evaluate.digest import object_digest, scene_digest
-    from blended.reset import reset_scene
+    from golem_blender.evaluate.digest import object_digest, scene_digest
+    from golem_blender.reset import reset_scene
 
     reset_scene()
 
     if arguments.builder:
         return object_digest(build_builder(arguments.builder))
 
-    from blended.evaluate.replay import load_record, sources_from
-    from blended.run.executor import run_source_in_process
+    from golem_blender.evaluate.replay import load_record, sources_from
+    from golem_blender.run.executor import run_source_in_process
 
     record = load_record(Path(arguments.log), arguments.iteration)
     sources = sources_from(record)
@@ -249,7 +249,7 @@ def main(argv) -> int:
         print(DIGEST_MARKER + json.dumps(digest, sort_keys=True), flush=True)
         return 0
 
-    from blended.evaluate.digest import compare_digests
+    from golem_blender.evaluate.digest import compare_digests
 
     digests = [run_child(arguments, hash_seed) for hash_seed in HASH_SEEDS]
     problems = compare_digests(digests[0], digests[1])

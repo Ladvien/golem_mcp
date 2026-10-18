@@ -15,10 +15,10 @@ Which calls count is a correctness question, not a convenience one (see
 evaluate/bench_bridge.py, which now owns the rule and the assembly). A
 chunk whose Python raised must be excluded (including it guarantees a
 re-bake failure and understates the harness); a chunk whose Python ran
-and only blended's own analyzer gate objected must be INCLUDED, because
+and only golem_blender's own analyzer gate objected must be INCLUDED, because
 that gate is this harness's standard, not 3DCodeBench's, and the
 geometry exists either way. The three accepted result prefixes below are
-read off `src/blended/agent/tools.py` and `HarnessResult.summary()`.
+read off `src/golem_blender/agent/tools.py` and `HarnessResult.summary()`.
 
 Nothing here writes to `_evaluate/` — a benchmark run must never enter
 the canonical convergence evidence.
@@ -48,7 +48,7 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 sys.path.insert(0, str(REPOSITORY_ROOT))
 os.chdir(REPOSITORY_ROOT)
 
-# The task text is `blended.evaluate.bench_task_prompt.OPS_TASK_TEMPLATE`:
+# The task text is `golem_blender.evaluate.bench_task_prompt.OPS_TASK_TEMPLATE`:
 # one definition. The production runner sends it as is. The fine-tune
 # decision experiment's raw-bpy arms send `RAW_TASK_TEMPLATE`, which is it
 # with `CHUNK_RULE` removed; its op arms send
@@ -78,7 +78,7 @@ def parse_arguments(argv):
         default="",
         help="<root>/<inst>/images/Image_0{05,15,25,35}.png: the bench's image-to-3D "
         "track. All four views must exist or the instance is refused before any "
-        "model call (blended.evaluate.bench_reference_views).",
+        "model call (golem_blender.evaluate.bench_reference_views).",
     )
     parser.add_argument("--max-tool-calls", type=int, default=24)
     parser.add_argument("--overwrite", action="store_true")
@@ -88,23 +88,23 @@ def parse_arguments(argv):
 def main(argv) -> int:
     import bpy
 
-    from blended.agent.loop import (
+    from golem_blender.agent.loop import (
         AgentSession,
         ModelConfig,
         OllamaClient,
         dispatch_here,
     )
-    from blended.capture.reference_photo import normalize_reference_photo
-    from blended.evaluate.bench_bridge import (
+    from golem_blender.capture.reference_photo import normalize_reference_photo
+    from golem_blender.evaluate.bench_bridge import (
         RecordedCall,
         canonical_orientation_epilogue,
         prelude,
         standalone_script,
     )
-    from blended.evaluate.bench_reference_views import reference_view_paths
-    from blended.evaluate.bench_task_prompt import OPS_TASK_TEMPLATE
-    from blended.ops.canonical_orientation import apply_canonical_depth_axis
-    from blended.version import assert_supported_blender
+    from golem_blender.evaluate.bench_reference_views import reference_view_paths
+    from golem_blender.evaluate.bench_task_prompt import OPS_TASK_TEMPLATE
+    from golem_blender.ops.canonical_orientation import apply_canonical_depth_axis
+    from golem_blender.version import assert_supported_blender
 
     arguments = parse_arguments(argv)
     assert_supported_blender()
@@ -327,6 +327,6 @@ def main(argv) -> int:
 extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
 # Blender exits 0 on an uncaught Python exception, so a run that
 # died would read as a success (OT-32).
-from blended.run.script_exit import run_script_main
+from golem_blender.run.script_exit import run_script_main
 
 raise SystemExit(run_script_main(main, extra_arguments))

@@ -23,7 +23,7 @@ def empty_scene():
 
 
 def _box():
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     box_name = add_box("Subject", 0.2, 0.2, 0.2)
     link_into_scene(box_name)
@@ -31,7 +31,7 @@ def _box():
 
 
 def test_assign_material_fills_one_slot(empty_scene):
-    from blended.ops.materials import assign_material
+    from golem_blender.ops.materials import assign_material
 
     box = _box()
     assign_material(box.name, "Terracotta", TERRACOTTA_RGB)
@@ -43,7 +43,7 @@ def test_assign_material_fills_one_slot(empty_scene):
 
 def test_assign_material_sets_both_colour_fields(empty_scene):
     """The shader colour and the Workbench colour must not disagree."""
-    from blended.ops.materials import assign_material
+    from golem_blender.ops.materials import assign_material
 
     box = _box()
     material_name = assign_material(box.name, "Terracotta", TERRACOTTA_RGB)
@@ -66,8 +66,8 @@ def test_a_shared_material_name_survives_reassignment(empty_scene):
     assembly failed the material gate with 0 assigned in 1 slot. The
     datablock must be reused, so every object referencing the name
     keeps its assignment."""
-    from blended.ops.materials import assign_material
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.materials import assign_material
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     body = bpy.data.objects[add_box("Body", 0.5, 0.5, 0.4)]
     link_into_scene(body.name)
@@ -88,8 +88,8 @@ def test_a_shared_material_name_survives_reassignment(empty_scene):
 
 def test_the_render_actually_shows_the_colour(empty_scene, tmp_path):
     """The assertion that closes the loop: pixels, not properties."""
-    from blended.capture.views import capture_views
-    from blended.ops.materials import assign_material
+    from golem_blender.capture.views import capture_views
+    from golem_blender.ops.materials import assign_material
 
     box = _box()
     assign_material(box.name, "Terracotta", TERRACOTTA_RGB)

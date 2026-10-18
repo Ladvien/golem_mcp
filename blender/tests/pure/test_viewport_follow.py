@@ -3,8 +3,8 @@
 The framing itself needs a GUI Blender: `make test-viewport-gui`.
 """
 
-from blended.agent.outcome import ToolOutcome
-from blended.viewport_follow import frame_target_names
+from golem_blender.agent.outcome import ToolOutcome
+from golem_blender.viewport_follow import frame_target_names
 
 
 def _gate(object_name: str) -> dict:
@@ -51,7 +51,7 @@ def test_unlinked_constructor_result_is_named_for_blender_to_filter() -> None:
 
 def test_the_viewport_line_names_a_few_objects_then_counts_the_rest():
     """A call that changed two hundred objects must not answer with two hundred names."""
-    from blended.viewport_follow import MAXIMUM_NAMES_ON_LINE, _framed_line
+    from golem_blender.viewport_follow import MAXIMUM_NAMES_ON_LINE, _framed_line
 
     names = tuple(f"Part{index}" for index in range(MAXIMUM_NAMES_ON_LINE + 5))
 

@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from blended.evaluate.bench_bridge import RecordedCall, prelude, standalone_script
-from blended.stages import STAGE_DONE, STAGE_EXECUTE
+from golem_blender.evaluate.bench_bridge import RecordedCall, prelude, standalone_script
+from golem_blender.stages import STAGE_DONE, STAGE_EXECUTE
 
 SCRIPTS_DIRECTORY = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_DIRECTORY) not in sys.path:

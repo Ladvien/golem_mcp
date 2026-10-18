@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from blended.evaluate.mistake_memory import MISTAKES, validate_memory
+from golem_blender.evaluate.mistake_memory import MISTAKES, validate_memory
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 # Where a guard may define its tests and helpers.

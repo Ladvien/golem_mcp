@@ -9,7 +9,7 @@ pytestmark = pytest.mark.blender
 GOOD_SOURCE = """
 import sys
 sys.path.insert(0, "src")
-from blended.ops import add_box, link_into_scene
+from golem_blender.ops import add_box, link_into_scene
 widget = add_box("Widget", 0.5, 0.5, 0.5)
 link_into_scene(widget)
 """
@@ -17,7 +17,7 @@ link_into_scene(widget)
 DISCONNECTED_SOURCE = """
 import sys
 sys.path.insert(0, "src")
-from blended.ops import add_box, link_into_scene
+from golem_blender.ops import add_box, link_into_scene
 import bmesh, bpy
 first = add_box("Widget", 0.5, 0.5, 0.5)
 link_into_scene(first)
@@ -35,8 +35,8 @@ def empty_scene():
 
 
 def test_task_succeeds_first_round(empty_scene, tmp_path):
-    from blended.harness import HarnessSettings
-    from blended.task import AgentTask, run_agent_task
+    from golem_blender.harness import HarnessSettings
+    from golem_blender.task import AgentTask, run_agent_task
 
     task = AgentTask(object_name="Widget", description="Build a widget.")
     result = run_agent_task(
@@ -52,8 +52,8 @@ def test_task_succeeds_first_round(empty_scene, tmp_path):
 def test_agent_recovers_using_gate_feedback(empty_scene, tmp_path):
     """The recovery path: round one fails the gate, the feedback names
     the cause, round two fixes it."""
-    from blended.harness import HarnessSettings
-    from blended.task import AgentTask, run_agent_task
+    from golem_blender.harness import HarnessSettings
+    from golem_blender.task import AgentTask, run_agent_task
 
     prompts_seen = []
 
@@ -73,8 +73,8 @@ def test_agent_recovers_using_gate_feedback(empty_scene, tmp_path):
 
 
 def test_task_escalates_after_the_cap(empty_scene, tmp_path):
-    from blended.harness import HarnessSettings
-    from blended.task import AgentTask, run_agent_task
+    from golem_blender.harness import HarnessSettings
+    from golem_blender.task import AgentTask, run_agent_task
 
     task = AgentTask(object_name="Widget", description="Build a widget.")
     result = run_agent_task(

@@ -41,7 +41,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
-from blended.agent.loop import ModelConfig, OllamaClient
+from golem_blender.agent.loop import ModelConfig, OllamaClient
 
 # The harness's metered writer and its own eye (OT-28): tools,
 # structured outputs, text AND image input, a 1,048,576 context read

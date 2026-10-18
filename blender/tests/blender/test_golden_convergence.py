@@ -139,8 +139,8 @@ def _expected_brief(brief, record):
     step. A record from before the suite gained steps must not be
     graded against steps it never ran.
     """
-    from blended.evaluate.acceptance import refine_brief
-    from blended.evaluate.replay import steps_applied
+    from golem_blender.evaluate.acceptance import refine_brief
+    from golem_blender.evaluate.replay import steps_applied
 
     for step in steps_applied(record, brief):
         brief = refine_brief(brief, step)
@@ -149,9 +149,9 @@ def _expected_brief(brief, record):
 
 def _measure(brief_name: str):
     """Rebuild the converging run for this brief and score it."""
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
-    from blended.evaluate.replay import load_record, replay_record
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.evaluate.replay import load_record, replay_record
 
     brief = get_brief(brief_name)
     record = load_record(ITERATION_LOG, CONVERGING_ITERATIONS[brief_name])
@@ -323,7 +323,7 @@ def _pinned_identity() -> str:
 
 def test_the_pinned_prompt_is_the_one_that_converged():
     """Pinning is a claim about history; it has to stay true."""
-    from blended.agent import prompt_versions
+    from golem_blender.agent import prompt_versions
 
     assert prompt_versions.ACTIVE_PROMPT_REVISION == (
         prompt_versions.PINNED_PROMPT_REVISION

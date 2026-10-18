@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from blended.agent.outcome import ToolOutcome, outcome_from_json, outcome_to_json
-from blended.stages import STAGE_DONE
+from golem_blender.agent.outcome import ToolOutcome, outcome_from_json, outcome_to_json
+from golem_blender.stages import STAGE_DONE
 
 
 def test_an_outcome_round_trips_through_json_text():

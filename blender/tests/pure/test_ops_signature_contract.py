@@ -18,7 +18,7 @@ import typing
 
 import pytest
 
-from blended.ops._contract import (
+from golem_blender.ops._contract import (
     UNITLESS_NUMERIC_NAMES,
     contract_violations,
     facade_ops,
@@ -26,7 +26,7 @@ from blended.ops._contract import (
     op,
     returns_object_names,
 )
-from blended.ops._objects import ObjectName
+from golem_blender.ops._objects import ObjectName
 
 # --- the fixture that proves the gate can fail (NFR-15) ------------------
 

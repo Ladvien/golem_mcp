@@ -11,7 +11,7 @@ bpy = pytest.importorskip("bpy", reason="requires Blender-as-module (pip install
 pytestmark = pytest.mark.blender
 
 BUILD_SOURCE = """
-from blended.ops import add_box, link_into_scene
+from golem_blender.ops import add_box, link_into_scene
 crate = add_box("ChatCrate", 0.6, 0.6, 0.6)
 link_into_scene(crate)
 """
@@ -28,8 +28,8 @@ class ScriptedClient:
     def __init__(self, replies):
         import dataclasses
 
-        from blended.agent import ModelConfig
-        from blended.agent.claude_code import TurnCost
+        from golem_blender.agent import ModelConfig
+        from golem_blender.agent.claude_code import TurnCost
 
         self.replies = list(replies)
         self.seen_messages = []
@@ -52,7 +52,7 @@ def empty_scene():
 
 
 def test_loop_runs_a_tool_then_answers(empty_scene, tmp_path):
-    from blended.agent import AgentSession
+    from golem_blender.agent import AgentSession
 
     client = ScriptedClient(
         [
@@ -91,7 +91,7 @@ def test_loop_runs_a_tool_then_answers(empty_scene, tmp_path):
 
 
 def test_render_result_attaches_an_image_the_model_can_see(empty_scene, tmp_path):
-    from blended.agent import AgentSession
+    from golem_blender.agent import AgentSession
 
     client = ScriptedClient(
         [
@@ -137,12 +137,12 @@ def test_render_result_attaches_an_image_the_model_can_see(empty_scene, tmp_path
 
 
 def test_gate_failure_is_reported_to_the_model(empty_scene, tmp_path):
-    from blended.agent import AgentSession
+    from golem_blender.agent import AgentSession
 
     open_box_source = """
 import bmesh
 import bpy
-from blended.ops import add_box, link_into_scene
+from golem_blender.ops import add_box, link_into_scene
 box = add_box("BadCrate", 0.5, 0.5, 0.5)
 link_into_scene(box)
 w = bmesh.new(); w.from_mesh(bpy.data.objects[box].data)
@@ -178,7 +178,7 @@ w.to_mesh(bpy.data.objects[box].data); w.free()
 
 
 def test_tool_exception_is_surfaced_not_swallowed(empty_scene, tmp_path):
-    from blended.agent import AgentSession
+    from golem_blender.agent import AgentSession
 
     client = ScriptedClient(
         [
@@ -205,7 +205,7 @@ def test_tool_exception_is_surfaced_not_swallowed(empty_scene, tmp_path):
 
 
 def test_runaway_tool_calling_is_capped(empty_scene, tmp_path):
-    from blended.agent import AgentSession
+    from golem_blender.agent import AgentSession
 
     looping_reply = {
         "role": "assistant",
@@ -227,7 +227,7 @@ def test_the_recorded_call_is_replayable(empty_scene, tmp_path):
     characters of each call, so the iteration log held a preview of the
     run_python source that crashed and not the source itself.
     """
-    from blended.agent import AgentSession
+    from golem_blender.agent import AgentSession
 
     long_source = BUILD_SOURCE + "\n# padding\n" + ("# " + "x" * 78 + "\n") * 6
     assert len(long_source) > 400
@@ -270,7 +270,7 @@ def test_the_budget_counts_calls_not_messages(empty_scene, tmp_path):
     report all said CALLS, so a run that executed 20 calls reported
     "Stopped after 16 tool calls". The count is now what was executed.
     """
-    from blended.agent import AgentSession
+    from golem_blender.agent import AgentSession
 
     three_calls_at_once = {
         "role": "assistant",
@@ -294,7 +294,7 @@ def test_the_budget_counts_calls_not_messages(empty_scene, tmp_path):
 
 
 def test_search_ops_finds_operations_without_guessing(empty_scene, tmp_path):
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _outcome = dispatch_tool("search_ops", {"query": "boolean"}, tmp_path)
     result_text, images = _outcome.text, list(_outcome.images)
@@ -307,8 +307,8 @@ def test_search_ops_finds_operations_without_guessing(empty_scene, tmp_path):
 
 
 def test_export_tool_verifies_the_written_file(empty_scene, tmp_path):
-    from blended.agent.tools import dispatch_tool
-    from blended.builders import CrateBuilder, CrateParameters
+    from golem_blender.agent.tools import dispatch_tool
+    from golem_blender.builders import CrateBuilder, CrateParameters
 
     CrateBuilder(CrateParameters(name="ExportMe")).build()
     _outcome = dispatch_tool(
@@ -343,7 +343,7 @@ class TwoModelClient:
         # Part of the client contract since 2026-09-06: the eye folds
         # its usage back into the client that owns the run, so a double
         # that stands in for one has to carry the accumulator.
-        from blended.agent.claude_code import TurnCost
+        from golem_blender.agent.claude_code import TurnCost
 
         self.spent = TurnCost()
 
@@ -358,7 +358,7 @@ class TwoModelClient:
 def _split_config():
     import dataclasses
 
-    from blended.agent import ModelConfig
+    from golem_blender.agent import ModelConfig
 
     return dataclasses.replace(
         ModelConfig.from_environment(),
@@ -369,8 +369,8 @@ def _split_config():
 
 def test_writer_never_receives_raw_images(empty_scene, tmp_path, monkeypatch):
     """deepseek-v4-flash is text-only — handing it image bytes is a bug."""
-    import blended.agent.loop as loop_module
-    from blended.agent import AgentSession
+    import golem_blender.agent.loop as loop_module
+    from golem_blender.agent import AgentSession
 
     config = _split_config()
     client = TwoModelClient(
@@ -435,8 +435,8 @@ def test_writer_never_receives_raw_images(empty_scene, tmp_path, monkeypatch):
 def test_eye_failure_degrades_without_killing_the_turn(
     empty_scene, tmp_path, monkeypatch
 ):
-    import blended.agent.loop as loop_module
-    from blended.agent import AgentSession
+    import golem_blender.agent.loop as loop_module
+    from golem_blender.agent import AgentSession
 
     def exploding_client(cfg):
         raise RuntimeError("eye endpoint unreachable")
@@ -491,7 +491,7 @@ def test_single_model_mode_still_attaches_images(empty_scene, tmp_path):
     straight into the conversation as before."""
     import dataclasses
 
-    from blended.agent import AgentSession, ModelConfig
+    from golem_blender.agent import AgentSession, ModelConfig
 
     config = dataclasses.replace(
         ModelConfig.from_environment(), model="vision-writer", vision_model=""
@@ -545,7 +545,7 @@ OBSERVED_COLD_START_SECONDS = 23.3
 def test_preflight_timeout_allows_a_cold_start():
     """A preflight shorter than a cold start reports a working backend
     as dead, and the driver then refuses to score the run."""
-    from blended.agent.loop import (
+    from golem_blender.agent.loop import (
         PREFLIGHT_TIMEOUT_SECONDS,
         REQUEST_TIMEOUT_SECONDS,
     )
@@ -599,9 +599,9 @@ PLANTER_OP_CALLS = [
 def test_a_brief_reaches_gate_pass_with_op_tools_only(empty_scene, tmp_path):
     """OT-4's acceptance: the vocabulary alone builds a brief the form
     gate passes, and every op result speaks the stage vocabulary."""
-    from blended.agent import AgentSession
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.agent import AgentSession
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     client = ScriptedClient(
         [
@@ -640,7 +640,7 @@ def test_a_brief_reaches_gate_pass_with_op_tools_only(empty_scene, tmp_path):
 def test_an_op_tool_failure_names_the_op_error_to_the_model(empty_scene, tmp_path):
     """An op's own exception (here: an unlinked boolean operand) comes back
     as a FAILED result at `execute`, not as a loop crash."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     for name in ("A", "B"):
         dispatch_tool(
@@ -661,7 +661,7 @@ def test_an_unresolved_intermediate_blocks_the_answer_until_resolved(
 ):
     """OT-5: add_box leaves an unlinked object; the answer is refused with
     the object named; removing it lets the same answer through."""
-    from blended.agent import AgentSession
+    from golem_blender.agent import AgentSession
 
     answer = {"role": "assistant", "content": "Cutter made."}
     client = ScriptedClient(
@@ -699,7 +699,7 @@ def test_an_unresolved_intermediate_blocks_the_answer_until_resolved(
 
 
 def test_a_gated_op_on_a_missing_object_fails_at_execute(empty_scene, tmp_path):
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     text = dispatch_tool("link_into_scene", {"object_name": "Ghost"}, tmp_path).text
     assert text.startswith("FAILED at execute: link_into_scene")
@@ -708,7 +708,7 @@ def test_a_gated_op_on_a_missing_object_fails_at_execute(empty_scene, tmp_path):
 
 def test_a_gate_failure_on_an_op_result_is_reported_at_gate(empty_scene, tmp_path):
     """Two unconnected boxes unioned into one object: 2 components, FAIL at gate."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     for name, x in (("A", 0.0), ("B", 5.0)):
         dispatch_tool(
@@ -732,7 +732,7 @@ def test_a_gate_failure_on_an_op_result_is_reported_at_gate(empty_scene, tmp_pat
 
 
 def test_an_armature_is_gated_on_scene_state_only(empty_scene, tmp_path):
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     text = dispatch_tool(
         "add_armature",
@@ -749,7 +749,7 @@ def test_an_armature_is_gated_on_scene_state_only(empty_scene, tmp_path):
 def test_an_action_op_accepts_plan_step_and_the_op_never_sees_it(empty_scene, tmp_path):
     """OT-6: plan_step rides on the call like on run_python; binding gets
     the op's own arguments only."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     text = dispatch_tool(
         "add_box",
@@ -769,7 +769,7 @@ def test_an_action_op_accepts_plan_step_and_the_op_never_sees_it(empty_scene, tm
 # --- the gate-failure cap (OT-16) ------------------------------------------
 
 TWO_ISLANDS_SOURCE = """
-from blended.ops import add_box, link_into_scene, linear_array
+from golem_blender.ops import add_box, link_into_scene, linear_array
 add_box("Bad", 0.1, 0.1, 0.1)
 link_into_scene("Bad")
 linear_array("Bad", 2, (1.0, 0.0, 0.0))
@@ -780,8 +780,8 @@ def test_a_builder_that_always_fails_the_gate_trips_the_cap(empty_scene, tmp_pat
     """OT-16: an applied array is two islands until something bridges
     them, so this chunk fails the gate every time. After the cap the
     turn stops with a contact sheet instead of spending the budget."""
-    from blended.agent import AgentSession
-    from blended.agent.loop import MAXIMUM_GATE_FAILURES_PER_OBJECT
+    from golem_blender.agent import AgentSession
+    from golem_blender.agent.loop import MAXIMUM_GATE_FAILURES_PER_OBJECT
 
     failing_call = {
         "role": "assistant",
@@ -824,7 +824,7 @@ def test_an_undisclosed_op_found_by_search_ops_runs_through_the_real_dispatcher(
     """OT-25: the model is shown the core set only; `boolean_union` is
     not in it. Searching for it and then calling it by name binds, runs
     and gates like a disclosed op — the door never shrank."""
-    from blended.agent import AgentSession
+    from golem_blender.agent import AgentSession
 
     client = ScriptedClient(
         [

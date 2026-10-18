@@ -3,7 +3,7 @@
     python3 scripts/inspect_glb.py <path> [--baseline <path>]
 
 Pure Python — reads the file's own bytes via
-``blended.export.glb_report``, so it runs anywhere the pure tier runs.
+``golem_blender.export.glb_report``, so it runs anywhere the pure tier runs.
 """
 
 import argparse
@@ -24,7 +24,7 @@ def parse_arguments(argv):
 
 
 def main(argv) -> int:
-    from blended.export.glb_report import asset_report, format_glb_report
+    from golem_blender.export.glb_report import asset_report, format_glb_report
 
     arguments = parse_arguments(argv)
     report = asset_report(arguments.glb)

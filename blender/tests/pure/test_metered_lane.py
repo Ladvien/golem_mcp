@@ -13,7 +13,7 @@ import io
 
 import pytest
 
-from blended.agent.loop import (
+from golem_blender.agent.loop import (
     BMB_ENDPOINT,
     LOCAL_ENDPOINT,
     MAXIMUM_RESERVED_COMPLETION_TOKENS,
@@ -312,7 +312,7 @@ def test_a_rate_limited_call_is_retried_then_succeeds(monkeypatch):
     import urllib.error
 
     waits = []
-    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
     attempts = {"n": 0}
 
     def flaky(self, path, payload, timeout_seconds):
@@ -330,7 +330,7 @@ def test_a_rate_limited_call_is_retried_then_succeeds(monkeypatch):
         OllamaClient, "_build_request", lambda self, path, payload: path
     )
     monkeypatch.setattr(
-        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(flaky)
+        "golem_blender.agent.loop.urllib.request.urlopen", _urlopen_from(flaky)
     )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
@@ -349,7 +349,7 @@ def test_a_permanent_error_is_not_retried(monkeypatch):
     import urllib.error
 
     waits = []
-    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
     calls = {"n": 0}
 
     def refuses(self, path, payload, timeout_seconds):
@@ -362,7 +362,7 @@ def test_a_permanent_error_is_not_retried(monkeypatch):
         OllamaClient, "_build_request", lambda self, path, payload: path
     )
     monkeypatch.setattr(
-        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(refuses)
+        "golem_blender.agent.loop.urllib.request.urlopen", _urlopen_from(refuses)
     )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
@@ -377,7 +377,7 @@ def test_a_window_that_never_lifts_fails_loudly(monkeypatch):
     import urllib.error
 
     waits = []
-    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
     calls = {"n": 0}
 
     def always_limited(self, path, payload, timeout_seconds):
@@ -390,7 +390,7 @@ def test_a_window_that_never_lifts_fails_loudly(monkeypatch):
         OllamaClient, "_build_request", lambda self, path, payload: path
     )
     monkeypatch.setattr(
-        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(always_limited)
+        "golem_blender.agent.loop.urllib.request.urlopen", _urlopen_from(always_limited)
     )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
@@ -412,10 +412,10 @@ def test_an_exhausted_credit_lane_is_not_retried(monkeypatch):
     adding credits changes it — so it is raised at once with its body."""
     import urllib.error
 
-    from blended.agent.loop import EXHAUSTED_CREDITS_SIGNATURE, exhausted_credits_error
+    from golem_blender.agent.loop import EXHAUSTED_CREDITS_SIGNATURE, exhausted_credits_error
 
     waits = []
-    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
     calls = {"n": 0}
     body = b'{"error":"usage credits auto reload monthly max reached, increase your monthly max"}'
 
@@ -429,7 +429,7 @@ def test_an_exhausted_credit_lane_is_not_retried(monkeypatch):
         OllamaClient, "_build_request", lambda self, path, payload: path
     )
     monkeypatch.setattr(
-        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(out_of_credits)
+        "golem_blender.agent.loop.urllib.request.urlopen", _urlopen_from(out_of_credits)
     )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
@@ -455,7 +455,7 @@ def test_a_socket_timeout_on_open_is_retried_then_succeeds(monkeypatch):
     retry caught HTTPError alone. The roll finished 16/20; the set was
     void. A stalled connection is "not now" exactly as a 503 is."""
     waits = []
-    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
     attempts = {"n": 0}
 
     def stalls_twice(self, path, payload, timeout_seconds):
@@ -471,7 +471,7 @@ def test_a_socket_timeout_on_open_is_retried_then_succeeds(monkeypatch):
         OllamaClient, "_build_request", lambda self, path, payload: path
     )
     monkeypatch.setattr(
-        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(stalls_twice)
+        "golem_blender.agent.loop.urllib.request.urlopen", _urlopen_from(stalls_twice)
     )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 
@@ -489,7 +489,7 @@ def test_a_connection_that_never_answers_fails_loudly(monkeypatch):
     import urllib.error
 
     waits = []
-    monkeypatch.setattr("blended.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
     calls = {"n": 0}
 
     def refused(self, path, payload, timeout_seconds):
@@ -500,7 +500,7 @@ def test_a_connection_that_never_answers_fails_loudly(monkeypatch):
         OllamaClient, "_build_request", lambda self, path, payload: path
     )
     monkeypatch.setattr(
-        "blended.agent.loop.urllib.request.urlopen", _urlopen_from(refused)
+        "golem_blender.agent.loop.urllib.request.urlopen", _urlopen_from(refused)
     )
     client = OllamaClient(_metered_config(context_length=METERED_WINDOW))
 

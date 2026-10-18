@@ -3,7 +3,7 @@ keeps the chunk format the bench already re-bakes. Pure."""
 
 from __future__ import annotations
 
-from blended.evaluate.bench_bridge import (
+from golem_blender.evaluate.bench_bridge import (
     EXECUTED_STAGES,
     OP_HELPER_NAME,
     RecordedCall,
@@ -12,7 +12,7 @@ from blended.evaluate.bench_bridge import (
     prelude,
     standalone_script,
 )
-from blended.stages import STAGE_DONE, STAGE_EXECUTE, STAGE_GATE
+from golem_blender.stages import STAGE_DONE, STAGE_EXECUTE, STAGE_GATE
 
 PRELUDE = prelude("/venv/site-packages", "/repo/src")
 EPILOGUE = "\n# --- epilogue ---\nprint('done')\n"
@@ -98,11 +98,11 @@ def test_a_record_of_chunks_only_keeps_the_chunk_format():
     assert PRELUDE.startswith(
         "import sys\nsys.path.insert(0, '/venv/site-packages')\nsys.path.insert(0, '/repo/src')\n"
     )
-    # The host Blender's own `blended` (an installed addon's bundled copy)
+    # The host Blender's own `golem_blender` (an installed addon's bundled copy)
     # is evicted before the script imports the tree it names.
     assert "del sys.modules[_name]" in PRELUDE
     assert PRELUDE.index("del sys.modules") < PRELUDE.index(
-        "from blended.agent.op_call"
+        "from golem_blender.agent.op_call"
     )
 
 
@@ -124,7 +124,7 @@ def test_a_chunk_that_raised_after_changing_the_scene_is_replayed():
     `Spoon: 956 tris`, and every later call was written against it.
     Dropping the chunk made the bake die with `UnknownObject: no object
     named 'Spoon'` — the replay could not reproduce the run."""
-    from blended.evaluate.bench_bridge import (
+    from golem_blender.evaluate.bench_bridge import (
         RecordedCall,
         include_call,
         standalone_script,
@@ -171,7 +171,7 @@ def test_a_chunk_that_raised_after_changing_the_scene_is_replayed():
 def test_the_default_keeps_the_old_rule_for_a_caller_that_cannot_look():
     """`changed_scene` is ground truth from `bpy.data`; a recorder with no
     scene to read must not silently promote failures into the bake."""
-    from blended.evaluate.bench_bridge import RecordedCall, include_call
+    from golem_blender.evaluate.bench_bridge import RecordedCall, include_call
 
     assert not include_call(RecordedCall("run_python", {"source": "x"}, "execute"))
     assert not include_call(RecordedCall("run_python", {"source": "x"}, ""))

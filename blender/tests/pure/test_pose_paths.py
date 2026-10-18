@@ -7,7 +7,7 @@ bone, or key the wrong one. These tests fail on that pattern.
 
 import pytest
 
-from blended.ops._pose_paths import (
+from golem_blender.ops._pose_paths import (
     ROTATION_QUATERNION_CHANNEL,
     escape_identifier,
     parse_pose_bone_path,

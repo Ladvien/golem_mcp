@@ -39,7 +39,7 @@ os.chdir(REPOSITORY_ROOT)
 BLENDER = os.environ.get("BLENDER", "/Applications/Blender.app/Contents/MacOS/Blender")
 PIN_PROPOSAL_PATH = Path("_evaluate/pin_proposal.json")
 PINNED_IDENTITY_PATH = Path("_evaluate/golden/pinned_identity.txt")
-REGISTRY_PATH = REPOSITORY_ROOT / "src" / "blended" / "agent" / "prompt_versions.py"
+REGISTRY_PATH = REPOSITORY_ROOT / "src" / "golem_blender" / "agent" / "prompt_versions.py"
 
 
 class PinRefused(SystemExit):
@@ -107,7 +107,7 @@ def main(argv=None) -> int:
             f"v{arguments.revision}"
         )
 
-    from blended.agent.prompt_versions import get_revision, validate_revisions
+    from golem_blender.agent.prompt_versions import get_revision, validate_revisions
 
     registry_problems = validate_revisions()
     if registry_problems:

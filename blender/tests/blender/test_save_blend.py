@@ -31,7 +31,7 @@ def _triangles(mesh_object) -> int:
 
 def _build_three_objects():
     """Two objects to save, one bystander that must stay out of the file."""
-    from blended.builders import (
+    from golem_blender.builders import (
         BarrelBuilder,
         BarrelParameters,
         CrateBuilder,
@@ -111,8 +111,8 @@ def _session_snapshot() -> dict:
 
 
 def test_the_file_reopens_with_exactly_the_named_objects(empty_scene, tmp_path):
-    from blended.export import save_blend
-    from blended.ops import assign_material
+    from golem_blender.export import save_blend
+    from golem_blender.ops import assign_material
 
     crate, barrel = _build_three_objects()
     assign_material(crate.name, "SaveWood", (0.6, 0.4, 0.2))
@@ -148,7 +148,7 @@ def test_the_file_reopens_with_exactly_the_named_objects(empty_scene, tmp_path):
 
 
 def test_the_session_is_unchanged_by_the_save(empty_scene, tmp_path):
-    from blended.export import save_blend
+    from golem_blender.export import save_blend
 
     crate, barrel = _build_three_objects()
     for scene_object in bpy.context.view_layer.objects:
@@ -166,7 +166,7 @@ def test_the_session_is_unchanged_by_the_save(empty_scene, tmp_path):
 
 
 def test_a_path_not_ending_in_blend_raises_and_writes_nothing(empty_scene, tmp_path):
-    from blended.export import BlendSaveError, save_blend
+    from golem_blender.export import BlendSaveError, save_blend
 
     crate, _ = _build_three_objects()
     before = _session_snapshot()
@@ -179,7 +179,7 @@ def test_a_path_not_ending_in_blend_raises_and_writes_nothing(empty_scene, tmp_p
 
 def test_a_missing_object_fails_loudly_and_writes_nothing(empty_scene, tmp_path):
     """The negative control: the check can fail."""
-    from blended.export import BlendSaveError, save_blend
+    from golem_blender.export import BlendSaveError, save_blend
 
     crate, _ = _build_three_objects()
     before = _session_snapshot()
@@ -193,7 +193,7 @@ def test_a_dependency_pulled_into_the_file_fails_loudly(empty_scene, tmp_path):
     """A parent the caller did not name rides into the file as a dependency;
     the file then holds more than the named objects, and that is refused,
     with the bad file deleted and the session unchanged."""
-    from blended.export import BlendSaveError, save_blend
+    from golem_blender.export import BlendSaveError, save_blend
 
     crate, barrel = _build_three_objects()
     barrel.parent = crate
@@ -209,7 +209,7 @@ def test_a_triangle_mismatch_in_the_written_file_fails_and_deletes_it(
 ):
     """Negative control for the count check: a re-read that disagrees with
     the live object is an error, not a warning."""
-    from blended.export import BlendSaveError, blend, save_blend
+    from golem_blender.export import BlendSaveError, blend, save_blend
 
     crate, _ = _build_three_objects()
     real_reread = blend._reread_triangle_counts
@@ -225,7 +225,7 @@ def test_a_triangle_mismatch_in_the_written_file_fails_and_deletes_it(
 
 
 def test_the_open_file_of_the_session_is_never_overwritten(empty_scene, tmp_path):
-    from blended.export import BlendSaveError, save_blend
+    from golem_blender.export import BlendSaveError, save_blend
 
     crate, _ = _build_three_objects()
     open_file = tmp_path / "open.blend"
@@ -237,7 +237,7 @@ def test_the_open_file_of_the_session_is_never_overwritten(empty_scene, tmp_path
 
 
 def test_export_glb_requires_a_blend_path_and_ships_both_files(empty_scene, tmp_path):
-    from blended.export import export_glb
+    from golem_blender.export import export_glb
 
     crate, _ = _build_three_objects()
     with pytest.raises(TypeError, match="blend_path"):
@@ -256,7 +256,7 @@ def test_export_glb_requires_a_blend_path_and_ships_both_files(empty_scene, tmp_
 
 
 def test_export_glb_with_a_bad_blend_path_writes_no_glb(empty_scene, tmp_path):
-    from blended.export import BlendSaveError, export_glb
+    from golem_blender.export import BlendSaveError, export_glb
 
     crate, _ = _build_three_objects()
     with pytest.raises(BlendSaveError, match=r"\.blend"):
@@ -267,7 +267,7 @@ def test_export_glb_with_a_bad_blend_path_writes_no_glb(empty_scene, tmp_path):
 def test_export_asset_fails_without_blend_path_and_writes_both_files_with_it(
     empty_scene, tmp_path
 ):
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _build_three_objects()
     glb_path = tmp_path / "barrel.glb"
@@ -309,7 +309,7 @@ def test_export_asset_fails_without_blend_path_and_writes_both_files_with_it(
 def test_the_save_blend_tool_saves_several_objects_and_refuses_the_rest(
     empty_scene, tmp_path
 ):
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _build_three_objects()
     blend_path = tmp_path / "both.blend"

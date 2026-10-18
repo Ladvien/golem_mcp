@@ -44,10 +44,10 @@ def _build_planter(
     drain_is_blind_recess: bool = False,
 ):
     """Build the planter the brief describes, with optional seeded defects."""
-    from blended.evaluate import briefs
-    from blended.ops.booleans import boolean_difference
-    from blended.ops.primitives import add_box, add_cylinder, link_into_scene
-    from blended.ops.transforms import snap_base_to_ground
+    from golem_blender.evaluate import briefs
+    from golem_blender.ops.booleans import boolean_difference
+    from golem_blender.ops.primitives import add_box, add_cylinder, link_into_scene
+    from golem_blender.ops.transforms import snap_base_to_ground
 
     wall = briefs.PLANTER_WALL_THICKNESS_M
     body = add_box(
@@ -123,8 +123,8 @@ def _failure_names(report, brief):
 
 
 def test_correct_planter_passes_every_check(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("planter_box")
     _build_planter()
@@ -139,8 +139,8 @@ def test_sealed_drain_hole_trips_the_drain_checks_and_nothing_else(empty_scene):
     material missing at the probe point and no line of sight through
     the floor. Nothing else may trip: the box is otherwise correct.
     """
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("planter_box")
     _build_planter(drain_hole=False)
@@ -154,8 +154,8 @@ def test_sealed_drain_hole_trips_the_drain_checks_and_nothing_else(empty_scene):
 
 
 def test_solid_block_trips_the_hollow_probe(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("planter_box")
     _build_planter(hollow=False, drain_hole=False)
@@ -167,8 +167,8 @@ def test_solid_block_trips_the_hollow_probe(empty_scene):
 
 
 def test_wrong_width_trips_the_dimension_spec(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("planter_box")
     _build_planter(width_scale=1.5)
@@ -181,8 +181,8 @@ def test_wrong_width_trips_the_dimension_spec(empty_scene):
 
 
 def test_missing_material_trips_the_material_check(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("planter_box")
     _build_planter(with_material=False)
@@ -193,8 +193,8 @@ def test_missing_material_trips_the_material_check(empty_scene):
 
 
 def test_stray_cutter_trips_the_stray_check(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("planter_box")
     _build_planter(leave_stray_cutter=True)
@@ -205,8 +205,8 @@ def test_stray_cutter_trips_the_stray_check(empty_scene):
 
 
 def test_missing_object_reports_not_found(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("planter_box")
     report = evaluate_brief(brief)
@@ -217,8 +217,8 @@ def test_missing_object_reports_not_found(empty_scene):
 
 
 def test_ungrounded_object_trips_the_grounding_check(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("planter_box")
     body = _build_planter()
@@ -234,9 +234,9 @@ def test_unlinked_object_reports_a_measurement_not_a_crash(empty_scene):
     """Construction and linking are separate ops; forgetting the second
     one leaves an object that exists, has no evaluated mesh, and shows
     nothing in the viewport. Probing it used to raise."""
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
-    from blended.ops.primitives import add_box
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.ops.primitives import add_box
 
     brief = get_brief("planter_box")
     add_box("PlanterBox", width_m=0.3, depth_m=0.2, height_m=0.25)
@@ -256,7 +256,7 @@ def test_unlinked_object_reports_a_measurement_not_a_crash(empty_scene):
 
 
 # The sole-clearance margin and cutter depth now live with the
-# arithmetic they belong to, in blended.ops.legs. They are not
+# arithmetic they belong to, in golem_blender.ops.legs. They are not
 # redeclared here: two copies is how the fixture and the agent came to
 # disagree in the first place.
 
@@ -265,7 +265,7 @@ def _build_reference_stool(*, angled_feet: bool = False, leg_angles_deg=None):
     """A stool that satisfies THREE_LEG_STOOL_BRIEF, built from the
     whitelisted ops only.
 
-    The correct path is `blended.ops.legs`, which owns the placement
+    The correct path is `golem_blender.ops.legs`, which owns the placement
     arithmetic. This fixture deliberately does NOT recompute it: the
     sole-inboard trap was measured twice (this fixture, then the agent
     at iteration 17), and a second copy of the numbers is how a fix
@@ -278,11 +278,11 @@ def _build_reference_stool(*, angled_feet: bool = False, leg_angles_deg=None):
     test input, not a second way to build a stool.
     """
 
-    from blended.evaluate import briefs
-    from blended.ops.booleans import boolean_union
-    from blended.ops.legs import SplayedLegSpec, add_splayed_leg, trim_soles_flat
-    from blended.ops.primitives import add_cylinder, link_into_scene
-    from blended.ops.transforms import apply_object_transform, snap_base_to_ground
+    from golem_blender.evaluate import briefs
+    from golem_blender.ops.booleans import boolean_union
+    from golem_blender.ops.legs import SplayedLegSpec, add_splayed_leg, trim_soles_flat
+    from golem_blender.ops.primitives import add_cylinder, link_into_scene
+    from golem_blender.ops.transforms import apply_object_transform, snap_base_to_ground
 
     seat_radius_m = briefs.STOOL_SEAT_DIAMETER_M / 2.0
     leg_radius_m = 0.022
@@ -355,8 +355,8 @@ def _add_naive_tilted_leg(
 
     from mathutils import Euler
 
-    from blended.ops.primitives import add_cylinder, link_into_scene
-    from blended.ops.transforms import apply_object_transform
+    from golem_blender.ops.primitives import add_cylinder, link_into_scene
+    from golem_blender.ops.transforms import apply_object_transform
 
     angle_rad = math.radians(placement_deg)
     run_m = foot_radius_m - top_radius_m
@@ -383,8 +383,8 @@ def _add_naive_tilted_leg(
 
 
 def test_stool_brief_is_satisfiable(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("three_leg_stool")
     _build_reference_stool()
@@ -393,8 +393,8 @@ def test_stool_brief_is_satisfiable(empty_scene):
 
 
 def test_stool_reference_passes_the_structural_gate(empty_scene):
-    from blended.analyze import analyze_object
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.analyze import analyze_object
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("three_leg_stool")
     stool = _build_reference_stool()
@@ -405,12 +405,12 @@ def test_stool_reference_passes_the_structural_gate(empty_scene):
 def test_legs_collapsed_to_the_axis_trips_no_central_post(empty_scene):
     """The measured historical failure (stale matrix_world): every leg
     ends up at the origin as one central post."""
-    from blended.evaluate import briefs
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
-    from blended.ops.booleans import boolean_union
-    from blended.ops.primitives import add_cylinder, link_into_scene
-    from blended.ops.transforms import snap_base_to_ground
+    from golem_blender.evaluate import briefs
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.ops.booleans import boolean_union
+    from golem_blender.ops.primitives import add_cylinder, link_into_scene
+    from golem_blender.ops.transforms import snap_base_to_ground
 
     brief = get_brief("three_leg_stool")
     rise_m = briefs.STOOL_TOTAL_HEIGHT_Z_M - briefs.STOOL_SEAT_THICKNESS_M
@@ -446,8 +446,8 @@ def test_blind_recess_trips_the_clear_axis_probe(empty_scene):
     above it all the way out of the open top. Only a full-axis line of
     sight distinguishes the two.
     """
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("planter_box")
     _build_planter(drain_is_blind_recess=True)
@@ -466,8 +466,8 @@ def test_blind_recess_trips_the_clear_axis_probe(empty_scene):
 
 
 def test_correct_planter_has_a_clear_drain_axis(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("planter_box")
     _build_planter()
@@ -486,8 +486,8 @@ def test_angled_sole_trips_the_ground_contact_probe(empty_scene):
     the stool touches along three edges and rocks. Contact is an area,
     and only measuring it as one tells the two apart.
     """
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("three_leg_stool")
     _build_reference_stool(angled_feet=True)
@@ -520,8 +520,8 @@ def test_angled_sole_is_reported_as_a_tilt_not_a_missing_leg(empty_scene):
     An angled sole must say so — naming the faces it rejected and how
     far out of plane they were — rather than reading as "no leg here".
     """
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("three_leg_stool")
     _build_reference_stool(angled_feet=True)
@@ -540,8 +540,8 @@ def test_angled_sole_is_reported_as_a_tilt_not_a_missing_leg(empty_scene):
 def test_flat_soles_measure_real_contact_area(empty_scene):
     """The correct build does not merely pass — it puts a measurable
     face on the floor at each foot."""
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("three_leg_stool")
     _build_reference_stool()
@@ -572,8 +572,8 @@ def test_uneven_leg_spacing_trips_the_placement_check(empty_scene):
     right to — the view does not contain the information. It is a
     measurement, so it is measured.
     """
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("three_leg_stool")
     _build_reference_stool(leg_angles_deg=UNEVENLY_SPACED_LEG_ANGLES_DEG)
@@ -593,8 +593,8 @@ def test_uneven_leg_spacing_trips_the_placement_check(empty_scene):
 
 def test_correct_spacing_measures_the_specified_bearings(empty_scene):
     """The correct build reports the brief's own angles back."""
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("three_leg_stool")
     _build_reference_stool()
@@ -616,14 +616,14 @@ REBUILT_LEG_ANGLES_DEG = (24.0, 144.0, 264.0)
 
 def _refined_outcome(before_report, brief, *, rebuild: bool):
     """Apply the refinement either as an edit or as a full rebuild."""
-    from blended.evaluate import briefs as brief_module
-    from blended.evaluate.acceptance import (
+    from golem_blender.evaluate import briefs as brief_module
+    from golem_blender.evaluate.acceptance import (
         RefinementOutcome,
         evaluate_brief,
         refine_brief,
     )
-    from blended.ops.primitives import remove_object_and_mesh
-    from blended.ops.transforms import apply_object_transform
+    from golem_blender.ops.primitives import remove_object_and_mesh
+    from golem_blender.ops.transforms import apply_object_transform
 
     step = brief.refinements[0]
     target_height_m = step.changed[0].expected_m
@@ -656,8 +656,8 @@ def _refined_outcome(before_report, brief, *, rebuild: bool):
 
 
 def test_a_localized_edit_passes_the_refinement_gate(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("three_leg_stool")
     _build_reference_stool()
@@ -676,8 +676,8 @@ def test_a_rebuild_trips_the_preservation_check(empty_scene):
     comparing against what the asset measured BEFORE the instruction
     catches that the user's approved work was discarded.
     """
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("three_leg_stool")
     _build_reference_stool()
@@ -698,7 +698,7 @@ def test_a_rebuild_trips_the_preservation_check(empty_scene):
 
 def test_the_refinement_step_is_reachable_from_the_brief(empty_scene):
     """A phase the briefs cannot exercise is a phase nobody tests."""
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("three_leg_stool")
     assert brief.refinements, "the stool brief must carry a follow-up step"
@@ -709,10 +709,10 @@ def test_the_refinement_step_is_reachable_from_the_brief(empty_scene):
 
 def _build_crate(lid_colour_rgb):
     """A geometrically PERFECT crate: only the lid's colour varies."""
-    from blended.evaluate import briefs
-    from blended.ops.booleans import boolean_difference
-    from blended.ops.materials import assign_material
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.evaluate import briefs
+    from golem_blender.ops.booleans import boolean_difference
+    from golem_blender.ops.materials import assign_material
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     wall = briefs.CRATE_WALL_THICKNESS_M
     body = add_box(
@@ -758,8 +758,8 @@ def test_a_lid_the_same_colour_as_the_body_fails_even_though_it_measures_right(
     colour. The examiner saw it (`missing_feature`) when no
     measurement could.
     """
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("crate_with_lid")
     _build_crate(lid_colour_rgb=(0.6, 0.4, 0.2))
@@ -781,8 +781,8 @@ def test_a_lid_the_same_colour_as_the_body_fails_even_though_it_measures_right(
 def test_a_contrasting_lid_passes(empty_scene):
     """The signed-off reference's own contrast (0.15) must be accepted,
     or the probe would condemn the artifact that earned the pin."""
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
 
     brief = get_brief("crate_with_lid")
     _build_crate(lid_colour_rgb=(0.5, 0.3, 0.15))
@@ -815,9 +815,9 @@ def test_an_oversized_seat_fails_the_form_gate_without_the_eye(empty_scene):
     no longer asked about, and the tag must go back into
     HALTING_DEVIATION_TAGS.
     """
-    from blended.evaluate.acceptance import evaluate_brief, refine_brief
-    from blended.evaluate.briefs import get_brief
-    from blended.ops.primitives import add_cylinder, link_into_scene
+    from golem_blender.evaluate.acceptance import evaluate_brief, refine_brief
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.ops.primitives import add_cylinder, link_into_scene
 
     brief = get_brief("three_leg_stool")
     refined = brief
@@ -863,7 +863,7 @@ DEPTH_BOUND_M = 0.0005
 
 def _crossing_plate_brief():
     """A two-part brief whose only relation is the depth bound."""
-    from blended.evaluate.briefs import (
+    from golem_blender.evaluate.briefs import (
         AssetBrief,
         NoInterpenetrationSpec,
         PartSpec,
@@ -888,7 +888,7 @@ def _crossing_plate_brief():
 
 
 def _plate(name, minimum_corner_m, maximum_corner_m):
-    from blended.ops.primitives import link_into_scene
+    from golem_blender.ops.primitives import link_into_scene
 
     x_min, y_min, z_min = minimum_corner_m
     x_max, y_max, z_max = maximum_corner_m
@@ -929,8 +929,8 @@ def test_a_shallow_crossing_fails_only_on_the_penetration_depth(empty_scene):
     Deleting the depth comparison in `_measure_relations` leaves the
     failure list empty and reddens this test.
     """
-    from blended.analyze.pair_checks import CONTACT_DEPTH_TOLERANCE_M, analyze_pair
-    from blended.evaluate.acceptance import evaluate_brief
+    from golem_blender.analyze.pair_checks import CONTACT_DEPTH_TOLERANCE_M, analyze_pair
+    from golem_blender.evaluate.acceptance import evaluate_brief
 
     assert PLATE_THICKNESS_M < CONTACT_DEPTH_TOLERANCE_M, (
         "fixture no longer exercises the blind spot: the plates are "

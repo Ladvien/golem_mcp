@@ -12,13 +12,13 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
-from blended.evaluate.cache_report import (
+from golem_blender.evaluate.cache_report import (
     cache_rows,
     paired_by_brief,
     render_pairs,
     render_rows,
 )
-from blended.evaluate.iteration_log import IterationLog
+from golem_blender.evaluate.iteration_log import IterationLog
 
 
 def _span(text: str) -> tuple[int, int]:

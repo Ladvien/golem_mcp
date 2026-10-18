@@ -10,7 +10,7 @@ from PIL import Image
 def test_contact_sheet_pillow_branch_returns_the_written_sheet(tmp_path):
     """compose_contact_sheet's Pillow branch fell off the end of the
     function (returned None, wrote nothing)."""
-    from blended.capture.contact_sheet import compose_contact_sheet
+    from golem_blender.capture.contact_sheet import compose_contact_sheet
 
     view_size_px = (64, 48)
     view_paths = {}

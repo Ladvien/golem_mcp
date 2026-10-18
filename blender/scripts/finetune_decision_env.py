@@ -83,15 +83,15 @@ def parse_arguments(argv):
 
 
 def harness_identity() -> dict:
-    from blended.agent.prompt_versions import get_revision
-    from blended.agent.system_prompt import assembled_prompt_fingerprint
-    from blended.agent.tools import (
+    from golem_blender.agent.prompt_versions import get_revision
+    from golem_blender.agent.system_prompt import assembled_prompt_fingerprint
+    from golem_blender.agent.tools import (
         OP_FUNCTIONS,
         SERVICE_TOOL_NAMES,
         TOOL_SCHEMAS,
         TOOL_SCHEMAS_FINGERPRINT,
     )
-    from blended.version import TARGET_BLENDER_SERIES
+    from golem_blender.version import TARGET_BLENDER_SERIES
 
     revision = get_revision(None)
     return {
@@ -114,13 +114,13 @@ def prompt_sizes(bench_root: Path) -> dict:
     """
     import json as json_module
 
-    from blended.agent.system_prompt import build_system_prompt
-    from blended.agent.tools import TOOL_SCHEMAS
-    from blended.evaluate.bench_task_prompt import (
+    from golem_blender.agent.system_prompt import build_system_prompt
+    from golem_blender.agent.tools import TOOL_SCHEMAS
+    from golem_blender.evaluate.bench_task_prompt import (
         RAW_TASK_TEMPLATE,
         SINGLE_SHOT_OPS_TASK_TEMPLATE,
     )
-    from blended.evaluate.raw_bpy_arm import raw_system_prompt
+    from golem_blender.evaluate.raw_bpy_arm import raw_system_prompt
 
     ops_system = build_system_prompt()
     schemas = json_module.dumps(TOOL_SCHEMAS)
@@ -206,7 +206,7 @@ def local_serving_facts() -> dict:
     GGUFs. Recorded here because "which machine generated the tokens" is
     part of every latency number in the report.
     """
-    from blended.agent.loop import LOCAL_LLAMA_SERVER_ENDPOINT
+    from golem_blender.agent.loop import LOCAL_LLAMA_SERVER_ENDPOINT
 
     binary = Path.home() / ".local" / "llama.cpp-macos" / "llama-server"
     weights = sorted(
@@ -232,7 +232,7 @@ def local_serving_facts() -> dict:
 
 
 def transcript_facts() -> dict:
-    from blended.agent.tool_event import TOOL_EVENT_SCHEMA_VERSION
+    from golem_blender.agent.tool_event import TOOL_EVENT_SCHEMA_VERSION
 
     iterations = REPOSITORY_ROOT / "_evaluate" / "iterations.jsonl"
     records = (

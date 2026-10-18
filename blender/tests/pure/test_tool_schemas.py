@@ -20,16 +20,16 @@ from pathlib import Path
 
 import pytest
 
-import blended.ops as ops_facade
-from blended.agent import tool_schemas as generator
-from blended.agent.plan import PLAN_STEP_ARGUMENT, PLAN_STEP_SCHEMA
-from blended.agent.tools import (
+import golem_blender.ops as ops_facade
+from golem_blender.agent import tool_schemas as generator
+from golem_blender.agent.plan import PLAN_STEP_ARGUMENT, PLAN_STEP_SCHEMA
+from golem_blender.agent.tools import (
     OP_TOOL_SCHEMAS,
     SERVICE_TOOL_SCHEMAS,
     TOOL_SCHEMAS,
     TOOL_SCHEMAS_FINGERPRINT,
 )
-from blended.ops._contract import (
+from golem_blender.ops._contract import (
     UNIT_SUFFIXES,
     UNITLESS_NUMERIC_NAMES,
     ContractViolation,
@@ -68,7 +68,7 @@ def _live_facade():
     """The facade module `facade_ops()` will see NOW. Resolved at call time
     because a dev-reload test elsewhere in the suite replaces the module
     object, and a patch on the collected-time import would miss it."""
-    return importlib.import_module("blended.ops")
+    return importlib.import_module("golem_blender.ops")
 
 
 @pytest.fixture()
@@ -310,8 +310,8 @@ def test_the_readers_are_the_only_plan_free_op_tools():
 
 
 def test_a_selector_round_trips_as_an_object_with_an_enum_of_kinds():
-    from blended.agent.op_call import ArgumentError, convert_argument
-    from blended.ops.selectors import EDGE_SELECTOR_KINDS, EdgeSelector
+    from golem_blender.agent.op_call import ArgumentError, convert_argument
+    from golem_blender.ops.selectors import EDGE_SELECTOR_KINDS, EdgeSelector
 
     schema = generator.json_schema_for_type(EdgeSelector)
     assert schema["type"] == "object"

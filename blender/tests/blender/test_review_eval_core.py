@@ -17,8 +17,8 @@ BLOCKAGE_TOLERANCE_M = 1.0e-4
 
 @pytest.mark.parametrize("scale", [1.0, 0.1, 0.01, 10.0])
 def test_a_scaled_solid_blocks_the_axis_through_its_centre(scale):
-    from blended.evaluate.acceptance import _find_axis_blockage
-    from blended.evaluate.briefs import ClearAxisProbe
+    from golem_blender.evaluate.acceptance import _find_axis_blockage
+    from golem_blender.evaluate.briefs import ClearAxisProbe
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.mesh.primitive_cube_add(size=CUBE_EDGE_M, location=(0.0, 0.0, 0.0))
@@ -41,8 +41,8 @@ def test_a_scaled_solid_blocks_the_axis_through_its_centre(scale):
 
 
 def test_an_axis_that_misses_the_solid_is_clear():
-    from blended.evaluate.acceptance import _find_axis_blockage
-    from blended.evaluate.briefs import ClearAxisProbe
+    from golem_blender.evaluate.acceptance import _find_axis_blockage
+    from golem_blender.evaluate.briefs import ClearAxisProbe
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.mesh.primitive_cube_add(size=CUBE_EDGE_M, location=(0.0, 0.0, 0.0))

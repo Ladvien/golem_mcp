@@ -1,7 +1,7 @@
 """Rigging ops must produce a usable armature with bound weights.
 
 These tests defend the contract that an in-Blender chat agent can rig,
-bind, and weight-paint through blended.ops without touching bpy.ops
+bind, and weight-paint through golem_blender.ops without touching bpy.ops
 directly: add_armature builds N bones with parenting and is idempotent
 by name; bind_mesh_to_armature with automatic weights leaves every
 vertex weighted; weight_report on an unbound mesh reports emptiness;
@@ -23,7 +23,7 @@ def empty_scene():
 
 def _tall_box():
     """A 0.3 x 0.3 x 1.0 m box, base at z=0, linked into the scene."""
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     box = add_box("RigSubject", 0.3, 0.3, 1.0)
     link_into_scene(box)
@@ -32,7 +32,7 @@ def _tall_box():
 
 def _three_bone_chain():
     """A vertical 3-bone armature inside the tall box (0 -> 0.5 -> 1.0 m)."""
-    from blended.ops.rigging import BoneSpec, add_armature
+    from golem_blender.ops.rigging import BoneSpec, add_armature
 
     bones = (
         BoneSpec("Root", (0, 0, 0.0), (0, 0, 0.5)),
@@ -48,7 +48,7 @@ def _three_bone_chain():
 
 
 def test_add_armature_creates_n_bones_with_parenting(empty_scene):
-    from blended.ops.rigging import BoneSpec, add_armature
+    from golem_blender.ops.rigging import BoneSpec, add_armature
 
     bones = (
         BoneSpec("Root", (0, 0, 0.0), (0, 0, 0.5)),
@@ -67,7 +67,7 @@ def test_add_armature_creates_n_bones_with_parenting(empty_scene):
 
 
 def test_add_armature_is_idempotent_by_name(empty_scene):
-    from blended.ops.rigging import BoneSpec, add_armature
+    from golem_blender.ops.rigging import BoneSpec, add_armature
 
     bones = (BoneSpec("Only", (0, 0, 0), (0, 0, 0.5)),)
     add_armature("Twin", bones)
@@ -79,21 +79,21 @@ def test_add_armature_is_idempotent_by_name(empty_scene):
 
 
 def test_add_armature_rejects_empty_bones(empty_scene):
-    from blended.ops.rigging import add_armature
+    from golem_blender.ops.rigging import add_armature
 
     with pytest.raises(ValueError, match="at least one bone"):
         add_armature("Empty", ())
 
 
 def test_add_armature_rejects_zero_length_bone(empty_scene):
-    from blended.ops.rigging import BoneSpec, add_armature
+    from golem_blender.ops.rigging import BoneSpec, add_armature
 
     with pytest.raises(ValueError, match="zero length"):
         add_armature("Stub", (BoneSpec("Stub", (0, 0, 0), (0, 0, 0)),))
 
 
 def test_add_armature_rejects_unknown_parent(empty_scene):
-    from blended.ops.rigging import BoneSpec, add_armature
+    from golem_blender.ops.rigging import BoneSpec, add_armature
 
     with pytest.raises(ValueError, match="unknown parent"):
         add_armature(
@@ -108,8 +108,8 @@ def test_add_armature_rejects_unknown_parent(empty_scene):
 
 
 def test_bind_with_automatic_weights_weights_all_vertices(empty_scene):
-    from blended.ops.rigging import bind_mesh_to_armature
-    from blended.ops.weights import weight_report
+    from golem_blender.ops.rigging import bind_mesh_to_armature
+    from golem_blender.ops.weights import weight_report
 
     box = _tall_box()
     armature = _three_bone_chain()
@@ -125,7 +125,7 @@ def test_bind_with_automatic_weights_weights_all_vertices(empty_scene):
 
 
 def test_rig_report_lists_bound_meshes(empty_scene):
-    from blended.ops.rigging import bind_mesh_to_armature, rig_report
+    from golem_blender.ops.rigging import bind_mesh_to_armature, rig_report
 
     box = _tall_box()
     armature = _three_bone_chain()
@@ -139,7 +139,7 @@ def test_rig_report_lists_bound_meshes(empty_scene):
 
 
 def test_weight_report_on_unbound_mesh_has_no_groups(empty_scene):
-    from blended.ops.weights import weight_report
+    from golem_blender.ops.weights import weight_report
 
     box = _tall_box()
     report = weight_report(box)
@@ -154,7 +154,7 @@ def test_weight_report_on_unbound_mesh_has_no_groups(empty_scene):
 
 
 def test_assign_weights_by_height_counts_only_in_range(empty_scene):
-    from blended.ops.weights import assign_weights_by_height, weight_report
+    from golem_blender.ops.weights import assign_weights_by_height, weight_report
 
     box = _tall_box()
     # The box spans z=0 to z=1.  Weight only the top quarter [0.75, 1.0].
@@ -169,7 +169,7 @@ def test_assign_weights_by_height_counts_only_in_range(empty_scene):
 
 
 def test_assign_weights_by_height_excludes_out_of_range(empty_scene):
-    from blended.ops.weights import assign_weights_by_height
+    from golem_blender.ops.weights import assign_weights_by_height
 
     box = _tall_box()
     # Range above the box — should weight zero vertices.

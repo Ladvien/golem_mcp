@@ -23,7 +23,7 @@ BUILDER_NAMES = ("barrel", "crate", "pallet")
 
 def _build(builder_name: str):
     """One build of the named builder with DEFAULT parameters."""
-    from blended.builders import (
+    from golem_blender.builders import (
         BarrelBuilder,
         BarrelParameters,
         CrateBuilder,
@@ -43,8 +43,8 @@ def _build(builder_name: str):
 
 @pytest.mark.parametrize("builder_name", BUILDER_NAMES)
 def test_rebuilding_after_a_reset_reproduces_the_digest(builder_name):
-    from blended.evaluate.digest import compare_digests, object_digest
-    from blended.reset import reset_scene
+    from golem_blender.evaluate.digest import compare_digests, object_digest
+    from golem_blender.reset import reset_scene
 
     reset_scene()
     first_digest = object_digest(_build(builder_name))
@@ -66,8 +66,8 @@ def test_a_changed_parameter_changes_the_digest(builder_name):
     """
     import dataclasses
 
-    from blended.evaluate.digest import object_digest
-    from blended.reset import reset_scene
+    from golem_blender.evaluate.digest import object_digest
+    from golem_blender.reset import reset_scene
 
     reset_scene()
     baseline_object = _build(builder_name)
@@ -79,7 +79,7 @@ def test_a_changed_parameter_changes_the_digest(builder_name):
         "crate": "bevel_segment_count",
         "pallet": "deck_board_count",
     }
-    from blended.builders import (
+    from golem_blender.builders import (
         BarrelBuilder,
         BarrelParameters,
         CrateBuilder,
@@ -123,8 +123,8 @@ def test_digest_has_non_empty_components(builder_name):
     ``None`` — object_digest(None) would raise, but if the build path is
     stubbed to return an empty scene, the assert below fails.
     """
-    from blended.evaluate.digest import object_digest
-    from blended.reset import reset_scene
+    from golem_blender.evaluate.digest import object_digest
+    from golem_blender.reset import reset_scene
 
     reset_scene()
     digest = object_digest(_build(builder_name))

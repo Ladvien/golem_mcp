@@ -19,7 +19,7 @@ def _messy_sphere(name, punch_face_count=3):
     profile of raw generated geometry."""
     import bmesh
 
-    from blended.ops.primitives import remove_object_and_mesh
+    from golem_blender.ops.primitives import remove_object_and_mesh
 
     remove_object_and_mesh(name)
     mesh_data = bpy.data.meshes.new(name)
@@ -51,8 +51,8 @@ def _messy_sphere(name, punch_face_count=3):
 
 
 def test_cleanup_takes_messy_mesh_to_gate_pass(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.ingest import CleanupSettings, cleanup_mesh
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.ingest import CleanupSettings, cleanup_mesh
 
     messy_object = _messy_sphere("MessySphere")
     before_report = analyze_object(messy_object)
@@ -85,7 +85,7 @@ def test_a_regressing_fill_is_reverted(empty_scene):
     import bmesh
     import mathutils
 
-    from blended.ingest import CleanupSettings, cleanup_mesh
+    from golem_blender.ingest import CleanupSettings, cleanup_mesh
 
     mesh_data = bpy.data.meshes.new("FoldedHole")
     working_mesh = bmesh.new()
@@ -131,7 +131,7 @@ def test_a_plain_small_hole_is_still_filled(empty_scene):
     hole on a closed prop is still filled and reports no revert."""
     import bmesh
 
-    from blended.ingest import CleanupSettings, cleanup_mesh
+    from golem_blender.ingest import CleanupSettings, cleanup_mesh
 
     mesh_data = bpy.data.meshes.new("PlainHole")
     working_mesh = bmesh.new()

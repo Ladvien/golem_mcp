@@ -1,6 +1,6 @@
 """Pure layer: the inverted-facet arithmetic, tested without bpy."""
 
-from blended.analyze.mesh_checks import facet_disagrees_with_its_normals
+from golem_blender.analyze.mesh_checks import facet_disagrees_with_its_normals
 
 # A CCW triangle in the xy plane, viewed from +Z (winding normal +Z),
 # with corner normals pointing +Z: agrees with itself.

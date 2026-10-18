@@ -1,4 +1,4 @@
-"""Ground truth for blended.viewport_follow, in a GUI Blender.
+"""Ground truth for golem_blender.viewport_follow, in a GUI Blender.
 
 The check is independent of the fit's own arithmetic. Blender's own
 projection (`view3d_utils.location_3d_to_region_2d`) must put every
@@ -29,9 +29,9 @@ import bpy
 from bpy_extras.view3d_utils import location_3d_to_region_2d
 from mathutils import Vector
 
-from blended.agent.outcome import ToolOutcome
-from blended.ops import add_box, link_into_scene
-from blended.viewport_follow import follow_viewport, frame_in_viewports, snapshot_scene
+from golem_blender.agent.outcome import ToolOutcome
+from golem_blender.ops import add_box, link_into_scene
+from golem_blender.viewport_follow import follow_viewport, frame_in_viewports, snapshot_scene
 
 # The window has drawn at least once by then, so regions have sizes.
 FIRST_CHECK_DELAY_S = 2.0

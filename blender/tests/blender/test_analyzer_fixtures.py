@@ -22,7 +22,7 @@ def _join_into_one_mesh(name, *source_objects):
     """The classic mistake: merge meshes into one datablock, no union."""
     import bmesh
 
-    from blended.ops.primitives import remove_object_and_mesh
+    from golem_blender.ops.primitives import remove_object_and_mesh
 
     remove_object_and_mesh(name)
     joined_mesh = bpy.data.meshes.new(name)
@@ -41,8 +41,8 @@ def _join_into_one_mesh(name, *source_objects):
 
 
 def test_clean_control_trips_nothing(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.builders import CrateBuilder, CrateParameters
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.builders import CrateBuilder, CrateParameters
 
     report = analyze_object(CrateBuilder(CrateParameters()).build())
     assert report.failures(MeshBudget()) == []
@@ -50,8 +50,8 @@ def test_clean_control_trips_nothing(empty_scene):
 
 
 def test_joined_overlap_trips_self_intersection_and_components(empty_scene):
-    from blended.analyze import analyze_object
-    from blended.ops import add_box, link_into_scene
+    from golem_blender.analyze import analyze_object
+    from golem_blender.ops import add_box, link_into_scene
 
     first_box = bpy.data.objects[add_box("JoinA", 1.0, 1.0, 1.0)]
     link_into_scene(first_box.name)
@@ -67,8 +67,8 @@ def test_joined_overlap_trips_self_intersection_and_components(empty_scene):
 
 
 def test_coincident_join_trips_duplicate_vertices(empty_scene):
-    from blended.analyze import analyze_object
-    from blended.ops import add_box, link_into_scene
+    from golem_blender.analyze import analyze_object
+    from golem_blender.ops import add_box, link_into_scene
 
     first_box = bpy.data.objects[add_box("CoinA", 1.0, 1.0, 1.0)]
     link_into_scene(first_box.name)
@@ -83,7 +83,7 @@ def test_coincident_join_trips_duplicate_vertices(empty_scene):
 def test_degenerate_face_trips_zero_area(empty_scene):
     import bmesh
 
-    from blended.analyze import analyze_object
+    from golem_blender.analyze import analyze_object
 
     degenerate_mesh = bpy.data.meshes.new("Degenerate")
     working_mesh = bmesh.new()
@@ -109,11 +109,11 @@ def test_union_beats_join_on_the_same_barrel(empty_scene):
     """Same silhouette, different verdicts: the gate sees what a render
     cannot. The unioned barrel passes; the naive join fails on both
     self-intersection and component count."""
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.builders import BarrelBuilder, BarrelParameters
-    from blended.builders.barrel import HOOP_POSITION_FRACTIONS
-    from blended.ops import add_cylinder, link_into_scene
-    from blended.ops.lathe import add_lathe
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.builders import BarrelBuilder, BarrelParameters
+    from golem_blender.builders.barrel import HOOP_POSITION_FRACTIONS
+    from golem_blender.ops import add_cylinder, link_into_scene
+    from golem_blender.ops.lathe import add_lathe
 
     parameters = BarrelParameters(name="UnionBarrel")
     unioned_barrel = BarrelBuilder(parameters).build()

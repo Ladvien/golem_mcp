@@ -82,9 +82,9 @@ def empty_scene():
 
 
 def test_an_op_call_sequence_replays_to_a_scored_pass(empty_scene):
-    from blended.evaluate.acceptance import evaluate_brief
-    from blended.evaluate.briefs import get_brief
-    from blended.evaluate.replay import calls_from, replay_record, sources_from
+    from golem_blender.evaluate.acceptance import evaluate_brief
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.evaluate.replay import calls_from, replay_record, sources_from
 
     assert sources_from(PLANTER_RECORD) == []  # no run_python anywhere
     assert len(calls_from(PLANTER_RECORD)) == 12
@@ -107,7 +107,7 @@ def test_an_op_call_sequence_replays_to_a_scored_pass(empty_scene):
 
 
 def test_a_replay_that_builds_nothing_is_loud(empty_scene):
-    from blended.evaluate.replay import ReplayProducedNothing, replay_record
+    from golem_blender.evaluate.replay import ReplayProducedNothing, replay_record
 
     record = {"tool_calls": [_recorded("list_scene")], "refinement_locality": []}
     with pytest.raises(ReplayProducedNothing):

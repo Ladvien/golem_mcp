@@ -7,16 +7,16 @@ import dataclasses
 
 import pytest
 
-from blended.agent.claude_code import TurnCost
-from blended.agent.outcome import ToolOutcome
-from blended.agent.tool_event import (
+from golem_blender.agent.claude_code import TurnCost
+from golem_blender.agent.outcome import ToolOutcome
+from golem_blender.agent.tool_event import (
     TOOL_EVENT_KIND,
     TOOL_EVENT_SCHEMA_VERSION,
     ToolEvent,
     decode_tool_event,
     encode_tool_event,
 )
-from blended.stages import STAGE_DONE
+from golem_blender.stages import STAGE_DONE
 
 
 def test_a_tool_event_round_trips_through_json():
@@ -52,7 +52,7 @@ def test_a_v1_payload_is_refused_not_misread():
 
 
 def _client(replies):
-    from blended.agent.loop import ModelConfig
+    from golem_blender.agent.loop import ModelConfig
 
     class Scripted:
         def __init__(self):
@@ -80,7 +80,7 @@ ANSWER = {"role": "assistant", "content": "Done."}
 
 
 def test_the_loop_emits_one_structured_event_per_dispatched_call(tmp_path):
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     def dispatch(tool_name, arguments, output_directory):
         return ToolOutcome(
@@ -140,8 +140,8 @@ def test_the_loop_emits_one_structured_event_per_dispatched_call(tmp_path):
 
 
 def test_a_refused_call_is_recorded_as_refused(tmp_path):
-    from blended.agent.loop import AgentSession
-    from blended.agent.plan import MISSING_PLAN_REFUSAL
+    from golem_blender.agent.loop import AgentSession
+    from golem_blender.agent.plan import MISSING_PLAN_REFUSAL
 
     session = AgentSession(
         client=_client(
@@ -168,7 +168,7 @@ def test_a_refused_call_is_recorded_as_refused(tmp_path):
 
 
 def test_the_hatch_record_carries_reason_and_hash(tmp_path):
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     def dispatch(tool_name, arguments, output_directory):
         return ToolOutcome(

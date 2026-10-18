@@ -25,7 +25,7 @@ def empty_scene():
 
 
 def test_stdout_is_captured_on_success(empty_scene):
-    from blended.run.executor import run_source_in_process
+    from golem_blender.run.executor import run_source_in_process
 
     result = run_source_in_process("print('triangles=124')")
     assert result.ok
@@ -35,7 +35,7 @@ def test_stdout_is_captured_on_success(empty_scene):
 
 def test_stdout_is_captured_even_when_the_chunk_raises(empty_scene):
     """The values printed before a failure are the diagnosis."""
-    from blended.run.executor import run_source_in_process
+    from golem_blender.run.executor import run_source_in_process
 
     result = run_source_in_process("print('reached step 2')\nraise ValueError('boom')")
     assert not result.ok
@@ -44,7 +44,7 @@ def test_stdout_is_captured_even_when_the_chunk_raises(empty_scene):
 
 
 def test_stdout_window_is_bounded_and_keeps_the_tail(empty_scene):
-    from blended.run.executor import MAXIMUM_STDOUT_CHARACTERS, run_source_in_process
+    from golem_blender.run.executor import MAXIMUM_STDOUT_CHARACTERS, run_source_in_process
 
     result = run_source_in_process(
         f"print('x' * {MAXIMUM_STDOUT_CHARACTERS * 2})\nprint('CONCLUSION')"
@@ -58,7 +58,7 @@ def test_stdout_window_is_bounded_and_keeps_the_tail(empty_scene):
 def test_run_python_tool_returns_printed_output(empty_scene, tmp_path):
     """The channel has to survive all the way to the tool result the
     model actually reads."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _outcome = dispatch_tool(
         "run_python",
@@ -76,7 +76,7 @@ def test_run_python_tool_returns_printed_output(empty_scene, tmp_path):
 def test_run_python_tool_says_so_when_nothing_was_printed(empty_scene, tmp_path):
     """Silence must be explicit, or the agent cannot tell 'printed
     nothing' from 'printing does not work here'."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _outcome = dispatch_tool(
         "run_python",
@@ -88,11 +88,11 @@ def test_run_python_tool_says_so_when_nothing_was_printed(empty_scene, tmp_path)
 
 
 def test_gated_run_python_also_carries_printed_output(empty_scene, tmp_path):
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     source = (
         "import bpy\n"
-        "from blended.ops.primitives import add_box, link_into_scene\n"
+        "from golem_blender.ops.primitives import add_box, link_into_scene\n"
         "box = add_box('Probe', 0.1, 0.1, 0.1)\n"
         "link_into_scene(box)\n"
         "print('vertices=%d' % len(bpy.data.objects[box].data.vertices))\n"

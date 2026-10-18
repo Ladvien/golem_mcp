@@ -17,8 +17,8 @@ touches. Keeping this in the pure lane means the guard runs on every
 
 import pytest
 
-from blended.evaluate.iteration_log import IterationRecord
-from blended.evaluate.object_identity import (
+from golem_blender.evaluate.iteration_log import IterationRecord
+from golem_blender.evaluate.object_identity import (
     IDENTITY_PROPERTY_NAME,
     ObjectHasNoIdentity,
     RefinementLocality,

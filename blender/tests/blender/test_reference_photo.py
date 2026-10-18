@@ -17,7 +17,7 @@ bpy = pytest.importorskip("bpy", reason="requires Blender-as-module (pip install
 
 pytestmark = pytest.mark.blender
 
-from blended.capture.reference_photo import (
+from golem_blender.capture.reference_photo import (
     MAXIMUM_PHOTO_EDGE_PX,
     normalize_reference_photo,
 )

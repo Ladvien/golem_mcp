@@ -28,7 +28,7 @@ import anyio
 import yaml
 from mcp.server.transport_security import TransportSecuritySettings
 
-from blmcp.tools_helpers.blended_bridge import BlendedFastMCP, blended_instructions
+from blmcp.tools_helpers.golem_blender_bridge import GolemBlenderFastMCP, golem_blender_instructions
 from blmcp.tools_helpers.golem_remote import GolemRemote
 
 # NOTE(@ideasman42): this was written to support LLAMA-C++'s Web UI,
@@ -96,7 +96,7 @@ def argument_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
-            "Exit when src/blended or blmcp changes while idle, so a stdio client that "
+            "Exit when src/golem_blender or blmcp changes while idle, so a stdio client that "
             "reconnects re-lists fresh tools. Off by default: Claude Code and Claude "
             "Desktop do not restart a server that exits. omp opts in (.omp/mcp.json). "
             "Needs --transport stdio."
@@ -138,14 +138,14 @@ def main() -> int:
     remote = GolemRemote()
     remote_text = anyio.run(remote.instructions)
 
-    mcp = BlendedFastMCP(
+    mcp = GolemBlenderFastMCP(
         "golem",
-        instructions=blended_instructions(
+        instructions=golem_blender_instructions(
             str(prompts["initial_instructions"]), remote_text
         ),
         remote=remote,
     )
-    # Exit once src/blended or blmcp changes while idle; a reconnecting client
+    # Exit once src/golem_blender or blmcp changes while idle; a reconnecting client
     # restarts the server, which then lists the current tools and instructions.
     if args.exit_on_source_change:
         mcp.exit_on_source_change()

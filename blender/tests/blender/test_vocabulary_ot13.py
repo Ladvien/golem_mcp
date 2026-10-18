@@ -13,7 +13,7 @@ TOP_FACE_EDGE_COUNT = 4
 
 @pytest.fixture()
 def two_boxes():
-    from blended.ops import add_box, link_into_scene
+    from golem_blender.ops import add_box, link_into_scene
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     for name, x in (("Seat", 0.0), ("Other", 3.0)):
@@ -23,7 +23,7 @@ def two_boxes():
 
 
 def test_rename_object_renames_object_and_data(two_boxes):
-    from blended.ops import rename_object
+    from golem_blender.ops import rename_object
 
     assert rename_object("Seat", "Stool") == "Stool"
     assert "Stool" in bpy.data.objects and "Seat" not in bpy.data.objects
@@ -32,7 +32,7 @@ def test_rename_object_renames_object_and_data(two_boxes):
 
 
 def test_rename_object_refuses_a_taken_name_instead_of_minting_dot_001(two_boxes):
-    from blended.ops import NameTaken, rename_object
+    from golem_blender.ops import NameTaken, rename_object
 
     with pytest.raises(NameTaken, match="already exists"):
         rename_object("Seat", "Other")
@@ -42,7 +42,7 @@ def test_rename_object_refuses_a_taken_name_instead_of_minting_dot_001(two_boxes
 
 
 def test_world_bounds_reads_the_placed_box(two_boxes):
-    from blended.ops import move_object_to, world_bounds
+    from golem_blender.ops import move_object_to, world_bounds
 
     bounds = world_bounds("Seat")
     assert bounds["min_m"] == pytest.approx([-0.2, -0.2, 0.41], abs=1e-6)
@@ -55,7 +55,7 @@ def test_world_bounds_reads_the_placed_box(two_boxes):
 
 
 def test_mark_uv_seams_by_selector_and_refuses_an_empty_selection(two_boxes):
-    from blended.ops import EdgeSelector, NoEdgesSelected, mark_uv_seams
+    from golem_blender.ops import EdgeSelector, NoEdgesSelected, mark_uv_seams
 
     assert (
         mark_uv_seams(
@@ -74,7 +74,7 @@ def test_mark_uv_seams_by_selector_and_refuses_an_empty_selection(two_boxes):
 
 
 def test_the_three_ops_dispatch_as_tools(two_boxes, tmp_path):
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     renamed = dispatch_tool(
         "rename_object", {"object_name": "Seat", "new_name": "Stool"}, tmp_path

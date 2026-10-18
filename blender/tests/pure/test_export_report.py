@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from blended.analyze.mesh_checks import MeshBudget, MeshReport
-from blended.export.gltf import ExportReport
+from golem_blender.analyze.mesh_checks import MeshBudget, MeshReport
+from golem_blender.export.gltf import ExportReport
 
 
 def _clean_report(triangle_count=100):

@@ -196,7 +196,7 @@ def _translate_seat(blender_object, offset_z_m: float) -> None:
 
 def _seal_drain_hole(blender_object) -> None:
     """Union a plug into the drain hole so it reads as sealed."""
-    from blended.ops import add_cylinder, boolean_union, link_into_scene
+    from golem_blender.ops import add_cylinder, boolean_union, link_into_scene
 
     plug_name = add_cylinder(
         "DrainPlug",
@@ -216,17 +216,17 @@ def _offset_lid(lid_object, offset_x_m: float) -> None:
 def main(argv) -> int:
     import bpy
 
-    from blended.agent.loop import ModelConfig, OllamaClient, VisionDescriber
-    from blended.capture import CaptureSettings, capture_views
-    from blended.evaluate.briefs import get_brief
-    from blended.evaluate.examiner import (
+    from golem_blender.agent.loop import ModelConfig, OllamaClient, VisionDescriber
+    from golem_blender.capture import CaptureSettings, capture_views
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.evaluate.examiner import (
         CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY,
         DEVIATION_TAGS,
         EXAMINED_VIEW_NAMES,
         examine_asset,
         examiner_identity,
     )
-    from blended.evaluate.replay import load_record, replay_record
+    from golem_blender.evaluate.replay import load_record, replay_record
 
     arguments = parse_arguments(argv)
 
@@ -504,6 +504,6 @@ def _converging_iteration(brief_name: str) -> int:
 extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
 # Blender exits 0 on an uncaught Python exception, so a run that
 # died would read as a success (OT-32).
-from blended.run.script_exit import run_script_main
+from golem_blender.run.script_exit import run_script_main
 
 raise SystemExit(run_script_main(main, extra_arguments))

@@ -42,7 +42,7 @@ from finetune_decision_thresholds import (
     model_directory,
 )
 
-from blended.agent.loop import exhausted_credits_error
+from golem_blender.agent.loop import exhausted_credits_error
 
 # Same exit code and meaning as the production sweep's.
 LANE_EXHAUSTED_EXIT = 3

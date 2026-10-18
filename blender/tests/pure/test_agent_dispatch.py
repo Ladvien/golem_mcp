@@ -22,8 +22,8 @@ import threading
 
 import pytest
 
-from blended.agent.claude_code import TurnCost
-from blended.agent.outcome import ToolOutcome
+from golem_blender.agent.claude_code import TurnCost
+from golem_blender.agent.outcome import ToolOutcome
 
 TOOL_CALL_REPLY = {
     "role": "assistant",
@@ -44,7 +44,7 @@ class ScriptedClient:
     """Replays fixed assistant messages so the LOOP is what's tested."""
 
     def __init__(self, replies):
-        from blended.agent.loop import ModelConfig
+        from golem_blender.agent.loop import ModelConfig
 
         self.replies = list(replies)
 
@@ -60,7 +60,7 @@ class ScriptedClient:
 
 
 def _session(dispatch, output_directory):
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     return AgentSession(
         client=ScriptedClient([TOOL_CALL_REPLY, ANSWER_REPLY]),
@@ -112,14 +112,14 @@ def test_the_default_dispatcher_runs_on_the_calling_thread():
     If `dispatch` were resolved as a class attribute it would bind as a
     method and be handed a phantom `self`.
     """
-    from blended.agent.loop import AgentSession, dispatch_here
+    from golem_blender.agent.loop import AgentSession, dispatch_here
 
     assert AgentSession().dispatch is dispatch_here
 
 
 def test_touching_bpy_off_the_main_thread_is_an_error_not_a_segfault():
     """The backstop under the seam, at the point bpy is reached."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     failures = []
 
@@ -145,7 +145,7 @@ def test_the_main_thread_reaches_bpy(monkeypatch):
     first act is `import bpy` — absent in the pure layer, which is the
     observable proof that the guard let it past.
     """
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     with pytest.raises(ModuleNotFoundError, match="bpy"):
         dispatch_tool("list_scene", {}, None)
@@ -158,7 +158,7 @@ def test_iteration_record_carries_the_models_that_ran():
     on a different writer without recording which one would attribute a
     model change to the prompt.
     """
-    from blended.evaluate.iteration_log import IterationRecord
+    from golem_blender.evaluate.iteration_log import IterationRecord
 
     record = IterationRecord(
         iteration=1,
@@ -181,7 +181,7 @@ def test_a_rebuilt_refinement_does_not_count_as_passed():
     against the BEFORE values rather than against the spec — so the
     iteration must not read as clean.
     """
-    from blended.evaluate.iteration_log import IterationRecord
+    from golem_blender.evaluate.iteration_log import IterationRecord
 
     base = {
         "iteration": 1,
@@ -208,9 +208,9 @@ def test_a_rebuilt_refinement_does_not_count_as_passed():
 
 
 def test_an_op_tool_call_binds_runs_and_reports_done():
-    from blended.agent.op_call import call_op
-    from blended.agent.tools import OP_FUNCTIONS, dispatch_tool
-    from blended.stages import STAGE_DONE
+    from golem_blender.agent.op_call import call_op
+    from golem_blender.agent.tools import OP_FUNCTIONS, dispatch_tool
+    from golem_blender.stages import STAGE_DONE
 
     outcome = dispatch_tool("middle_extent_m", {"extents_m": [0.3, 0.2, 0.25]}, None)
 
@@ -229,14 +229,14 @@ def test_an_op_tool_call_binds_runs_and_reports_done():
 def test_an_unregistered_tool_is_refused_at_the_door_without_bpy():
     """Neither a service tool nor a facade op: refused before `import bpy`,
     which is what makes this assertion possible in the pure layer."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     outcome = dispatch_tool("add_boxx", {"name": "Crate"}, None)
     assert outcome.text == "Unknown tool: add_boxx" and outcome.ok is False
 
 
 def test_a_mistyped_argument_fails_at_execute_with_the_cause_and_no_traceback():
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     text = dispatch_tool("middle_extent_m", {"extents_m": "big"}, None).text
 
@@ -246,8 +246,8 @@ def test_a_mistyped_argument_fails_at_execute_with_the_cause_and_no_traceback():
 
 
 def test_unknown_and_missing_parameters_are_named():
-    from blended.agent.op_call import ArgumentError, bind_arguments
-    from blended.agent.tools import OP_FUNCTIONS
+    from golem_blender.agent.op_call import ArgumentError, bind_arguments
+    from golem_blender.agent.tools import OP_FUNCTIONS
 
     with pytest.raises(ArgumentError, match=r"unknown parameter\(s\) \['widht_m'\]"):
         bind_arguments(
@@ -269,9 +269,9 @@ def test_arguments_are_converted_to_the_signature_types():
     """JSON in, the op's own types out — the same hints the schema came from."""
     from pathlib import Path
 
-    from blended.agent.op_call import bind_arguments
-    from blended.agent.tools import OP_FUNCTIONS
-    from blended.ops import BoneSpec, SplayedLegSpec
+    from golem_blender.agent.op_call import bind_arguments
+    from golem_blender.agent.tools import OP_FUNCTIONS
+    from golem_blender.ops import BoneSpec, SplayedLegSpec
 
     leg = bind_arguments(
         "add_splayed_leg",
@@ -320,8 +320,8 @@ def test_arguments_are_converted_to_the_signature_types():
 
 
 def test_binding_is_strict_about_json_types():
-    from blended.agent.op_call import ArgumentError, convert_argument
-    from blended.ops import SplayedLegSpec
+    from golem_blender.agent.op_call import ArgumentError, convert_argument
+    from golem_blender.ops import SplayedLegSpec
 
     with pytest.raises(ArgumentError, match="expected an integer"):
         convert_argument(int, True, "x.count")
@@ -334,8 +334,8 @@ def test_binding_is_strict_about_json_types():
 
 
 def test_an_op_that_raises_is_a_failed_call_with_its_type_and_traceback():
-    from blended.agent.op_call import call_op
-    from blended.stages import STAGE_EXECUTE
+    from golem_blender.agent.op_call import call_op
+    from golem_blender.stages import STAGE_EXECUTE
 
     def exploding_op(width_m: float) -> str:
         """Always raises."""
@@ -351,8 +351,8 @@ def test_an_op_that_raises_is_a_failed_call_with_its_type_and_traceback():
 
 
 def test_a_returned_report_is_rendered_as_json():
-    from blended.agent.op_call import json_returned
-    from blended.ops import BoneSpec
+    from golem_blender.agent.op_call import json_returned
+    from golem_blender.ops import BoneSpec
 
     assert json_returned(
         BoneSpec(name="root", head_m=(0.0, 0.0, 0.0), tail_m=(0.0, 0.0, 0.5))
@@ -368,7 +368,7 @@ def test_a_returned_report_is_rendered_as_json():
 
 
 def test_an_op_tool_off_the_main_thread_is_refused_like_any_tool():
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     failures = []
 
@@ -389,7 +389,7 @@ def test_an_op_tool_off_the_main_thread_is_refused_like_any_tool():
 
 
 def test_run_python_without_a_reason_is_refused_before_bpy():
-    from blended.agent.tools import RUN_PYTHON_REASON_REFUSAL, dispatch_tool
+    from golem_blender.agent.tools import RUN_PYTHON_REASON_REFUSAL, dispatch_tool
 
     for arguments in (
         {"source": "pass"},
@@ -406,7 +406,7 @@ def test_run_python_without_a_reason_is_refused_before_bpy():
 def test_run_python_with_a_reason_reaches_bpy():
     """The refusal is the only pure-layer stop; a reasoned call proceeds
     to the body, whose first act is `import bpy` — absent here."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     with pytest.raises(ModuleNotFoundError, match="bpy"):
         dispatch_tool(
@@ -415,7 +415,7 @@ def test_run_python_with_a_reason_reaches_bpy():
 
 
 def test_the_run_python_schema_requires_the_reason():
-    from blended.agent.tools import SERVICE_TOOL_SCHEMAS
+    from golem_blender.agent.tools import SERVICE_TOOL_SCHEMAS
 
     run_python = next(
         t["function"]
@@ -430,7 +430,7 @@ def test_the_run_python_schema_requires_the_reason():
 
 
 def test_search_ops_returns_each_hit_with_its_generated_schema():
-    from blended.agent.tools import (
+    from golem_blender.agent.tools import (
         MAXIMUM_SEARCH_RESULTS,
         OP_TOOL_SCHEMAS,
         dispatch_tool,
@@ -455,7 +455,7 @@ def test_search_ops_returns_each_hit_with_its_generated_schema():
 
 
 def test_search_ops_spans_the_underscore_and_word_order():
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     for query in ("assign material", "material assign", "assign_material"):
         assert dispatch_tool("search_ops", {"query": query}, None).text.startswith(

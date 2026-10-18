@@ -4,7 +4,7 @@ run on each side."""
 
 import pytest
 
-from blended.evaluate.cache_report import (
+from golem_blender.evaluate.cache_report import (
     NoBilledInput,
     RunCacheRow,
     cache_read_fraction,
@@ -13,7 +13,7 @@ from blended.evaluate.cache_report import (
     render_pairs,
     render_rows,
 )
-from blended.evaluate.iteration_log import IterationRecord
+from golem_blender.evaluate.iteration_log import IterationRecord
 
 
 def _record(iteration, brief, **spend):
@@ -77,7 +77,7 @@ def test_pairs_take_each_briefs_latest_run_on_each_side():
 
 
 def test_turn_cost_reports_the_same_fraction_in_its_summary():
-    from blended.agent.claude_code import TurnCost
+    from golem_blender.agent.claude_code import TurnCost
 
     spent = TurnCost(
         api_calls=14,

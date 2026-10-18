@@ -69,7 +69,7 @@ def parse_arguments(argv):
 
 def _golden_comparison(golden_directory, captured, view_name):
     """Compare one captured view against the pinned golden PNG."""
-    from blended.evaluate.visual_diff import compare_view_files
+    from golem_blender.evaluate.visual_diff import compare_view_files
 
     return compare_view_files(
         view_name,
@@ -79,7 +79,7 @@ def _golden_comparison(golden_directory, captured, view_name):
 
 
 def _capture_for(brief, built, directory):
-    from blended.capture import CaptureSettings, capture_views
+    from golem_blender.capture import CaptureSettings, capture_views
 
     directory.mkdir(parents=True, exist_ok=True)
     return capture_views(
@@ -93,11 +93,11 @@ def _capture_for(brief, built, directory):
 def main(argv) -> int:
     import bpy
 
-    from blended.agent.prompt_versions import get_revision
-    from blended.capture import CaptureSettings
-    from blended.evaluate.briefs import get_brief
-    from blended.evaluate.replay import load_record, replay_record
-    from blended.version import assert_supported_blender
+    from golem_blender.agent.prompt_versions import get_revision
+    from golem_blender.capture import CaptureSettings
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.evaluate.replay import load_record, replay_record
+    from golem_blender.version import assert_supported_blender
 
     arguments = parse_arguments(argv)
     assert_supported_blender()
@@ -260,6 +260,6 @@ def main(argv) -> int:
 extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
 # Blender exits 0 on an uncaught Python exception, so a run that
 # died would read as a success (OT-32).
-from blended.run.script_exit import run_script_main
+from golem_blender.run.script_exit import run_script_main
 
 raise SystemExit(run_script_main(main, extra_arguments))

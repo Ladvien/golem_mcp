@@ -49,12 +49,12 @@ _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_DIR not in sys.path:
     sys.path.insert(0, _REPO_DIR)
 
-from blmcp.tools_helpers.blended_bridge import SOURCE_ROOTS
+from blmcp.tools_helpers.golem_blender_bridge import SOURCE_ROOTS
 from blmcp.tools_helpers.connection import send_code
 from blmcp.tools_helpers.live_blender import PAUSE_PREFIX
 from tests.mcp_client import MCPClient
 
-from blended.agent.plan import MISSING_PLAN_REFUSAL
+from golem_blender.agent.plan import MISSING_PLAN_REFUSAL
 
 # Fixed ports for the test servers (background and foreground).
 # Kept off the add-on's default (9876) so a user's running Blender is never
@@ -571,12 +571,12 @@ class _TestServerMixin:
         )
 
     # -----------------------------------------------------------------
-    # blended tools.
+    # golem_blender tools.
 
-    def test_blended_tools_dispatch_through_blender(self) -> None:
+    def test_golem_blender_tools_dispatch_through_blender(self) -> None:
         """
         The plan gate refuses a scene-changing tool, then the declared plan
-        lets blended's ops build, link and measure a box inside Blender.
+        lets golem_blender's ops build, link and measure a box inside Blender.
         """
         box = {"name": "Crate", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.5}
         content = self._call_tool_expect_error("add_box", box)

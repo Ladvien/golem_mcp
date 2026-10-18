@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decompose a blended model row's 3DCodeBench chamfer into its components.
+"""Decompose a golem_blender model row's 3DCodeBench chamfer into its components.
 
 Answers one question before any live model time is spent: how much of a
 model row's `cd_yawmin` is orientation, how much is proportion (aspect

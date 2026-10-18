@@ -59,8 +59,8 @@ from finetune_decision_thresholds import (
     SERVED_PRECISION,
 )
 
-from blended.agent.tool_disclosure import core_ops, offered_tools
-from blended.agent.tools import SERVICE_TOOL_NAMES, TOOL_SCHEMAS
+from golem_blender.agent.tool_disclosure import core_ops, offered_tools
+from golem_blender.agent.tools import SERVICE_TOOL_NAMES, TOOL_SCHEMAS
 
 DECISION_DIRECTORY = (
     REPOSITORY_ROOT / "docs" / "research" / "2026-09-19-finetune-decision"
@@ -144,12 +144,12 @@ def _first_line(command_result: dict) -> str:
 
 def write_prompt_diff(bench_root: Path) -> dict:
     """The §8 prompt-parity diff, and its statistics."""
-    from blended.agent.system_prompt import build_system_prompt
-    from blended.evaluate.bench_task_prompt import (
+    from golem_blender.agent.system_prompt import build_system_prompt
+    from golem_blender.evaluate.bench_task_prompt import (
         RAW_TASK_TEMPLATE,
         SINGLE_SHOT_OPS_TASK_TEMPLATE,
     )
-    from blended.evaluate.raw_bpy_arm import raw_system_prompt
+    from golem_blender.evaluate.raw_bpy_arm import raw_system_prompt
 
     ops_system = build_system_prompt()
     raw_system = raw_system_prompt(bench_root)
@@ -907,7 +907,7 @@ def main(argv) -> int:
             f"**What does separate the rolls is the offered set.** Every "
             f"archived roll that offered the disclosed "
             f"{offered_schema_count}-of-{harness.get('tool_schema_count')} "
-            f"set (`blended.agent.tool_disclosure.offered_tools`, fingerprint "
+            f"set (`golem_blender.agent.tool_disclosure.offered_tools`, fingerprint "
             f"`{mechanism_measured.get('disclosed_fingerprint')}`) bakes a "
             f"{percent(disclosed_op_share_low)}–"
             f"{percent(disclosed_op_share_high)} op share; rolls predating op "
@@ -1002,7 +1002,7 @@ def main(argv) -> int:
         (
             "5. **The canonical-orientation epilogue is asymmetric.** A1/A2's "
             "emitted scripts end with `apply_canonical_depth_axis()`; a raw "
-            "script cannot, because the epilogue imports `blended`. `cd_yawmin` "
+            "script cannot, because the epilogue imports `golem_blender`. `cd_yawmin` "
             "is therefore never compared across formats — `cd_pca` quotients "
             "orientation out and is what the arms are ranked on here."
         ),

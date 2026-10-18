@@ -13,9 +13,9 @@ import bpy
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
-from blended.builders import BarrelBuilder, BarrelParameters
-from blended.harness import HarnessSettings, run_builder, run_chunk
-from blended.version import assert_supported_blender
+from golem_blender.builders import BarrelBuilder, BarrelParameters
+from golem_blender.harness import HarnessSettings, run_builder, run_chunk
+from golem_blender.version import assert_supported_blender
 
 assert_supported_blender()
 settings = HarnessSettings(
@@ -36,7 +36,7 @@ import sys
 sys.path.insert(0, "src")
 import bmesh
 import bpy
-from blended.ops import add_box, link_into_scene
+from golem_blender.ops import add_box, link_into_scene
 link_into_scene(add_box("DemoDefect", 0.5, 0.5, 0.5))
 box = bpy.data.objects["DemoDefect"]
 working = bmesh.new(); working.from_mesh(box.data)

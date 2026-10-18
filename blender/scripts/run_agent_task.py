@@ -71,37 +71,37 @@ def parse_arguments(argv):
 def main(argv) -> int:
     import bpy
 
-    from blended.agent.loop import (
+    from golem_blender.agent.loop import (
         AgentSession,
         ModelConfig,
         OllamaClient,
         VisionDescriber,
     )
-    from blended.agent.prompt_versions import PINNED_PROMPT_REVISION, get_revision
-    from blended.agent.system_prompt import (
+    from golem_blender.agent.prompt_versions import PINNED_PROMPT_REVISION, get_revision
+    from golem_blender.agent.system_prompt import (
         assembled_prompt_fingerprint,
         build_system_prompt,
     )
-    from blended.agent.tool_event import TOOL_EVENT_KIND
-    from blended.agent.tools import TOOL_SCHEMAS_FINGERPRINT
-    from blended.analyze import analyze_object
-    from blended.capture import CaptureSettings, capture_contact_sheet
-    from blended.evaluate.acceptance import (
+    from golem_blender.agent.tool_event import TOOL_EVENT_KIND
+    from golem_blender.agent.tools import TOOL_SCHEMAS_FINGERPRINT
+    from golem_blender.analyze import analyze_object
+    from golem_blender.capture import CaptureSettings, capture_contact_sheet
+    from golem_blender.evaluate.acceptance import (
         RefinementOutcome,
         evaluate_brief,
         refine_brief,
     )
-    from blended.evaluate.briefs import get_brief
-    from blended.evaluate.examiner import examiner_identity
-    from blended.evaluate.iteration_log import IterationLog, IterationRecord
-    from blended.evaluate.object_identity import (
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.evaluate.examiner import examiner_identity
+    from golem_blender.evaluate.iteration_log import IterationLog, IterationRecord
+    from golem_blender.evaluate.object_identity import (
         measure_locality,
         new_identity,
         stamp_identity,
     )
-    from blended.evaluate.visual_diff import VisualGateNotCalibrated
-    from blended.export.gltf import export_glb
-    from blended.version import assert_supported_blender
+    from golem_blender.evaluate.visual_diff import VisualGateNotCalibrated
+    from golem_blender.export.gltf import export_glb
+    from golem_blender.version import assert_supported_blender
 
     arguments = parse_arguments(argv)
     assert_supported_blender()
@@ -179,7 +179,7 @@ def main(argv) -> int:
         else pinned_golden_directory
     )
     if arguments.examiner == "auto":
-        from blended.evaluate.examiner import load_calibration
+        from golem_blender.evaluate.examiner import load_calibration
 
         licence_problems = load_calibration().problems(
             examiner_identity(client.config.vision_model)
@@ -304,7 +304,7 @@ def main(argv) -> int:
     visual_gate_failures: list[str] = []
     if built_objects_in_scene:
         try:
-            from blended.evaluate.visual_diff import (
+            from golem_blender.evaluate.visual_diff import (
                 CALIBRATION_PATH,
                 compare_view_files,
                 gate_failures,
@@ -360,11 +360,11 @@ def main(argv) -> int:
         and not form_failures
         and built_objects_in_scene
     ):
-        from blended.evaluate.examiner import (
+        from golem_blender.evaluate.examiner import (
             calibration_file_identity,
             examine_asset,
         )
-        from blended.evaluate.iteration_log import IterationVerdict, VerdictLog
+        from golem_blender.evaluate.iteration_log import IterationVerdict, VerdictLog
 
         # The licence was established before the run; here the examiner
         # only examines.
@@ -544,6 +544,6 @@ def main(argv) -> int:
 extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
 # Blender exits 0 on an uncaught Python exception, so a run that
 # died would read as a success (OT-32).
-from blended.run.script_exit import run_script_main
+from golem_blender.run.script_exit import run_script_main
 
 raise SystemExit(run_script_main(main, extra_arguments))

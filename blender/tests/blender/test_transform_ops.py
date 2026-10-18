@@ -27,7 +27,7 @@ def empty_scene():
 
 
 def _tall_box():
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     box = add_box("Subject", 0.1, 0.1, 1.0)
     link_into_scene(box)
@@ -36,7 +36,7 @@ def _tall_box():
 
 def test_rotation_reaches_matrix_world_immediately(empty_scene):
     """The whole point: no caller should have to know about the depsgraph."""
-    from blended.ops.transforms import rotate_object_euler
+    from golem_blender.ops.transforms import rotate_object_euler
 
     box = _tall_box()
     rotate_object_euler(box, y_rad=QUARTER_TURN_RAD)
@@ -59,7 +59,7 @@ def test_rotation_reaches_matrix_world_immediately(empty_scene):
 
 def test_rotation_is_set_not_accumulated(empty_scene):
     """Re-running a chunk must not spin the object twice."""
-    from blended.ops.transforms import rotate_object_euler
+    from golem_blender.ops.transforms import rotate_object_euler
 
     box = _tall_box()
     rotate_object_euler(box, y_rad=QUARTER_TURN_RAD)
@@ -73,7 +73,7 @@ def test_rotation_is_set_not_accumulated(empty_scene):
 def test_rotation_survives_apply_object_transform(empty_scene):
     """The historical failure: rotation set, transform applied, vertices
     untouched because matrix_world was still stale."""
-    from blended.ops.transforms import apply_object_transform, rotate_object_euler
+    from golem_blender.ops.transforms import apply_object_transform, rotate_object_euler
 
     box = _tall_box()
     rotate_object_euler(box, y_rad=QUARTER_TURN_RAD)
@@ -89,7 +89,7 @@ def test_rotation_survives_apply_object_transform(empty_scene):
 
 
 def test_move_object_to_reaches_matrix_world_immediately(empty_scene):
-    from blended.ops.transforms import move_object_to
+    from golem_blender.ops.transforms import move_object_to
 
     box = _tall_box()
     move_object_to(box, (0.25, -0.5, 0.75))
@@ -101,7 +101,7 @@ def test_move_object_to_reaches_matrix_world_immediately(empty_scene):
 
 def test_both_ops_are_discoverable_through_search(empty_scene, tmp_path):
     """A whitelisted op nobody can find is not whitelisted."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _outcome = dispatch_tool(
         "search_ops", {"query": "rotate"}, output_directory=tmp_path
@@ -132,7 +132,7 @@ def test_multi_word_search_finds_the_op(
     query as one substring, so it could not span the underscore in
     `boolean_union` and could not survive reversed word order.
     """
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _outcome = dispatch_tool("search_ops", {"query": query}, output_directory=tmp_path)
     text, _ = _outcome.text, list(_outcome.images)
@@ -142,7 +142,7 @@ def test_multi_word_search_finds_the_op(
 def test_search_still_narrows(empty_scene, tmp_path):
     """Matching words must not turn every query into a catalogue dump:
     every word has to appear, so more words match fewer ops."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _outcome = dispatch_tool(
         "search_ops", {"query": "object"}, output_directory=tmp_path
@@ -161,9 +161,9 @@ def test_a_query_with_no_words_is_refused(empty_scene, tmp_path):
     """Splitting on punctuation makes an all-punctuation query empty, and
     `all()` of an empty list is True — which would silently match every
     op in the manifest. It is refused instead."""
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _outcome = dispatch_tool("search_ops", {"query": "???"}, output_directory=tmp_path)
     text, _ = _outcome.text, list(_outcome.images)
     assert "no searchable words" in text
-    assert "blended.ops." not in text
+    assert "golem_blender.ops." not in text

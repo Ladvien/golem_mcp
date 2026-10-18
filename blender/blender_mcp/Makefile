@@ -87,7 +87,7 @@ test:
 	$(PYTHON) tests/test_rst_parse.py
 	$(PYTHON) tests/test_rst_search.py
 	$(PYTHON) tests/test_mcp_server.py
-	$(PYTHON) tests/test_blended_bridge.py
+	$(PYTHON) tests/test_golem_blender_bridge.py
 	$(PYTHON) tests/test_blender_mcp_with_blender.py
 
 test_rst_parse:

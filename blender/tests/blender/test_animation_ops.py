@@ -27,7 +27,7 @@ def empty_scene():
 
 
 def _box():
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     box = add_box("Subject", 0.2, 0.2, 0.2)
     link_into_scene(box)
@@ -62,7 +62,7 @@ def _two_bone_armature():
 
 
 def test_set_frame_range_updates_scene(empty_scene):
-    from blended.ops.animation import set_frame_range
+    from golem_blender.ops.animation import set_frame_range
 
     scene = bpy.context.scene
     set_frame_range(5, 25)
@@ -72,7 +72,7 @@ def test_set_frame_range_updates_scene(empty_scene):
 
 
 def test_set_frame_range_rejects_start_geq_end(empty_scene):
-    from blended.ops.animation import set_frame_range
+    from golem_blender.ops.animation import set_frame_range
 
     with pytest.raises(ValueError):
         set_frame_range(10, 10)
@@ -81,7 +81,7 @@ def test_set_frame_range_rejects_start_geq_end(empty_scene):
 
 
 def test_two_keyframes_on_box_match_channel_count(empty_scene):
-    from blended.ops.animation import keyframe_object_transform
+    from golem_blender.ops.animation import keyframe_object_transform
 
     box = _box()
     count_after_first = keyframe_object_transform(
@@ -107,7 +107,7 @@ def test_two_keyframes_on_box_match_channel_count(empty_scene):
 
 
 def test_location_only_keyframes_skip_other_channels(empty_scene):
-    from blended.ops.animation import keyframe_object_transform
+    from golem_blender.ops.animation import keyframe_object_transform
 
     box = _box()
     count = keyframe_object_transform(box, frame=1, location_m=(1.0, 2.0, 3.0))
@@ -116,7 +116,7 @@ def test_location_only_keyframes_skip_other_channels(empty_scene):
 
 
 def test_rotation_degrees_converted_to_radians(empty_scene):
-    from blended.ops.animation import keyframe_object_transform
+    from golem_blender.ops.animation import keyframe_object_transform
 
     box = _box()
     keyframe_object_transform(box, frame=1, rotation_euler_deg=(0.0, 0.0, DEG_180_Z))
@@ -125,7 +125,7 @@ def test_rotation_degrees_converted_to_radians(empty_scene):
 
 
 def test_pose_bone_rotation_keyframes_on_armature_action(empty_scene):
-    from blended.ops.animation import keyframe_pose_bone_rotation
+    from golem_blender.ops.animation import keyframe_pose_bone_rotation
 
     arm_obj = _two_bone_armature()
     count = keyframe_pose_bone_rotation(
@@ -153,7 +153,7 @@ def test_pose_bone_rotation_keyframes_on_armature_action(empty_scene):
 
 
 def test_report_on_never_animated_object_is_all_zero(empty_scene):
-    from blended.ops.animation import animation_report
+    from golem_blender.ops.animation import animation_report
 
     box = _box()
     report = animation_report(box)
@@ -165,7 +165,7 @@ def test_report_on_never_animated_object_is_all_zero(empty_scene):
 
 
 def test_report_on_animated_box_counts_correctly(empty_scene):
-    from blended.ops.animation import (
+    from golem_blender.ops.animation import (
         animation_report,
         keyframe_object_transform,
         set_frame_range,

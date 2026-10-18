@@ -8,7 +8,7 @@ import datetime as _datetime
 
 import pytest
 
-from blended.evaluate.candidate_ops import (
+from golem_blender.evaluate.candidate_ops import (
     UnminableRecord,
     hatch_calls_per_gate_passing_brief,
     hatch_events_from_record,
@@ -67,8 +67,8 @@ def test_a_reason_is_one_spelling_and_a_shape_ignores_literals():
     assert source_shape(INSET) == source_shape(INSET_OTHER_LITERALS)
     assert "bmesh.ops.inset_region" in source_shape(INSET)
     assert (
-        source_shape("from blended.ops import add_box\nadd_box('A', 1, 1, 1)")
-        == "add_box blended.ops:add_box"
+        source_shape("from golem_blender.ops import add_box\nadd_box('A', 1, 1, 1)")
+        == "add_box golem_blender.ops:add_box"
     )
     assert source_shape("def (") == "<unparseable>"
 

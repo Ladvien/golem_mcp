@@ -2,7 +2,7 @@
 
 import pytest
 
-from blended.builders.pallet import PalletParameters
+from golem_blender.builders.pallet import PalletParameters
 
 
 def test_default_parameters_validate():

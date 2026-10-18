@@ -14,10 +14,10 @@ import bpy
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
-from blended.analyze import MeshBudget, analyze_object
-from blended.builders import BarrelBuilder, BarrelParameters
-from blended.capture import capture_contact_sheet
-from blended.version import assert_supported_blender
+from golem_blender.analyze import MeshBudget, analyze_object
+from golem_blender.builders import BarrelBuilder, BarrelParameters
+from golem_blender.capture import capture_contact_sheet
+from golem_blender.version import assert_supported_blender
 
 assert_supported_blender()
 barrel_object = BarrelBuilder(BarrelParameters()).build()

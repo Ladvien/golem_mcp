@@ -11,7 +11,7 @@ plausible, misses an explicit instruction constraint" — cannot be read
 off a distance, so the spec (§4) asks for a VLM judge plus a
 hand-verified subset to estimate judge error.
 
-`blended.evaluate.examiner` is deliberately NOT reused: it is
+`golem_blender.evaluate.examiner` is deliberately NOT reused: it is
 golden-reference-PAIRED with a closed deviation vocabulary, and there is
 no pinned golden for a benchmark instance. This asks one question with a
 two-field answer, and the eye is the licensed default eye.
@@ -177,7 +177,7 @@ def main(argv) -> int:
         raise SystemExit(f"run scripts/finetune_phase_a.py first: no {TAXONOMY_CSV}")
     refuse_to_overwrite_hand_verification(JUDGE_JSONL)
 
-    from blended.agent.loop import ModelConfig, OllamaClient, VisionDescriber
+    from golem_blender.agent.loop import ModelConfig, OllamaClient, VisionDescriber
 
     rows = stratified(geometry_rows(), arguments.sample)
     print(f"[judge] {len(rows)} row(s) sampled for G3", flush=True)

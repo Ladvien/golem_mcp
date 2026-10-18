@@ -26,8 +26,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from blended.agent.tools import SERVICE_TOOL_SCHEMAS, TOOL_SCHEMAS
-from blended.ops._contract import facade_ops
+from golem_blender.agent.tools import SERVICE_TOOL_SCHEMAS, TOOL_SCHEMAS
+from golem_blender.ops._contract import facade_ops
 
 # The probe must have found work to do, so reformatting the prompts away
 # turns the gate red instead of green. Measured 2026-09-06: 45
@@ -57,7 +57,7 @@ _SERVICE_TOOL_NAMES: set[str] = {
 }
 
 _PROMPTS_DIR = (
-    Path(__file__).resolve().parents[2] / "src" / "blended" / "agent" / "prompts"
+    Path(__file__).resolve().parents[2] / "src" / "golem_blender" / "agent" / "prompts"
 )
 
 

@@ -786,7 +786,7 @@ class TestIdfWeighting(unittest.TestCase):
         """
         For a multi-token query where only one token is in the path,
         the bonus reflects that token's IDF specifically - not a
-        blended or largest-IDF applied to the whole query.
+        golem_blender or largest-IDF applied to the whole query.
         """
         corpus: dict[str, str] = {}
         # 'color' is in every file (common, IDF ~ 1).

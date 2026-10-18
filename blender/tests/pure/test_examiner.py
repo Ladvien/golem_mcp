@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from blended.evaluate.examiner import (
+from golem_blender.evaluate.examiner import (
     CANNOT_TELL_TAG,
     Calibration,
     ExaminerReplyUnparseable,
@@ -265,8 +265,8 @@ def test_the_shipped_eye_holds_the_licence_in_the_repository():
     harness is broken" rather than "the eye was swapped". Shipping an
     eye the repository cannot license is the failure this pins.
     """
-    from blended.agent.loop import ModelConfig
-    from blended.evaluate.examiner import load_calibration
+    from golem_blender.agent.loop import ModelConfig
+    from golem_blender.evaluate.examiner import load_calibration
 
     shipped_eye = ModelConfig().vision_model
     calibration = load_calibration()
@@ -286,8 +286,8 @@ def test_the_licence_identity_still_matches_the_shipped_eye():
     reliability, while an IDENTITY mismatch means nobody measured THIS
     eye at all. The second is always a bug.
     """
-    from blended.agent.loop import ModelConfig
-    from blended.evaluate.examiner import load_calibration
+    from golem_blender.agent.loop import ModelConfig
+    from golem_blender.evaluate.examiner import load_calibration
 
     calibration = load_calibration()
     assert not calibration.absent
@@ -308,7 +308,7 @@ def test_a_licence_measured_on_identical_images_does_not_cover_a_fresh_run():
     rate in the used regime is not zero and must be licensed
     separately.
     """
-    from blended.evaluate.examiner import (
+    from golem_blender.evaluate.examiner import (
         CROSS_RUN_CONTROL_MINIMUM_SPECIFICITY,
         Calibration,
     )
@@ -352,7 +352,7 @@ def test_a_verdict_records_which_view_earned_its_tags():
     aggregate deviation list cannot say which of the five views paid
     for itself.
     """
-    from blended.evaluate.iteration_log import IterationVerdict
+    from golem_blender.evaluate.iteration_log import IterationVerdict
 
     verdict = IterationVerdict(
         iteration=900,
@@ -386,7 +386,7 @@ def test_a_tag_a_gate_owns_is_recorded_but_never_halts():
     `material_missing` by the material gate, so they are advisory
     evidence and cannot halt a cycle.
     """
-    from blended.evaluate.examiner import (
+    from golem_blender.evaluate.examiner import (
         DEVIATION_TAGS,
         HALTING_DEVIATION_TAGS,
         MEASURED_DEVIATION_TAGS,

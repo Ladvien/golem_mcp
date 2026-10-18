@@ -4,7 +4,7 @@ Rule 2 of the 2026-10-07 live-Blender change: every tool looks for the open
 running Blender first; when none can serve the call the result starts with
 `PAUSED:`, tells the agent to stop and tell the user, and no headless Blender
 is ever started. Before the change, an upstream tool surfaced a raw
-`ToolError`, a scene-changing blended tool answered 'No plan declared' before
+`ToolError`, a scene-changing golem_blender tool answered 'No plan declared' before
 it noticed there was no Blender, and the five `*_for_cli` tools spawned
 `blender --background` on the file instead.
 """
@@ -60,11 +60,11 @@ def no_blender(monkeypatch):
 
 @pytest.fixture
 def server(tmp_path):
-    """A BlendedFastMCP with the upstream tools the test calls, logging under tmp."""
-    from blmcp.tools_helpers import blended_bridge
+    """A GolemBlenderFastMCP with the upstream tools the test calls, logging under tmp."""
+    from blmcp.tools_helpers import golem_blender_bridge
 
-    instance = blended_bridge.BlendedFastMCP("live-blender-test", instructions="x")
-    instance._blended = blended_bridge.BlendedSession(
+    instance = golem_blender_bridge.GolemBlenderFastMCP("live-blender-test", instructions="x")
+    instance._golem_blender = golem_blender_bridge.GolemBlenderSession(
         log_directory=tmp_path / "logs", output_root=tmp_path / "outputs"
     )
     for module_name in ("get_objects_summary", "get_blendfile_summary_path_info"):
@@ -164,7 +164,7 @@ def test_a_for_cli_tool_answers_from_the_open_blender_that_has_the_file(
 def test_the_instructions_head_names_the_pause_the_server_sends():
     """The head tells the agent what to do on `PAUSED:`; the server sends that
     exact prefix. One constant, so the rule and the message cannot drift apart."""
-    from blmcp.tools_helpers.blended_bridge import MCP_INSTRUCTIONS_HEAD
+    from blmcp.tools_helpers.golem_blender_bridge import MCP_INSTRUCTIONS_HEAD
     from blmcp.tools_helpers.live_blender import PAUSE_PREFIX
 
     assert PAUSE_PREFIX in MCP_INSTRUCTIONS_HEAD

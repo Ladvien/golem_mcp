@@ -42,11 +42,11 @@ def parse_arguments(argv):
 def main(argv) -> int:
     import bpy
 
-    from blended.capture import CaptureSettings, capture_contact_sheet
-    from blended.evaluate.acceptance import evaluate_brief, refine_brief
-    from blended.evaluate.briefs import get_brief
-    from blended.evaluate.replay import load_record, replay_record, steps_applied
-    from blended.export.gltf import export_glb
+    from golem_blender.capture import CaptureSettings, capture_contact_sheet
+    from golem_blender.evaluate.acceptance import evaluate_brief, refine_brief
+    from golem_blender.evaluate.briefs import get_brief
+    from golem_blender.evaluate.replay import load_record, replay_record, steps_applied
+    from golem_blender.export.gltf import export_glb
 
     arguments = parse_arguments(argv)
     record = load_record(Path(arguments.log), arguments.iteration)
@@ -102,6 +102,6 @@ def main(argv) -> int:
 extra_arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
 # Blender exits 0 on an uncaught Python exception, so a run that
 # died would read as a success (OT-32).
-from blended.run.script_exit import run_script_main
+from golem_blender.run.script_exit import run_script_main
 
 raise SystemExit(run_script_main(main, extra_arguments))

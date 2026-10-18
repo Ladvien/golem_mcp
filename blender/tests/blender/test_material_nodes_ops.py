@@ -22,7 +22,7 @@ def empty_scene():
 
 
 def _box():
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     box_name = add_box("Subject", 0.2, 0.2, 0.2)
     link_into_scene(box_name)
@@ -45,7 +45,7 @@ def _save_test_png(path, width_px=64, height_px=64, fill_rgb=(0.9, 0.2, 0.3)):
 
 
 def test_noise_procedural_links_base_color_and_reports(empty_scene):
-    from blended.ops.material_nodes import (
+    from golem_blender.ops.material_nodes import (
         assign_procedural_material,
         material_report,
     )
@@ -60,7 +60,7 @@ def test_noise_procedural_links_base_color_and_reports(empty_scene):
 
 
 def test_procedural_fills_exactly_one_slot(empty_scene):
-    from blended.ops.material_nodes import assign_procedural_material
+    from golem_blender.ops.material_nodes import assign_procedural_material
 
     box = _box()
     assign_procedural_material(box.name, "ProcNoise", "noise")
@@ -71,7 +71,7 @@ def test_procedural_fills_exactly_one_slot(empty_scene):
 
 
 def test_rerun_does_not_duplicate_nodes_or_materials(empty_scene):
-    from blended.ops.material_nodes import assign_procedural_material
+    from golem_blender.ops.material_nodes import assign_procedural_material
 
     box = _box()
     assign_procedural_material(box.name, "ProcNoise", "noise")
@@ -86,7 +86,7 @@ def test_rerun_does_not_duplicate_nodes_or_materials(empty_scene):
 
 
 def test_unknown_kind_raises_value_error(empty_scene):
-    from blended.ops.material_nodes import assign_procedural_material
+    from golem_blender.ops.material_nodes import assign_procedural_material
 
     box = _box()
     with pytest.raises(ValueError):
@@ -97,7 +97,7 @@ def test_unknown_kind_raises_value_error(empty_scene):
 
 
 def test_image_texture_material_reports_path(empty_scene, tmp_path):
-    from blended.ops.material_nodes import (
+    from golem_blender.ops.material_nodes import (
         assign_image_texture_material,
         material_report,
     )
@@ -118,7 +118,7 @@ def test_image_texture_material_reports_path(empty_scene, tmp_path):
 
 
 def test_image_texture_missing_file_raises(empty_scene, tmp_path):
-    from blended.ops.material_nodes import assign_image_texture_material
+    from golem_blender.ops.material_nodes import assign_image_texture_material
 
     box = _box()
     with pytest.raises(FileNotFoundError):
@@ -134,8 +134,8 @@ def test_checker_render_is_not_grey(empty_scene, tmp_path):
     """A checker with red/blue must show colour in a Workbench render,
     not grey — proving the diffuse_color sync makes Workbench honour the
     material (the shader graph alone would not)."""
-    from blended.capture.views import capture_views
-    from blended.ops.material_nodes import assign_procedural_material
+    from golem_blender.capture.views import capture_views
+    from golem_blender.ops.material_nodes import assign_procedural_material
 
     box = _box()
     assign_procedural_material(

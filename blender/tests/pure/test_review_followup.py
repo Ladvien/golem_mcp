@@ -1,7 +1,7 @@
 """Regression tests for the 2026-10-07 review follow-up (ISSUES.md S1-S3, P*, D*).
 
 Every test here failed on the code it guards before the fix, with the failure
-recorded in the matching MistakeRecord (``blended.evaluate.mistake_memory``).
+recorded in the matching MistakeRecord (``golem_blender.evaluate.mistake_memory``).
 """
 
 import sys
@@ -60,7 +60,7 @@ def test_a_raised_chunk_keeps_its_multiline_string_literals():
     """`indent()` put four spaces into the continuation lines of a triple-quoted
     string, so the replay built a different value than the run did (`NOTE` was
     'a\\n    b' instead of 'a\\nb')."""
-    from blended.evaluate.bench_bridge import RecordedCall, standalone_script
+    from golem_blender.evaluate.bench_bridge import RecordedCall, standalone_script
 
     call = RecordedCall(
         "run_python",
@@ -113,7 +113,7 @@ def test_a_watchdog_kill_mid_frame_reports_the_timeout_not_a_json_error(stub_cla
     """The watchdog kills the CLI mid-line; stdout then ends on `{"type":`, and
     `json.loads` of that fragment surfaced as JSONDecodeError instead of the
     'did not answer within' the caller handles."""
-    from blended.agent.claude_code import ClaudeCodeTransport
+    from golem_blender.agent.claude_code import ClaudeCodeTransport
 
     transport = ClaudeCodeTransport(
         WRITER_MODEL,
@@ -128,7 +128,7 @@ def test_a_watchdog_kill_mid_frame_reports_the_timeout_not_a_json_error(stub_cla
 def test_an_auth_status_that_is_not_a_json_object_is_a_failed_check(stub_claude):
     """`auth status` printing `[]` made `status.get` raise AttributeError, and
     only the json.loads line sat inside the try."""
-    from blended.agent.claude_code import ClaudeCodeTransport
+    from golem_blender.agent.claude_code import ClaudeCodeTransport
 
     transport = ClaudeCodeTransport(WRITER_MODEL, binary_path=str(stub_claude))
 
@@ -144,7 +144,7 @@ def test_an_auth_status_that_is_not_a_json_object_is_a_failed_check(stub_claude)
 def test_a_duplicate_skill_module_name_is_a_registry_problem(monkeypatch):
     """`registered` was a set, so a name listed twice collapsed to one and
     `validate_modules()` returned [] while `get_module` silently served the first."""
-    from blended.agent import skill_modules
+    from golem_blender.agent import skill_modules
 
     first = skill_modules.SKILL_MODULES[0]
     monkeypatch.setattr(

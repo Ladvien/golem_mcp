@@ -26,7 +26,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 RUNNER = REPOSITORY_ROOT / "scripts" / "run_3dcode_instance.py"
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
-from blended.agent.loop import (
+from golem_blender.agent.loop import (
     exhausted_credits_error,  # ONE definition of "out of credits"
 )
 

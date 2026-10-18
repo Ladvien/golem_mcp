@@ -16,7 +16,7 @@ def empty_scene():
 def _box_with_flipped_faces(name, flip_face_indices=None, flip_all=False):
     import bmesh
 
-    from blended.ops.primitives import remove_object_and_mesh
+    from golem_blender.ops.primitives import remove_object_and_mesh
 
     remove_object_and_mesh(name)
     mesh_data = bpy.data.meshes.new(name)
@@ -39,15 +39,15 @@ def _box_with_flipped_faces(name, flip_face_indices=None, flip_all=False):
 
 
 def test_clean_control_has_no_flipped_triangles(empty_scene):
-    from blended.analyze import analyze_object
-    from blended.builders import BarrelBuilder, BarrelParameters
+    from golem_blender.analyze import analyze_object
+    from golem_blender.builders import BarrelBuilder, BarrelParameters
 
     report = analyze_object(BarrelBuilder(BarrelParameters()).build())
     assert report.flipped_normal_triangle_count == 0
 
 
 def test_single_flipped_face_is_detected(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
+    from golem_blender.analyze import MeshBudget, analyze_object
 
     TRIANGLES_PER_QUAD = 2
     box_object = _box_with_flipped_faces("OneFlipped", flip_face_indices=[0])
@@ -68,7 +68,7 @@ def test_open_mesh_inverted_facet_is_counted(empty_scene):
     """
     import bmesh
 
-    from blended.analyze import MeshBudget, analyze_object
+    from golem_blender.analyze import MeshBudget, analyze_object
 
     mesh_data = bpy.data.meshes.new("OpenInverted")
     working_mesh = bmesh.new()
@@ -98,7 +98,7 @@ def test_open_mesh_inverted_facet_is_counted(empty_scene):
 def test_clean_open_box_reads_zero_inverted_facets(empty_scene):
     """A clean box, open or closed, must read zero inverted facets —
     the port must not have made every open mesh fail."""
-    from blended.analyze import analyze_object
+    from golem_blender.analyze import analyze_object
 
     box_object = _box_with_flipped_faces("CleanBox")
     report = analyze_object(box_object)

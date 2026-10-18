@@ -12,7 +12,7 @@ entry is a doc that lies — the exact failure class the repo's
 pin-verified-behavior rule exists to prevent.
 """
 
-from blended.evaluate.briefs import (
+from golem_blender.evaluate.briefs import (
     SOURCE_ART_DIRECTION,
     SOURCE_LITERATURE,
     STOOL_LEG_COUNT,
@@ -64,7 +64,7 @@ def test_the_provenance_floor_does_not_slip():
     the briefs floor. Raise it when you instrument a brief — never
     lower it.
     """
-    from blended.evaluate.briefs import BRIEFS
+    from golem_blender.evaluate.briefs import BRIEFS
 
     instrumented = sorted(name for name, brief in BRIEFS.items() if brief.provenance)
     assert len(instrumented) >= MINIMUM_BRIEFS_WITH_PROVENANCE, (
@@ -79,7 +79,7 @@ def test_a_registry_key_that_disagrees_with_the_brief_name_is_reported():
     A mismatch reports a brief the caller cannot fetch. This replaced a
     name-uniqueness loop over a dict's keys, which could not fire.
     """
-    from blended.evaluate.briefs import BRIEFS
+    from golem_blender.evaluate.briefs import BRIEFS
 
     stray = AssetBrief(
         name="not_the_key",

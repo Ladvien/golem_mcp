@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from blended.agent.tool_disclosure import (
+from golem_blender.agent.tool_disclosure import (
     MINIMUM_BRIEFS_USING_OP,
     core_ops,
     derive_core_ops,
@@ -16,7 +16,7 @@ from blended.agent.tool_disclosure import (
     reader_ops,
     write_core_module,
 )
-from blended.agent.tools import (
+from golem_blender.agent.tools import (
     SERVICE_TOOL_NAMES,
     TOOL_SCHEMAS,
     TOOL_SCHEMAS_FINGERPRINT,
@@ -87,9 +87,9 @@ def test_the_generated_module_round_trips(tmp_path):
 
 # --- the loop offers the disclosed set and records what it offered ---
 
-from blended.agent.outcome import ToolOutcome
-from blended.agent.tool_event import TOOL_EVENT_KIND, decode_tool_event
-from blended.stages import STAGE_DONE
+from golem_blender.agent.outcome import ToolOutcome
+from golem_blender.agent.tool_event import TOOL_EVENT_KIND, decode_tool_event
+from golem_blender.stages import STAGE_DONE
 
 
 class _RecordingClient:
@@ -98,8 +98,8 @@ class _RecordingClient:
     def __init__(self, replies):
         import dataclasses
 
-        from blended.agent.claude_code import TurnCost
-        from blended.agent.loop import ModelConfig
+        from golem_blender.agent.claude_code import TurnCost
+        from golem_blender.agent.loop import ModelConfig
 
         self.replies = list(replies)
         self.spent = TurnCost()
@@ -128,7 +128,7 @@ def _ok(name, **validated):
 
 
 def test_the_client_is_shown_service_readers_and_core_and_nothing_else(tmp_path):
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     client = _RecordingClient([{"role": "assistant", "content": "nothing to build"}])
     session = AgentSession(
@@ -148,7 +148,7 @@ def test_the_client_is_shown_service_readers_and_core_and_nothing_else(tmp_path)
 
 
 def test_a_withheld_tool_leaves_the_offered_set_too(tmp_path):
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     client = _RecordingClient([{"role": "assistant", "content": "ok"}])
     session = AgentSession(
@@ -170,7 +170,7 @@ def test_a_withheld_tool_leaves_the_offered_set_too(tmp_path):
 def test_an_undisclosed_op_dispatches_by_name_after_search_ops(tmp_path):
     """The offered schemas shrink; the door does not. A model that found
     `boolean_union` through search_ops calls it like any other op."""
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     dispatched = []
 
@@ -209,8 +209,8 @@ def test_an_undisclosed_op_dispatches_by_name_after_search_ops(tmp_path):
 
 
 def test_the_cli_envelope_admits_an_undisclosed_op_by_name():
-    from blended.agent.claude_code import envelope_schema
-    from blended.agent.tools import OP_FUNCTIONS
+    from golem_blender.agent.claude_code import envelope_schema
+    from golem_blender.agent.tools import OP_FUNCTIONS
 
     offered = offered_tools(TOOL_SCHEMAS, core_ops(), SERVICE_TOOL_NAMES)
     variants = envelope_schema(offered)["properties"]["tool_calls"]["items"]["oneOf"]

@@ -1,8 +1,8 @@
-# blended — Backlog: ops vocabulary as the agent tool surface
+# golem_blender — Backlog: ops vocabulary as the agent tool surface
 
 **Date:** 2026-09-10
 **Baseline:** `main` @ `5764504`, per `docs/2026-09-10-specification-and-requirements.md`
-**Problem being solved:** OPS-1 says all sanctioned construction goes through `blended.ops` and callers are never handed raw `bpy`. AGT-1 hands the agent `run_python(source)`. The verified construction vocabulary is not the agent's ACI; the escape hatch is. This backlog closes that gap.
+**Problem being solved:** OPS-1 says all sanctioned construction goes through `golem_blender.ops` and callers are never handed raw `bpy`. AGT-1 hands the agent `run_python(source)`. The verified construction vocabulary is not the agent's ACI; the escape hatch is. This backlog closes that gap.
 
 ## How to read this document
 
@@ -17,14 +17,14 @@
 
 | Fact | Value | Source |
 |---|---|---|
-| Agent tools | 9 hand-written service tools + 52 generated op tools = 61 in `TOOL_SCHEMAS` (37 require a declared plan, 16 op tools are readers), fingerprint `t:0d039e177002` pinned; measured 2026-10-12 with OT-50 and OT-51 merged (OT-50 added `save_blend` and OT-51 four ops; on 2026-10-07 it was 8 + 48 = 56 and `t:fd10e7f510a8`; it was 42 ops, 50 tools and `t:1fe7f62007ef` when OT-3 closed; OT-13 and OT-14 added the ops) | `src/blended/agent/tools.py`, `_evaluate/golden/pinned_tool_schemas_fingerprint.txt`, `tests/pure/test_tool_schemas.py` |
+| Agent tools | 9 hand-written service tools + 52 generated op tools = 61 in `TOOL_SCHEMAS` (37 require a declared plan, 16 op tools are readers), fingerprint `t:0d039e177002` pinned; measured 2026-10-12 with OT-50 and OT-51 merged (OT-50 added `save_blend` and OT-51 four ops; on 2026-10-07 it was 8 + 48 = 56 and `t:fd10e7f510a8`; it was 42 ops, 50 tools and `t:1fe7f62007ef` when OT-3 closed; OT-13 and OT-14 added the ops) | `src/golem_blender/agent/tools.py`, `_evaluate/golden/pinned_tool_schemas_fingerprint.txt`, `tests/pure/test_tool_schemas.py` |
 | Construction path in the ACI | 52 generated op tools, bound, gated, plan-required unless readers; `run_python(source, reason)` is the escape hatch (OT-3–OT-7, closed) | AGT-1, AGT-3, AGT-21 |
 | Ops facade completeness | whole — every public op re-exported, builders import the facade only (OT-1, closed) | `tests/pure/test_one_path_ops.py` |
 | Op signature contract | enforced — names in, names out, units on quantities, no bpy types (OT-2, closed) | `tests/pure/test_ops_signature_contract.py` |
 | Shipped builders | 3 (crate, barrel, pallet) | OPS-15 |
-| Manifest generation | introspects ops modules for prose AND for tool schemas (OT-3, closed) | PRM-2, `src/blended/manifest.py`, `src/blended/agent/tool_schemas.py` |
+| Manifest generation | introspects ops modules for prose AND for tool schemas (OT-3, closed) | PRM-2, `src/golem_blender/manifest.py`, `src/golem_blender/agent/tool_schemas.py` |
 | Bench incumbent | `deepseek-v4-pro:cloud`, 6 rolls, 120/120 exec, `cd_pca` 0.0252 | `docs/2026-09-06-bench-panel-preregistration.md` |
-| Transcript schema | `TRANSCRIPT_SCHEMA_VERSION` 2: structured `tool_event` per call, `IterationRecord.tool_events` (OT-8, closed) | AGT-17, `src/blended/agent/tool_event.py` |
+| Transcript schema | `TRANSCRIPT_SCHEMA_VERSION` 2: structured `tool_event` per call, `IterationRecord.tool_events` (OT-8, closed) | AGT-17, `src/golem_blender/agent/tool_event.py` |
 | Retry / turn caps in the loop | gate-failure cap per object, 3 consecutive (OT-16); 1.7M-token budget per turn at the seam (OT-17, re-derived on the 50-tool lane); both closed | AGT-20, AGT-9 |
 
 ---
@@ -329,7 +329,7 @@ at 0.224/0.488. The knowledge is in the views, not the text.
 with the bench's own renderer; `run_3dcode_instance.py --reference-images-root` hands them
 to `AgentSession.send(reference_images=)` where the eye reads them for the blind writer;
 `bench_chain.sh REFERENCE_IMAGES=<root>` refuses a roll missing any instance's views before
-the sweep. One definition of the views: `blended.evaluate.bench_reference_views`.
+the sweep. One definition of the views: `golem_blender.evaluate.bench_reference_views`.
 **Why:** RESP (`10.48550/arXiv.2604.11082`): a relevant reference lifts recall by +0.30–0.49;
 the eye probe above says the same of proportions on this bench. The writer itself answers
 HTTP 400 to images through the daemon, so the eye-describes-the-views path is the only one.
@@ -374,7 +374,7 @@ split, the dispatched-minus-baked drop rate on each path, and the offered-tools 
 the turn carried. `scripts/finetune_hatch_mechanism.py` already computes every one of those
 from `.agent_transcript.txt` plus the baked script, so the analysis is written; the roll
 only has to produce the artifacts. **Secondary arm:** the same op format with the
-`run_python` chunk bullet REMOVED (`blended.evaluate.bench_task_prompt.CHUNK_RULE`), which
+`run_python` chunk bullet REMOVED (`golem_blender.evaluate.bench_task_prompt.CHUNK_RULE`), which
 tests whether the mandate is what puts a chunk first. One model, no new weights.
 **Why:** The cheap precondition ran first and shrank this item (`phaseA/hatch_mechanism.md`,
 2026-09-19). Measured there: the archive's op path is MORE reliable than A1's (7.0% of

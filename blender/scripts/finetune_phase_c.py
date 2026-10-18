@@ -27,10 +27,10 @@ Four sources, each counted on its own terms:
   (`scripts/finetune_hatch_mechanism.py`).
 * **`_evaluate/iterations.jsonl`**, the convergence loop's own records:
   only those carrying schema-2 `tool_events` are minable, and
-  `blended.agent.tool_event.decode_tool_event` refuses any other
+  `golem_blender.agent.tool_event.decode_tool_event` refuses any other
   version rather than guessing.
 * **`logs/chat-*.jsonl`**, the chat transcripts, read through
-  `blended.evaluate.candidate_ops.hatch_events_from_transcript` — the
+  `golem_blender.evaluate.candidate_ops.hatch_events_from_transcript` — the
   same reader `scripts/mine_candidate_ops.py` drives, not a second copy.
 
 Plus the op-coverage histogram over all `OP_FUNCTIONS`: an op that never
@@ -185,7 +185,7 @@ def summarise_pairs(pairs: list[dict]) -> dict:
 
 def iteration_records() -> dict:
     """What the convergence log holds, and how much of it is minable."""
-    from blended.agent.tool_event import (
+    from golem_blender.agent.tool_event import (
         TOOL_EVENT_SCHEMA_VERSION,
         decode_tool_event,
     )
@@ -227,7 +227,7 @@ def iteration_records() -> dict:
 
 def transcript_hatches() -> dict:
     """Hatch invocations in the chat transcripts, grouped by reason."""
-    from blended.evaluate.candidate_ops import (
+    from golem_blender.evaluate.candidate_ops import (
         UnminableRecord,
         hatch_events_from_transcript,
         normalize_reason,
@@ -271,7 +271,7 @@ def op_coverage(iterations: dict, scripts: dict) -> dict:
     tool events of the convergence log, and the ops the archived scripts
     call (`op_calls_in_scripts`, read off the emitted text).
     """
-    from blended.agent.tools import OP_FUNCTIONS
+    from golem_blender.agent.tools import OP_FUNCTIONS
 
     seen = Counter()
     for histogram in (iterations.get("tool_histogram", {}), scripts["histogram"]):
@@ -296,8 +296,8 @@ def op_calls_in_scripts(bench_root: Path, results_root_argument: str) -> dict:
     scripts themselves are the ground truth for op coverage in the
     benchmark corpus — `.agent_meta.json` only counts them.
     """
-    from blended.agent.tools import OP_FUNCTIONS
-    from blended.evaluate.bench_bridge import OP_HELPER_NAME
+    from golem_blender.agent.tools import OP_FUNCTIONS
+    from golem_blender.evaluate.bench_bridge import OP_HELPER_NAME
 
     results_root = bench_root / results_root_argument
     seen = Counter()

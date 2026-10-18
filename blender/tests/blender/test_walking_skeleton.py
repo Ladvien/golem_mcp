@@ -16,15 +16,15 @@ def empty_scene():
 
 
 def test_pinned_blender_series(empty_scene):
-    from blended.version import assert_supported_blender
+    from golem_blender.version import assert_supported_blender
 
     running_series = assert_supported_blender()
     assert len(running_series) == 2
 
 
 def test_crate_builds_and_passes_the_gate(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.builders import CrateBuilder, CrateParameters
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.builders import CrateBuilder, CrateParameters
 
     crate_object = CrateBuilder(CrateParameters()).build()
 
@@ -37,8 +37,8 @@ def test_crate_builds_and_passes_the_gate(empty_scene):
 
 def test_analyzer_can_fail_on_seeded_defect(empty_scene):
     """The gate must be able to fail — a gate that cannot fail is not a gate."""
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     open_box = bpy.data.objects[
         add_box("OpenBox", width_m=1.0, depth_m=1.0, height_m=1.0)
@@ -60,9 +60,9 @@ def test_analyzer_can_fail_on_seeded_defect(empty_scene):
 
 
 def test_capture_renders_all_four_views(empty_scene, tmp_path):
-    from blended.builders import CrateBuilder, CrateParameters
-    from blended.capture import capture_views
-    from blended.capture.views import VIEW_DIRECTIONS
+    from golem_blender.builders import CrateBuilder, CrateParameters
+    from golem_blender.capture import capture_views
+    from golem_blender.capture.views import VIEW_DIRECTIONS
 
     crate_object = CrateBuilder(CrateParameters()).build()
     captured = capture_views(crate_object, tmp_path)
@@ -75,7 +75,7 @@ def test_capture_renders_all_four_views(empty_scene, tmp_path):
 
 def test_add_box_is_idempotent_by_name(empty_scene):
     """Rebuilding under the same name replaces, never creates '.001'."""
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     first_box = add_box("SameName", width_m=1.0, depth_m=1.0, height_m=1.0)
     link_into_scene(first_box)

@@ -81,7 +81,7 @@ def _now() -> str:
 
 
 def _client(model: str, vision_model: str):
-    from blended.agent.loop import ModelConfig, OllamaClient
+    from golem_blender.agent.loop import ModelConfig, OllamaClient
 
     overrides = {}
     if model:
@@ -99,8 +99,8 @@ def preflight(arguments, brief_names) -> list[str]:
     an unlicensed examiner stops the session here rather than producing
     unattributable verdicts.
     """
-    from blended.agent.prompt_versions import latest_revision, validate_revisions
-    from blended.evaluate.examiner import (
+    from golem_blender.agent.prompt_versions import latest_revision, validate_revisions
+    from golem_blender.evaluate.examiner import (
         EXAMINED_VIEW_NAMES,
         ExaminerError,
         examiner_identity,
@@ -219,7 +219,7 @@ def classify(record, verdict, history) -> tuple[str, str]:
     where a MEASUREMENT (not a model) says the agent got it wrong may
     edit the prompt.
     """
-    from blended.evaluate.iteration_log import (
+    from golem_blender.evaluate.iteration_log import (
         CLASSIFICATION_BAD_BRIEF,
         CLASSIFICATION_HARNESS_CODE,
         CLASSIFICATION_HARNESS_CRITIQUE,
@@ -426,9 +426,9 @@ def write_pin_proposal(
 
 def propose_only(arguments) -> int:
     """The ADJUST machinery, printed. No Blender, no writes."""
-    from blended.agent import prompt_search
-    from blended.agent.prompt_versions import latest_revision
-    from blended.evaluate.iteration_log import IterationLog
+    from golem_blender.agent import prompt_search
+    from golem_blender.agent.prompt_versions import latest_revision
+    from golem_blender.evaluate.iteration_log import IterationLog
 
     records = IterationLog(Path(arguments.log)).records()
     selected = [
@@ -482,11 +482,11 @@ def propose_only(arguments) -> int:
 def main(argv=None) -> int:
     arguments = parse_arguments(argv)
 
-    from blended.agent import prompt_search
-    from blended.agent.prompt_versions import get_revision
-    from blended.evaluate.briefs import BRIEFS
-    from blended.evaluate.examiner import calibration_file_identity, examiner_identity
-    from blended.evaluate.iteration_log import (
+    from golem_blender.agent import prompt_search
+    from golem_blender.agent.prompt_versions import get_revision
+    from golem_blender.evaluate.briefs import BRIEFS
+    from golem_blender.evaluate.examiner import calibration_file_identity, examiner_identity
+    from golem_blender.evaluate.iteration_log import (
         CLASSIFICATION_PROMPT,
         IterationLog,
         VerdictLog,
@@ -695,10 +695,10 @@ def adjust(arguments, failing_records) -> tuple[str, int | None]:
     was refused, either by the admissibility filter, by the registry, or
     by the screening run.
     """
-    from blended.agent import prompt_search
-    from blended.agent.prompt_versions import latest_revision
+    from golem_blender.agent import prompt_search
+    from golem_blender.agent.prompt_versions import latest_revision
 
-    package_directory = REPOSITORY_ROOT / "src" / "blended" / "agent"
+    package_directory = REPOSITORY_ROOT / "src" / "golem_blender" / "agent"
     body = latest_revision().body
     evidence = prompt_search.gate_evidence(failing_records)
     client = _client(arguments.model, arguments.vision_model)
@@ -726,7 +726,7 @@ def adjust(arguments, failing_records) -> tuple[str, int | None]:
     # pulls), ranked lexicographically by
     # (form failures, structural failures, tool calls).
     failing_brief = failing_records[0].brief_name
-    from blended.evaluate.iteration_log import IterationLog
+    from golem_blender.evaluate.iteration_log import IterationLog
 
     log = IterationLog(Path(arguments.log))
     for (index,), candidate in screened:

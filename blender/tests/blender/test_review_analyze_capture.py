@@ -64,8 +64,8 @@ def test_reverted_fill_keeps_the_cleanup_that_preceded_it(empty_scene):
     revert restored the untouched ORIGINAL mesh (the snapshot was copied
     from blender_object.data before the bmesh edits were written back),
     so both loose vertices were back and the component count was 3."""
-    from blended.analyze import analyze_object
-    from blended.ingest import CleanupSettings, cleanup_mesh
+    from golem_blender.analyze import analyze_object
+    from golem_blender.ingest import CleanupSettings, cleanup_mesh
 
     scene_object = _folded_hole_object_with_loose_vertices("FoldedHoleLoose")
     vertex_count_before = len(scene_object.data.vertices)
@@ -86,7 +86,7 @@ def test_reverted_fill_keeps_the_cleanup_that_preceded_it(empty_scene):
 
 
 def test_analyzer_gate_fails_an_empty_mesh(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
+    from golem_blender.analyze import MeshBudget, analyze_object
 
     mesh_data = bpy.data.meshes.new("Nothing")
     empty_object = bpy.data.objects.new("Nothing", mesh_data)
@@ -150,7 +150,7 @@ def test_drift_signatures_match_the_error_blender_really_raises(
     `is invalid` while Blender says `unrecognized`."""
     import traceback
 
-    from blended.drift.catalog import match_traceback
+    from golem_blender.drift.catalog import match_traceback
 
     with pytest.raises(Exception) as raised:
         raising_call()

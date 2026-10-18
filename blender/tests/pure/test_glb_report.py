@@ -13,7 +13,7 @@ import struct
 
 import pytest
 
-from blended.export.glb_report import (
+from golem_blender.export.glb_report import (
     GLB_CHUNK_HEADER_SIZE_BYTES,
     GLB_HEADER_SIZE_BYTES,
     GLB_MAGIC,

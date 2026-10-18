@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from blended.agent.loop import (
+from golem_blender.agent.loop import (
     VISION_DESCRIBE_PROMPT,
     ModelConfig,
     OllamaClient,

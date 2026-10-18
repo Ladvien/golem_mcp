@@ -1,8 +1,8 @@
 """Agent-directed feedback: pure logic, no bpy."""
 
-from blended.analyze.mesh_checks import MeshReport
-from blended.harness import HarnessResult
-from blended.task import AgentTask, build_gate_feedback
+from golem_blender.analyze.mesh_checks import MeshReport
+from golem_blender.harness import HarnessResult
+from golem_blender.task import AgentTask, build_gate_feedback
 
 TASK = AgentTask(object_name="Widget", description="Build a widget.")
 

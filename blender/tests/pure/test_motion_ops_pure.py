@@ -1,6 +1,6 @@
 """OT-51: what the motion ops promise without Blender or numpy.
 
-The numerics sit in skinclip, which imports numpy; blended puts its venv
+The numerics sit in skinclip, which imports numpy; golem_blender puts its venv
 ahead of Blender's own site-packages, so a numpy wheel in the venv would
 shadow Blender's. The facade, the MCP server and this layer therefore
 must import the ops with numpy absent: skinclip is imported inside op
@@ -13,11 +13,11 @@ import sys
 import pytest
 from skinclip.spec import RingSkirtSpec
 
-import blended.ops as ops_facade
-from blended.agent.op_call import call_op
-from blended.manifest import OP_CONFIG_DATACLASSES, OP_MODULE_NAMES
-from blended.ops._contract import changes_scene, is_gated, is_reads_only
-from blended.ops.motion import ArmatureRotationModeError, bake_cloth_chains
+import golem_blender.ops as ops_facade
+from golem_blender.agent.op_call import call_op
+from golem_blender.manifest import OP_CONFIG_DATACLASSES, OP_MODULE_NAMES
+from golem_blender.ops._contract import changes_scene, is_gated, is_reads_only
+from golem_blender.ops.motion import ArmatureRotationModeError, bake_cloth_chains
 
 MOTION_READERS = ("body_capsules_report", "clip_self_intersection_report")
 MOTION_WRITERS = ("bake_cloth_chains", "repair_limb_penetration")
@@ -25,13 +25,13 @@ MOTION_WRITERS = ("bake_cloth_chains", "repair_limb_penetration")
 BLOCKED_IMPORT_PROGRAM = """
 import sys
 sys.modules["numpy"] = None   # an import of numpy now raises ImportError
-import blended.ops, blended.manifest
-from blended.manifest import build_manifest
+import golem_blender.ops, golem_blender.manifest
+from golem_blender.manifest import build_manifest
 build_manifest()
-import blended.ops.motion
+import golem_blender.ops.motion
 import skinclip.spec
-assert blended.ops.RingSkirtSpec is skinclip.spec.RingSkirtSpec
-print("IMPORTED", len(blended.ops.__all__))
+assert golem_blender.ops.RingSkirtSpec is skinclip.spec.RingSkirtSpec
+print("IMPORTED", len(golem_blender.ops.__all__))
 """
 
 
@@ -41,7 +41,7 @@ def test_the_ops_import_with_numpy_unavailable():
         capture_output=True,
         text=True,
         check=False,
-        env={"BLENDED_DISABLE_PLUGINS": "1", "PATH": ""},
+        env={"GOLEM_BLENDER_DISABLE_PLUGINS": "1", "PATH": ""},
     )
 
     assert result.returncode == 0, result.stderr
@@ -59,7 +59,7 @@ def test_the_readers_are_plan_free_and_the_writers_are_not():
 
 def test_the_module_is_in_the_manifest_and_its_config_object_is_documented():
     assert "motion" in OP_MODULE_NAMES
-    assert ("blended.ops.motion", "RingSkirtSpec") in OP_CONFIG_DATACLASSES
+    assert ("golem_blender.ops.motion", "RingSkirtSpec") in OP_CONFIG_DATACLASSES
 
 
 def test_the_rotation_mode_error_is_a_value_error_on_the_facade():

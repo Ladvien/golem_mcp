@@ -18,7 +18,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
-from blended.evaluate.iteration_log import (
+from golem_blender.evaluate.iteration_log import (
     DEFAULT_VERDICT_PATH,
     HUMAN_EXAMINER,
     IterationVerdict,

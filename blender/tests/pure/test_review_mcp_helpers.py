@@ -6,9 +6,9 @@ Each test drives the fixed path with data that fails on the old code:
 
 * ``search`` folded overlapping matches into one hit but left the hit's
   ``text`` at the seed's window, so a folded match was scored yet never shown.
-* ``BlendedSession.resume`` read the handoff as UTF-8 outside its ``try``, so a
+* ``GolemBlenderSession.resume`` read the handoff as UTF-8 outside its ``try``, so a
   corrupt handoff crashed server start-up and was never consumed.
-* ``blended_bridge`` left three public module constants out of ``__all__``,
+* ``golem_blender_bridge`` left three public module constants out of ``__all__``,
   failing ``blender_mcp/_misc/check_namespace.py`` (``make check_namespace``).
 """
 
@@ -35,7 +35,7 @@ pytest.importorskip("docutils")
 pytest.importorskip("mcp")
 
 from blmcp.tools_helpers import (
-    blended_bridge,
+    golem_blender_bridge,
     rst_doc_search,
     rst_parse_docs,
 )
@@ -103,13 +103,13 @@ def test_handoff_that_is_not_utf8_is_refused_loudly_and_consumed() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         log_directory = Path(tmp) / "logs"
         log_directory.mkdir()
-        path = blended_bridge.handoff_path(log_directory, parent_pid)
+        path = golem_blender_bridge.handoff_path(log_directory, parent_pid)
         path.write_bytes(b"\xff\xfe not json")
         stderr = io.StringIO()
         with mock.patch.object(
-            blended_bridge, "sys", types.SimpleNamespace(stderr=stderr)
+            golem_blender_bridge, "sys", types.SimpleNamespace(stderr=stderr)
         ):
-            session = blended_bridge.BlendedSession.resume(
+            session = golem_blender_bridge.GolemBlenderSession.resume(
                 log_directory,
                 Path(tmp) / "outputs",
                 parent_pid,
@@ -123,7 +123,7 @@ def test_handoff_that_is_not_utf8_is_refused_loudly_and_consumed() -> None:
 
 def test_missing_handoff_starts_a_new_session() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        session = blended_bridge.BlendedSession.resume(
+        session = golem_blender_bridge.GolemBlenderSession.resume(
             Path(tmp) / "logs", Path(tmp) / "outputs", 1
         )
     assert not session.plan_declared
@@ -135,7 +135,7 @@ def test_bridge_module_passes_check_namespace() -> None:
         [
             sys.executable,
             str(REPOSITORY_ROOT / "blender_mcp" / "_misc" / "check_namespace.py"),
-            str(Path(blended_bridge.__file__)),
+            str(Path(golem_blender_bridge.__file__)),
         ],
         capture_output=True,
         text=True,

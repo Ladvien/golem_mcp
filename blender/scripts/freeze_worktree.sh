@@ -26,8 +26,8 @@ set -u
 
 : ${FREEZE_ROOT:=$HOME/golem_mcp-worktrees}
 REPOSITORY=${REPOSITORY:-$(cd "$(dirname "$0")/.." && pwd)}
-# blended is the blender/ directory of the golem_mcp repository: a freeze is a worktree of the whole
-# repository, and the frozen blended tree (what this script prints) is the same directory inside it.
+# golem_blender is the blender/ directory of the golem_mcp repository: a freeze is a worktree of the whole
+# repository, and the frozen golem_blender tree (what this script prints) is the same directory inside it.
 PREFIX=$(git -C "$REPOSITORY" rev-parse --show-prefix 2>/dev/null)
 PREFIX=${PREFIX%/}
 
@@ -78,7 +78,7 @@ esac
 
 COMMIT=$(git -C "$REPOSITORY" rev-parse --short "$1") || exit 2
 TREE=$FREEZE_ROOT/$COMMIT
-# A commit from before blended was imported under blender/ (40b027d) has its
+# A commit from before golem_blender was imported under blender/ (40b027d) has its
 # tree at the repository root; freeze those at the root of the worktree.
 if [ -n "$PREFIX" ] && git -C "$REPOSITORY" cat-file -e "$COMMIT:$PREFIX" 2>/dev/null; then
   FROZEN=$TREE/$PREFIX

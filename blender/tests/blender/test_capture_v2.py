@@ -48,9 +48,9 @@ def _image_luminance(image_path):
 
 
 def test_contact_sheet_tiles_every_view(empty_scene, tmp_path):
-    from blended.analyze import analyze_object
-    from blended.builders import CrateBuilder, CrateParameters
-    from blended.capture import capture_contact_sheet
+    from golem_blender.analyze import analyze_object
+    from golem_blender.builders import CrateBuilder, CrateParameters
+    from golem_blender.capture import capture_contact_sheet
 
     crate_object = CrateBuilder(CrateParameters()).build()
     report = analyze_object(crate_object)
@@ -69,8 +69,8 @@ def test_xray_reveals_hidden_geometry(empty_scene, tmp_path):
     when X-ray is on."""
     import numpy
 
-    from blended.capture import CaptureSettings, capture_views
-    from blended.ops import add_box, link_into_scene
+    from golem_blender.capture import CaptureSettings, capture_views
+    from golem_blender.ops import add_box, link_into_scene
 
     outer_box = bpy.data.objects[add_box("OuterShell", 1.0, 1.0, 1.0)]
     link_into_scene(outer_box.name)
@@ -98,9 +98,9 @@ def test_xray_reveals_hidden_geometry(empty_scene, tmp_path):
 def test_numpy_compositor_tiles_views_into_one_sheet(empty_scene, tmp_path):
     """The Pillow-free path must produce a real sheet, since Blender
     bundles numpy but not Pillow. This is the path production uses."""
-    from blended.builders import CrateBuilder, CrateParameters
-    from blended.capture import capture_views
-    from blended.capture.compose import compose_grid_numpy
+    from golem_blender.builders import CrateBuilder, CrateParameters
+    from golem_blender.capture import capture_views
+    from golem_blender.capture.compose import compose_grid_numpy
 
     crate_object = CrateBuilder(CrateParameters()).build()
     view_paths = capture_views(crate_object, tmp_path)
@@ -115,9 +115,9 @@ def test_numpy_compositor_tiles_views_into_one_sheet(empty_scene, tmp_path):
 
 def test_contact_sheet_composes_without_pillow(empty_scene, tmp_path, monkeypatch):
     """Forced down the Pillow-free branch even on a box that has Pillow."""
-    import blended.capture.compose as compose_module
-    from blended.builders import CrateBuilder, CrateParameters
-    from blended.capture import capture_contact_sheet
+    import golem_blender.capture.compose as compose_module
+    from golem_blender.builders import CrateBuilder, CrateParameters
+    from golem_blender.capture import capture_contact_sheet
 
     numpy_sheet_paths = []
     real_compose_grid_numpy = compose_module.compose_grid_numpy
@@ -144,7 +144,7 @@ def test_the_sheet_can_see_underneath(empty_scene, tmp_path):
     they overlap. Neither can answer "are the legs evenly spaced". Only
     a view from below has no occluder.
     """
-    from blended.capture.views import ORTHOGRAPHIC_VIEWS, VIEW_DIRECTIONS
+    from golem_blender.capture.views import ORTHOGRAPHIC_VIEWS, VIEW_DIRECTIONS
 
     assert VIEW_DIRECTIONS["bottom"] == (0.0, 0.0, -1.0)
     assert "bottom" in ORTHOGRAPHIC_VIEWS
@@ -152,8 +152,8 @@ def test_the_sheet_can_see_underneath(empty_scene, tmp_path):
 
 
 def test_every_named_view_is_actually_rendered(empty_scene, tmp_path):
-    from blended.capture.views import VIEW_DIRECTIONS, capture_views
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.capture.views import VIEW_DIRECTIONS, capture_views
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     box = bpy.data.objects[add_box("ViewBox", 0.4, 0.3, 0.2)]
     link_into_scene(box.name)

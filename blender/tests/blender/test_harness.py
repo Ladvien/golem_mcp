@@ -14,8 +14,8 @@ def empty_scene():
 
 
 def test_run_builder_full_loop_with_export(empty_scene, tmp_path):
-    from blended.builders import PalletBuilder, PalletParameters
-    from blended.harness import HarnessSettings, run_builder
+    from golem_blender.builders import PalletBuilder, PalletParameters
+    from golem_blender.harness import HarnessSettings, run_builder
 
     result = run_builder(
         PalletBuilder(PalletParameters()),
@@ -40,7 +40,7 @@ def test_a_glb_export_without_a_blend_path_is_refused_before_building(
     """OT-50: every exported asset ships with its .blend. The harness has
     no default beside the .glb, so the run fails loudly before the builder
     runs and nothing is written."""
-    from blended.harness import HarnessSettings, run_builder
+    from golem_blender.harness import HarnessSettings, run_builder
 
     class ExplodingBuilder:
         def build(self):
@@ -59,7 +59,7 @@ def test_a_glb_export_without_a_blend_path_is_refused_before_building(
 def test_run_chunk_retries_and_logs(empty_scene, tmp_path):
     import json
 
-    from blended.harness import HarnessSettings, run_chunk
+    from golem_blender.harness import HarnessSettings, run_chunk
     from tests.blender.test_retry import (
         BROKEN_SMOOTH_CRATE_SOURCE,
         FIXED_SMOOTH_CRATE_SOURCE,
@@ -81,14 +81,14 @@ def test_run_chunk_retries_and_logs(empty_scene, tmp_path):
 
 
 def test_gate_failure_still_produces_review_sheet(empty_scene, tmp_path):
-    from blended.harness import HarnessSettings, run_chunk
+    from golem_blender.harness import HarnessSettings, run_chunk
 
     OPEN_BOX_SOURCE = """
 import sys
 sys.path.insert(0, "src")
 import bmesh
 import bpy
-from blended.ops import add_box, link_into_scene
+from golem_blender.ops import add_box, link_into_scene
 
 open_box = add_box("OpenChunk", 1.0, 1.0, 1.0)
 link_into_scene(open_box)
@@ -108,7 +108,7 @@ working.to_mesh(bpy.data.objects[open_box].data); working.free()
 
 
 def test_missing_object_is_a_distinct_failure(empty_scene, tmp_path):
-    from blended.harness import HarnessSettings, run_chunk
+    from golem_blender.harness import HarnessSettings, run_chunk
 
     result = run_chunk(
         "x = 1",
@@ -130,12 +130,12 @@ def test_an_unlinked_object_fails_the_gate(empty_scene, tmp_path):
     have been absent from any export, because `export_glb` writes the
     SCENE.
     """
-    from blended.harness import HarnessSettings, run_chunk
+    from golem_blender.harness import HarnessSettings, run_chunk
 
     UNLINKED_SOURCE = """
 import sys
 sys.path.insert(0, "src")
-from blended.ops import add_box
+from golem_blender.ops import add_box
 
 add_box("Orphan", 1.0, 1.0, 1.0)
 """
@@ -152,12 +152,12 @@ add_box("Orphan", 1.0, 1.0, 1.0)
 
 def test_a_linked_object_passes_the_same_gate(empty_scene, tmp_path):
     """The control: the only difference is the link call."""
-    from blended.harness import HarnessSettings, run_chunk
+    from golem_blender.harness import HarnessSettings, run_chunk
 
     LINKED_SOURCE = """
 import sys
 sys.path.insert(0, "src")
-from blended.ops import add_box, link_into_scene
+from golem_blender.ops import add_box, link_into_scene
 
 link_into_scene(add_box("Linked", 1.0, 1.0, 1.0))
 """
@@ -180,12 +180,12 @@ def test_the_summary_tells_the_writer_where_the_extents_landed(empty_scene, tmp_
     its middle extent (0.6) on z while the canonical depth axis is y, so
     the summary must name both.
     """
-    from blended.harness import HarnessSettings, run_chunk
+    from golem_blender.harness import HarnessSettings, run_chunk
 
     OBLONG_SOURCE = """
 import sys
 sys.path.insert(0, "src")
-from blended.ops import add_box, link_into_scene
+from golem_blender.ops import add_box, link_into_scene
 
 link_into_scene(add_box("Oblong", 0.9, 0.3, 0.6))
 """
@@ -209,7 +209,7 @@ QUARTER_TURN_RAD = 3.141592653589793 / 2.0
 ROTATED_OBLONG_SOURCE = f"""
 import sys
 sys.path.insert(0, "src")
-from blended.ops import add_box, link_into_scene, rotate_object_euler
+from golem_blender.ops import add_box, link_into_scene, rotate_object_euler
 
 link_into_scene(add_box("Oblong", 0.9, 0.3, 0.6))
 rotate_object_euler("Oblong", x_rad={QUARTER_TURN_RAD!r})
@@ -226,8 +226,8 @@ def test_the_reading_and_the_op_measure_the_same_box(empty_scene, tmp_path):
     the middle extent already sat on y. The harness told the writer one
     axis assignment and applied another.
     """
-    from blended.harness import HarnessSettings, run_chunk
-    from blended.ops import canonical_depth_axis_rotation_euler_rad
+    from golem_blender.harness import HarnessSettings, run_chunk
+    from golem_blender.ops import canonical_depth_axis_rotation_euler_rad
 
     result = run_chunk(
         ROTATED_OBLONG_SOURCE,
@@ -249,8 +249,8 @@ def test_the_reading_and_the_op_measure_the_same_box(empty_scene, tmp_path):
 
 def test_inspect_object_and_list_scene_read_the_world_box(empty_scene, tmp_path):
     """OT-34, the tools the writer checks its own work with."""
-    from blended.agent.tools import dispatch_tool
-    from blended.harness import HarnessSettings, run_chunk
+    from golem_blender.agent.tools import dispatch_tool
+    from golem_blender.harness import HarnessSettings, run_chunk
 
     result = run_chunk(
         ROTATED_OBLONG_SOURCE,
@@ -271,7 +271,7 @@ def test_inspect_object_and_list_scene_read_the_world_box(empty_scene, tmp_path)
 
 def _visible_box(name: str):
     """A gate-clean, linked, visible cube — the control for every case."""
-    from blended.ops import add_box, link_into_scene
+    from golem_blender.ops import add_box, link_into_scene
 
     built = add_box(name, 1.0, 1.0, 1.0)
     link_into_scene(built)
@@ -288,7 +288,7 @@ def test_every_invisibility_cause_is_named_not_just_detected(empty_scene):
     """
     import bpy
 
-    from blended.harness import invisibility_failure
+    from golem_blender.harness import invisibility_failure
 
     control = _visible_box("Control")
     assert invisibility_failure(control) == ""
@@ -324,13 +324,13 @@ def test_an_unrenderable_object_fails_even_though_it_is_visible(empty_scene, tmp
     loses the object. Measured on the harness's own sheet: 634280 bytes
     with the object, 318310 without.
     """
-    from blended.harness import HarnessSettings, run_chunk
+    from golem_blender.harness import HarnessSettings, run_chunk
 
     UNRENDERABLE_SOURCE = """
 import sys
 sys.path.insert(0, "src")
 import bpy
-from blended.ops import add_box, link_into_scene
+from golem_blender.ops import add_box, link_into_scene
 
 built = add_box("Ghost", 1.0, 1.0, 1.0)
 link_into_scene(built)
@@ -351,7 +351,7 @@ def test_inspect_object_agrees_with_the_gate(empty_scene, tmp_path):
     it — one shared rule, one verdict."""
     import bpy
 
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     hidden = _visible_box("Checked")
     hidden.hide_viewport = True
@@ -379,7 +379,7 @@ def test_a_collapsed_or_non_finite_transform_fails_the_gate(empty_scene):
     """
     import bpy
 
-    from blended.harness import degenerate_transform_failure
+    from golem_blender.harness import degenerate_transform_failure
 
     control = _visible_box("Control")
     assert degenerate_transform_failure(control) == ""
@@ -411,7 +411,7 @@ def test_legitimate_scales_are_left_alone(empty_scene):
     scale has determinant 1e-9)."""
     import bpy
 
-    from blended.harness import degenerate_transform_failure
+    from golem_blender.harness import degenerate_transform_failure
 
     stretched = _visible_box("Stretched")
     stretched.scale = (10.0, 1.0, 1.0)
@@ -431,13 +431,13 @@ def test_legitimate_scales_are_left_alone(empty_scene):
 
 def test_the_gate_reports_a_broken_transform_through_run_chunk(empty_scene, tmp_path):
     """End to end: the model must read the cause in the tool result."""
-    from blended.harness import HarnessSettings, run_chunk
+    from golem_blender.harness import HarnessSettings, run_chunk
 
     COLLAPSED_SOURCE = """
 import sys
 sys.path.insert(0, "src")
 import bpy
-from blended.ops import add_box, link_into_scene
+from golem_blender.ops import add_box, link_into_scene
 
 built = add_box("Flat", 1.0, 1.0, 1.0)
 link_into_scene(built)

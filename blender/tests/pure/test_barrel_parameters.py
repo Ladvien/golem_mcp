@@ -2,7 +2,7 @@
 
 import pytest
 
-from blended.builders.barrel import BarrelParameters
+from golem_blender.builders.barrel import BarrelParameters
 
 
 def test_default_parameters_validate():

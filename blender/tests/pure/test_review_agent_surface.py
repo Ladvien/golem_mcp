@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from blended.agent.claude_code import ClaudeCodeTransport
-from blended.agent.tools import dispatch_tool
+from golem_blender.agent.claude_code import ClaudeCodeTransport
+from golem_blender.agent.tools import dispatch_tool
 
 WRITER_MODEL = "claude-code:sonnet"
 # Larger than any OS pipe buffer (64 KiB on Linux, 16-64 KiB on macOS).

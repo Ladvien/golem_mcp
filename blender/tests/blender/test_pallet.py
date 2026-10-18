@@ -14,8 +14,8 @@ def empty_scene():
 
 
 def test_pallet_passes_the_gate_as_one_solid(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
-    from blended.builders import PalletBuilder, PalletParameters
+    from golem_blender.analyze import MeshBudget, analyze_object
+    from golem_blender.builders import PalletBuilder, PalletParameters
 
     pallet_object = PalletBuilder(PalletParameters()).build()
     report = analyze_object(pallet_object)
@@ -25,7 +25,7 @@ def test_pallet_passes_the_gate_as_one_solid(empty_scene):
 
 
 def test_pallet_dimensions_match_parameters(empty_scene):
-    from blended.builders import PalletBuilder, PalletParameters
+    from golem_blender.builders import PalletBuilder, PalletParameters
 
     DIMENSION_TOLERANCE_M = 1.0e-4
     parameters = PalletParameters()
@@ -43,9 +43,9 @@ def test_pallet_dimensions_match_parameters(empty_scene):
 def test_array_intermediate_is_multi_component_by_design(empty_scene):
     """Document the honest intermediate: an applied array alone is N
     islands — only the union step earns the single-component verdict."""
-    from blended.analyze import analyze_object
-    from blended.ops import add_box, link_into_scene
-    from blended.ops.arrays import linear_array
+    from golem_blender.analyze import analyze_object
+    from golem_blender.ops import add_box, link_into_scene
+    from golem_blender.ops.arrays import linear_array
 
     board_name = add_box("LoneBoards", 0.1, 0.5, 0.02)
     link_into_scene(board_name)

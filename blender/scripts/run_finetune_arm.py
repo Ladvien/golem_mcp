@@ -28,7 +28,7 @@ Two output formats reach the SAME scored artifact, `<model-dir>/<inst>/<inst>.py
             `scripts/run_3dcode_instance.py` does for a production roll.
 * `raw`   — the reply's Python is written verbatim, with NO prelude and
             NO epilogue: a raw script has to stand alone, and the
-            epilogue imports `blended`. `cd_yawmin` is therefore never
+            epilogue imports `golem_blender`. `cd_yawmin` is therefore never
             compared across formats; `cd_pca` quotients orientation out
             and is what the arms are compared on.
 
@@ -135,9 +135,9 @@ def main(argv) -> int:
             f"{ARMS[arguments.arm]['model']!r}, not {model!r}"
         )
 
-    from blended.agent.loop import ModelConfig, OllamaClient
-    from blended.agent.system_prompt import assembled_prompt_fingerprint
-    from blended.agent.tools import TOOL_SCHEMAS, TOOL_SCHEMAS_FINGERPRINT
+    from golem_blender.agent.loop import ModelConfig, OllamaClient
+    from golem_blender.agent.system_prompt import assembled_prompt_fingerprint
+    from golem_blender.agent.tools import TOOL_SCHEMAS, TOOL_SCHEMAS_FINGERPRINT
 
     bench_root = Path(arguments.bench_root).resolve()
     prompt_path = bench_root / "data" / arguments.instance / PROMPT_FILENAME
@@ -162,8 +162,8 @@ def main(argv) -> int:
     )
 
     if arguments.format == "ops":
-        from blended.agent.system_prompt import build_system_prompt
-        from blended.evaluate.bench_task_prompt import (
+        from golem_blender.agent.system_prompt import build_system_prompt
+        from golem_blender.evaluate.bench_task_prompt import (
             SINGLE_SHOT_OPS_TASK_TEMPLATE,
         )
 
@@ -171,7 +171,7 @@ def main(argv) -> int:
         user_text = SINGLE_SHOT_OPS_TASK_TEMPLATE.format(description=description)
         offered = TOOL_SCHEMAS
     else:
-        from blended.evaluate.raw_bpy_arm import raw_system_prompt, raw_task_text
+        from golem_blender.evaluate.raw_bpy_arm import raw_system_prompt, raw_task_text
 
         system_text = raw_system_prompt(bench_root)
         user_text = raw_task_text(description)
@@ -262,7 +262,7 @@ def main(argv) -> int:
 
 def _finish_raw(assistant: dict, record: dict, script_path: Path) -> int:
     """Write the reply's Python verbatim, or record which stage failed."""
-    from blended.evaluate.raw_bpy_arm import extract_python, parses
+    from golem_blender.evaluate.raw_bpy_arm import extract_python, parses
 
     reply = assistant.get("content", "") or ""
     record["raw_output"] = reply
@@ -289,8 +289,8 @@ def _finish_ops(
     """Dispatch the reply's tool calls here, then lower them to a script."""
     import bpy
 
-    from blended.agent.loop import dispatch_here
-    from blended.evaluate.bench_bridge import (
+    from golem_blender.agent.loop import dispatch_here
+    from golem_blender.evaluate.bench_bridge import (
         HATCH_TOOL_NAME,
         RecordedCall,
         canonical_orientation_epilogue,

@@ -24,7 +24,7 @@ def empty_scene():
 
 
 def _rigged_animated_textured_box():
-    from blended.ops import (
+    from golem_blender.ops import (
         BoneSpec,
         add_armature,
         add_box,
@@ -60,7 +60,7 @@ def _rigged_animated_textured_box():
 
 
 def _inspect(object_name, domain, tmp_path):
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _outcome = dispatch_tool(
         "inspect_domain", {"object_name": object_name, "domain": domain}, tmp_path
@@ -92,7 +92,7 @@ def test_every_domain_reports_the_built_state(empty_scene, tmp_path):
 
 
 def test_a_wrong_object_type_is_named_not_crashed(empty_scene, tmp_path):
-    from blended.agent.tools import dispatch_tool
+    from golem_blender.agent.tools import dispatch_tool
 
     _rigged_animated_textured_box()
     _outcome = dispatch_tool(

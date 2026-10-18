@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from blended.evaluate.bench_reference_views import (  # ONE definition of the views
+from golem_blender.evaluate.bench_reference_views import (  # ONE definition of the views
     REFERENCE_IMAGES_SUBDIR,
     REFERENCE_VIEW_FILENAMES,
 )

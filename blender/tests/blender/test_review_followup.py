@@ -1,7 +1,7 @@
 """Blender-side regression tests for the 2026-10-07 review follow-up.
 
 Every test failed on the code it guards before the fix; the measured failure is
-in the matching MistakeRecord (``blended.evaluate.mistake_memory``).
+in the matching MistakeRecord (``golem_blender.evaluate.mistake_memory``).
 """
 
 import pytest
@@ -52,7 +52,7 @@ def test_a_wire_edge_on_a_closed_cube_fails_the_manifold_gate(empty_scene):
     """A cube plus one edge to a lone vertex has link_faces == 0 on that edge.
     Counted only for `> 2`, the analyzer reported 0 non-manifold edges and the
     gate passed it; Blender's own Select Non-Manifold selects wire edges."""
-    from blended.analyze.mesh_checks import MeshBudget, analyze_object
+    from golem_blender.analyze.mesh_checks import MeshBudget, analyze_object
 
     vertices, faces = _cube_vertices_and_faces()
     wire_vertex_index = len(vertices)
@@ -112,7 +112,7 @@ def test_import_glb_centres_on_the_bounding_box_not_the_vertex_mean(
 ):
     """Recentring on the vertex mean left a mesh with dense vertices on one
     side visibly off-centre: the stated convention is 'centered on X/Y'."""
-    from blended.ingest.import_glb import import_glb
+    from golem_blender.ingest.import_glb import import_glb
 
     glb_path = _exported_lopsided_cube_glb(tmp_path)
 
@@ -139,7 +139,7 @@ def test_reset_scene_restores_frame_range_units_and_resolution(empty_scene):
     """A build that changed the frame range, unit scale or resolution left
     them for the next build: reset wiped datablocks only, so a rebuild started
     from residue."""
-    from blended import reset
+    from golem_blender import reset
 
     scene = bpy.context.scene
     scene.frame_start = STALE_FRAME_START
@@ -162,7 +162,7 @@ def test_reset_scene_restores_frame_range_units_and_resolution(empty_scene):
 
 
 def test_a_stale_frame_end_after_reset_is_not_a_clean_scene(empty_scene):
-    from blended import reset
+    from golem_blender import reset
 
     reset.reset_scene()
     bpy.context.scene.frame_end = STALE_FRAME_END

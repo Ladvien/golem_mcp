@@ -54,7 +54,7 @@ def test_adjacent_slivers_do_not_kill_the_healer(empty_scene):
     second face, and reading `.edges` off it raised
     'ReferenceError: BMesh data of type BMFace has been removed'.
     """
-    from blended.ops.heal import weld_and_dissolve
+    from golem_blender.ops.heal import weld_and_dissolve
 
     slivers = _mesh_of_adjacent_slivers()
     report = weld_and_dissolve(slivers.name)
@@ -65,8 +65,8 @@ def test_adjacent_slivers_do_not_kill_the_healer(empty_scene):
 def test_healing_actually_removes_the_zero_area_faces(empty_scene):
     """Surviving is not enough — the slivers have to be gone, or the
     analyzer will report them and the agent will chase them."""
-    from blended.analyze.mesh_checks import ZERO_AREA_EPSILON_M2
-    from blended.ops.heal import weld_and_dissolve
+    from golem_blender.analyze.mesh_checks import ZERO_AREA_EPSILON_M2
+    from golem_blender.ops.heal import weld_and_dissolve
 
     slivers = _mesh_of_adjacent_slivers()
     weld_and_dissolve(slivers.name)
@@ -78,8 +78,8 @@ def test_healing_actually_removes_the_zero_area_faces(empty_scene):
 
 def test_a_clean_mesh_is_left_alone(empty_scene):
     """Healing is not allowed to invent work on a mesh with no debris."""
-    from blended.ops.heal import weld_and_dissolve
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.heal import weld_and_dissolve
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     box = add_box("CleanBox", 1.0, 1.0, 1.0)
     link_into_scene(box)
@@ -99,8 +99,8 @@ def test_boolean_on_unlinked_objects_refuses_instead_of_lying(empty_scene):
     addend regardless. The agent concluded the op was broken, wiped the
     scene to A/B-test it, and destroyed its finished stool.
     """
-    from blended.ops.booleans import UnlinkedOperand, boolean_union
-    from blended.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.booleans import UnlinkedOperand, boolean_union
+    from golem_blender.ops.primitives import add_box, link_into_scene
 
     target = add_box("A", 0.2, 0.2, 0.2)
     addend = add_box("B", 0.2, 0.2, 0.2, location_m=(0.1, 0.0, 0.0))

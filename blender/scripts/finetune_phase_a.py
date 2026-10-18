@@ -370,7 +370,7 @@ def baked_call_counts(script_path: Path) -> dict:
     """
     if not script_path.exists():
         return {"baked_chunks": 0, "baked_scene_ops": 0, "baked_reader_ops": 0}
-    from blended.ops._contract import changes_scene, facade_ops
+    from golem_blender.ops._contract import changes_scene, facade_ops
 
     scene = {name for name, function in facade_ops() if changes_scene(function)}
     text = script_path.read_text(errors="replace")

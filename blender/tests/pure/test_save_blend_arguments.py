@@ -10,17 +10,17 @@ from pathlib import Path
 
 import pytest
 
-from blended.agent.tools import (
+from golem_blender.agent.tools import (
     SERVICE_TOOL_NAMES,
     TOOL_SCHEMAS,
     _required_blend_path,
 )
-from blended.export.blend import (
+from golem_blender.export.blend import (
     BlendSaveError,
     BlendSaveReport,
     validate_blend_request,
 )
-from blended.harness import HarnessSettings, require_export_blend_path
+from golem_blender.harness import HarnessSettings, require_export_blend_path
 
 
 def _tool(name: str) -> dict:

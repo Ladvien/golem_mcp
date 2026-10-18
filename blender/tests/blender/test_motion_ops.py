@@ -3,7 +3,7 @@
 `skinclip.testing.tube_humanoid` writes a 22-joint UE5-named tube humanoid
 with one animation; Blender imports it through its own glTF importer, so
 the bones carry Blender's rest orientation and the action Blender's
-slotted-action layout: the conversions in `blended.ops._skinned` are
+slotted-action layout: the conversions in `golem_blender.ops._skinned` are
 exercised on a real import, not on a hand-built rig.
 
 What each test defends:
@@ -82,7 +82,7 @@ def _import_tube(tmp_path, clip: str) -> tuple[str, str]:
 
 def _channel_snapshot(armature_name: str) -> dict:
     """Every fcurve of the active action as (data_path, index) -> list of (frame, value)."""
-    from blended.ops.animation import _action_fcurves
+    from golem_blender.ops.animation import _action_fcurves
 
     armature = bpy.data.objects[armature_name]
     return {
@@ -93,7 +93,7 @@ def _channel_snapshot(armature_name: str) -> dict:
 
 def _add_garment(armature_name: str) -> str:
     """An open ring of quads 0.18 m round the body, 0.15-0.95 m high, on material M_Skirt, bound unweighted."""
-    from blended.ops.rigging import bind_mesh_to_armature
+    from golem_blender.ops.rigging import bind_mesh_to_armature
 
     heights = [
         round(GARMENT_BOTTOM_M + i * GARMENT_RING_STEP_M, 4)
@@ -131,7 +131,7 @@ def _add_garment(armature_name: str) -> str:
 
 
 def _skirt_spec():
-    from blended.ops.motion import RingSkirtSpec
+    from golem_blender.ops.motion import RingSkirtSpec
 
     return RingSkirtSpec(
         count=12,
@@ -160,7 +160,7 @@ def _group_weights(mesh_name: str) -> dict:
 def test_the_hand_through_the_torso_fails_and_names_the_arm_against_the_trunk(
     empty_scene, tmp_path
 ):
-    from blended.ops.motion import clip_self_intersection_report
+    from golem_blender.ops.motion import clip_self_intersection_report
 
     armature, action = _import_tube(tmp_path, "hand_through_torso")
     report = clip_self_intersection_report(armature, action)
@@ -189,8 +189,8 @@ def test_frames_are_blender_frame_numbers_when_the_action_starts_late(
     empty_scene, tmp_path
 ):
     """Shifting every key by 100 frames moves worst_frame by 100; an index would not."""
-    from blended.ops.animation import _action_fcurves
-    from blended.ops.motion import clip_self_intersection_report
+    from golem_blender.ops.animation import _action_fcurves
+    from golem_blender.ops.motion import clip_self_intersection_report
 
     armature, action = _import_tube(tmp_path, "hand_through_torso")
     before = clip_self_intersection_report(armature, action)
@@ -209,7 +209,7 @@ def test_frames_are_blender_frame_numbers_when_the_action_starts_late(
 
 
 def test_a_clean_clip_passes(empty_scene, tmp_path):
-    from blended.ops.motion import clip_self_intersection_report
+    from golem_blender.ops.motion import clip_self_intersection_report
 
     armature, action = _import_tube(tmp_path, "rest")
     report = clip_self_intersection_report(armature, action)
@@ -221,7 +221,7 @@ def test_a_clean_clip_passes(empty_scene, tmp_path):
 
 def test_a_looser_limit_passes_what_the_default_fails(empty_scene, tmp_path):
     """contour_limit_m reaches the check: a limit above the worst contour passes the same clip."""
-    from blended.ops.motion import clip_self_intersection_report
+    from golem_blender.ops.motion import clip_self_intersection_report
 
     armature, action = _import_tube(tmp_path, "hand_through_torso")
     strict = clip_self_intersection_report(armature, action)
@@ -234,7 +234,7 @@ def test_a_looser_limit_passes_what_the_default_fails(empty_scene, tmp_path):
 
 
 def test_a_rotation_mode_other_than_quaternion_is_refused(empty_scene, tmp_path):
-    from blended.ops.motion import (
+    from golem_blender.ops.motion import (
         ArmatureRotationModeError,
         clip_self_intersection_report,
     )
@@ -248,7 +248,7 @@ def test_a_rotation_mode_other_than_quaternion_is_refused(empty_scene, tmp_path)
 
 
 def test_a_constrained_bone_is_refused_by_name(empty_scene, tmp_path):
-    from blended.ops.motion import clip_self_intersection_report
+    from golem_blender.ops.motion import clip_self_intersection_report
 
     armature, action = _import_tube(tmp_path, "hand_through_torso")
     bpy.data.objects[armature].pose.bones["hand_r"].constraints.new("COPY_ROTATION")
@@ -258,7 +258,7 @@ def test_a_constrained_bone_is_refused_by_name(empty_scene, tmp_path):
 
 
 def test_an_action_that_is_not_active_is_refused(empty_scene, tmp_path):
-    from blended.ops.motion import clip_self_intersection_report
+    from golem_blender.ops.motion import clip_self_intersection_report
 
     armature, _ = _import_tube(tmp_path, "hand_through_torso")
 
@@ -267,7 +267,7 @@ def test_an_action_that_is_not_active_is_refused(empty_scene, tmp_path):
 
 
 def test_an_unweighted_vertex_is_refused_not_sent_to_the_origin(empty_scene, tmp_path):
-    from blended.ops.motion import clip_self_intersection_report
+    from golem_blender.ops.motion import clip_self_intersection_report
 
     armature, action = _import_tube(tmp_path, "hand_through_torso")
     garment = _add_garment(armature)  # bound, no vertex groups at all
@@ -287,7 +287,7 @@ def test_an_unweighted_vertex_is_refused_not_sent_to_the_origin(empty_scene, tmp
 def test_the_capsule_report_holds_the_eighteen_capsules_of_a_ue5_humanoid(
     empty_scene, tmp_path
 ):
-    from blended.ops.motion import body_capsules_report
+    from golem_blender.ops.motion import body_capsules_report
 
     armature, _ = _import_tube(tmp_path, "rest")
     report = body_capsules_report(armature)
@@ -319,7 +319,7 @@ def test_the_capsule_report_holds_the_eighteen_capsules_of_a_ue5_humanoid(
 
 def test_capsule_positions_are_world_metres_at_rest(empty_scene, tmp_path):
     """The tube's left upper arm runs from x=0.22 to x=0.52 at height 1.42 m, radius 0.05 m."""
-    from blended.ops.motion import body_capsules_report
+    from golem_blender.ops.motion import body_capsules_report
 
     armature, _ = _import_tube(tmp_path, "rest")
     by_name = {c.name: c for c in body_capsules_report(armature).capsules}
@@ -333,9 +333,9 @@ def test_capsule_positions_are_world_metres_at_rest(empty_scene, tmp_path):
 
 
 def test_a_rig_that_is_not_a_humanoid_is_refused(empty_scene):
-    from blended.ops.motion import body_capsules_report
-    from blended.ops.primitives import add_box, link_into_scene
-    from blended.ops.rigging import BoneSpec, add_armature, bind_mesh_to_armature
+    from golem_blender.ops.motion import body_capsules_report
+    from golem_blender.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.rigging import BoneSpec, add_armature, bind_mesh_to_armature
 
     link_into_scene(add_box("Subject", 0.3, 0.3, 1.0))
     add_armature(
@@ -357,7 +357,7 @@ def test_a_moved_and_turned_armature_measures_the_same(empty_scene, tmp_path):
     The adapter composes `armature.matrix_world` into the roots' rest matrix, the
     inverse bind and the mesh's vertices; leaving any one out reads a sheared figure.
     """
-    from blended.ops.motion import body_capsules_report, clip_self_intersection_report
+    from golem_blender.ops.motion import body_capsules_report, clip_self_intersection_report
 
     armature, action = _import_tube(tmp_path, "hand_through_torso")
     still = clip_self_intersection_report(armature, action)
@@ -386,7 +386,7 @@ def test_a_moved_and_turned_armature_measures_the_same(empty_scene, tmp_path):
 def test_a_mixamo_rig_is_read_as_mixamo(empty_scene, tmp_path):
     from skinclip.testing import tube_humanoid
 
-    from blended.ops.motion import body_capsules_report
+    from golem_blender.ops.motion import body_capsules_report
 
     path = tmp_path / "mixamo.glb"
     tube_humanoid(path, "mixamo", "rest")
@@ -409,7 +409,7 @@ def test_a_mixamo_rig_is_read_as_mixamo(empty_scene, tmp_path):
 
 
 def test_the_repair_clears_the_hand_and_touches_only_the_arm(empty_scene, tmp_path):
-    from blended.ops.motion import (
+    from golem_blender.ops.motion import (
         clip_self_intersection_report,
         repair_limb_penetration,
     )
@@ -461,7 +461,7 @@ def test_a_second_repair_only_trims_micrometres(empty_scene, tmp_path):
     frames (measured 2026-10-12: 0.9 micrometre on 4 frames); it must stay
     that small and must not move a key by more than a hair.
     """
-    from blended.ops.motion import repair_limb_penetration
+    from golem_blender.ops.motion import repair_limb_penetration
 
     armature, action = _import_tube(tmp_path, "hand_through_torso")
     repair_limb_penetration(armature, action)
@@ -483,8 +483,8 @@ def test_the_repair_refuses_an_action_that_moves_a_bone_it_cannot_see(
     empty_scene, tmp_path
 ):
     """Only rotations and the pelvis location are read; a moving hand location would be repaired blind."""
-    from blended.ops.animation import _action_channelbag
-    from blended.ops.motion import repair_limb_penetration
+    from golem_blender.ops.animation import _action_channelbag
+    from golem_blender.ops.motion import repair_limb_penetration
 
     armature, action = _import_tube(tmp_path, "hand_through_torso")
     bag = _action_channelbag(bpy.data.objects[armature])
@@ -505,7 +505,7 @@ def test_the_repair_refuses_an_action_that_moves_a_bone_it_cannot_see(
 
 
 def _bake(tmp_path):
-    from blended.ops.motion import bake_cloth_chains
+    from golem_blender.ops.motion import bake_cloth_chains
 
     armature, action = _import_tube(tmp_path, "thigh_swing")
     garment = _add_garment(armature)
@@ -609,8 +609,8 @@ def test_the_clearance_probe_fails_on_chains_that_were_never_baked(
     from skinclip import capsules, humanoid
     from skinclip.intersect import CheckSettings
 
-    from blended.ops import _skinned
-    from blended.ops.animation import _action_channelbag
+    from golem_blender.ops import _skinned
+    from golem_blender.ops.animation import _action_channelbag
 
     armature_name, _, garment, spec, report = _bake(tmp_path)
     armature = bpy.data.objects[armature_name]
@@ -647,7 +647,7 @@ def test_the_clearance_probe_fails_on_chains_that_were_never_baked(
 def test_a_bake_leaves_the_active_object_and_selection_as_it_found_them(
     empty_scene, tmp_path
 ):
-    from blended.ops.motion import bake_cloth_chains
+    from golem_blender.ops.motion import bake_cloth_chains
 
     armature, action = _import_tube(tmp_path, "thigh_swing")
     garment = _add_garment(armature)
@@ -667,7 +667,7 @@ def test_a_bake_leaves_the_active_object_and_selection_as_it_found_them(
 def test_a_second_bake_reuses_the_bones_and_leaves_the_weights_alone(
     empty_scene, tmp_path
 ):
-    from blended.ops.motion import bake_cloth_chains
+    from golem_blender.ops.motion import bake_cloth_chains
 
     armature, action, garment, spec, first = _bake(tmp_path)
     weights = _group_weights(garment)
@@ -687,8 +687,8 @@ def test_a_second_bake_reuses_the_bones_and_leaves_the_weights_alone(
 
 
 def test_a_partial_set_of_chain_bones_is_refused(empty_scene, tmp_path):
-    from blended.ops.animation import _action_channelbag
-    from blended.ops.motion import bake_cloth_chains
+    from golem_blender.ops.animation import _action_channelbag
+    from golem_blender.ops.motion import bake_cloth_chains
 
     armature, action = _import_tube(tmp_path, "thigh_swing")
     garment = _add_garment(armature)
@@ -711,7 +711,7 @@ def test_a_partial_set_of_chain_bones_is_refused(empty_scene, tmp_path):
 
 
 def test_a_material_the_mesh_does_not_hold_is_refused(empty_scene, tmp_path):
-    from blended.ops.motion import bake_cloth_chains
+    from golem_blender.ops.motion import bake_cloth_chains
 
     armature, action = _import_tube(tmp_path, "thigh_swing")
     garment = _add_garment(armature)
@@ -728,9 +728,9 @@ def _bone_names(armature_name: str) -> set[str]:
 
 def test_a_refused_bake_leaves_the_scene_as_it_found_it(empty_scene, tmp_path):
     """Each refusal comes before the first bone or weight is written."""
-    from blended.ops.motion import bake_cloth_chains
-    from blended.ops.primitives import add_box, link_into_scene
-    from blended.ops.rigging import BoneSpec, add_armature
+    from golem_blender.ops.motion import bake_cloth_chains
+    from golem_blender.ops.primitives import add_box, link_into_scene
+    from golem_blender.ops.rigging import BoneSpec, add_armature
 
     armature, action = _import_tube(tmp_path, "thigh_swing")
     garment = _add_garment(armature)
@@ -760,7 +760,7 @@ def test_a_refused_bake_leaves_the_scene_as_it_found_it(empty_scene, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# the definitions blended shares with skinclip
+# the definitions golem_blender shares with skinclip
 # ---------------------------------------------------------------------------
 
 
@@ -768,17 +768,17 @@ def test_the_exported_ring_skirt_spec_is_skinclips_own():
     from skinclip import cloth
     from skinclip.spec import RingSkirtSpec as skinclip_spec
 
-    import blended.ops
-    from blended.ops.motion import RingSkirtSpec
+    import golem_blender.ops
+    from golem_blender.ops.motion import RingSkirtSpec
 
     assert RingSkirtSpec is skinclip_spec
-    assert blended.ops.RingSkirtSpec is skinclip_spec
+    assert golem_blender.ops.RingSkirtSpec is skinclip_spec
     assert cloth.RingSkirtSpec is skinclip_spec
 
 
 def test_the_default_contour_limit_is_skinclips():
     from skinclip.intersect import CheckSettings
 
-    from blended.ops.motion import DEFAULT_CONTOUR_LIMIT_M
+    from golem_blender.ops.motion import DEFAULT_CONTOUR_LIMIT_M
 
     assert DEFAULT_CONTOUR_LIMIT_M == CheckSettings().contour_limit_m

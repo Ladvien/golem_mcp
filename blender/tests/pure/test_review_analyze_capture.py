@@ -5,8 +5,8 @@ import struct
 
 import pytest
 
-from blended.analyze.mesh_checks import MeshBudget, MeshReport
-from blended.export.glb_report import (
+from golem_blender.analyze.mesh_checks import MeshBudget, MeshReport
+from golem_blender.export.glb_report import (
     GLB_CHUNK_TYPE_BIN,
     GLB_CHUNK_TYPE_JSON,
     GLB_MAGIC,

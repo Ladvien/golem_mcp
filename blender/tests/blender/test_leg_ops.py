@@ -20,8 +20,8 @@ bpy = pytest.importorskip("bpy", reason="requires Blender-as-module")
 
 pytestmark = pytest.mark.blender
 
-from blended.evaluate import briefs
-from blended.ops.legs import (
+from golem_blender.evaluate import briefs
+from golem_blender.ops.legs import (
     SplayedLegSpec,
     add_splayed_leg,
     splayed_leg_ring,
@@ -116,8 +116,8 @@ def test_the_naive_placement_still_lands_inboard(empty_scene):
     """
     from mathutils import Euler
 
-    from blended.ops.primitives import add_cylinder, link_into_scene
-    from blended.ops.transforms import apply_object_transform
+    from golem_blender.ops.primitives import add_cylinder, link_into_scene
+    from golem_blender.ops.transforms import apply_object_transform
 
     spec = _stool_leg_spec()
     leg = add_cylinder(
@@ -146,8 +146,8 @@ def test_the_naive_placement_still_lands_inboard(empty_scene):
 
 
 def test_a_ring_of_legs_lands_on_its_bearings(empty_scene):
-    from blended.ops.booleans import boolean_union
-    from blended.ops.primitives import add_cylinder, link_into_scene
+    from golem_blender.ops.booleans import boolean_union
+    from golem_blender.ops.primitives import add_cylinder, link_into_scene
 
     seat = add_cylinder(
         "Stool",

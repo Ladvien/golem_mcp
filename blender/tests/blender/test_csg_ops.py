@@ -19,7 +19,7 @@ def empty_scene():
 
 
 def _bored_box():
-    from blended.ops import add_box, add_cylinder, boolean_difference, link_into_scene
+    from golem_blender.ops import add_box, add_cylinder, boolean_difference, link_into_scene
 
     box_object = add_box("BoredBox", BOX_SIZE_M, BOX_SIZE_M, BOX_SIZE_M)
     link_into_scene(box_object)
@@ -35,7 +35,7 @@ def _bored_box():
 
 
 def test_difference_bores_a_clean_hole(empty_scene):
-    from blended.analyze import MeshBudget, analyze_object
+    from golem_blender.analyze import MeshBudget, analyze_object
 
     bored_box = _bored_box()
     report = analyze_object(bpy.data.objects[bored_box])
@@ -60,8 +60,8 @@ def test_non_intersecting_cutter_raises_instead_of_silently_no_oping(empty_scene
     defect (2 disconnected components). A boolean that changes nothing
     must raise, naming the counts, and must leave the target intact —
     the operand is only consumed on a real result."""
-    from blended.ops import add_box, boolean_difference, link_into_scene
-    from blended.ops.booleans import BooleanNoOp
+    from golem_blender.ops import add_box, boolean_difference, link_into_scene
+    from golem_blender.ops.booleans import BooleanNoOp
 
     box_object = add_box("NoOpBox", 1.0, 1.0, 1.0)
     link_into_scene(box_object)
@@ -78,7 +78,7 @@ def test_non_intersecting_cutter_raises_instead_of_silently_no_oping(empty_scene
 
 
 def test_snap_base_to_ground(empty_scene):
-    from blended.ops import add_box, link_into_scene, snap_base_to_ground
+    from golem_blender.ops import add_box, link_into_scene, snap_base_to_ground
 
     GROUND_TOLERANCE_M = 1.0e-6
     floating_box = add_box("Floater", 1.0, 1.0, 1.0, location_m=(0.0, 0.0, 3.0))
@@ -98,8 +98,8 @@ def test_snap_base_to_ground(empty_scene):
 def test_transform_ops_see_pending_location_and_rotation(empty_scene):
     """matrix_world is lazily evaluated: transform ops must refresh the
     depsgraph or they silently bake nothing."""
-    from blended.ops import add_cylinder, link_into_scene
-    from blended.ops.transforms import apply_object_transform
+    from golem_blender.ops import add_cylinder, link_into_scene
+    from golem_blender.ops.transforms import apply_object_transform
 
     leg = add_cylinder("PendingLeg", radius_m=0.02, height_m=0.4)
     link_into_scene(leg)

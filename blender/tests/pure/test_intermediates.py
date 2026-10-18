@@ -5,12 +5,12 @@ from __future__ import annotations
 
 import dataclasses
 
-from blended.agent.claude_code import TurnCost
-from blended.agent.intermediates import (
+from golem_blender.agent.claude_code import TurnCost
+from golem_blender.agent.intermediates import (
     UNRESOLVED_INTERMEDIATES_REFUSAL,
     IntermediateLedger,
 )
-from blended.agent.outcome import ToolOutcome
+from golem_blender.agent.outcome import ToolOutcome
 
 
 def test_the_ledger_debits_before_it_credits():
@@ -49,7 +49,7 @@ def test_the_refusal_names_every_pending_intermediate_and_its_creator():
 
 
 def _client(replies):
-    from blended.agent.loop import ModelConfig
+    from golem_blender.agent.loop import ModelConfig
 
     class Scripted:
         def __init__(self):
@@ -76,7 +76,7 @@ def _call(tool_name, **arguments):
 def test_the_loop_refuses_an_answer_while_an_intermediate_is_pending(tmp_path):
     """add_box (ungated) then an answer: refused, the model resolves it
     with remove_object_and_mesh, then the same answer is accepted."""
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     def dispatch(tool_name, arguments, output_directory):
         if tool_name == "add_box":
@@ -134,7 +134,7 @@ def test_the_loop_refuses_an_answer_while_an_intermediate_is_pending(tmp_path):
 
 
 def test_a_refusal_counts_against_the_budget_so_a_stubborn_model_terminates(tmp_path):
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     def dispatch(tool_name, arguments, output_directory):
         return ToolOutcome("OK: add_box", intermediates_created=("Cutter",))

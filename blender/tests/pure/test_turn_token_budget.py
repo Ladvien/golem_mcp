@@ -9,8 +9,8 @@ poison every later turn of the session.
 
 import dataclasses
 
-from blended.agent.claude_code import TurnCost
-from blended.agent.outcome import ToolOutcome
+from golem_blender.agent.claude_code import TurnCost
+from golem_blender.agent.outcome import ToolOutcome
 
 TWO_CALL_REPLY = {
     "role": "assistant",
@@ -31,7 +31,7 @@ ANSWER_REPLY = {"role": "assistant", "content": "done"}
 
 class ScriptedClient:
     def __init__(self, replies):
-        from blended.agent.loop import ModelConfig
+        from golem_blender.agent.loop import ModelConfig
 
         self.replies = list(replies)
 
@@ -62,7 +62,7 @@ class SpendingClient(ScriptedClient):
 
 
 def test_the_turn_stops_at_the_seam_when_the_token_budget_is_exceeded(tmp_path):
-    from blended.agent.loop import TOKEN_CAP_TOOL_RESULT, AgentSession
+    from golem_blender.agent.loop import TOKEN_CAP_TOOL_RESULT, AgentSession
 
     session = AgentSession(
         client=SpendingClient(
@@ -98,7 +98,7 @@ def test_the_turn_stops_at_the_seam_when_the_token_budget_is_exceeded(tmp_path):
 def test_an_answer_over_budget_is_still_returned(tmp_path):
     """The budget refuses MORE tool calls; a reply that already answers
     ends the turn whatever it cost."""
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     session = AgentSession(
         client=SpendingClient([ANSWER_REPLY], tokens_per_call=5_000),
@@ -108,7 +108,7 @@ def test_an_answer_over_budget_is_still_returned(tmp_path):
 
 
 def test_the_budget_is_per_turn_not_per_session(tmp_path):
-    from blended.agent.loop import AgentSession
+    from golem_blender.agent.loop import AgentSession
 
     session = AgentSession(
         client=SpendingClient(
