@@ -755,3 +755,7 @@ accept only `guidance=1.0`; use a `flux2-klein-base-*` model to vary it.
 
 **Skin weights need review.** Shoulders and hips are where auto-generated weights
 fail. Pose to extremes before trusting them — true of any auto-rigger.
+
+## License
+
+GPL-3.0 (`LICENSE`) covers the whole repository, including `blender/` (formerly MIT as `Ladvien/blended`; relicensed by its sole author) and the vendored Blender Lab server in `blender/blender_mcp/` (GPL-3.0-or-later).
