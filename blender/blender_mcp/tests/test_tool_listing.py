@@ -302,6 +302,65 @@ EXPECTED_TOOLS = [
         },
     },
     {
+        "name": "register_kit_pack",
+        "description": "Register a folder of .glb pieces (e.g. a Kenney pack) as a golem kit (kit.yaml) with measured sizes, for kitbashing new assets.",
+        "inputSchema": {
+            "properties": {
+                "pack_dir": {"title": "Pack Dir", "type": "string"},
+                "kit_dir": {"title": "Kit Dir", "type": "string"},
+                "kit_name": {"title": "Kit Name", "type": "string"},
+                "license": {"title": "License", "type": "string"},
+            },
+            "required": ["pack_dir", "kit_dir", "kit_name", "license"],
+            "title": "register_kit_packArguments",
+            "type": "object",
+        },
+    },
+    {
+        "name": "search_reference_images",
+        "description": "Search Openverse, Wikimedia Commons, Pexels and Brave for reference images; returns a numbered contact sheet and the items' sources and licenses.",
+        "inputSchema": {
+            "properties": {
+                "query": {"title": "Query", "type": "string"},
+                "sources": {
+                    "anyOf": [
+                        {"items": {"type": "string"}, "type": "array"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "title": "Sources",
+                },
+                "count": {"default": 24, "title": "Count", "type": "integer"},
+                "license_filter": {
+                    "default": "any",
+                    "title": "License Filter",
+                    "type": "string",
+                },
+            },
+            "required": ["query"],
+            "title": "search_reference_imagesArguments",
+            "type": "object",
+        },
+    },
+    {
+        "name": "save_reference_images",
+        "description": "Download the numbered images of a search into the kit's codex_fs reference folder with provenance; returns Mac and big paths.",
+        "inputSchema": {
+            "properties": {
+                "search_id": {"title": "Search Id", "type": "string"},
+                "numbers": {
+                    "items": {"type": "integer"},
+                    "title": "Numbers",
+                    "type": "array",
+                },
+                "kit_slug": {"title": "Kit Slug", "type": "string"},
+            },
+            "required": ["search_id", "numbers", "kit_slug"],
+            "title": "save_reference_imagesArguments",
+            "type": "object",
+        },
+    },
+    {
         "name": "jump_to_tab_by_name",
         "description": "\nSwitch the active workspace tab to *name*.\n",
         "inputSchema": {

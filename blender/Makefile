@@ -6,8 +6,9 @@ PY ?= .venv/bin/python
 
 # uv sync is exact by default and uninstalls op plugins installed out of band
 # (spyrite_tile_ops, from spyrit_tile's `make install-golem-plugin`).
+# The capture extra is Pillow: the reference-image contact sheet needs it.
 sync:
-	uv sync --inexact
+	uv sync --inexact --extra capture
 BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
 
 
@@ -21,8 +22,10 @@ test: test-pure test-blender-app test-bench-scripts test-mcp
 test-pure:
 	$(PY) -m pytest tests/pure -q
 
-# Bench-script and Pillow tests in a throwaway env: numpy/scipy/trimesh/Pillow
-# never enter .venv, whose site-packages Blender (Python 3.13) puts first on sys.path.
+# Bench-script and Pillow tests in a throwaway env: numpy/scipy/trimesh never
+# enter .venv, whose site-packages Blender (Python 3.13) puts first on sys.path.
+# Pillow is in .venv (extra `capture`, for the reference contact sheet), but
+# scripts/run_tests_in_blender.py keeps it out of the Blender app layer.
 test-bench-scripts:
 	uv run --isolated --no-project --python 3.11 --with pytest --with numpy --with scipy --with trimesh --with pillow \
 		python -m pytest -q -p no:cacheprovider tests/bench_scripts

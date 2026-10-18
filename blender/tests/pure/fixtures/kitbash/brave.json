@@ -1,0 +1,29 @@
+{
+  "type": "images",
+  "results": [
+    {
+      "type": "image_result",
+      "title": "Old wooden barrel for sale",
+      "url": "https://shop.example.com/barrels/old-oak",
+      "source": "shop.example.com",
+      "thumbnail": {"src": "https://imgs.search.brave.com/abc/old-oak-thumb", "width": 500, "height": 375},
+      "properties": {"url": "https://shop.example.com/img/old-oak.jpg", "width": 1200, "height": 900}
+    },
+    {
+      "type": "image_result",
+      "title": "Whisky cask diagram",
+      "url": "https://blog.example.org/whisky-casks",
+      "source": "blog.example.org",
+      "thumbnail": {"src": "https://imgs.search.brave.com/def/cask-thumb"},
+      "properties": {"url": "https://blog.example.org/cask.png"}
+    },
+    {
+      "type": "image_result",
+      "title": "Result without a full-size address",
+      "url": "https://broken.example.net/page",
+      "source": "broken.example.net",
+      "thumbnail": {"src": "https://imgs.search.brave.com/ghi/broken-thumb"},
+      "properties": {}
+    }
+  ]
+}

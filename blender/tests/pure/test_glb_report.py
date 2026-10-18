@@ -12,6 +12,13 @@ import json
 import struct
 
 import pytest
+from _glb_fixture import (
+    _bin_chunk,
+    _build_glb,
+    _json_chunk,
+    _pack_components,
+    _write_glb,
+)
 
 from golem_blender.export.glb_report import (
     GLB_CHUNK_HEADER_SIZE_BYTES,
@@ -40,132 +47,6 @@ UP_NORMALS = (
 # glTF requires the NORMAL accessor to cover every POSITION; the
 # 5-vertex fixtures need 5 normals.
 UP_NORMALS_5 = UP_NORMALS + ((0.0, 0.0, 1.0),)
-
-
-def _pack_components(values):
-    return b"".join(struct.pack("<fff", *value) for value in values)
-
-
-def _json_chunk(payload: bytes) -> bytes:
-    """Blender-style JSON chunk: length field is the PADDED length."""
-    padding = (4 - (len(payload) & 3)) & 3
-    return (
-        struct.pack("<I", len(payload) + padding) + b"JSON" + payload + b" " * padding
-    )
-
-
-def _bin_chunk(payload: bytes) -> bytes:
-    padding = (4 - (len(payload) & 3)) & 3
-    return (
-        struct.pack("<I", len(payload) + padding)
-        + b"BIN\x00"
-        + payload
-        + b"\x00" * padding
-    )
-
-
-def _build_glb(positions, indices, normals=None):
-    """Assemble a minimal .glb: one mesh, one triangle primitive."""
-    binary = bytearray()
-    binary.extend(_pack_components(positions))
-    if normals is not None:
-        binary.extend(_pack_components(normals))
-    binary.extend(struct.pack("<" + "I" * len(indices), *indices))
-    while len(binary) % 4:
-        binary.append(0)
-
-    buffer_views = [{"buffer": 0, "byteOffset": 0, "byteLength": len(binary)}]
-    accessors = [
-        {
-            "bufferView": 0,
-            "byteOffset": 0,
-            "componentType": 5126,
-            "count": len(positions),
-            "type": "VEC3",
-            "min": [
-                min(p[0] for p in positions),
-                min(p[1] for p in positions),
-                min(p[2] for p in positions),
-            ],
-            "max": [
-                max(p[0] for p in positions),
-                max(p[1] for p in positions),
-                max(p[2] for p in positions),
-            ],
-        }
-    ]
-    attributes = {"POSITION": 0}
-
-    offset = len(_pack_components(positions))
-    if normals is not None:
-        buffer_views.append(
-            {
-                "buffer": 0,
-                "byteOffset": offset,
-                "byteLength": len(_pack_components(normals)),
-            }
-        )
-        accessors.append(
-            {
-                "bufferView": len(buffer_views) - 1,
-                "byteOffset": 0,
-                "componentType": 5126,
-                "count": len(normals),
-                "type": "VEC3",
-            }
-        )
-        attributes["NORMAL"] = len(accessors) - 1
-        offset += len(_pack_components(normals))
-    buffer_views.append(
-        {
-            "buffer": 0,
-            "byteOffset": offset,
-            "byteLength": len(indices) * 4,
-        }
-    )
-    accessors.append(
-        {
-            "bufferView": len(buffer_views) - 1,
-            "byteOffset": 0,
-            "componentType": 5125,
-            "count": len(indices),
-            "type": "SCALAR",
-        }
-    )
-    indices_accessor = len(accessors) - 1
-
-    gltf = {
-        "asset": {"version": "2.0"},
-        "buffers": [{"byteLength": len(binary)}],
-        "bufferViews": buffer_views,
-        "accessors": accessors,
-        "meshes": [
-            {
-                "name": "Tri",
-                "primitives": [
-                    {
-                        "attributes": attributes,
-                        "indices": indices_accessor,
-                        "mode": 4,
-                    }
-                ],
-            }
-        ],
-        "nodes": [{"name": "TriNode", "mesh": 0}],
-        "scenes": [{"nodes": [0]}],
-        "scene": 0,
-    }
-    json_chunk = _json_chunk(json.dumps(gltf).encode("utf-8"))
-    bin_chunk = _bin_chunk(bytes(binary))
-    declared = GLB_HEADER_SIZE_BYTES + len(json_chunk) + len(bin_chunk)
-    header = struct.pack("<III", GLB_MAGIC, 2, declared)
-    return header + json_chunk + bin_chunk
-
-
-def _write_glb(tmp_path, data, name="test.glb"):
-    path = tmp_path / name
-    path.write_bytes(data)
-    return path
 
 
 def test_two_triangles_sharing_an_edge(tmp_path):

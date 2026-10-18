@@ -35,14 +35,18 @@ PAUSE_INSTRUCTIONS = (
     "work around it with other tools. Continue when the user says Blender is ready."
 )
 
-# Tools that read only the bundled docs: they never touch Blender, so a missing
+# Tools that never touch Blender: the bundled docs, and the kitbash tools that
+# work on the web and on files (reference images, pack registration). A missing
 # Blender is no reason to pause them. A tool left off this list pauses, which is
 # the safe direction for a tool added later.
 TOOLS_WITHOUT_BLENDER = frozenset(
     {
         "get_python_api_docs",
+        "register_kit_pack",
+        "save_reference_images",
         "search_api_docs",
         "search_manual_docs",
+        "search_reference_images",
     }
 )
 

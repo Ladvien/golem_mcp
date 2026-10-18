@@ -190,8 +190,9 @@ make test-mcp-blender          # MCP client -> server -> real background
 make test-viewport-gui         # viewport framing in a GUI Blender (opens
                                # a window for a few seconds)
 make test-bench-scripts        # tests/bench_scripts in a throwaway env with
-                               # numpy, scipy, trimesh and Pillow (never in
-                               # .venv; downloads wheels on first run)
+                               # numpy, scipy, trimesh and Pillow (numpy, scipy
+                               # and trimesh never in .venv; downloads wheels
+                               # on first run)
 make test                      # pure + Blender app + bench scripts + MCP unit; the gate
 make test-repro ARGS="--builder barrel"
                                # build twice in two fresh Blenders under

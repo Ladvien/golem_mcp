@@ -1,0 +1,42 @@
+{
+  "page": 1,
+  "per_page": 3,
+  "photos": [
+    {
+      "id": 4443214,
+      "width": 3000,
+      "height": 2000,
+      "url": "https://www.pexels.com/photo/brown-wooden-barrel-4443214/",
+      "photographer": "Ada Example",
+      "alt": "Brown wooden barrel on a stone floor",
+      "src": {
+        "original": "https://images.pexels.com/photos/4443214/pexels-photo-4443214.jpeg",
+        "medium": "https://images.pexels.com/photos/4443214/pexels-photo-4443214.jpeg?auto=compress&cs=tinysrgb&h=350"
+      }
+    },
+    {
+      "id": 5107861,
+      "width": 1800,
+      "height": 2700,
+      "url": "https://www.pexels.com/photo/oak-barrels-5107861/",
+      "photographer": "Bo Sample",
+      "alt": "",
+      "src": {
+        "original": "https://images.pexels.com/photos/5107861/pexels-photo-5107861.jpeg",
+        "medium": "https://images.pexels.com/photos/5107861/pexels-photo-5107861.jpeg?auto=compress&cs=tinysrgb&h=350"
+      }
+    },
+    {
+      "id": 6020311,
+      "width": 2400,
+      "height": 1600,
+      "url": "https://www.pexels.com/photo/barrel-cellar-6020311/",
+      "photographer": "Cy Placeholder",
+      "alt": "Barrels in a cellar",
+      "src": {
+        "original": "https://images.pexels.com/photos/6020311/pexels-photo-6020311.jpeg",
+        "medium": "https://images.pexels.com/photos/6020311/pexels-photo-6020311.jpeg?auto=compress&cs=tinysrgb&h=350"
+      }
+    }
+  ]
+}

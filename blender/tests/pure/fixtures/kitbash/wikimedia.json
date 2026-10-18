@@ -1,0 +1,94 @@
+{
+  "batchcomplete": "",
+  "query": {
+    "pages": {
+      "171344628": {
+        "pageid": 171344628,
+        "ns": 6,
+        "title": "File:Castello d Volognano - Antichi attrezzi e botti per cantina 1.jpg",
+        "index": 3,
+        "imageinfo": [
+          {
+            "url": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Castello_d_Volognano_-_Antichi_attrezzi_e_botti_per_cantina_1.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Castello_d_Volognano_-_Antichi_attrezzi_e_botti_per_cantina_1.jpg",
+            "width": 4000,
+            "height": 3000,
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6f/Castello_d_Volognano_-_Antichi_attrezzi_e_botti_per_cantina_1.jpg/500px-Castello_d_Volognano_-_Antichi_attrezzi_e_botti_per_cantina_1.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "extmetadata": {
+              "LicenseShortName": {
+                "value": "CC BY 4.0"
+              },
+              "LicenseUrl": {
+                "value": "https://creativecommons.org/licenses/by/4.0"
+              },
+              "Artist": {
+                "value": "<a rel=\"mw:WikiLink\" href=\"https://commons.wikimedia.org/wiki/User:Anna.Massini\" title=\"User:Anna.Massini\">Anna.Massini</a>"
+              },
+              "ObjectName": {
+                "value": "Castello d Volognano - Antichi attrezzi e botti per cantina 1"
+              }
+            }
+          }
+        ]
+      },
+      "59741114": {
+        "pageid": 59741114,
+        "ns": 6,
+        "title": "File:Four wet wooden barrels.jpg",
+        "index": 2,
+        "imageinfo": [
+          {
+            "url": "https://upload.wikimedia.org/wikipedia/commons/9/9e/Four_wet_wooden_barrels.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Four_wet_wooden_barrels.jpg",
+            "width": 4655,
+            "height": 3995,
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9e/Four_wet_wooden_barrels.jpg/500px-Four_wet_wooden_barrels.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "extmetadata": {
+              "LicenseShortName": {
+                "value": "CC0"
+              },
+              "LicenseUrl": {
+                "value": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+              },
+              "Artist": {
+                "value": "<a href=\"//commons.wikimedia.org/wiki/User:W.carter\" title=\"User:W.carter\">W.carter</a>"
+              },
+              "ObjectName": {
+                "value": "Four wet wooden barrels"
+              }
+            }
+          }
+        ]
+      },
+      "87633155": {
+        "pageid": 87633155,
+        "ns": 6,
+        "title": "File:Rutherford Hill Wine Cave-1369.jpg",
+        "index": 1,
+        "imageinfo": [
+          {
+            "url": "https://upload.wikimedia.org/wikipedia/commons/b/b3/Rutherford_Hill_Wine_Cave-1369.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Rutherford_Hill_Wine_Cave-1369.jpg",
+            "width": 3948,
+            "height": 3948,
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b3/Rutherford_Hill_Wine_Cave-1369.jpg/500px-Rutherford_Hill_Wine_Cave-1369.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "extmetadata": {
+              "LicenseShortName": {
+                "value": "CC BY-SA 4.0"
+              },
+              "LicenseUrl": {
+                "value": "https://creativecommons.org/licenses/by-sa/4.0"
+              },
+              "Artist": {
+                "value": "<bdi><a href=\"https://www.wikidata.org/wiki/Q57175365\" class=\"extiw\" title=\"d:Q57175365\"><span title=\"German-American photographer, Wikipedian, and Executive Director of the Wiki Education Foundation\">Frank Schulenburg</span></a></bdi>"
+              },
+              "ObjectName": {
+                "value": "Rutherford Hill Wine Cave-1369"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

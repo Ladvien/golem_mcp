@@ -1,0 +1,48 @@
+{
+  "result_count": 240,
+  "page_size": 3,
+  "results": [
+    {
+      "id": "dc68c275-69eb-470a-a8e0-305b7420585f",
+      "title": "One Old Wooden Barrel",
+      "creator": "dejankrsmanovic",
+      "license": "by",
+      "license_version": "2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0/",
+      "attribution": "\"One Old Wooden Barrel\" by dejankrsmanovic is licensed under CC BY 2.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/2.0/.",
+      "foreign_landing_url": "https://www.flickr.com/photos/155403590@N07/43182338615",
+      "url": "https://live.staticflickr.com/1793/43182338615_1e1ea779a9_b.jpg",
+      "thumbnail": "https://api.openverse.org/v1/images/dc68c275-69eb-470a-a8e0-305b7420585f/thumb/",
+      "width": 1024,
+      "height": 683
+    },
+    {
+      "id": "ba0476bb-7d77-4e19-b23a-ab68edbb18f8",
+      "title": "Hose in wooden barrel",
+      "creator": "Thomas Cizauskas",
+      "license": "by-nc-nd",
+      "license_version": "2.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc-nd/2.0/",
+      "attribution": "\"Hose in wooden barrel\" by Thomas Cizauskas is licensed under CC BY-NC-ND 2.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-nd/2.0/.",
+      "foreign_landing_url": "https://www.flickr.com/photos/75714412@N00/51598902756",
+      "url": "https://live.staticflickr.com/65535/51598902756_a09c6d1ee9_b.jpg",
+      "thumbnail": "https://api.openverse.org/v1/images/ba0476bb-7d77-4e19-b23a-ab68edbb18f8/thumb/",
+      "width": 1024,
+      "height": 768
+    },
+    {
+      "id": "8e972103-8ed2-4f37-b562-bbb87063294b",
+      "title": "Wooden barrel postbox in the Galapagos Islands, 1983",
+      "creator": "Pierre5018",
+      "license": "by-sa",
+      "license_version": "4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "attribution": "\"Wooden barrel postbox in the Galapagos Islands, 1983\" by Pierre5018 is licensed under CC BY-SA 4.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-sa/4.0/.",
+      "foreign_landing_url": "https://commons.wikimedia.org/w/index.php?curid=35002929",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/e6/Wooden_barrel_postbox_in_the_Galapagos_Islands%2C_1983.jpg",
+      "thumbnail": "https://api.openverse.org/v1/images/8e972103-8ed2-4f37-b562-bbb87063294b/thumb/",
+      "width": 1400,
+      "height": 2004
+    }
+  ]
+}
