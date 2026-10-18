@@ -2588,6 +2588,16 @@ def _scp_from_bmb(remote_path: str, local_path: str) -> bool:
     return result.returncode == 0
 
 
+def _scp_to_bmb(local_path: str, remote_path: str) -> bool:
+    result = subprocess.run(
+        ["scp", local_path, f"{BMB_HOST}:{remote_path}"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    return result.returncode == 0
+
+
 def _mflux_generate(
     prompt: str,
     model: str,
@@ -2624,7 +2634,24 @@ def _mflux_generate(
         f"--prompt {shlex.quote(prompt)}",
     ]
     if image_path:
-        cmd_parts.append(f"--image-path {shlex.quote(_bmb_path(image_path))}")
+        if Path(image_path).is_file():
+            # An init image that lives on big: copy it to bmb, where mflux runs.
+            made = _ssh_bmb(f"mkdir -p {shlex.quote(remote_dir)}", timeout=60)
+            if made.returncode != 0:
+                tail = (made.stderr or made.stdout or "").strip().splitlines()
+                raise RuntimeError(
+                    f"Could not create {remote_dir} on {BMB_HOST}: {tail[-1] if tail else 'no output'}"
+                )
+            remote_init = f"{remote_dir}/{output_name}_init{Path(image_path).suffix or '.png'}"
+            if not _scp_to_bmb(image_path, remote_init):
+                raise RuntimeError(
+                    f"Copying the init image {image_path} to {BMB_HOST}:{remote_init} failed. "
+                    f"Check SSH/scp access to {BMB_HOST}."
+                )
+            init_on_bmb = remote_init
+        else:
+            init_on_bmb = _bmb_path(image_path)
+        cmd_parts.append(f"--image-path {shlex.quote(init_on_bmb)}")
         cmd_parts.append(f"--image-strength {image_strength}")
 
     result = _ssh_bmb(" ".join(cmd_parts), timeout=900)
@@ -2998,7 +3025,15 @@ def generate_image(
         float,
         Field(description="Init image influence strength (0=none, 1=full). Only used with image_path.", ge=0.0, le=1.0),
     ] = 0.4,
-    image_path: Annotated[str, Field(description="Path to init image for img2img (on bmb filesystem)")] = "",
+    image_path: Annotated[
+        str,
+        Field(
+            description=(
+                "Init image for img2img: a file on big (copied to bmb first, e.g. "
+                "/mnt/codex_fs/game_assets/references/<kit>/<file>.png) or a path on bmb"
+            )
+        ),
+    ] = "",
 ) -> dict[str, Any]:
     """Generate an image using FLUX.2 via mflux on bmb (MacBook Pro M4).
 
