@@ -185,8 +185,6 @@ def _apply_material_to_faces(mesh_object, material, faces: FaceSelector) -> None
             break
     if slot_index is None:
         slots.append(material)
-    if was_single:
-        _move_all_faces(mesh_object, len(slots) - 1)
         slot_index = len(slots) - 1
     for polygon in mesh_object.data.polygons:
         if polygon.index in indices:
@@ -243,6 +241,8 @@ def _assign_material_to_object(mesh_object, material) -> None:
             return
 
     slots.append(material)
+    if was_single:
+        _move_all_faces(mesh_object, len(slots) - 1)
 
 
 def _move_all_faces(mesh_object, slot_index: int) -> None:
