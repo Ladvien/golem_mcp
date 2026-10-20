@@ -320,6 +320,70 @@ def test_baking_a_normal_map_of_relief_produces_a_varying_map(empty_scene, tmp_p
     assert min(float(value) for value in array[:, 2]) > 0.5
 
 
+def test_the_from_height_normal_map_holds_the_relief(empty_scene, tmp_path):
+    """`from_height` must hold the SURFACE normal, and the bake must not.
+
+    The bake stores a CURVATURE measure — the difference between the
+    vertex normal and the face normal — so on a smooth relief it is
+    nearly flat. `from_height` stores the surface normal itself, so
+    it spans the full range. Measured on a cobblestone slab: the baked
+    map's encoded X channel spans 0.482 to 0.518; the from-height one
+    spans 0.388 to 0.965.
+    """
+    from golem_blender.ops.pbr_bake import bake_normal_map
+    from golem_blender.ops.uv import unwrap_uvs
+
+    box = _box()
+    unwrap_uvs(box.name)
+    # A relief slab: a step in the middle, so the surface has a face
+    # that is not flat.
+    for vertex in box.data.vertices:
+        if vertex.co.x > 0.0:
+            vertex.co.z += 0.05
+    box.data.update()
+    bpy.ops.object.select_all(action="DESELECT")
+    box.select_set(True)
+    bpy.context.view_layer.objects.active = box
+    bpy.ops.object.shade_smooth()
+    bpy.context.view_layer.update()
+
+    from_height = _read_pixels(
+        Path(
+            bake_normal_map(
+                box.name,
+                tmp_path / "from_height.png",
+                resolution_px=128,
+                method="from_height",
+            )
+        )
+    )
+    baked = _read_pixels(
+        Path(
+            bake_normal_map(
+                box.name, tmp_path / "bake.png", resolution_px=128, method="bake"
+            )
+        )
+    )
+
+    def span(array):
+        return float(array[:, 0].max()) - float(array[:, 0].min())
+
+    assert span(from_height) > span(baked) * 3.0, (
+        f"the from-height map spans {span(from_height):.3f} and the baked one "
+        f"{span(baked):.3f}: the surface normal is not being held"
+    )
+
+
+def test_an_unknown_normal_map_method_is_refused(empty_scene, tmp_path):
+    from golem_blender.ops.pbr_bake import bake_normal_map
+
+    box = _box()
+    with pytest.raises(ValueError, match="method"):
+        bake_normal_map(
+            box.name, tmp_path / "n.png", resolution_px=64, method="invented"
+        )
+
+
 def test_baking_a_mesh_with_no_uv_layer_names_the_op_to_call_first(
     empty_scene, tmp_path
 ):

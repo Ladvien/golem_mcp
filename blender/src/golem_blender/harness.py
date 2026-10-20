@@ -176,7 +176,7 @@ def gate_object(blender_object, budget: MeshBudget) -> GateVerdict:
         )
     from golem_blender.analyze import analyze_object
 
-    report = analyze_object(blender_object)
+    report = analyze_object(blender_object, budget)
     gate_failures = tuple(report.failures(budget))
     return GateVerdict(
         object_name=blender_object.name,

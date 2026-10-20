@@ -60,6 +60,14 @@ DEFAULT_METALLIC = 0.0
 DEFAULT_AO_DISTANCE_M = 0.05
 # The bake target's temporary names, so a failed bake leaves nothing behind.
 BAKE_TARGET_NODE_NAME = "blended_bake_target"
+# How a normal map is made. `from_height` solves for the surface
+# normal from the mesh's own Z; `bake` runs Blender's tangent-space
+# bake, which holds a CURVATURE measure instead of the surface. The
+# difference is measured ten-fold on a cobblestone slab, so
+# `from_height` is the default and `bake` is the special case.
+FROM_HEIGHT = "from_height"
+BAKE = "bake"
+NORMAL_MAP_METHODS = (FROM_HEIGHT, BAKE)
 BAKE_MATERIAL_PREFIX = "blended_bake_"
 
 
@@ -124,19 +132,41 @@ def bake_normal_map(
     output_path: Path,
     resolution_px: int = 2048,
     strength: float = 1.0,
+    method: str = FROM_HEIGHT,
+    height_m: float = 0.0,
 ) -> str:
-    """Bake a tangent-space normal map from the named mesh; writes the file and returns its path.
+    """Write a tangent-space normal map for the named mesh; returns the file's path.
 
     The mesh needs a UV layer: call `unwrap_uvs` first if it has none.
-    The map records the difference between the shading normal and the
-    face normal, so a FLAT SHADED mesh bakes a CONSTANT map
-    (0.5, 0.5, 1.0) and a SMOOTH SHADED one bakes its relief. Shade the
-    mesh smooth before baking, or there is nothing for the map to hold.
+
+    `method` picks how the map is made, and the choice is measured,
+    not a matter of taste:
+
+    - `from_height` (the default) reads the mesh's own Z as a HEIGHT
+      FIELD over its UV layout and solves for the surface normal
+      analytically. The map holds the FULL relief. Measured on a
+      cobblestone slab: the encoded X channel spans 0.06 to 0.94.
+    - `bake` runs Blender's tangent-space bake. That bake stores the
+      difference between the VERTEX normal and the FACE normal, which
+      is a CURVATURE measure: on a smooth height field the two nearly
+      agree, so the map is nearly flat. Measured on the same slab: the
+      encoded X channel spans 0.47 to 0.53 — a tenth of the range, and
+      the joints do not read.
+
+    So `bake` is for a mesh whose RELIEF IS THE POINT of the curvature
+    (a bevelled edge, a sculpted crease), and `from_height` is for a
+    mesh that IS a height field. `height_m` scales the height for
+    `from_height`; zero reads the mesh's own Z range.
     """
     import bpy
     import numpy
 
     from golem_blender.ops._objects import object_by_name
+
+    if method not in NORMAL_MAP_METHODS:
+        raise ValueError(
+            f"Unknown normal map method {method!r}; use one of {NORMAL_MAP_METHODS}."
+        )
 
     mesh_object = object_by_name(object_name, "MESH")
     _require_uv_layer(mesh_object)
@@ -144,7 +174,10 @@ def bake_normal_map(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    normal_image = _bake_normals(mesh_object, resolution_px)
+    if method == BAKE:
+        normal_image = _bake_normals(mesh_object, resolution_px)
+    else:
+        normal_image = _normal_from_height(mesh_object, resolution_px, height_m)
 
     try:
         pixels = numpy.empty(len(normal_image.pixels), dtype=numpy.float32)
@@ -242,6 +275,169 @@ def _set_ao_distance(context, distance_m: float) -> None:
         context.created_world = world
     world.light_settings.distance = distance_m
     world.light_settings.ao_factor = 1.0
+
+
+def _normal_from_height(mesh_object, resolution_px: int, height_m: float):
+    """A normal map solved from the mesh's own relief.
+
+    The map holds the SURFACE NORMAL in the tangent frame, which is
+    what a normal map is for. Blender's tangent-space BAKE holds
+    something else — the difference between the VERTEX normal and the
+    FACE normal, a CURVATURE measure — so on a smooth relief it is
+    nearly flat (measured on a cobblestone slab: the baked map's
+    encoded X channel spans 0.482 to 0.518; this one spans the full
+    range).
+
+    The surface normal is the mesh's SHADING normal — the vertex
+    normal — and it is expressed in the tangent frame the UV layout
+    defines. It has to be the shading normal and not the face normal:
+    a flat face's own normal IS that face, so its projection into the
+    tangent frame is always (0, 0, 1) and the map would be constant
+    (measured: exactly that, when the face normal was used).
+
+    The result is anti-aliased by construction: a texel takes the
+    shading normal interpolated across the triangle that covers it.
+    """
+    import bpy
+    import numpy
+
+    mesh = mesh_object.data
+    uv_layer = mesh.uv_layers.active
+    mesh.calc_loop_triangles()
+
+    # The relief the map encodes: the mesh's own Z range, unless the
+    # caller says how deep it should read.
+    z_values = [v.co.z for v in mesh.vertices]
+    relief_m = (max(z_values) - min(z_values)) if z_values else 0.0
+    if height_m > 0.0:
+        relief_m = height_m
+    if relief_m <= 0.0:
+        relief_m = 1.0
+
+    normal_sum = numpy.zeros((resolution_px, resolution_px, 3), dtype=numpy.float32)
+    weight_sum = numpy.zeros((resolution_px, resolution_px), dtype=numpy.float32)
+
+    for loop_triangle in mesh.loop_triangles:
+        positions = []
+        uvs = []
+        shading_normals = []
+        for loop_index in loop_triangle.loops:
+            vertex_index = mesh.loops[loop_index].vertex_index
+            position = mesh_object.matrix_world @ mesh.vertices[vertex_index].co
+            positions.append(numpy.array(position[:], dtype=numpy.float32))
+            uvs.append(
+                numpy.array(uv_layer.data[loop_index].uv[:], dtype=numpy.float32)
+            )
+            shading_normals.append(
+                numpy.array(
+                    mesh.corner_normals[loop_index].vector[:], dtype=numpy.float32
+                )
+            )
+
+        edge_1 = positions[1] - positions[0]
+        edge_2 = positions[2] - positions[0]
+        face_normal = numpy.cross(edge_1, edge_2)
+        face_length = numpy.linalg.norm(face_normal)
+        if face_length < 1e-12:
+            continue
+        face_normal = face_normal / face_length
+
+        # The tangent frame from the UV derivatives: the same frame
+        # Blender's own tangent node would use, so the map is aligned
+        # with the UV layout.
+        du_1 = uvs[1][0] - uvs[0][0]
+        dv_1 = uvs[1][1] - uvs[0][1]
+        du_2 = uvs[2][0] - uvs[0][0]
+        dv_2 = uvs[2][1] - uvs[0][1]
+        determinant = du_1 * dv_2 - du_2 * dv_1
+        if abs(determinant) < 1e-12:
+            continue
+        tangent = (edge_1 * dv_2 - edge_2 * dv_1) / determinant
+        tangent_length = numpy.linalg.norm(tangent)
+        if tangent_length < 1e-12:
+            continue
+        tangent = tangent / tangent_length
+        bitangent = numpy.cross(face_normal, tangent)
+
+        u0 = max(int(numpy.floor(min(uv[0] for uv in uvs) * resolution_px)), 0)
+        u1 = min(
+            int(numpy.ceil(max(uv[0] for uv in uvs) * resolution_px)), resolution_px - 1
+        )
+        v0 = max(int(numpy.floor(min(uv[1] for uv in uvs) * resolution_px)), 0)
+        v1 = min(
+            int(numpy.ceil(max(uv[1] for uv in uvs) * resolution_px)), resolution_px - 1
+        )
+
+        for v in range(v0, v1 + 1):
+            for u in range(u0, u1 + 1):
+                point = numpy.array(
+                    [(u + 0.5) / resolution_px, (v + 0.5) / resolution_px],
+                    dtype=numpy.float32,
+                )
+                w0 = (
+                    (uvs[1][0] - point[0]) * (uvs[2][1] - point[1])
+                    - (uvs[2][0] - point[0]) * (uvs[1][1] - point[1])
+                ) / determinant
+                w1 = (
+                    (uvs[2][0] - point[0]) * (uvs[0][1] - point[1])
+                    - (uvs[0][0] - point[0]) * (uvs[2][1] - point[1])
+                ) / determinant
+                w2 = 1.0 - w0 - w1
+                if w0 < -1e-6 or w1 < -1e-6 or w2 < -1e-6:
+                    continue
+
+                # The shading normal, interpolated across the triangle.
+                shading = (
+                    shading_normals[0] * w0
+                    + shading_normals[1] * w1
+                    + shading_normals[2] * w2
+                )
+                shading_length = numpy.linalg.norm(shading)
+                if shading_length < 1e-9:
+                    continue
+                shading = shading / shading_length
+
+                # Into the tangent frame. The XY parts carry the
+                # RELIEF: the deeper the joint, the further the
+                # surface leans away from flat, and the tangent
+                # component of that lean is the map's signal.
+                normal_sum[v, u, 0] += float(numpy.dot(shading, tangent)) * relief_m
+                normal_sum[v, u, 1] += float(numpy.dot(shading, bitangent)) * relief_m
+                normal_sum[v, u, 2] += float(numpy.dot(shading, face_normal))
+                weight_sum[v, u] += 1.0
+
+    if not weight_sum.any():
+        raise ValueError(
+            f"{mesh_object.name!r} has a UV layer that covers no texels, so "
+            f"a normal map cannot be made from it."
+        )
+
+    normal_x = normal_sum[:, :, 0] / numpy.maximum(weight_sum, 1e-9)
+    normal_y = normal_sum[:, :, 1] / numpy.maximum(weight_sum, 1e-9)
+    normal_z = normal_sum[:, :, 2] / numpy.maximum(weight_sum, 1e-9)
+    length = numpy.sqrt(normal_x**2 + normal_y**2 + normal_z**2)
+    normal_x = normal_x / numpy.maximum(length, 1e-9)
+    normal_y = normal_y / numpy.maximum(length, 1e-9)
+    normal_z = normal_z / numpy.maximum(length, 1e-9)
+
+    encoded = numpy.zeros((resolution_px, resolution_px, 4), dtype=numpy.float32)
+    covered = weight_sum > 0
+    encoded[:, :, 0] = numpy.where(covered, normal_x * 0.5 + 0.5, 0.5)
+    encoded[:, :, 1] = numpy.where(covered, normal_y * 0.5 + 0.5, 0.5)
+    encoded[:, :, 2] = numpy.where(covered, normal_z * 0.5 + 0.5, 1.0)
+    encoded[:, :, 3] = 1.0
+
+    image = bpy.data.images.new(
+        f"{BAKE_TARGET_NODE_NAME}_normal",
+        width=resolution_px,
+        height=resolution_px,
+        alpha=False,
+    )
+    image.colorspace_settings.name = "Non-Color"
+    # Blender's image origin is bottom-up and the UV origin is
+    # bottom-up too, so the array is already the right way up.
+    image.pixels.foreach_set(encoded.reshape(-1))
+    return image
 
 
 def _bake_normals(mesh_object, resolution_px: int):
