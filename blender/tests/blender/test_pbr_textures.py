@@ -115,6 +115,26 @@ def test_the_preview_refuses_the_workbench_engine(empty_scene, tmp_path):
         )
 
 
+def test_the_preview_camera_aims_at_the_largest_face(empty_scene):
+    """A flat slab's camera must look at its TOP, not along its edge.
+
+    The camera used to aim down the object's WIDEST extent. A flat
+    slab has two equal widest extents, so the camera landed edge-on to
+    the surface and the preview showed a flat field.
+    """
+    from golem_blender.capture.texture_preview import _facing_direction
+
+    box = _box(size_m=2.0)
+    # A slab: wide in X and Y, thin in Z.
+    for vertex in box.data.vertices:
+        vertex.co.z = vertex.co.z * 0.05
+    box.data.update()
+
+    direction = _facing_direction(box)
+    # The largest face spans X and Y, so the camera looks down Z.
+    assert abs(direction.z) == 1.0
+
+
 def test_the_preview_leaves_the_scene_as_it_found_it(empty_scene, tmp_path):
     """The camera and the light are removed, and the engine is restored."""
     from golem_blender.capture.texture_preview import render_texture_preview
@@ -186,6 +206,28 @@ def test_the_report_says_what_the_graph_has_wired(empty_scene, tmp_path):
     assert report.orm_channels == "R=ao,G=roughness,B=metallic"
     assert report.base_color_path.endswith("red.png")
     assert report.orm_path.endswith("orm.png")
+
+
+def test_the_orm_is_loaded_as_non_color(empty_scene, tmp_path):
+    """The ORM carries VALUES, so it must not be gamma-decoded on the way in.
+
+    Loaded as sRGB, a roughness of 0.7 reaches the shader as
+    0.7^(1/2.2) = 0.85 — the material is quietly wrong.
+    """
+    from golem_blender.ops.pbr_textures import assign_pbr_texture_set
+
+    box = _box()
+    base_color_path = _write_image(tmp_path / "red.png", (*TEXTURE_RGB, 1.0))
+    orm_path = _write_image(tmp_path / "orm.png", ORM_RGBA)
+    assign_pbr_texture_set(box.name, "RedSet", base_color_path, orm_path)
+
+    material = box.data.materials[0]
+    orm_node = next(
+        node
+        for node in material.node_tree.nodes
+        if node.bl_idname == "ShaderNodeTexImage" and node.name == "blended_pbr_orm"
+    )
+    assert orm_node.image.colorspace_settings.name == "Non-Color"
 
 
 def test_a_missing_map_is_refused_with_its_path(empty_scene, tmp_path):
@@ -315,7 +357,9 @@ def test_the_bake_leaves_no_scratch_datablock_behind(empty_scene, tmp_path):
     # during a render; those are Blender's, not the bake's.
     new_images = {image.name for image in bpy.data.images} - before_images
     assert not [
-        name for name in new_images if not name.startswith(("Render Result", "Viewer Node"))
+        name
+        for name in new_images
+        if not name.startswith(("Render Result", "Viewer Node"))
     ]
 
 

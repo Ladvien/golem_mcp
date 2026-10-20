@@ -151,6 +151,56 @@ def test_exporting_reports_a_map_that_is_missing_instead_of_hiding_it(tmp_path):
     assert set(report["files"]) == {"base_color"}
 
 
+def test_the_generated_png_is_found_through_the_mac_mount(tmp_path, monkeypatch):
+    """A path big reports must be TRANSLATED before it can be opened.
+
+    The bug this pins: the golem server's `reference_dir` is
+    `/mnt/codex_fs/...` — the path BIG sees. Read as a Mac path it does
+    not exist, the lookup failed, and the copy silently took the
+    PREVIOUS map while the tool reported success.
+    """
+    from blmcp.tools import golem_pbr_textures
+
+    root = tmp_path / "codex"
+    (root / "game_assets" / "generated").mkdir(parents=True)
+    monkeypatch.setattr(kitbash_paths, "CODEX_ROOT_MAC", root)
+    monkeypatch.setattr(kitbash_paths, "CODEX_ROOT_ON_BIG", "/mnt/fake_codex")
+    monkeypatch.setattr(pbr_paths, "big_path", kitbash_paths.big_path)
+
+    published = root / "game_assets" / "generated" / "a_prompt_20260101_000000"
+    published.mkdir(parents=True)
+    image = published / "reference.png"
+    image.write_bytes(b"generated-bytes")
+
+    resolved = golem_pbr_textures._resolve_generated_png(
+        {
+            "reference_dir": "/mnt/fake_codex/game_assets/generated/a_prompt_20260101_000000",
+            "local_path": "/home/someone/else/output.png",
+        }
+    )
+
+    assert resolved == image
+    assert resolved.read_bytes() == b"generated-bytes"
+
+
+def test_a_path_big_reports_that_is_not_on_codex_is_refused(tmp_path, monkeypatch):
+    """A path on big's own filesystem cannot be opened here, and says so."""
+    from blmcp.tools import golem_pbr_textures
+
+    root = tmp_path / "codex"
+    root.mkdir(parents=True)
+    monkeypatch.setattr(kitbash_paths, "CODEX_ROOT_MAC", root)
+    monkeypatch.setattr(kitbash_paths, "CODEX_ROOT_ON_BIG", "/mnt/fake_codex")
+
+    assert golem_pbr_textures._mac_path_of("/home/someone/else/output.png") is None
+    assert (
+        golem_pbr_textures._resolve_generated_png(
+            {"local_path": "/home/someone/else/output.png"}
+        )
+        is None
+    )
+
+
 # --- portability ------------------------------------------------------------
 
 

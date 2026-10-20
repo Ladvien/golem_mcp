@@ -33,6 +33,7 @@ __all__ = ("register",)
 import json
 from pathlib import Path
 
+from golem_blender.kitbash import paths as kitbash_paths
 from golem_blender.pbr import generate as pbr_generate
 from golem_blender.pbr import paths as pbr_paths
 from mcp.server.fastmcp import (  # pylint: disable=import-error,no-name-in-module
@@ -94,9 +95,12 @@ def register(mcp: FastMCP) -> None:
         """Generate a base-colour texture on the golem server and write it into the texture set; returns the image and its paths.
 
         `init_image_path` refines an existing map: it must be a path under
-        the codex root (the Mac's `~/mnt/codex_fs/...`), and a HIGHER
-        `image_strength` changes more of it while a LOWER one keeps more
-        of the original. The written file is `T_<output_name>_BaseColor.png`.
+        the codex root (the Mac's `~/mnt/codex_fs/...`). A LOWER
+        `image_strength` changes MORE of it and a HIGHER one keeps more of
+        the original — measured against mflux, not assumed: from the same
+        init image, strength 0 produced a wholly new pattern, 0.25 kept
+        the layout and changed the shapes, and 0.6 kept the init almost
+        as it was. The written file is `T_<output_name>_BaseColor.png`.
         """
         directory = Path(texture_dir) if texture_dir else pbr_paths.texture_root()
         texture_name = output_name or "Texture"
@@ -309,21 +313,25 @@ def _resolve_generated_png(payload: dict) -> Path | None:
     """The generated PNG on a filesystem this process can open.
 
     The golem server writes the image into its own output directory and
-    publishes a copy under the codex root; the codex copy is the one
-    this process can open, so it is preferred.
+    publishes a copy under the codex root. BOTH of those paths are
+    paths as BIG sees them, so they must be translated to the Mac's
+    mount before they can be opened here. Reading them as Mac paths
+    silently found a STALE file: /mnt/codex_fs/... does not exist on the
+    Mac, so the lookup failed and the copy took whatever was already at
+    the destination — the previous map, byte for byte, while the tool
+    reported success.
     """
     reference_dir = payload.get("reference_dir")
     if reference_dir:
-        candidate = Path(reference_dir) / "reference.png"
-        if candidate.is_file():
-            return candidate
+        candidate = _mac_path_of(reference_dir)
+        if candidate is not None:
+            image = candidate / "reference.png"
+            if image.is_file():
+                return image
 
     remote_path = payload.get("remote_path")
     if remote_path:
-        try:
-            candidate = Path(pbr_paths.big_path(remote_path))
-        except ValueError:
-            candidate = None
+        candidate = _mac_path_of(remote_path)
         if candidate is not None and candidate.is_file():
             return candidate
 
@@ -334,3 +342,15 @@ def _resolve_generated_png(payload: dict) -> Path | None:
             return candidate
 
     return None
+
+
+def _mac_path_of(big_path: str) -> Path | None:
+    """The Mac's path for a path big reported, or None when it is not one.
+
+    A path big gives that is not under the codex root is on big's own
+    filesystem, which this process cannot open at all.
+    """
+    try:
+        return kitbash_paths.mac_path(big_path)
+    except ValueError:
+        return None

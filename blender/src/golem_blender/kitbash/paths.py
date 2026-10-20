@@ -34,3 +34,21 @@ def big_path(mac_path: Path) -> str:
             f"{mac_path} is not under {CODEX_ROOT_MAC}, so big cannot see it"
         ) from None
     return f"{CODEX_ROOT_ON_BIG.rstrip('/')}/{relative.as_posix()}"
+
+
+def mac_path(big_path: str) -> Path:
+    """The path the Mac sees for a file under CODEX_ROOT_ON_BIG; ValueError for any other path.
+
+    The reverse of ``big_path``. The golem server reports paths as BIG
+    sees them (``/mnt/codex_fs/...``), and the Mac has to open them, so
+    the prefix has to come back off. A path that is not under the big
+    root is on big's own filesystem, which the Mac cannot open at all,
+    and saying so is better than handing back a path that will not
+    open.
+    """
+    big_prefix = CODEX_ROOT_ON_BIG.rstrip("/") + "/"
+    if not big_path.startswith(big_prefix):
+        raise ValueError(
+            f"{big_path} is not under {CODEX_ROOT_ON_BIG}, so the Mac cannot see it"
+        )
+    return CODEX_ROOT_MAC / big_path[len(big_prefix) :]

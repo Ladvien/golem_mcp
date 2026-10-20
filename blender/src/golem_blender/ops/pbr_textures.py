@@ -165,6 +165,11 @@ def _wire_orm(material, links, principled, base_color_node, orm_path: Path) -> N
     import bpy
 
     orm_image = bpy.data.images.load(str(orm_path), check_existing=True)
+    # The ORM carries VALUES, not colour: R = occlusion, G = roughness,
+    # B = metallic. Loaded as sRGB its channels would be gamma-decoded
+    # on the way in, so a roughness of 0.7 would reach the shader as
+    # 0.7^(1/2.2) = 0.85. Non-Color is the only correct space for it.
+    orm_image.colorspace_settings.name = "Non-Color"
     orm_node = _get_or_create_node(material, ORM_IMAGE_NODE_NAME, "ShaderNodeTexImage")
     orm_node.image = orm_image
 

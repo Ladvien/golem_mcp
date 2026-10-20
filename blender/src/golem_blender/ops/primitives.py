@@ -66,6 +66,16 @@ def link_into_scene(object_name: str) -> ObjectName:
 
     Never skip this: an unlinked object has no depsgraph instance, so
     evaluated_get() silently returns stored values (see drift catalog).
+
+    The VIEW LAYER is updated afterwards, and that is not a nicety.
+    A newly linked object does not appear in
+    ``bpy.context.view_layer.objects`` until the depsgraph has been
+    refreshed (measured in Blender 5.2: the object was in
+    ``scene.collection.objects`` and NOT in the view layer's object
+    list, both before and after ``view_layer.update()`` had not been
+    called). An object outside the view layer is invisible to a
+    RENDER, so the asset looked like a flat empty field while the
+    scene held it.
     """
     import bpy
 
@@ -77,6 +87,10 @@ def link_into_scene(object_name: str) -> ObjectName:
     # linking the first measured step, and a second link must not fail.
     if blender_object.name not in collection.objects:
         collection.objects.link(blender_object)
+    # Without this the object is in the collection but not in the view
+    # layer, and the view layer is what renders and what the analyzer
+    # measures.
+    bpy.context.view_layer.update()
     return ObjectName(object_name)
 
 

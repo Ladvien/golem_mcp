@@ -253,12 +253,14 @@ def import_generated_asset(
 
     if not height_m > 0 or not math.isfinite(height_m):
         raise ValueError(f"height_m must be a positive number, got {height_m}")
-    big_prefix = paths.CODEX_ROOT_ON_BIG.rstrip("/") + "/"
-    local_glb_path = (
-        str(paths.CODEX_ROOT_MAC / glb_path[len(big_prefix) :])
-        if glb_path.startswith(big_prefix)
-        else glb_path
-    )
+    # A glb_path under big's codex root (/mnt/codex_fs/...) is read
+    # through the Mac mount, so generate_3d's published_to + "/asset.glb"
+    # can be passed verbatim. A path that is NOT under that root is
+    # already a path this machine can open.
+    try:
+        local_glb_path = str(paths.mac_path(glb_path))
+    except ValueError:
+        local_glb_path = glb_path
 
     generated_object = _import_joined(local_glb_path, object_name)
     try:

@@ -321,9 +321,12 @@ EXPECTED_TOOLS = [
         "description": "Generate a base-colour texture on the golem server and write it into the texture set; returns the image and its paths.\n"
         "\n"
         "`init_image_path` refines an existing map: it must be a path under\n"
-        "the codex root (the Mac's `~/mnt/codex_fs/...`), and a HIGHER\n"
-        "`image_strength` changes more of it while a LOWER one keeps more\n"
-        "of the original. The written file is `T_<output_name>_BaseColor.png`.\n",
+        "the codex root (the Mac's `~/mnt/codex_fs/...`). A LOWER\n"
+        "`image_strength` changes MORE of it and a HIGHER one keeps more of\n"
+        "the original \u2014 measured against mflux, not assumed: from the same\n"
+        "init image, strength 0 produced a wholly new pattern, 0.25 kept\n"
+        "the layout and changed the shapes, and 0.6 kept the init almost\n"
+        "as it was. The written file is `T_<output_name>_BaseColor.png`.\n",
         "inputSchema": {
             "properties": {
                 "prompt": {"title": "Prompt", "type": "string"},
