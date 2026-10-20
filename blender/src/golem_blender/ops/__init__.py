@@ -76,6 +76,7 @@ from golem_blender.ops.primitives import (
     remove_object_and_mesh,
     rename_object,
 )
+from golem_blender.ops.relief import ReliefSlabReport, add_relief_slab
 from golem_blender.ops.rigging import (
     BoneSpec,
     RigReport,
@@ -129,6 +130,7 @@ __all__ = [
     "NoEdgesSelected",
     "PairContour",
     "PbrTextureReport",
+    "ReliefSlabReport",
     "RigReport",
     "RingSkirtSpec",
     "SplayedLegSpec",
@@ -141,6 +143,7 @@ __all__ = [
     "add_box",
     "add_cylinder",
     "add_lathe",
+    "add_relief_slab",
     "add_splayed_leg",
     "animation_report",
     "apply_all_modifiers",

@@ -34,6 +34,7 @@ OP_MODULE_NAMES = (
     "uv",
     "pbr_textures",
     "pbr_bake",
+    "relief",
     "rigging",
     "weights",
     "animation",
