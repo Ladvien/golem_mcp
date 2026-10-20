@@ -46,20 +46,20 @@ from golem_blender.ops._objects import ObjectName
 # is about 200 mm, so a cobble spans about fifty cells.
 #
 # It is measured, and every measure agrees. Sweeping the cell count
-# with the joint's depth held at 40 mm, the render's contrast gain
-# from the ORM was +0.016 at 128 cells, +0.023 at 256 and +0.028 at
-# 512; the normal map's signal was 12.2%, 16.2% and 25.7%; and the
-# occlusion's dark fraction was 0.48%, 3.03% and 5.74%. All three
-# grow with the cells, so the default is the ceiling.
+# with the joint's depth held PHYSICAL (60 mm), the render's contrast
+# gain from the ORM was +0.016 at 128 cells, +0.023 at 256 and +0.028
+# at 512; the normal map's signal was 12.2%, 16.2% and 25.7%; and the
+# occlusion's dark fraction was 0.48%, 3.03% and 5.74%. All three grow
+# with the cells, so the default is the ceiling.
 #
 # The cost is now affordable: the bake is 2.6 s at 512 cells, and
 # the gate's per-call cost fell from 41.8 s to 3.2 s when the UV
 # overlap check became a sweep line.
 DEFAULT_CELL_COUNT = 512
 # The slab's thickness. It has to hold the joint: the default depth is
-# 40 mm, so the slab must be at least 50 mm thick for the joint to
-# be a groove in it rather than a hole through it. The thickness is
-# the slab's FLOOR, so it follows the depth.
+# 60 mm, so the slab must be at least 75 mm thick for the joint to be
+# a groove in it rather than a hole through it. The thickness is the
+# slab's FLOOR, so it follows the depth.
 DEFAULT_THICKNESS_M = 0.08
 # The cell count's ceiling, for the same reason: the gate's cost grows
 # with the mesh. 512 cells is 524288 triangles for the top sheet, and
@@ -99,10 +99,6 @@ MAXIMUM_DEPTH_FRACTION = 0.8
 # reads as a cobble street, and it is the default.
 DEFAULT_DEPTH_M = 0.06
 DEFAULT_WALL_CELLS = 1
-# The threshold that turns the soft joint response into a definite
-# network, and the ramp that widens it into walls.
-JOINT_THRESHOLD = 0.45
-JOINT_RAMP = 0.35
 # How much the joint response is turned into depth. The response is a
 # local contrast in 0..1, and the joints are thin, so a gain above 1
 # reaches the weak ones: measured, the signal in the baked normal map

@@ -11,10 +11,11 @@ The render setup, each part of it measured:
 
 - EEVEE with no light is near-black (mean 0.0003), so a light is
   created when the scene has none.
-- The camera must FACE the object's surface. A camera on the -Y axis
-  looking at a horizontal plane sees the plane EDGE-ON, and the sampled
-  pixels are background, not the surface. The single preview therefore
-  looks down the object's WIDEST extent, square on.
+- The camera must FACE the object's surface. A camera looking at a
+  horizontal plane EDGE-ON sees background, not the surface. The single
+  preview therefore faces the object's LARGEST FACE, square on — not
+  its widest extent, which for a flat slab is one of two equal extents
+  and would point the camera along the surface.
 - The camera and the light are removed afterwards, and the previous
   engine, camera and resolution are restored, so a preview leaves the
   scene as it found it.
@@ -60,8 +61,8 @@ def render_texture_preview(
     `engine` must be a shader-accurate engine; BLENDER_WORKBENCH is
     refused with a ValueError naming the reason, because a Workbench
     preview shows the material's viewport colour and therefore cannot
-    show a texture. The camera looks down the object's widest extent,
-    so it faces the surface instead of its edge.
+    show a texture. The camera faces the object's LARGEST FACE, so it
+    looks at the surface rather than at its edge.
     """
     import bpy
 

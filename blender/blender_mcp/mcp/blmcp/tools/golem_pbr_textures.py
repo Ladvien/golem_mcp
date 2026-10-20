@@ -61,8 +61,13 @@ from blmcp.tools_helpers.live_blender import require_live_blender
 GENERATE_IMAGE_TOOL = "generate_image"
 # The model the lane generates with by default.
 DEFAULT_MODEL = "flux2-klein-4b"
-# The default init-image influence. The mflux CLI says 0 is no influence
-# and 1 is full replacement.
+# The default init-image influence.
+#
+# `image_strength` is how much of the INIT IMAGE the result KEEPS: 1 is
+# the init almost unchanged, 0 discards it. That is measured against
+# mflux, not assumed — the mean difference from the init was 0.5 at
+# strength 1.0, 17.1 at 0.6, 45.2 at 0.25 and 37.3 at 0.0. So to
+# REPLACE a map, use a LOW strength; to nudge it, a HIGH one.
 DEFAULT_IMAGE_STRENGTH = 0.4
 
 _TOOL_CALL = toolcode_wrap_with_calling_convention(

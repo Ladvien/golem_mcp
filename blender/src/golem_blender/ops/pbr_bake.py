@@ -157,14 +157,18 @@ def bake_normal_map(
 
     - `from_height` (the default) reads the mesh's own Z as a HEIGHT
       FIELD over its UV layout and solves for the surface normal
-      analytically. The map holds the FULL relief. Measured on a
-      cobblestone slab: the encoded X channel spans 0.06 to 0.94.
+      analytically. The map holds the FULL relief.
     - `bake` runs Blender's tangent-space bake. That bake stores the
       difference between the VERTEX normal and the FACE normal, which
       is a CURVATURE measure: on a smooth height field the two nearly
-      agree, so the map is nearly flat. Measured on the same slab: the
-      encoded X channel spans 0.47 to 0.53 — a tenth of the range, and
-      the joints do not read.
+      agree, so the map is nearly flat.
+
+    Measured together, on the same cobblestone slab (a 2 m relief at
+    512 cells with a 60 mm joint, baked at 1024 px): the `from_height`
+    map's encoded X channel spans 0.000 to 1.000 — the full range —
+    and 32.31% of its texels carry a real normal, while the `bake`
+    map's spans 0.400 to 0.596 and only 0.32% do. That is the whole
+    difference: a fifth of the range, and a hundredth of the signal.
 
     So `bake` is for a mesh whose RELIEF IS THE POINT of the curvature
     (a bevelled edge, a sculpted crease), and `from_height` is for a
@@ -297,9 +301,11 @@ def _normal_from_height(mesh_object, resolution_px: int, height_m: float):
     what a normal map is for. Blender's tangent-space BAKE holds
     something else — the difference between the VERTEX normal and the
     FACE normal, a CURVATURE measure — so on a smooth relief it is
-    nearly flat (measured on a cobblestone slab: the baked map's
-    encoded X channel spans 0.482 to 0.518; this one spans the full
-    range).
+    nearly flat. Measured together on the same cobblestone slab (a 2 m
+    relief at 512 cells with a 60 mm joint, baked at 1024 px): the
+    baked map's encoded X channel spans 0.400 to 0.596 and 0.32% of its
+    texels carry a real normal; this one spans 0.000 to 1.000 and
+    32.31% do.
 
     The surface normal is the mesh's SHADING normal — the vertex
     normal — and it is expressed in the tangent frame the UV layout

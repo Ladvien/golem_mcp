@@ -9,6 +9,7 @@ in the new code names a machine.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -269,4 +270,116 @@ def test_the_new_files_name_no_machine(source_path):
         assert forbidden not in code, (
             f"{source_path.name} contains {forbidden!r} in its code: the lane "
             f"must work on any host, so every root comes from the environment."
+        )
+
+
+# --- the procedure stays true ----------------------------------------------
+
+PROCEDURE_PATH = SOURCE_ROOT / "pbr" / "procedure.md"
+# The names the procedure mixes: some are OPS the Blender runs, some
+# are TOOLS the MCP server runs. An agent reads the procedure and calls
+# names from it, so every one must be callable, and none may be a dead
+# end.
+PROCEDURE_TOOL_NAMES = (
+    "generate_texture_base",
+    "preview_texture",
+    "export_texture_set",
+    "search_reference_images",
+    "save_reference_images",
+)
+PROCEDURE_OP_NAMES = (
+    "add_relief_slab",
+    "assign_pbr_texture_set",
+    "assign_pbr_constants",
+    "bake_orm_map",
+    "bake_normal_map",
+    "pbr_texture_report",
+    "unwrap_uvs",
+)
+
+
+def test_every_name_the_procedure_mentions_is_callable():
+    """A name in the procedure that is neither an op nor a tool is a dead end.
+
+    The procedure is the only thing an agent READS before it starts.
+    A name there that resolves to nothing sends the agent looking for
+    something that does not exist.
+    """
+    import golem_blender.ops as facade
+
+    text = PROCEDURE_PATH.read_text(encoding="utf-8")
+    named = set(re.findall(r"`([a-z_]+)\(", text))
+    named |= set(re.findall(r"^\| `([a-z_]+)`", text, re.MULTILINE))
+
+    for name in sorted(named):
+        assert hasattr(facade, name) or name in PROCEDURE_TOOL_NAMES, (
+            f"the procedure names {name!r}, which is neither an op on the "
+            f"facade nor a tool the server serves"
+        )
+
+
+def test_the_procedure_quotes_the_codes_own_defaults():
+    """The procedure's example numbers must be the code's defaults.
+
+    The procedure is a copy of the code's numbers, and copies drift.
+    This reads the signature and checks the procedure says the same
+    thing, so a default that moves cannot silently leave the
+    procedure quoting the old one.
+    """
+    import inspect
+
+    from golem_blender.ops import pbr_bake, relief
+
+    text = PROCEDURE_PATH.read_text(encoding="utf-8")
+    expected = {
+        "ao_distance_m": inspect.signature(pbr_bake.bake_orm_map)
+        .parameters["ao_distance_m"]
+        .default,
+        "roughness": inspect.signature(pbr_bake.bake_orm_map)
+        .parameters["roughness"]
+        .default,
+        "depth_m": inspect.signature(relief.add_relief_slab)
+        .parameters["depth_m"]
+        .default,
+        "cell_count": inspect.signature(relief.add_relief_slab)
+        .parameters["cell_count"]
+        .default,
+    }
+    for name, value in expected.items():
+        assert f"{name}={value}" in text, (
+            f"the procedure does not quote {name}={value}, the code's default. "
+            f"It must: the procedure is what the agent reads."
+        )
+
+
+def test_the_normal_map_ranges_are_quoted_consistently():
+    """One measured set of ranges, quoted the same way everywhere.
+
+    Three different sets of numbers for the same two maps were in the
+    code and the procedure at once. The point of this test is not the
+    numbers but that there is only ONE place they are written down.
+    """
+    from golem_blender.ops import pbr_bake
+
+    doc = pbr_bake.bake_normal_map.__doc__ or ""
+    # Every NUMBER RANGE in the docstring, whatever words introduce it.
+    # Keying on one phrasing ("spans X to Y") lets a third range through
+    # under a different wording, which is the defect being guarded.
+    quoted = re.findall(r"([\d.]+) to ([\d.]+)", doc)
+    assert len(quoted) == 2, (
+        f"bake_normal_map's docstring quotes {len(quoted)} ranges; it should "
+        f"quote exactly two - the from_height one and the bake one - so the "
+        f"two numbers cannot disagree with each other. Found: {quoted}"
+    )
+    assert len(set(quoted)) == 2, (
+        f"bake_normal_map's docstring quotes the same range twice: {quoted}. "
+        f"The two maps have different ranges, so two identical ones means "
+        f"one of them is wrong."
+    )
+
+    text = PROCEDURE_PATH.read_text(encoding="utf-8")
+    for low, high in quoted:
+        assert f"{low} to {high}" in text, (
+            f"the procedure does not quote the range {low} to {high} that "
+            f"the code's docstring quotes."
         )

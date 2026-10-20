@@ -96,11 +96,13 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    The mesh needs a UV layer — call `unwrap_uvs` first if it has none.
    **The normal map's default method is `from_height`, and that is the
    one to use for a relief surface.** The `bake` method stores a
-   CURVATURE measure, so on a smooth relief it is nearly flat:
-   measured on a cobblestone slab, the baked map's encoded X channel
-   spanned 0.482 to 0.518 and the from-height one spanned 0.388 to
-   0.965. Use `bake` for a mesh whose relief is a crease or an edge
-   rather than a surface.
+   CURVATURE measure, so on a smooth relief it is nearly flat.
+   Measured together on the same cobblestone slab (a 2 m relief at 512
+   cells with a 60 mm joint, baked at 1024 px): the `from_height` map's
+   encoded X channel spans 0.000 to 1.000 — the full range — and
+   32.31% of its texels carry a real normal, while the `bake` map's
+   spans 0.400 to 0.596 and only 0.32% do. Use `bake` for a mesh whose
+   relief is a crease or an edge rather than a surface.
    The AO's reach is not a lever: across a tenfold range the
    occlusion's dark fraction moved 5.62% to 5.79%. The joint's DEPTH
    is the lever, and that is the mesh's, not the bake's.
@@ -139,17 +141,19 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
   line up. Count the stones in the map, and size the mesh so the
   stone lands on the right number of cells.
 - **The ORM's AO channel is what makes the relief read, not the
-  normal map.** Measured on a cobblestone slab: the ORM added +0.0193
-  of contrast to the render against the albedo alone, and the normal
-  map added +0.0027. The AO darkens the joints; the normal map only
-  tilts the stones. So bake the ORM, and treat the normal map as the
-  finishing detail.
-- **The AO's reach saturates.** Measured on the same slab, a reach of
-  0.01 m left 0.88% of the surface dark, 0.03 m left 2.90%, and
-  0.06 m and beyond all left 3.08%: the joints are deep enough that
-  any reach covering them darkens them completely. The default of
-  0.06 m is the first value past the knee; a larger one only costs
-  time.
+  normal map.** Measured on the current cobblestone slab (a 2 m relief
+  at 512 cells with a 60 mm joint): the ORM added +0.0412 of contrast
+  to the render against the albedo alone, and the normal map added
+  +0.0041 — a tenth of the ORM's share. Together they added +0.0412:
+  the normal map's contribution is already inside the ORM's. The AO
+  darkens the joints; the normal map only tilts the stones. So bake
+  the ORM, and treat the normal map as the finishing detail.
+- **The AO's reach barely matters.** Measured on the same slab, a
+  reach of 0.01 m left 6.63% of the surface dark, 0.02 m left 9.63%,
+  and 0.03 m and beyond all left about 9.9% — 10.04% at 0.2 m. The
+  joints are deep enough that any reach covering them darkens them
+  completely, so a larger reach only costs time. The default of 0.06 m
+  sits well past the knee.
 - **Shade the mesh SMOOTH before baking its normal map.** The map
   holds the surface normal, and a FLAT SHADED mesh's surface normal
   is its face normal, so a FLAT SHADED mesh bakes a constant map
@@ -182,5 +186,7 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 | `assign_pbr_texture_set` | Puts the maps on the mesh as one material. |
 | `bake_orm_map` | Bakes the AO and packs it with roughness and metallic. |
 | `bake_normal_map` | Writes the tangent-space normal map. |
+| `assign_pbr_constants` | Writes flat roughness and metallic, for a material that needs no map. |
 | `pbr_texture_report` | Says what the material has actually wired. |
+| `unwrap_uvs` | Gives the mesh a UV layout, which the normal map needs. |
 | `export_texture_set` | Copies the set out with its metadata. |
