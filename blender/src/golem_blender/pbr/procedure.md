@@ -57,13 +57,13 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    `generate_texture_base(prompt="...", output_name="<Name>",
    init_image_path="<the previous map>", image_strength=...)`.
    `init_image_path` must be under the codex root (`~/mnt/codex_fs/...`).
-   **A LOWER `image_strength` CHANGES MORE of the map; a higher one keeps
-   more of the original.** This is measured against mflux, not assumed:
-   from the same init image, strength 0 produced a wholly new pattern,
-   0.25 kept the layout and changed the shapes, and 0.6 kept the init
-   almost as it was. So to REPLACE the map, use a low strength
-   (0.0-0.3); to nudge it, use a high one (0.6-0.9). Change the `seed`
-   for a different result at the same strength.
+   **`image_strength` is how much of the init the result KEEPS: 1 is
+   the init almost unchanged, 0 discards it.** Measured against mflux,
+   not assumed — the mean difference from the init was 0.5 at strength
+   1.0, 17.1 at 0.6, 45.2 at 0.25 and 37.3 at 0.0. So to REPLACE the
+   map, use a LOW strength (0.0-0.3); to nudge it, use a HIGH one
+   (0.6-0.9). Change the `seed` for a different result at the same
+   strength.
 
 5. **Apply it to the object.**
    `assign_pbr_texture_set(object_name="<the mesh>", name="<Material>",
