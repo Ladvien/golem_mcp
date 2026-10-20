@@ -33,6 +33,7 @@ adjustable with a number instead of a prompt.
 
 from __future__ import annotations
 
+import pathlib
 from pathlib import Path
 
 # The stone colours a cobblestone's ramp runs between: a dark grey
@@ -50,10 +51,29 @@ DEFAULT_VARIATION = 0.25
 # The plane the pattern is rendered on, in metres across. The camera
 # frames it exactly, so the image is the pattern with no border.
 PLANE_SIZE_M = 2.0
-# The pattern's scale, in cells across the image. A cobble is about
-# 200 mm and the image is 2 m, so sixteen cells across is a cobble's
-# size. The same default the relief's procedural source uses.
-DEFAULT_PROCEDURAL_SCALE = 16.0
+# The pattern's scale, in cells across the image - and a Voronoi
+# pattern's cell count IS its scale, measured: at a scale of 4 there
+# are 16 cells, at 8 there are 64, and at 16 there are 256, computed
+# from the same jittered-lattice definition the node uses.
+#
+# The size is set by the SURFACE, not by taste. The AI-generated
+# cobblestone the lane delivered has about 4.8 stones across a 2 m
+# street, so the procedural one has to match it or the two textures
+# are not the same size of thing: a cobble is about 400 mm, and
+# about five of them make a 2 m street.
+DEFAULT_PROCEDURAL_SCALE = 5.0
+# How far the pattern's DOMAIN is displaced by a noise texture, and
+# at what scale. The wander is what turns a Voronoi diagram into a
+# cobblestone: the cells' straight edges break into worn curves and
+# the corners round off. Measured on the real thing, the pattern goes
+# from reading as a diagram to reading as a stone surface.
+#
+# The amount is in the pattern's own cell units, so it means the same
+# thing at any scale. The noise's scale is in cells, so the
+# displacement bends a cell's edge rather than moving the cells
+# around.
+DEFAULT_WANDER = 0.8
+DEFAULT_WANDER_SCALE = 4.0
 
 
 def write_procedural_base_color(
@@ -62,6 +82,8 @@ def write_procedural_base_color(
     scale_cells: float = 16.0,
     width_px: int = 2048,
     height_px: int = 2048,
+    wander: float = DEFAULT_WANDER,
+    wander_scale: float = DEFAULT_WANDER_SCALE,
     stone_dark_rgb: tuple[float, float, float] = DEFAULT_STONE_DARK_RGB,
     stone_light_rgb: tuple[float, float, float] = DEFAULT_STONE_LIGHT_RGB,
     mortar_rgb: tuple[float, float, float] = DEFAULT_MORTAR_RGB,
@@ -75,7 +97,12 @@ def write_procedural_base_color(
     generated texture can only be approximately.
 
     `kind` is the cell shape - "voronoi" for rounded stones, "brick"
-    for courses. `scale_cells` is how many cells across the image.
+    for courses. `scale_cells` is how many cells across the image,
+    and a Voronoi pattern's cell count IS its scale.
+
+    `wander` is how far the pattern's domain is displaced by a noise
+    texture, in cell units. It is what makes the cells read as worn
+    stones rather than as a diagram; zero gives the plain diagram.
     """
     import bpy
 
@@ -98,9 +125,18 @@ def write_procedural_base_color(
     output = tree.nodes.new("ShaderNodeOutputMaterial")
     emission = tree.nodes.new("ShaderNodeEmission")
 
-    # The pattern's domain: the UVs scaled to the cell count.
+    # The pattern's domain: the UVs scaled to the cell count, and
+    # then WANDERED.
     #
-    # There is deliberately NO wrap node here. Blender's texture nodes
+    # The wander is what makes it a cobblestone rather than a
+    # diagram. A Voronoi cell's edges are straight lines meeting at
+    # corners, and a cobble's edge is a worn curve - so the DOMAIN is
+    # displaced by a noise texture, and the cell's boundary wanders
+    # with it. Measured on the real thing: the cells break into
+    # irregular stones with rounded edges, and the pattern reads as a
+    # stone surface.
+    #
+    # There is deliberately NO wrap node. Blender's texture nodes
     # already evaluate on a wrapped lattice, so the pattern repeats by
     # itself - measured, the Voronoi field's seam is 0.0083x the
     # interior's largest steps with no wrap at all. Adding one folds
@@ -111,7 +147,31 @@ def write_procedural_base_color(
     scaling.operation = "SCALE"
     scaling.inputs["Scale"].default_value = float(scale_cells)
     tree.links.new(coordinate.outputs["UV"], scaling.inputs[0])
-    domain = scaling.outputs["Vector"]
+
+    if wander > 0.0:
+        noise = tree.nodes.new("ShaderNodeTexNoise")
+        noise.inputs["Scale"].default_value = float(wander_scale)
+        noise.inputs["Detail"].default_value = 2.0
+        tree.links.new(scaling.outputs["Vector"], noise.inputs["Vector"])
+        # The noise is a scalar field, so it is spread over the
+        # domain's three components: that displaces the pattern in
+        # all of them, and the cell's edge wanders rather than the
+        # whole pattern shifting.
+        combine = tree.nodes.new("ShaderNodeCombineXYZ")
+        tree.links.new(noise.outputs["Fac"], combine.inputs["X"])
+        tree.links.new(noise.outputs["Fac"], combine.inputs["Y"])
+        tree.links.new(noise.outputs["Fac"], combine.inputs["Z"])
+        displaced = tree.nodes.new("ShaderNodeVectorMath")
+        displaced.operation = "SCALE"
+        displaced.inputs["Scale"].default_value = float(wander)
+        tree.links.new(combine.outputs["Vector"], displaced.inputs[0])
+        added = tree.nodes.new("ShaderNodeVectorMath")
+        added.operation = "ADD"
+        tree.links.new(scaling.outputs["Vector"], added.inputs[0])
+        tree.links.new(displaced.outputs["Vector"], added.inputs[1])
+        domain = added.outputs["Vector"]
+    else:
+        domain = scaling.outputs["Vector"]
 
     # The cells' own random values, which give each stone its colour,
     # and the distance to a cell edge, which is the joint.
@@ -126,11 +186,22 @@ def write_procedural_base_color(
         tree.links.new(domain, edges.inputs["Vector"])
         cell_colour = cells.outputs["Color"]
         edge_distance = edges.outputs["Distance"]
-    else:
+    elif kind == "brick":
         cells = tree.nodes.new("ShaderNodeTexBrick")
         tree.links.new(domain, cells.inputs["Vector"])
         edge_distance = cells.outputs["Fac"]
         cell_colour = cells.outputs["Color"]
+    else:
+        # A wave is a GRAIN: its troughs are the grain's lines and its
+        # bands are the rings, so the "cell" is a band rather than a
+        # cell. The wave's own value drives both the colour and the
+        # joint.
+        cells = tree.nodes.new("ShaderNodeTexWave")
+        cells.wave_type = "BANDS"
+        cells.bands_direction = "X"
+        tree.links.new(domain, cells.inputs["Vector"])
+        edge_distance = cells.outputs["Fac"]
+        cell_colour = cells.outputs["Fac"]
 
     # The stones' colour: a ramp from the dark stone to the light one,
     # driven by the cell's own random value.
@@ -140,12 +211,20 @@ def write_procedural_base_color(
     tree.links.new(cell_colour, ramp.inputs["Fac"])
 
     # The noise that varies a stone within itself.
+    #
+    # It is ADDED, not multiplied. Multiplying the stone by the noise
+    # darkened it - the noise's dark values pulled every stone down,
+    # and the joint's darkness turned out to be the NOISE's rather
+    # than the mortar's: measured, changing the mortar's colour from
+    # near-black to pale sand left the darkest tenth at 0.2471 in
+    # every case. A stone's wear is a shift around its own colour,
+    # not a scaling of it.
     noise = tree.nodes.new("ShaderNodeTexNoise")
     noise.inputs["Scale"].default_value = float(scale_cells) * 4.0
     tree.links.new(domain, noise.inputs["Vector"])
     varied = tree.nodes.new("ShaderNodeMix")
     varied.data_type = "RGBA"
-    varied.blend_type = "MULTIPLY"
+    varied.blend_type = "ADD"
     varied.inputs[0].default_value = float(variation)
     tree.links.new(ramp.outputs["Color"], varied.inputs[6])
     tree.links.new(noise.outputs["Color"], varied.inputs[7])
@@ -192,8 +271,26 @@ def write_procedural_base_color(
             scene.render.engine = "BLENDER_EEVEE"
             scene.render.resolution_x = width_px
             scene.render.resolution_y = height_px
-            scene.render.image_settings.file_format = "PNG"
-            scene.view_settings.view_transform = "Standard"
+            # The render goes to an EXR, not a PNG, and that is the
+            # whole point of it.
+            #
+            # A rendered PNG is a PICTURE of the pattern: the view
+            # transform compresses it. Measured, an emission of 0.8
+            # came back as 0.5831 under the Standard transform and
+            # 0.4254 under Raw - and a pattern whose values are
+            # distorted is not the pattern, it is a picture of it. Two
+            # different patterns came back with the same seam (38.835x
+            # each) because the distortion dominated their own
+            # structure.
+            #
+            # An EXR is LINEAR FLOAT and is not transformed, so it
+            # carries the values: the same emission came back as
+            # 0.7998 in an EXR. The PNG is then written from those
+            # values with Blender's image API, which is the way the
+            # ORM bake already writes its maps.
+            scene.render.image_settings.file_format = "OPEN_EXR"
+            scene.render.image_settings.color_depth = "32"
+            scene.view_settings.view_transform = "Raw"
             bpy.ops.object.camera_add(location=(0.0, 0.0, 5.0))
             camera = bpy.context.active_object
             camera.rotation_euler = (0.0, 0.0, 0.0)
@@ -214,8 +311,58 @@ def write_procedural_base_color(
             diagonal = PLANE_SIZE_M * 2.0**0.5
             camera.data.lens = camera.data.sensor_width * PLANE_SIZE_M / diagonal
             scene.camera = camera
-            scene.render.filepath = str(output_path)
+            # The EXR's path is UNIQUE per call, so two calls never
+            # share one: a render overwrites it, and a read of a
+            # shared path can find the other call's file.
+            source_exr = str(output_path.with_name(f"{output_path.stem}_source.exr"))
+            scene.render.filepath = source_exr
             bpy.ops.render.render(write_still=True)
+
+            # The EXR's values, written into a PNG without changing
+            # them.
+            import numpy
+
+            # The EXR is read into a FRESH datablock, because the
+            # path is the same every call: `load` reuses the
+            # datablock for a path it has seen, and that datablock
+            # holds the PREVIOUS call's pixels. So the read returns
+            # the last pattern, not this one - which is why every
+            # file the benchmark wrote came out identical, and why
+            # the seam was the same number for all of them.
+            source = bpy.data.images.load(str(source_exr), check_existing=False)
+            try:
+                pixels = numpy.empty(len(source.pixels), dtype=numpy.float32)
+                source.pixels.foreach_get(pixels)
+                array = pixels.reshape((height_px, width_px, 4))
+                # The EXR is linear and the PNG is sRGB, so the values
+                # are ENCODED on the way out. An albedo is a colour,
+                # and a colour is sRGB - the ORM's channels are
+                # values and are written as data, which is a different
+                # file and a different path.
+                encoded = _linear_to_srgb(numpy.clip(array, 0.0, 1.0))
+                image = bpy.data.images.new(
+                    output_path.stem, width=width_px, height=height_px, alpha=False
+                )
+                image.colorspace_settings.name = "sRGB"
+                try:
+                    image.pixels.foreach_set(encoded.ravel())
+                    image.filepath_raw = str(output_path)
+                    image.file_format = "PNG"
+                    image.save()
+                finally:
+                    bpy.data.images.remove(image)
+            finally:
+                bpy.data.images.remove(source)
+            # The EXR is the intermediate, not a deliverable: it is
+            # six megabytes a pattern, and the PNG is the file. So it
+            # is removed once the PNG is written.
+            source_exr_path = pathlib.Path(source_exr)
+            if source_exr_path.exists():
+                source_exr_path.unlink()
+            # And the macOS sidecar that the share makes for it.
+            sidecar = source_exr_path.with_name(f"._{source_exr_path.name}")
+            if sidecar.exists():
+                sidecar.unlink()
         finally:
             (
                 scene.render.engine,
@@ -237,6 +384,22 @@ def write_procedural_base_color(
     return output_path
 
 
+def _linear_to_srgb(values):
+    """The sRGB encoding of linear values, the way a PNG stores colour.
+
+    An albedo map is a COLOUR, and a colour is stored sRGB. The
+    pattern is computed in linear - the nodes' values are linear -
+    so it has to be encoded on the way out, or the map is too dark.
+    """
+    import numpy
+
+    return numpy.where(
+        values <= 0.0031308,
+        values * 12.92,
+        1.055 * numpy.power(numpy.clip(values, 0.0, None), 1.0 / 2.4) - 0.055,
+    )
+
+
 def procedural_source_metadata(
     kind: str = "voronoi",
     scale_cells: float = DEFAULT_PROCEDURAL_SCALE,
@@ -256,7 +419,7 @@ def procedural_source_metadata(
 
 
 # The cell shapes a procedural colour can have.
-PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick")
+PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "wave")
 
 
 __all__ = (
@@ -266,6 +429,8 @@ __all__ = (
     "DEFAULT_STONE_DARK_RGB",
     "DEFAULT_STONE_LIGHT_RGB",
     "DEFAULT_VARIATION",
+    "DEFAULT_WANDER",
+    "DEFAULT_WANDER_SCALE",
     "PROCEDURAL_COLOUR_KINDS",
     "procedural_source_metadata",
     "write_procedural_base_color",

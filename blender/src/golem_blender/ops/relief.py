@@ -129,17 +129,14 @@ JOINT_BLUR_CELLS = 3
 # That is the thing an AI-generated texture can never be, and it is
 # why a procedural surface tiles exactly rather than approximately.
 PROCEDURAL_SOURCE_KINDS = ("voronoi", "brick", "wave", "noise")
-# The pattern's scale, in cells across the slab. A cobble is about
-# 200 mm and the slab is 2 m, so sixteen cells across is a cobble's
-# size. Measured: a Voronoi network at this scale carries joint
-# signal on 12.06% of the cells, and the maps baked from it are
-# usable - the ORM's occlusion is dark on 11.15% of the surface and
-# the normal map carries 6.37% signal, against the 12.13% and 28.42%
-# an albedo-derived relief gives.
+# The pattern's scale, in cells across the slab. It is the SAME
+# number the base colour's pattern uses, because they are the same
+# pattern and must be the same scale: one definition, not two.
 #
-# The number lives in the PBR package, because the base colour's
-# pattern and the relief's pattern are the same pattern and must be
-# the same scale: one definition, not two.
+# The size is set by the SURFACE. The AI-generated cobblestone the
+# lane delivered has about 4.8 stones across a 2 m street, so the
+# procedural one matches it: a cobble is about 400 mm, and about
+# five of them make a 2 m street.
 DEFAULT_PROCEDURAL_SCALE = pbr_procedural.DEFAULT_PROCEDURAL_SCALE
 
 
