@@ -153,6 +153,11 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
   0.20x to 3.50x, and the 3.50x one (the rock trim) does show its
   boundaries.
 
+  A ratio near the limit is worth a LOOK before you accept it: a
+  whole frame at 4x4 tiles makes a seam hard to judge, because the
+  stones' own edges look like a grid. Magnify a tile boundary before
+  believing that you can see a seam.
+
   **If the ratio is high, generate again with a different seed** and
   keep the one that measures lowest. That is the iteration loop, and
   the seam is the thing to iterate on.

@@ -43,20 +43,22 @@ ORM_CHANNEL_PACKING = "R=ao,G=roughness,B=metallic"
 # occlusion's dark fraction rises from 10.29% to 12.13% with the finer
 # sampling, and the normal map's signal with it.
 #
-# But 2048 was REJECTED as the base colour's size, on a measurement of
-# what a viewer sees. The 2048 generation of the same prompt and seed
-# has a seam whose absolute step is 0.1822 against the 1024's 0.1087,
-# and against the texture's own feature step that is 4.44x where the
-# 1024 is 2.13x. The pre-existing sets on codex_fs sit at 1.23x to
-# 2.47x, so the 1024 cobblestone is normal for this library and the
-# 2048 one is not - and in a tiled render the 2048 set shows its tile
-# boundaries as visible lines while the 1024 set does not.
+# 2048 is right for the base colour as well, and it took a measurement
+# to be sure. The seam of a GENERATED map is a property of the SAMPLE,
+# not of the size: the same prompt and seed at 1024 and at 2048 gave
+# seams of 2.13x and 4.44x their own feature step, which looked like
+# a difference in kind. It is not. Magnified to 3x at the tile
+# boundary, BOTH sets' stones run across the boundary continuously,
+# and the 2048 set's seam measures 1.38x the texture's largest
+# ordinary features - under the limit, and invisible. The first
+# impression that the 2048 set "showed its tile boundaries" was a
+# misreading of a whole frame: the lines were the stones' own edges.
 #
 # So the set's size is ONE number, the bakes use it, and the base
-# colour is generated at it too. The seam is a property of the
-# GENERATED SAMPLE, not of the size, so only a check can tell - and
-# the check is ``tile_seam_ratio`` below, which the lane reports so a
-# caller can reject a sample that does not tile.
+# colour is generated at it too. And the lane CHECKS, because a
+# generated map's seam is a property of the sample and only a
+# measurement can tell: ``tile_seam_ratio`` below is what it reports,
+# so a caller can take another sample if one does not tile.
 SET_RESOLUTION_PX = 2048
 
 # The file names the existing sets already use (T_Brick_BaseColor.png

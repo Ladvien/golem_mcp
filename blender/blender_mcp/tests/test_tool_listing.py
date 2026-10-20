@@ -327,7 +327,15 @@ EXPECTED_TOOLS = [
         "mean difference from the init was 0.5 at strength 1.0, 17.1 at\n"
         "0.6, 45.2 at 0.25 and 37.3 at 0.0. So to REPLACE the map, use a\n"
         "LOW strength; to keep it and nudge it, use a HIGH one. The\n"
-        "written file is `T_<output_name>_BaseColor.png`.\n",
+        "written file is `T_<output_name>_BaseColor.png`.\n"
+        "\n"
+        "`width` and `height` default to the SET's resolution, the same\n"
+        "number the bakes use, so a set's three maps agree. Every other\n"
+        "set on codex_fs has all three at 2048, and the relief is sampled\n"
+        "FROM the base colour, so the base colour's pixels decide where\n"
+        "the baked joints land: at 1024 the 512-cell grid gets 2 albedo\n"
+        "pixels per cell and at 2048 it gets 4, and the occlusion's dark\n"
+        "fraction rises from 10.29% to 12.13%.\n",
         "inputSchema": {
             "properties": {
                 "prompt": {"title": "Prompt", "type": "string"},
@@ -343,8 +351,8 @@ EXPECTED_TOOLS = [
                 },
                 "seed": {"default": 42, "title": "Seed", "type": "integer"},
                 "steps": {"default": 8, "title": "Steps", "type": "integer"},
-                "width": {"default": 1024, "title": "Width", "type": "integer"},
-                "height": {"default": 1024, "title": "Height", "type": "integer"},
+                "width": {"default": 2048, "title": "Width", "type": "integer"},
+                "height": {"default": 2048, "title": "Height", "type": "integer"},
                 "init_image_path": {
                     "default": "",
                     "title": "Init Image Path",

@@ -615,9 +615,7 @@ def test_the_seam_measure_compares_against_the_largest_features(tmp_path):
             value = 100
             if column in (7, 8, 23):
                 value = 140
-            elif column in (15, 16):
-                value = 120
-            elif column == width - 1:
+            elif column in (15, 16, width - 1):
                 value = 120
             rows += bytes((value, value, value))
 

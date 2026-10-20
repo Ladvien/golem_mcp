@@ -193,9 +193,10 @@ def register(mcp: FastMCP) -> None:
         # Does the generated map TILE? A set is something you repeat
         # across a floor, and a generated image's seam is a property of
         # the SAMPLE, not of the size - so the only way to know is to
-        # measure this one. The seam's step against the texture's own
-        # feature step: the sets already on codex_fs measure 1.23x to
-        # 2.47x, and above the limit a tile boundary shows as a line.
+        # measure this one. The seam's step against the texture's
+        # largest ordinary features: the sets already on codex_fs
+        # measure 0.20x to 3.50x, and the 3.50x one does show its
+        # boundaries.
         try:
             seam_ratio = pbr_paths.tile_seam_ratio(Path(written.mac_path))
         except (OSError, ValueError) as error:
