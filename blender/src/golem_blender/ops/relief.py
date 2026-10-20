@@ -82,12 +82,21 @@ MAXIMUM_DEPTH_FRACTION = 0.8
 # sweep preferred the coarse grid for the wrong reason. With the
 # depth held physical, every measure grows with the cell count.
 #
-# The value is the knee of the occlusion's curve. Measured on a
-# cobblestone albedo, a joint 20 mm deep left 0.00% of the surface
-# dark, 50 mm left 0.12%, 100 mm left 5.66% — the occlusion needs a
-# CREVICE, and below about half a centimetre the joint is a ramp it
-# cannot find. 60 mm is deep enough to be a crevice and shallow
-# enough that a 2 m street is not a canyon.
+# The value has two bounds, and they are different kinds of bound.
+#
+# The LOWER bound is measured: the occlusion needs a CREVICE, and a
+# joint 20 mm deep left 0.00% of the surface dark, 50 mm left 0.12%
+# and 100 mm left 5.66% — below about half a centimetre the joint is
+# a ramp it cannot find.
+#
+# The UPPER bound is physical. The cobblestone texture's stones are
+# about 282 mm across, and the joint between them is sand and grit,
+# not a trench. The render's contrast keeps rising with the depth
+# (+0.017 at 20 mm, +0.040 at 60 mm, +0.067 at 140 mm), so the
+# measurement alone would push the joint deeper and deeper — but past
+# about a tenth of a metre the cobbles stop being a paved surface and
+# become islands in a pit. 60 mm is the deepest joint that still
+# reads as a cobble street, and it is the default.
 DEFAULT_DEPTH_M = 0.06
 DEFAULT_WALL_CELLS = 1
 # The threshold that turns the soft joint response into a definite
