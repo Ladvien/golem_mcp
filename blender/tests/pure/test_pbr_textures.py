@@ -383,3 +383,71 @@ def test_the_normal_map_ranges_are_quoted_consistently():
             f"the procedure does not quote the range {low} to {high} that "
             f"the code's docstring quotes."
         )
+
+
+def test_a_re_export_leaves_no_stale_file_in_the_set(tmp_path):
+    """The destination is written as a CLEAN SET.
+
+    A previous export put a reference photo there; this one does not
+    include it. Copying over the top would leave the old photo beside
+    the new maps, and the metadata - which lists the extras - would
+    not mention it, so it would look like part of the deliverable and
+    be nothing of the sort.
+    """
+    source = tmp_path / "source"
+    source.mkdir()
+    destination = tmp_path / "out"
+    for file_name in (
+        "T_Brick_BaseColor.png",
+        "T_Brick_ORM.png",
+        "T_Brick_Normal.png",
+    ):
+        (source / file_name).write_bytes(b"png")
+    reference = source / "reference.png"
+    reference.write_bytes(b"reference")
+
+    pbr_generate.export_texture_set("Brick", source, destination, extras=[reference])
+    assert (destination / "reference.png").is_file()
+
+    report = pbr_generate.export_texture_set("Brick", source, destination)
+
+    assert not (destination / "reference.png").exists(), (
+        "the reference from the previous export survived, so the set "
+        "carries a file its own metadata does not list"
+    )
+    assert report["removed"] == ["reference.png"]
+    for file_name in (
+        "T_Brick_BaseColor.png",
+        "T_Brick_ORM.png",
+        "T_Brick_Normal.png",
+    ):
+        assert (destination / file_name).is_file(), (
+            f"the re-export removed {file_name}, which is part of the set"
+        )
+
+
+def test_the_export_leaves_a_file_it_does_not_own_alone(tmp_path):
+    """Only the export's OWN files are removed.
+
+    The destination may hold other work. The previous export's
+    metadata.json is the record of what belongs to the set, so a file
+    no export claims is not this export's to delete.
+    """
+    source = tmp_path / "source"
+    source.mkdir()
+    destination = tmp_path / "out"
+    for file_name in (
+        "T_Brick_BaseColor.png",
+        "T_Brick_ORM.png",
+        "T_Brick_Normal.png",
+    ):
+        (source / file_name).write_bytes(b"png")
+
+    pbr_generate.export_texture_set("Brick", source, destination)
+    other = destination / "notes.txt"
+    other.write_text("someone else's work")
+
+    pbr_generate.export_texture_set("Brick", source, destination)
+
+    assert other.is_file(), "the export deleted a file that was never its own"
+    assert other.read_text() == "someone else's work"

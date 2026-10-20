@@ -28,6 +28,44 @@ from golem_blender.pbr import paths as pbr_paths
 METADATA_FILE_NAME = "metadata.json"
 
 
+def _remove_stale_set_files(
+    destination: Path,
+    current_files: set[str],
+    current_extras: set[str],
+) -> list[str]:
+    """Remove the files a PREVIOUS export put in `destination` and this one does not.
+
+    The previous export's own ``metadata.json`` is the record of what
+    belongs to the set: it lists the maps and the extras it copied.
+    Reading that record is what makes the removal safe - a file no
+    export claims is left alone, because the destination may hold
+    other work that is none of this export's business.
+
+    Returns the names removed.
+    """
+    metadata_path = destination / METADATA_FILE_NAME
+    if not metadata_path.is_file():
+        return []
+    try:
+        previous = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+    keep = {Path(path).name for path in current_files | current_extras}
+    keep.add(METADATA_FILE_NAME)
+    removed: list[str] = []
+    for group in ("files", "extras"):
+        for path in (previous.get(group) or {}).values():
+            name = Path(path).name
+            if name in keep or name.startswith("._"):
+                continue
+            target = destination / name
+            if target.is_file():
+                target.unlink()
+                removed.append(name)
+    return removed
+
+
 @dataclass(frozen=True)
 class GeneratedTexture:
     """One generated base-colour map, where it landed and how it was made."""
@@ -116,6 +154,15 @@ def export_texture_set(
     exported without them says how it was MADE but not how to LIGHT it
     or where the pattern came from, so the export is not reusable on
     its own.
+
+    The destination is written as a CLEAN SET: a file the previous
+    export put there and this one does not is removed. Copying over the
+    top would leave a stale reference photo beside the new maps, and
+    the metadata — which lists the extras — would not mention it, so it
+    would look like part of the deliverable and be nothing of the
+    sort. Only files this module's own export writes are removed: the
+    three maps, the extras it copied, and the metadata. Anything else
+    in the directory is left alone.
     """
     texture_directory = Path(texture_directory)
     destination = Path(destination)
@@ -152,6 +199,16 @@ def export_texture_set(
         shutil.copy2(extra_path, target)
         extras_copied[extra_path.name] = str(target)
 
+    # The set is written whole, so what a PREVIOUS export put here and
+    # this one does not is removed. The previous export's own
+    # metadata.json says what it copied - that is the record of what
+    # belongs to the set - so the files to remove are read from it
+    # rather than guessed. A file nobody's export claims is left
+    # alone: the destination may hold other work.
+    removed = _remove_stale_set_files(
+        destination, set(copied.values()), set(extras_copied.values())
+    )
+
     metadata_path = destination / METADATA_FILE_NAME
     metadata_path.write_text(
         json.dumps(
@@ -175,6 +232,7 @@ def export_texture_set(
         "files": copied,
         "missing": missing,
         "extras": extras_copied,
+        "removed": removed,
         "metadata_path": str(metadata_path),
         "channel_packing": pbr_paths.ORM_CHANNEL_PACKING,
     }
