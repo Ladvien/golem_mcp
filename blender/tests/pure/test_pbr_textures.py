@@ -451,3 +451,198 @@ def test_the_export_leaves_a_file_it_does_not_own_alone(tmp_path):
 
     assert other.is_file(), "the export deleted a file that was never its own"
     assert other.read_text() == "someone else's work"
+
+
+def test_a_set_three_maps_are_the_same_size_by_default():
+    """The base colour and the bakes must agree on the set's resolution.
+
+    A set is three maps that go on one surface, and every other set on
+    codex_fs has all three at 2048. The lane was producing something
+    else - a 1024 base colour with 2048 bakes - because the generator
+    and the bakes each had their own default and nobody made them
+    agree.
+    """
+    import inspect
+
+    from golem_blender.ops import pbr_bake
+
+    bake_orm = inspect.signature(pbr_bake.bake_orm_map).parameters["resolution_px"]
+    bake_normal = inspect.signature(pbr_bake.bake_normal_map).parameters[
+        "resolution_px"
+    ]
+    assert bake_orm.default == pbr_paths.SET_RESOLUTION_PX
+    assert bake_normal.default == pbr_paths.SET_RESOLUTION_PX
+    assert bake_orm.default == bake_normal.default, (
+        "the two bakes disagree on the set's resolution, so a set can come "
+        "out with maps of different sizes"
+    )
+
+
+def test_the_generator_writes_the_set_resolution_by_default():
+    """The base colour is generated at the set's resolution too.
+
+    The generator runs in the MCP server's process, so its default is
+    read from the tool source rather than from a signature.
+    """
+    tool_source = (BLMCP_TOOLS_ROOT / "golem_pbr_textures.py").read_text(
+        encoding="utf-8"
+    )
+    assert "width: int = pbr_paths.SET_RESOLUTION_PX" in tool_source, (
+        "the generator's width is not the set's resolution, so a set's base "
+        "colour comes out at a different size from its bakes"
+    )
+    assert "height: int = pbr_paths.SET_RESOLUTION_PX" in tool_source
+
+
+# --- does a texture tile? -------------------------------------------------
+
+
+def _write_png(path, width, height, pixel):
+    """A PNG of one flat colour, written with zlib and no filter."""
+    import struct
+    import zlib
+
+    raw = b"".join(b"\x00" + bytes(pixel) * width for _ in range(height))
+
+    def chunk(kind, payload):
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
+def test_a_flat_texture_has_no_seam_at_all(tmp_path):
+    """A flat map tiles trivially, and the measure says so."""
+    path = tmp_path / "flat.png"
+    _write_png(path, 32, 32, (128, 128, 128))
+    assert pbr_paths.tile_seam_ratio(path) == 0.0
+
+
+def test_a_texture_with_a_hard_seam_measures_it(tmp_path):
+    """A map whose last column differs from its first is caught.
+
+    The baseline is the 95th percentile of the interior steps, so the
+    map needs a realistic interior: a texture with big features and a
+    small seam is a good texture, and one with a small feature and a
+    big seam is a bad one. So the map here has ordinary variation and
+    a last column that is off by much more than that variation.
+    """
+    import struct
+    import zlib
+
+    width, height = 32, 32
+    rows = bytearray()
+    for row in range(height):
+        rows += b"\x00"
+        for column in range(width):
+            # The interior is mostly flat with a FEW big features, so
+            # its median step and its 95th percentile step differ -
+            # which is the whole point: the measure is against the
+            # largest ordinary features, not the typical one. The last
+            # column is far brighter than any of them.
+            value = 100
+            if column in (7, 8, 23):
+                value = 115
+            if column == width - 1:
+                value = 220
+            rows += bytes((value, value, value))
+
+    def chunk(kind, payload):
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    path = tmp_path / "seamed.png"
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(bytes(rows)))
+        + chunk(b"IEND", b"")
+    )
+
+    ratio = pbr_paths.tile_seam_ratio(path)
+    assert ratio > pbr_paths.TILE_SEAM_LIMIT, (
+        f"a hard seam measured {ratio}, which is not past the limit, so the "
+        f"measure would not warn about a texture that does not tile"
+    )
+
+
+def test_the_seam_measure_refuses_a_file_that_is_not_a_png(tmp_path):
+    """Not a PNG is an error, not a silent zero."""
+    path = tmp_path / "not.png"
+    path.write_bytes(b"this is not a png")
+    with pytest.raises(ValueError):
+        pbr_paths.tile_seam_ratio(path)
+
+
+def test_the_seam_measure_compares_against_the_largest_features(tmp_path):
+    """The baseline is the 95th percentile, not the median.
+
+    A texture's interior is mostly flat with a few large features, so
+    its median step and its 95th percentile step are different numbers.
+    The seam has to be read against the LARGEST ordinary features: a
+    seam no bigger than the biggest stone edge is invisible, and a
+    median would call a big seam small whenever the texture is quiet.
+
+    This map has a quiet interior (a step of 2) with three loud
+    features (a step of 40), and a seam of 20. Against the median the
+    seam is ten times over; against the largest features it is half -
+    which is the honest answer, because the seam is half the size of
+    the features it crosses.
+    """
+    import struct
+    import zlib
+
+    width, height = 32, 32
+    rows = bytearray()
+    for row in range(height):
+        rows += b"\x00"
+        for column in range(width):
+            value = 100
+            if column in (7, 8, 23):
+                value = 140
+            elif column in (15, 16):
+                value = 120
+            elif column == width - 1:
+                value = 120
+            rows += bytes((value, value, value))
+
+    def chunk(kind, payload):
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    path = tmp_path / "features.png"
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(bytes(rows)))
+        + chunk(b"IEND", b"")
+    )
+
+    ratio = pbr_paths.tile_seam_ratio(path)
+    # Against the median (2) the seam would be 10.0; against the
+    # largest features (40) it is 0.5.
+    assert 0.3 < ratio < 0.8, (
+        f"the measure read {ratio}, which is not the ratio against the "
+        f"largest features (0.5). It is being compared against the wrong "
+        f"baseline."
+    )

@@ -47,6 +47,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+from golem_blender.pbr import paths as pbr_paths
+
 # The engine a bake runs in. Cycles is the only one that bakes.
 BAKE_ENGINE = "CYCLES"
 BAKE_SAMPLES = 16
@@ -87,7 +89,7 @@ BAKE_MATERIAL_PREFIX = "blended_bake_"
 def bake_orm_map(
     object_name: str,
     output_path: Path,
-    resolution_px: int = 2048,
+    resolution_px: int = pbr_paths.SET_RESOLUTION_PX,
     ao_distance_m: float = DEFAULT_AO_DISTANCE_M,
     roughness: float = DEFAULT_ROUGHNESS,
     metallic: float = DEFAULT_METALLIC,
@@ -143,7 +145,7 @@ def bake_orm_map(
 def bake_normal_map(
     object_name: str,
     output_path: Path,
-    resolution_px: int = 2048,
+    resolution_px: int = pbr_paths.SET_RESOLUTION_PX,
     strength: float = 1.0,
     method: str = FROM_HEIGHT,
     height_m: float = 0.0,

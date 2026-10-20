@@ -129,6 +129,33 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 
 - The file names are `T_<Name>_BaseColor.png`, `T_<Name>_ORM.png` and
   `T_<Name>_Normal.png`.
+- **A set's three maps are the same size.** They are all 2048, which is
+  what every other set on codex_fs uses, and the generator and both
+  bakes read that one number so a set cannot come out mismatched. It
+  matters for the relief, not just for tidiness: the height field is
+  sampled FROM the base colour, so at 1024 the 512-cell grid gets 2
+  albedo pixels per cell and at 2048 it gets 4, and the occlusion's
+  dark fraction rises from 10.29% to 12.13%.
+- **A set tiles, and you CHECK that it does.** A set is something you
+  repeat across a floor, so its own edges have to meet. The seam is a
+  property of the GENERATED SAMPLE, not of the size: two generations
+  of the same prompt and seed at different sizes had seams of 2.13x
+  and 4.44x their own feature step, and in a tiled render the second
+  one showed its tile boundaries as visible lines while the first did
+  not.
+
+  So `generate_texture_base` measures the seam it produced and reports
+  it as `tile_seam_ratio`, with `tiles_cleanly` saying whether it is
+  inside the limit. The ratio is the seam's step over the 95th
+  percentile of the texture's own interior steps - the size of its
+  largest ordinary features - because a seam no bigger than the
+  biggest stone edge is invisible. The sets already on codex_fs measure
+  0.20x to 3.50x, and the 3.50x one (the rock trim) does show its
+  boundaries.
+
+  **If the ratio is high, generate again with a different seed** and
+  keep the one that measures lowest. That is the iteration loop, and
+  the seam is the thing to iterate on.
 - The ORM packs **R = ambient occlusion, G = roughness, B = metallic**.
 - The base colour is sRGB. The ORM and the normal map are Non-Color
   data: they carry values, not colour.

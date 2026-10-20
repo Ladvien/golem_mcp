@@ -91,8 +91,8 @@ def register(mcp: FastMCP) -> None:
         model: str = DEFAULT_MODEL,
         seed: int = 42,
         steps: int = 8,
-        width: int = 1024,
-        height: int = 1024,
+        width: int = pbr_paths.SET_RESOLUTION_PX,
+        height: int = pbr_paths.SET_RESOLUTION_PX,
         init_image_path: str = "",
         image_strength: float = DEFAULT_IMAGE_STRENGTH,
         texture_dir: str = "",
@@ -107,6 +107,14 @@ def register(mcp: FastMCP) -> None:
         0.6, 45.2 at 0.25 and 37.3 at 0.0. So to REPLACE the map, use a
         LOW strength; to keep it and nudge it, use a HIGH one. The
         written file is `T_<output_name>_BaseColor.png`.
+
+        `width` and `height` default to the SET's resolution, the same
+        number the bakes use, so a set's three maps agree. Every other
+        set on codex_fs has all three at 2048, and the relief is sampled
+        FROM the base colour, so the base colour's pixels decide where
+        the baked joints land: at 1024 the 512-cell grid gets 2 albedo
+        pixels per cell and at 2048 it gets 4, and the occlusion's dark
+        fraction rises from 10.29% to 12.13%.
         """
         directory = Path(texture_dir) if texture_dir else pbr_paths.texture_root()
         texture_name = output_name or "Texture"
@@ -181,6 +189,22 @@ def register(mcp: FastMCP) -> None:
             "image_strength": written.image_strength,
             "init_image_path": written.init_image_path,
         }
+
+        # Does the generated map TILE? A set is something you repeat
+        # across a floor, and a generated image's seam is a property of
+        # the SAMPLE, not of the size - so the only way to know is to
+        # measure this one. The seam's step against the texture's own
+        # feature step: the sets already on codex_fs measure 1.23x to
+        # 2.47x, and above the limit a tile boundary shows as a line.
+        try:
+            seam_ratio = pbr_paths.tile_seam_ratio(Path(written.mac_path))
+        except (OSError, ValueError) as error:
+            seam_ratio = None
+            summary["seam_measurement_error"] = str(error)
+        if seam_ratio is not None:
+            summary["tile_seam_ratio"] = round(seam_ratio, 3)
+            summary["tile_seam_limit"] = pbr_paths.TILE_SEAM_LIMIT
+            summary["tiles_cleanly"] = seam_ratio <= pbr_paths.TILE_SEAM_LIMIT
         return [
             Image(data=Path(written.mac_path).read_bytes(), format="png"),
             json.dumps(summary, indent=2),
