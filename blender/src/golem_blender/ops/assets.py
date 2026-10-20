@@ -256,10 +256,22 @@ def import_generated_asset(
     # A glb_path under big's codex root (/mnt/codex_fs/...) is read
     # through the Mac mount, so generate_3d's published_to + "/asset.glb"
     # can be passed verbatim. A path that is NOT under that root is
-    # already a path this machine can open.
+    # already a path this machine can open — and one that is neither
+    # under the root nor an existing file is REFUSED rather than
+    # assumed: a path on big's own filesystem, read as a Mac path,
+    # either fails with a confusing "not found" or, worse, finds an
+    # unrelated file at the same absolute path.
     try:
         local_glb_path = str(paths.mac_path(glb_path))
     except ValueError:
+        candidate = Path(glb_path)
+        if not candidate.is_file():
+            raise ValueError(
+                f"{glb_path} is not under the codex root "
+                f"({paths.CODEX_ROOT_ON_BIG}) and is not a file this machine "
+                f"can open. Pass the big path of a file on the codex mount, "
+                f"or a local path."
+            ) from None
         local_glb_path = glb_path
 
     generated_object = _import_joined(local_glb_path, object_name)

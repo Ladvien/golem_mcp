@@ -43,7 +43,6 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         "metallic",
         "strength",
         "cell_count",
-        "depth_cells",
         "scale",
         "weight",
         "triangle_count",

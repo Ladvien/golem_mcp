@@ -129,6 +129,10 @@ def add_armature(
     armature_object = bpy.data.objects.new(name, armature_data)
     armature_object.location = location_m
     bpy.context.scene.collection.objects.link(armature_object)
+    # The VIEW LAYER, not just the collection: a newly linked object
+    # does not join the layer until the depsgraph is refreshed, and the
+    # edit bones below need the object to be in it.
+    bpy.context.view_layer.update()
 
     _create_edit_bones(armature_object, bones)
     armature_object.select_set(False)

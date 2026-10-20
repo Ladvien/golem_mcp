@@ -135,17 +135,19 @@ def test_the_orm_is_what_makes_the_relief_read(empty_scene, tmp_path):
     from golem_blender.ops.pbr_bake import bake_orm_map
     from golem_blender.ops.relief import add_relief_slab
 
-    albedo_path = _write_cobble_albedo(tmp_path / "cobble.png", cell_count=8)
-    # A joint four cells deep: the occlusion needs a CREVICE, and a
-    # crevice is measured in cells. At 32 cells over 1.0 m a cell is
-    # 31 mm, so the joint is 125 mm deep — a real gap between stones.
+    albedo_path = _write_cobble_albedo(tmp_path / "cobble.png", cell_count=16)
+    # A joint 100 mm deep on a 2 m slab at 64 cells. The occlusion needs
+    # a CREVICE and a crevice is a physical size: measured, a joint
+    # 20 mm deep left 0.00% of the surface dark, 50 mm left 0.12% and
+    # 100 mm left 5.66%. The slab is 200 mm thick so the joint is a
+    # groove in it rather than a hole through it.
     name = add_relief_slab(
         "Street",
         albedo_path,
-        size_m=1.0,
+        size_m=2.0,
         thickness_m=0.2,
-        cell_count=32,
-        depth_cells=4.0,
+        cell_count=64,
+        depth_m=0.1,
     )
     slab = bpy.data.objects[name]
 

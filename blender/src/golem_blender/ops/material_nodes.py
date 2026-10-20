@@ -203,8 +203,18 @@ def _set_texture_colors(texture_node, kind, color_a_rgb, color_b_rgb):
     # and the Principled BSDF default for Workbench/Eevee solid shading.
 
 
-def assign_image_texture_material(object_name: str, name: str, image_path: Path) -> str:
+def assign_image_texture_material(
+    object_name: str,
+    name: str,
+    image_path: Path,
+    non_color: bool = False,
+) -> str:
     """Create/reuse an image-texture material and assign it as the named mesh's only slot.
+
+    `non_color` marks the image as DATA rather than colour — a normal
+    map, an ORM, a height field. Loaded as sRGB its values would be
+    gamma-decoded on the way in, so a roughness of 0.7 would reach the
+    shader as 0.7^(1/2.2) = 0.85.
 
     Raises FileNotFoundError if ``image_path`` does not exist.
     Returns the material's name.
@@ -227,7 +237,7 @@ def assign_image_texture_material(object_name: str, name: str, image_path: Path)
     tree = material.node_tree
     links = tree.links
 
-    image = load_image(image_path)
+    image = load_image(image_path, non_color=non_color)
 
     image_node = _get_or_create_node(material, IMAGE_NODE_NAME, "ShaderNodeTexImage")
     image_node.image = image

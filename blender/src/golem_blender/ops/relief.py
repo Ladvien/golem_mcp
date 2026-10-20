@@ -42,38 +42,53 @@ from golem_blender.ops._contract import op
 from golem_blender.ops._image_loading import load_image
 from golem_blender.ops._objects import ObjectName
 
-# The default grid. 256 cells over 2 m is a 7.8 mm cell, and a cobble
-# is about 200 mm, so a cobble spans about twenty-five cells. The
-# triangle count matters: the gate measures the mesh on every call,
-# and a 256-cell slab made a call take 41.8 s and wedged the live
-# Blender's socket — the sweep-line overlap check brought that down
-# to 3.2 s, and the bake is the slow part now.
-DEFAULT_CELL_COUNT = 256
-# The slab's thickness. It has to hold the joint: the default depth
-# is four cells, and a cell is size_m / cell_count, so a 2 m slab at
-# 256 cells has a 7.8 mm cell and needs 31 mm of thickness. The
-# thickness is the slab's FLOOR, so it follows the depth.
+# The default grid: 512 cells over 2 m is a 3.9 mm cell, and a cobble
+# is about 200 mm, so a cobble spans about fifty cells.
+#
+# It is measured, and every measure agrees. Sweeping the cell count
+# with the joint's depth held at 40 mm, the render's contrast gain
+# from the ORM was +0.016 at 128 cells, +0.023 at 256 and +0.028 at
+# 512; the normal map's signal was 12.2%, 16.2% and 25.7%; and the
+# occlusion's dark fraction was 0.48%, 3.03% and 5.74%. All three
+# grow with the cells, so the default is the ceiling.
+#
+# The cost is now affordable: the bake is 2.6 s at 512 cells, and
+# the gate's per-call cost fell from 41.8 s to 3.2 s when the UV
+# overlap check became a sweep line.
+DEFAULT_CELL_COUNT = 512
+# The slab's thickness. It has to hold the joint: the default depth is
+# 40 mm, so the slab must be at least 50 mm thick for the joint to
+# be a groove in it rather than a hole through it. The thickness is
+# the slab's FLOOR, so it follows the depth.
 DEFAULT_THICKNESS_M = 0.08
 # The cell count's ceiling, for the same reason: the gate's cost grows
-# with the mesh. 512 cells is 262144 triangles for the top sheet alone,
-# which the gate measures in about 6 s — the sweep-line overlap check
-# brought that down from 41.8 s — and the bake is the slow part.
+# with the mesh. 512 cells is 524288 triangles for the top sheet, and
+# the gate measures it in about 6 s.
 MAXIMUM_CELL_COUNT = 512
 # The ORM constants live in pbr_bake, which is where the bake reads
 # them from: one definition, not two.
 # How deep a joint may be relative to the slab's thickness, so the
 # slab keeps a floor under the groove.
 MAXIMUM_DEPTH_FRACTION = 0.8
-# The joint's depth, in CELLS, and the wall's width in cells.
+# The joint's depth, in METRES, and the wall's width in cells.
 #
-# The depth is in CELLS because the occlusion needs a CREVICE, and a
-# crevice is measured against the cell that spans it. Measured on a
-# 1.0 m slab at 32 cells, where a cell is 31 mm: a joint one cell
-# deep left NOTHING below 0.5 in the baked occlusion, two cells left
-# 0.88% dark, four cells left 7.58% and eight left 18.01%. A depth
-# relative to the slab's THICKNESS would have hidden this — the same
-# fraction is a different number of cells at a different size.
-DEFAULT_DEPTH_CELLS = 4.0
+# The depth is a PHYSICAL size because the joint is: a cobble's gap is
+# a fixed amount of sand and grit, and it does not get shallower
+# because the mesh got finer.
+#
+# It is in METRES rather than CELLS because that was wrong in a way
+# the numbers caught: "four cells deep" is 62 mm at 128 cells and
+# 31 mm at 256, so the finer mesh made the joint SHALLOWER and the
+# sweep preferred the coarse grid for the wrong reason. With the
+# depth held physical, every measure grows with the cell count.
+#
+# The value is the knee of the occlusion's curve. Measured on a
+# cobblestone albedo, a joint 20 mm deep left 0.00% of the surface
+# dark, 50 mm left 0.12%, 100 mm left 5.66% — the occlusion needs a
+# CREVICE, and below about half a centimetre the joint is a ramp it
+# cannot find. 60 mm is deep enough to be a crevice and shallow
+# enough that a 2 m street is not a canyon.
+DEFAULT_DEPTH_M = 0.06
 DEFAULT_WALL_CELLS = 1
 # The threshold that turns the soft joint response into a definite
 # network, and the ramp that widens it into walls.
@@ -202,15 +217,16 @@ def _build_relief_slab(
     size_m: float = 2.0,
     thickness_m: float = DEFAULT_THICKNESS_M,
     cell_count: int = DEFAULT_CELL_COUNT,
-    depth_cells: float = DEFAULT_DEPTH_CELLS,
+    depth_m: float = DEFAULT_DEPTH_M,
 ) -> ReliefSlabReport:
     """Build a solid slab whose relief comes from the given albedo; returns what it measured.
 
     `albedo_path` is the texture the slab will carry, and the slab's
     height field is derived from it, so the baked maps' joints land on
-    the texture's own mortar lines. `depth_cells` is the joint's
-    depth in CELLS, because the occlusion needs a crevice and a
-    crevice is measured against the cell that spans it.
+    the texture's own mortar lines. `depth_m` is the joint's depth in
+    METRES: the joint is a physical gap of sand and grit, and the
+    occlusion only finds it when it is deep enough to be a crevice
+    rather than a ramp.
     """
     import bmesh
     import bpy
@@ -232,14 +248,13 @@ def _build_relief_slab(
         )
 
     height, peak = _joint_response(albedo_path, cell_count)
-    # The joint's depth, in cells, and the slab has to be deep enough
-    # to hold it: a joint deeper than the slab is a hole through it.
-    cell_m = size_m / cell_count
-    depth_m = min(depth_cells * cell_m, thickness_m * MAXIMUM_DEPTH_FRACTION)
-    if depth_m <= 0.0:
+    # The joint's depth, and the slab has to be deep enough to hold it:
+    # a joint deeper than the slab is a hole through it.
+    joint_depth_m = min(depth_m, thickness_m * MAXIMUM_DEPTH_FRACTION)
+    if joint_depth_m <= 0.0:
         raise ValueError(
             f"The slab is {thickness_m:.3f} m thick, which cannot hold a "
-            f"joint {depth_cells:.1f} cells ({depth_cells * cell_m:.3f} m) deep."
+            f"joint {depth_m:.3f} m deep."
         )
 
     remove_object_and_mesh(name)
@@ -260,7 +275,7 @@ def _build_relief_slab(
             y = (row / cell_count - 0.5) * size_m
             z = (
                 float(height[min(row, cell_count - 1), min(column, cell_count - 1)])
-                * depth_m
+                * joint_depth_m
             )
             top.append(working.verts.new((x, y, z)))
     working.verts.ensure_lookup_table()
@@ -328,7 +343,7 @@ def _build_relief_slab(
         triangle_count=len(mesh.loop_triangles),
         size_m=size_m,
         thickness_m=thickness_m,
-        relief_depth_m=depth_m,
+        relief_depth_m=joint_depth_m,
         joint_peak=peak,
     )
 
@@ -340,7 +355,7 @@ def add_relief_slab(
     size_m: float = 2.0,
     thickness_m: float = DEFAULT_THICKNESS_M,
     cell_count: int = DEFAULT_CELL_COUNT,
-    depth_cells: float = DEFAULT_DEPTH_CELLS,
+    depth_m: float = DEFAULT_DEPTH_M,
 ) -> ObjectName:
     """Build a solid slab whose relief is derived from the given albedo; returns its name.
 
@@ -356,6 +371,6 @@ def add_relief_slab(
         size_m=size_m,
         thickness_m=thickness_m,
         cell_count=cell_count,
-        depth_cells=depth_cells,
+        depth_m=depth_m,
     )
     return ObjectName(report.object_name)
