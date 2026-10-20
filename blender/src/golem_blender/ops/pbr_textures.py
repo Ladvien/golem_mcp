@@ -42,6 +42,7 @@ from golem_blender.ops.material_nodes import (
     _get_or_create_node,
     _sync_diffuse_from_image,
 )
+from golem_blender.ops.selectors import FaceSelector
 
 # Node names, reused across runs so a re-run updates rather than stacks.
 ORM_IMAGE_NODE_NAME = "blended_pbr_orm"
@@ -93,6 +94,7 @@ def assign_pbr_texture_set(
     base_color_path: Path,
     orm_path: Path | None = None,
     normal_path: Path | None = None,
+    faces: FaceSelector | None = None,
 ) -> str:
     """Apply a PBR texture set to the named mesh as one material; returns the material name.
 
@@ -101,6 +103,21 @@ def assign_pbr_texture_set(
     place, so calling this again with a revised map changes the material
     instead of adding a second one. Raises FileNotFoundError naming the
     first image path that does not exist.
+
+    The mesh's OTHER material slots are left alone. A game asset is not
+    the slab the lane built: a barrel has a wood body, a metal band and
+    a rope handle, and its faces are split between them. This material
+    takes the slot it already held - or an empty one - and every other
+    slot keeps its place and its faces.
+
+    `faces` says which faces the material applies to. Without it, the
+    material is put on the mesh and the faces that were using the slot
+    it replaces keep using it; the faces of a multi-slot asset are
+    left where they are, so a texture applied to a whole barrel would
+    sit on a slot nothing points at. With it - a
+    ``FaceSelector(kind="material_slot", material_slot_index=1)``,
+    say - those faces are moved onto the new material and the other
+    faces keep theirs.
     """
     import bpy
 
@@ -149,9 +166,67 @@ def assign_pbr_texture_set(
 
     _position_nodes(material)
 
-    mesh_object.data.materials.clear()
-    mesh_object.data.materials.append(material)
+    _assign_material_to_object(mesh_object, material)
+    if faces is not None:
+        _apply_material_to_faces(mesh_object, material, faces)
     return material.name
+
+
+def _apply_material_to_faces(mesh_object, material, faces: FaceSelector) -> None:
+    """Move the selected faces onto the material, leaving the others where they are."""
+    from golem_blender.ops.selectors import select_faces
+
+    indices = select_faces(mesh_object.name, faces)
+    slots = mesh_object.data.materials
+    slot_index = None
+    for index, existing in enumerate(slots):
+        if existing is not None and existing.name == material.name:
+            slot_index = index
+            break
+    if slot_index is None:
+        slots.append(material)
+        slot_index = len(slots) - 1
+    for polygon in mesh_object.data.polygons:
+        if polygon.index in indices:
+            polygon.material_index = slot_index
+
+
+def _assign_material_to_object(mesh_object, material) -> None:
+    """Put the material on the mesh, and leave the mesh's OTHER slots alone.
+
+    A game asset is not the slab the lane built: a barrel has a wood
+    body, a metal band and a rope handle, and its faces are split
+    between them. Clearing the slots and appending one - which is
+    what this used to do - destroys that: measured, a three-slot
+    barrel with its faces split 12/11/11 came out as ONE slot with
+    all 34 faces on it, and the face-to-material mapping was gone.
+
+    So the material REPLACES the slot it already held, and every other
+    slot keeps its place and its faces. A mesh with no material gets
+    the new one on slot zero.
+    """
+    import bpy
+
+    slots = mesh_object.data.materials
+
+    # The slot this material already holds: the faces pointing at it
+    # keep pointing at it, and the OTHER slots are untouched.
+    for index, existing in enumerate(slots):
+        if existing is not None and existing.name == material.name:
+            if existing is material:
+                return
+            # A different datablock with the same name: the slot
+            # holds a stale one, so replace it where it stands.
+            slots[index] = material
+            return
+
+    # An empty slot takes it, so the other slots keep their indices.
+    for index, existing in enumerate(slots):
+        if existing is None:
+            slots[index] = material
+            return
+
+    slots.append(material)
 
 
 def _link_direct(links, from_socket, to_socket) -> None:
@@ -266,13 +341,56 @@ def _position_nodes(material) -> None:
             node.location = location
 
 
+def _pbr_material_of(mesh_object):
+    """The material on the mesh that carries a PBR SET, or the first one.
+
+    A PBR set is a material whose graph has the maps wired in: the
+    ORM's channels separated into roughness and metallic is the
+    clearest sign, because only a set brings one. On a multi-slot
+    asset that is the one the lane textured, not slot zero - and slot
+    zero is often something else entirely, a wood body that was there
+    first.
+
+    A material with only a base colour is a fallback: it is a PBR
+    material, but a partial one, so it is read only when no full set
+    is on the mesh.
+    """
+    slots = mesh_object.data.materials
+    if not slots:
+        return None
+    with_base_colour = None
+    for material in slots:
+        if material is None or material.node_tree is None:
+            continue
+        principled = material.node_tree.nodes.get(PRINCIPLED_NODE_NAME)
+        if principled is None:
+            continue
+        base_color_input = principled.inputs.get(BASE_COLOR_INPUT_NAME)
+        if base_color_input is None or not base_color_input.links:
+            continue
+        if material.node_tree.nodes.get(ORM_IMAGE_NODE_NAME) is not None:
+            return material
+        if with_base_colour is None:
+            with_base_colour = material
+    if with_base_colour is not None:
+        return with_base_colour
+    return slots[0]
+
+
 @op(reads_only=True)
 def pbr_texture_report(object_name: str) -> PbrTextureReport:
-    """Report what the named mesh's PBR material has wired; reads the graph, changes nothing."""
+    """Report what the named mesh's PBR material has wired; reads the graph, changes nothing.
+
+    The material it reads is the one that actually carries a PBR set -
+    a texture wired into the Principled - not simply the first slot.
+    That matters on a multi-slot asset: a barrel with a wood body and
+    a cobbled band has two materials, and reading slot zero would
+    report the wood's empty graph and say the set was never applied.
+    """
     from golem_blender.ops._objects import object_by_name
 
     mesh_object = object_by_name(object_name, "MESH")
-    material = mesh_object.data.materials[0] if mesh_object.data.materials else None
+    material = _pbr_material_of(mesh_object)
 
     if material is None or material.node_tree is None:
         return PbrTextureReport(
@@ -311,7 +429,12 @@ def pbr_texture_report(object_name: str) -> PbrTextureReport:
                 ao_multiplied = True
                 base_color_path = _image_path_of(source.inputs[MIX_A_COLOR_INDEX])
             elif source.bl_idname == "ShaderNodeTexImage":
-                base_color_path = _image_path_of(source)
+                # The base colour is linked DIRECTLY, with no ORM to
+                # multiply into it. The image's own path, read from
+                # the node - the same thing the ORM branch reads, but
+                # off the node rather than off a socket.
+                if source.image is not None:
+                    base_color_path = source.image.filepath
 
         normal_input = principled.inputs.get("Normal")
         if normal_input is not None and normal_input.links:

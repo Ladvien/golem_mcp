@@ -116,6 +116,16 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    `pbr_texture_report(object_name="<the mesh>")`, which says what is
    actually wired.
 
+   **On an asset with more than one material, say which faces get the
+   texture.** A game asset is not the slab the lane built: a barrel
+   has a wood body, a metal band and a rope handle, and its faces are
+   split between them. This op does not touch the other slots - but
+   it also does not know which faces you meant, so the texture would
+   sit on a slot nothing points at. Pass
+   `faces=FaceSelector(kind="material_slot", material_slot_index=1)`
+   and those faces move onto the new material while the others keep
+   theirs.
+
 8. **Look at the object in context.**
    `preview_texture(object_name="<the mesh>")`. Now you are judging the
    texture ON the asset, in the lighting of the scene.
@@ -162,6 +172,9 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
   keep the one that measures lowest. That is the iteration loop, and
   the seam is the thing to iterate on.
 - The ORM packs **R = ambient occlusion, G = roughness, B = metallic**.
+- **The lane does not destroy an asset's other material slots.** It
+  takes the slot its material already held, or an empty one, and
+  every other slot keeps its place and its faces.
 - The base colour is sRGB. The ORM and the normal map are Non-Color
   data: they carry values, not colour.
 - The normal map is TANGENT space, so it needs a UV layer, and it is

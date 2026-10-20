@@ -453,3 +453,139 @@ def test_the_bake_leaves_the_meshes_own_material_on_it(empty_scene, tmp_path):
 
     assert [m.name for m in box.data.materials] == ["OwnMaterial"]
     assert not [m for m in bpy.data.materials if m.name.startswith("blended_bake_")]
+
+
+def _multi_slot_asset(name: str = "Barrel"):
+    """A mesh with THREE material slots and its faces split between them.
+
+    A game asset is not the slab the lane builds: a barrel has a wood
+    body, a metal band and a rope handle. The face split is what
+    makes the test meaningful - a material assignment that is lost is
+    not visible in the slot list alone.
+    """
+    bpy.ops.mesh.primitive_cylinder_add(vertices=32, radius=0.4, depth=1.2)
+    barrel = bpy.context.active_object
+    barrel.name = name
+    mesh = barrel.data
+    for material_name in ("Wood", "MetalBand", "Rope"):
+        mesh.materials.append(bpy.data.materials.new(f"{name}_{material_name}"))
+    for index, polygon in enumerate(mesh.polygons):
+        polygon.material_index = index % 3
+    return barrel
+
+
+def _faces_per_slot(mesh) -> dict[int, int]:
+    tally: dict[int, int] = {}
+    for polygon in mesh.polygons:
+        tally[polygon.material_index] = tally.get(polygon.material_index, 0) + 1
+    return tally
+
+
+def test_applying_a_set_leaves_the_assets_other_material_slots_alone(
+    empty_scene, tmp_path
+):
+    """The lane must not destroy a multi-slot asset's setup.
+
+    It used to clear the slots and append one, which took a
+    three-slot barrel with its faces split 12/11/11 and left one slot
+    with all 34 faces on it. The face-to-material mapping was gone.
+    """
+    from golem_blender.ops.pbr_textures import assign_pbr_texture_set
+
+    barrel = _multi_slot_asset()
+    before = _faces_per_slot(barrel.data)
+    base = _write_image(tmp_path / "T_Set_BaseColor.png", (*TEXTURE_RGB, 1.0))
+
+    assign_pbr_texture_set(barrel.name, "CobbleBarrel", base)
+
+    assert [m.name for m in barrel.data.materials] == [
+        "Barrel_Wood",
+        "Barrel_MetalBand",
+        "Barrel_Rope",
+        "CobbleBarrel",
+    ]
+    after = _faces_per_slot(barrel.data)
+    for slot, count in before.items():
+        assert after.get(slot) == count, (
+            f"the faces on slot {slot} moved: {before} became {after}"
+        )
+
+
+def test_a_face_selector_moves_the_chosen_faces_onto_the_new_material(
+    empty_scene, tmp_path
+):
+    """The texture has to land on FACES, or it is on a slot nothing uses."""
+    from golem_blender.ops.pbr_textures import assign_pbr_texture_set
+    from golem_blender.ops.selectors import FaceSelector
+
+    barrel = _multi_slot_asset()
+    before = _faces_per_slot(barrel.data)
+    base = _write_image(tmp_path / "T_Set_BaseColor.png", (*TEXTURE_RGB, 1.0))
+
+    assign_pbr_texture_set(
+        barrel.name,
+        "CobbleBarrel",
+        base,
+        faces=FaceSelector(kind="material_slot", material_slot_index=1),
+    )
+
+    after = _faces_per_slot(barrel.data)
+    cobble_slot = next(
+        index
+        for index, material in enumerate(barrel.data.materials)
+        if material and material.name == "CobbleBarrel"
+    )
+    assert after[cobble_slot] == before[1], (
+        f"the selected faces did not move onto the new material: {before} "
+        f"became {after}"
+    )
+    assert after[0] == before[0], "the other slots' faces moved"
+
+
+def test_the_report_reads_the_material_that_carries_the_set(empty_scene, tmp_path):
+    """On a multi-slot asset the report must not read slot zero.
+
+    Slot zero is often something else entirely - a wood body that was
+    there first - and reading it says the set was never applied.
+    """
+    from golem_blender.ops.pbr_textures import (
+        assign_pbr_texture_set,
+        pbr_texture_report,
+    )
+
+    barrel = _multi_slot_asset()
+    base = _write_image(tmp_path / "T_Set_BaseColor.png", (*TEXTURE_RGB, 1.0))
+    orm = _write_image(tmp_path / "T_Set_ORM.png", ORM_RGBA)
+
+    assign_pbr_texture_set(barrel.name, "CobbleBarrel", base, orm)
+
+    report = pbr_texture_report(barrel.name)
+    assert report.material_name == "CobbleBarrel", (
+        f"the report read {report.material_name!r}, not the material that "
+        f"carries the set"
+    )
+    assert report.ao_multiplied
+
+
+def test_the_report_survives_a_base_colour_with_no_orm(empty_scene, tmp_path):
+    """A base colour on its own is a first-class case, not a crash.
+
+    The report read the base colour's path by asking a NODE for its
+    links, which only a SOCKET has, so it raised AttributeError
+    whenever the base colour was wired directly with no ORM to
+    multiply into it.
+    """
+    from golem_blender.ops.pbr_textures import (
+        assign_pbr_texture_set,
+        pbr_texture_report,
+    )
+
+    box = _box()
+    base = _write_image(tmp_path / "T_Set_BaseColor.png", (*TEXTURE_RGB, 1.0))
+
+    assign_pbr_texture_set(box.name, "PlainSet", base)
+
+    report = pbr_texture_report(box.name)
+    assert report.base_color_linked
+    assert report.base_color_path.endswith("T_Set_BaseColor.png")
+    assert not report.ao_multiplied
