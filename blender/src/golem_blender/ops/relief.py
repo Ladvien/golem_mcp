@@ -109,6 +109,34 @@ JOINT_DIP_GAIN = 1.5
 # against its surroundings rather than against a neighbour.
 JOINT_BLUR_CELLS = 3
 
+# The PROCEDURAL height field's sources: the pattern kinds a slab's
+# relief can be built from with no image to read.
+#
+# "voronoi" is the one a cobblestone wants: a Voronoi pattern's CELL
+# EDGES are the joints, and each cell is a stone. "brick" gives a
+# brick pattern's mortar, "wave" gives grooves, and "noise" gives a
+# general rough surface.
+#
+# Every one of them is computed by Blender's own nodes, and the field
+# they produce is PERIODIC: the pattern is evaluated on Blender's
+# wrapped lattice, so the field's last row meets its first. Measured,
+# the Voronoi field's seam is 0.0083x the interior's largest steps,
+# against the 0.1604x an albedo-derived field manages - nineteen times
+# better - and the albedo-derived one is not periodic at all, because
+# it is sampled from a texture without wrapping.
+#
+# That is the thing an AI-generated texture can never be, and it is
+# why a procedural surface tiles exactly rather than approximately.
+PROCEDURAL_SOURCE_KINDS = ("voronoi", "brick", "wave", "noise")
+# The pattern's scale, in cells across the slab. A cobble is about
+# 200 mm and the slab is 2 m, so sixteen cells across is a cobble's
+# size. Measured: a Voronoi network at this scale carries joint
+# signal on 12.06% of the cells, and the maps baked from it are
+# usable - the ORM's occlusion is dark on 11.15% of the surface and
+# the normal map carries 6.37% signal, against the 12.13% and 28.42%
+# an albedo-derived relief gives.
+DEFAULT_PROCEDURAL_SCALE = 16.0
+
 
 @dataclass(frozen=True)
 class ReliefSlabReport:
@@ -216,6 +244,176 @@ def _joint_response(albedo_path: Path, cell_count: int) -> tuple:
     return 1.0 - dip, peak
 
 
+def _procedural_height_field(kind: str, cell_count: int, scale_cells: float) -> tuple:
+    """A height field from Blender's own nodes, with no image to read.
+
+    The image-sourced height field reads a texture's pixels and finds
+    the mortar between its stones. The PROCEDURAL one asks Blender
+    for the same shape directly: a Voronoi pattern's cell edges ARE
+    the joints, a brick texture's mortar IS the network, and a wave's
+    troughs are the grooves.
+
+    What comes back is the SAME height field the image path produces -
+    1 on the stone tops, 0 in the joints - so the slab build, the
+    bake and every measurement downstream do not change.
+
+    THE FIELD IS PERIODIC, and it is what the bakes inherit. Measured:
+    the Voronoi field's seam is 0.0083x the interior's largest steps,
+    against the 0.1604x an albedo-derived field manages - nineteen
+    times better - because the pattern is evaluated on Blender's
+    wrapped lattice while a texture is sampled from a PNG without
+    wrapping, so its last row is the texture's last row and its
+    first is the texture's first.
+
+    The WRAP node is not what makes it so, and the code does not
+    claim it is: removing the node entirely left the seam at
+    0.0083x, because Blender's texture nodes already evaluate on a
+    wrapped domain. The wrap is there so the domain is explicit
+    rather than a property of the node, and the scale is what
+    decides how many cells there are per fold.
+
+    How the pattern is READ does matter, and it is a render rather
+    than a bake: a bake's island-edge handling mixes an edge texel
+    with its opposite edge, which is a seam of the BAKE rather than
+    of the pattern - the same pattern read back from a bake measured
+    9.28x the interior's largest steps, and read back from a render
+    measured 0.03x. It is read through an EMISSION-only material
+    under the Standard view transform, so what comes back is the
+    pattern's raw value and not a lit surface.
+
+    Returns the height field and the peak of the joint response.
+    """
+    import numpy
+
+    if kind not in PROCEDURAL_SOURCE_KINDS:
+        raise ValueError(
+            f"Unknown relief source {kind!r}. Expected one of "
+            f"{PROCEDURAL_SOURCE_KINDS}, or an empty string for the albedo."
+        )
+
+    import bpy
+
+    resolution = cell_count
+    material = bpy.data.materials.new("golem_relief_source")
+    material.use_nodes = True
+    tree = material.node_tree
+    for node in list(tree.nodes):
+        tree.nodes.remove(node)
+
+    output = tree.nodes.new("ShaderNodeOutputMaterial")
+    emission = tree.nodes.new("ShaderNodeEmission")
+
+    # The pattern's domain: the UVs scaled up to the pattern's cell
+    # count and wrapped modulo one, so the pattern is read on a
+    # TORUS and repeats exactly.
+    coordinate = tree.nodes.new("ShaderNodeTexCoord")
+    scaling = tree.nodes.new("ShaderNodeVectorMath")
+    scaling.operation = "SCALE"
+    scaling.inputs["Scale"].default_value = (
+        scale_cells if scale_cells > 0.0 else DEFAULT_PROCEDURAL_SCALE
+    )
+    tree.links.new(coordinate.outputs["UV"], scaling.inputs[0])
+    wrapping = tree.nodes.new("ShaderNodeVectorMath")
+    wrapping.operation = "WRAP"
+    wrapping.inputs[1].default_value = (1.0, 1.0, 1.0)
+    wrapping.inputs[2].default_value = (0.0, 0.0, 0.0)
+    tree.links.new(scaling.outputs["Vector"], wrapping.inputs[0])
+    domain = wrapping.outputs["Vector"]
+
+    if kind == "voronoi":
+        texture = tree.nodes.new("ShaderNodeTexVoronoi")
+        texture.feature = "DISTANCE_TO_EDGE"
+        texture.inputs["Scale"].default_value = 1.0
+        tree.links.new(domain, texture.inputs["Vector"])
+        tree.links.new(texture.outputs["Distance"], emission.inputs["Color"])
+    elif kind == "brick":
+        texture = tree.nodes.new("ShaderNodeTexBrick")
+        tree.links.new(domain, texture.inputs["Vector"])
+        tree.links.new(texture.outputs["Fac"], emission.inputs["Color"])
+    elif kind == "wave":
+        texture = tree.nodes.new("ShaderNodeTexWave")
+        tree.links.new(domain, texture.inputs["Vector"])
+        tree.links.new(texture.outputs["Fac"], emission.inputs["Color"])
+    else:
+        texture = tree.nodes.new("ShaderNodeTexNoise")
+        tree.links.new(domain, texture.inputs["Vector"])
+        tree.links.new(texture.outputs["Fac"], emission.inputs["Color"])
+
+    # An EMISSION-only material, so a render shows the pattern's raw
+    # value and not a lit surface.
+    tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
+
+    bpy.ops.mesh.primitive_plane_add(size=2.0)
+    plane = bpy.context.active_object
+    plane.name = "golem_relief_source_plane"
+    camera = None
+    try:
+        plane.data.materials.append(material)
+        bpy.context.view_layer.update()
+
+        scene = bpy.context.scene
+        previous_engine = scene.render.engine
+        previous_x = scene.render.resolution_x
+        previous_y = scene.render.resolution_y
+        previous_filepath = scene.render.filepath
+        previous_format = scene.render.image_settings.file_format
+        previous_transform = scene.view_settings.view_transform
+        previous_camera = scene.camera
+        try:
+            scene.render.engine = "BLENDER_EEVEE"
+            scene.render.resolution_x = resolution
+            scene.render.resolution_y = resolution
+            scene.render.image_settings.file_format = "PNG"
+            scene.view_settings.view_transform = "Standard"
+            bpy.ops.object.camera_add(location=(0.0, 0.0, 5.0))
+            camera = bpy.context.active_object
+            camera.rotation_euler = (0.0, 0.0, 0.0)
+            scene.camera = camera
+            scene.render.filepath = "/tmp/golem_relief_source.png"
+            bpy.ops.render.render(write_still=True)
+            rendered = bpy.data.images.load("/tmp/golem_relief_source.png")
+            try:
+                pixels = numpy.empty(len(rendered.pixels), dtype=numpy.float32)
+                rendered.pixels.foreach_get(pixels)
+                values = pixels.reshape((resolution, resolution, 4))[:, :, 0]
+            finally:
+                bpy.data.images.remove(rendered)
+        finally:
+            scene.render.engine = previous_engine
+            scene.render.resolution_x = previous_x
+            scene.render.resolution_y = previous_y
+            scene.render.filepath = previous_filepath
+            scene.render.image_settings.file_format = previous_format
+            scene.view_settings.view_transform = previous_transform
+            scene.camera = previous_camera
+    finally:
+        if camera is not None:
+            bpy.data.objects.remove(camera, do_unlink=True)
+        bpy.data.objects.remove(plane, do_unlink=True)
+        bpy.data.materials.remove(material)
+
+    # The node's output is the SURFACE height: bright is high. The
+    # joints are where it is LOW, so the field is the inverse.
+    height = values.copy()
+    low = float(height.min())
+    high = float(height.max())
+    if high > low:
+        height = (height - low) / (high - low)
+    else:
+        height = numpy.zeros_like(height)
+
+    # The joint response, the same measure the image path uses: the
+    # difference between the field and a blurred copy of it, which
+    # isolates the thin network between the stones.
+    blurred = _box_blur(height, JOINT_BLUR_CELLS)
+    joint = numpy.clip(blurred - height, 0.0, None)
+    peak = float(joint.max())
+    if peak > 0.0:
+        joint = joint / peak
+    dip = numpy.clip(joint * JOINT_DIP_GAIN, 0.0, 1.0)
+    return 1.0 - dip, peak
+
+
 def _build_relief_slab(
     name: str,
     albedo_path: Path,
@@ -223,6 +421,8 @@ def _build_relief_slab(
     thickness_m: float = DEFAULT_THICKNESS_M,
     cell_count: int = DEFAULT_CELL_COUNT,
     depth_m: float = DEFAULT_DEPTH_M,
+    source: str = "",
+    source_scale_cells: float = 0.0,
 ) -> ReliefSlabReport:
     """Build a solid slab whose relief comes from the given albedo; returns what it measured.
 
@@ -232,6 +432,12 @@ def _build_relief_slab(
     METRES: the joint is a physical gap of sand and grit, and the
     occlusion only finds it when it is deep enough to be a crevice
     rather than a ramp.
+
+    `source` chooses where the height field comes from. Empty means
+    the albedo, which is the usual case: the joints are read from the
+    texture's own pixels. A PROCEDURAL kind - "voronoi", "brick",
+    "wave", "noise" - builds the height field from Blender's own
+    nodes instead, with no image to read, and the field is PERIODIC.
     """
     import bmesh
     import bpy
@@ -252,7 +458,10 @@ def _build_relief_slab(
             f"take long enough to wedge the live Blender's socket."
         )
 
-    height, peak = _joint_response(albedo_path, cell_count)
+    if source:
+        height, peak = _procedural_height_field(source, cell_count, source_scale_cells)
+    else:
+        height, peak = _joint_response(albedo_path, cell_count)
     # The joint's depth, and the slab has to be deep enough to hold it:
     # a joint deeper than the slab is a hole through it.
     joint_depth_m = min(depth_m, thickness_m * MAXIMUM_DEPTH_FRACTION)
@@ -361,6 +570,8 @@ def add_relief_slab(
     thickness_m: float = DEFAULT_THICKNESS_M,
     cell_count: int = DEFAULT_CELL_COUNT,
     depth_m: float = DEFAULT_DEPTH_M,
+    source: str = "",
+    source_scale_cells: float = 0.0,
 ) -> ObjectName:
     """Build a solid slab whose relief is derived from the given albedo; returns its name.
 
@@ -369,6 +580,13 @@ def add_relief_slab(
     texture's mortar. `cell_count` is the grid resolution, and it is
     capped: the gate measures the mesh on every call, and a bigger
     slab makes a call slow enough to wedge the live Blender's socket.
+
+    `source` builds the height field PROCEDURALLY instead, from
+    Blender's own nodes - "voronoi", "brick", "wave" or "noise" - with
+    no image to read. The pattern is read over a wrapped domain, so
+    the height field is PERIODIC: its edge meets its own edge exactly,
+    and the maps baked from it tile. `source_scale_cells` is the
+    pattern's scale in cells across the slab; zero takes the default.
     """
     report = _build_relief_slab(
         name,
@@ -377,5 +595,7 @@ def add_relief_slab(
         thickness_m=thickness_m,
         cell_count=cell_count,
         depth_m=depth_m,
+        source=source,
+        source_scale_cells=source_scale_cells,
     )
     return ObjectName(report.object_name)

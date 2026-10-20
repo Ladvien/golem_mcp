@@ -51,6 +51,7 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         "color_a_rgb",
         "color_b_rgb",
         "location_m",
+        "source_scale_cells",
     }
 )
 

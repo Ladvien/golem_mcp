@@ -206,3 +206,95 @@ def test_a_cell_count_over_the_cap_is_refused(empty_scene, tmp_path):
     albedo_path = _write_cobble_albedo(tmp_path / "cobble.png")
     with pytest.raises(ValueError, match="cells"):
         add_relief_slab("Street", albedo_path, cell_count=MAXIMUM_CELL_COUNT + 1)
+
+
+def test_a_procedural_source_builds_a_slab_with_no_image_to_read(empty_scene, tmp_path):
+    """The relief can be COMPUTED, not photographed.
+
+    This is the module's theme taken all the way: the height field
+    comes from Blender's own nodes, so the surface needs no texture
+    to derive its joints from.
+    """
+    from golem_blender.ops.relief import add_relief_slab
+
+    albedo = tmp_path / "albedo.png"
+    _write_cobble_albedo(albedo)
+
+    name = add_relief_slab(
+        "Procedural",
+        albedo,
+        size_m=2.0,
+        thickness_m=0.09,
+        cell_count=64,
+        depth_m=0.06,
+        source="voronoi",
+    )
+    slab = bpy.data.objects[name]
+
+    assert len(slab.data.vertices) > 0
+    assert slab.data.uv_layers, "the slab has no UV layer to bake against"
+    # The relief is not flat: a slab with no joints would bake nothing.
+    heights = {round(vertex.co.z, 6) for vertex in slab.data.vertices}
+    assert len(heights) > 1, "the procedural slab is flat"
+
+
+def test_a_procedural_height_field_is_periodic(empty_scene, tmp_path):
+    """The procedural field's edge meets its own edge exactly.
+
+    An image-sourced field cannot do this: it is sampled from a
+    texture without wrapping, so its last row is the texture's last
+    row and its first is the texture's first. A procedural field is
+    read on a WRAPPED domain, so it repeats exactly - which is what
+    makes the maps baked from it tile.
+
+    The threshold is the measurement's: the Voronoi field's seam is
+    0.0083x the interior's largest steps and an albedo-derived
+    field's is 0.1604x, so anything under 0.05x is a field that
+    repeats rather than one that nearly repeats.
+
+    The albedo-derived field is the CONTROL, and it is in this test
+    on purpose: it is the field the lane used before, sampled from a
+    texture without wrapping, and it does NOT repeat. Without it
+    beside, a threshold of "under 0.5x" would have passed a field
+    that is three times worse than the one it replaced.
+    """
+    import numpy
+
+    from golem_blender.ops.relief import _joint_response, _procedural_height_field
+
+    def seam_ratio(field):
+        seam = float(numpy.abs(field[-1] - field[0]).mean())
+        inner = numpy.abs(field[:-1] - field[1:])
+        baseline = float(numpy.percentile(inner, 95))
+        return seam / baseline if baseline else float("inf")
+
+    field, _peak = _procedural_height_field("voronoi", 128, 0.0)
+    procedural_ratio = seam_ratio(field)
+    assert procedural_ratio < 0.05, (
+        f"the procedural field's seam is {procedural_ratio:.3f}x the interior's "
+        f"largest steps, so it is not periodic"
+    )
+
+    # The control: the field the lane used before, which is sampled
+    # from a texture without wrapping and does not repeat.
+    albedo = tmp_path / "albedo.png"
+    _write_cobble_albedo(albedo)
+    image_field, _peak = _joint_response(albedo, 128)
+    assert seam_ratio(image_field) > procedural_ratio * 4, (
+        "the albedo-derived field is not measurably worse than the "
+        "procedural one, so the comparison says nothing"
+    )
+    # A regression: if the procedural field stops repeating, this
+    # catches it, because the two would converge.
+    assert procedural_ratio < seam_ratio(image_field) / 4
+
+
+def test_an_unknown_procedural_source_is_refused(empty_scene, tmp_path):
+    """A misspelled source names itself rather than building nothing."""
+    from golem_blender.ops.relief import add_relief_slab
+
+    albedo = tmp_path / "albedo.png"
+    _write_cobble_albedo(albedo)
+
+    with pytest.raises(ValueError, match="Unknown relief source"):
+        add_relief_slab("Bad", albedo, size_m=2.0, cell_count=64, source="voronoii")

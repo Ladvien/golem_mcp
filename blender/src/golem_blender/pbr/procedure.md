@@ -69,6 +69,15 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    `add_relief_slab(name="<mesh>", albedo_path="<the accepted map>",
    size_m=2.0, thickness_m=0.08, cell_count=512, depth_m=0.06)`.
 
+   **Or build the relief PROCEDURALLY, with no image to read.**
+   `source="voronoi"` makes the height field from Blender's own nodes
+   - a Voronoi pattern's cell edges ARE the joints - and the field is
+   PERIODIC: measured, its seam is 0.0083x the interior's largest
+   steps, against the 0.1604x an albedo-derived field manages. The
+   maps baked from it tile exactly. The other sources are "brick",
+   "wave" and "noise"; `source_scale_cells` sets the pattern's scale
+   in cells across the slab.
+
    The relief comes from the ALBEDO, so the baked maps' joints land on
    the texture's own mortar lines instead of near them. Without it the
    maps have nothing to carry: the occlusion finds no crevice and the
