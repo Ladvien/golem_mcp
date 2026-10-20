@@ -50,6 +50,10 @@ DEFAULT_VARIATION = 0.25
 # The plane the pattern is rendered on, in metres across. The camera
 # frames it exactly, so the image is the pattern with no border.
 PLANE_SIZE_M = 2.0
+# The pattern's scale, in cells across the image. A cobble is about
+# 200 mm and the image is 2 m, so sixteen cells across is a cobble's
+# size. The same default the relief's procedural source uses.
+DEFAULT_PROCEDURAL_SCALE = 16.0
 
 
 def write_procedural_base_color(
@@ -233,6 +237,24 @@ def write_procedural_base_color(
     return output_path
 
 
+def procedural_source_metadata(
+    kind: str = "voronoi",
+    scale_cells: float = DEFAULT_PROCEDURAL_SCALE,
+) -> dict:
+    """What a procedural base colour was made from, for the export's metadata.
+
+    A set's metadata says how it was MADE, and this is how a
+    procedural one was made: no prompt and no model, but a pattern
+    kind and a scale, and the fact that the pattern is periodic.
+    """
+    return {
+        "base_colour_source": "procedural: Blender's own nodes, no image",
+        "base_colour_kind": kind,
+        "base_colour_scale_cells": scale_cells,
+        "base_colour_periodic": True,
+    }
+
+
 # The cell shapes a procedural colour can have.
 PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick")
 
@@ -240,9 +262,11 @@ PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick")
 __all__ = (
     "DEFAULT_MORTAR_RGB",
     "DEFAULT_MORTAR_WIDTH",
+    "DEFAULT_PROCEDURAL_SCALE",
     "DEFAULT_STONE_DARK_RGB",
     "DEFAULT_STONE_LIGHT_RGB",
     "DEFAULT_VARIATION",
     "PROCEDURAL_COLOUR_KINDS",
+    "procedural_source_metadata",
     "write_procedural_base_color",
 )

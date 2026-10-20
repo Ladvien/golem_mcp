@@ -76,7 +76,11 @@ from golem_blender.ops.primitives import (
     remove_object_and_mesh,
     rename_object,
 )
-from golem_blender.ops.relief import ReliefSlabReport, add_relief_slab
+from golem_blender.ops.relief import (
+    ReliefSlabReport,
+    add_relief_slab,
+    relief_slab_report,
+)
 from golem_blender.ops.rigging import (
     BoneSpec,
     RigReport,
@@ -101,7 +105,12 @@ from golem_blender.ops.transforms import (
     snap_base_to_ground,
     world_bounds,
 )
-from golem_blender.ops.uv import NoEdgesSelected, UnwrapReport, mark_uv_seams, unwrap_uvs
+from golem_blender.ops.uv import (
+    NoEdgesSelected,
+    UnwrapReport,
+    mark_uv_seams,
+    unwrap_uvs,
+)
 from golem_blender.ops.weights import (
     WeightReport,
     assign_vertex_group_weights,
@@ -183,6 +192,7 @@ __all__ = [
     "move_object_to",
     "orientation_reading",
     "pbr_texture_report",
+    "relief_slab_report",
     "remove_object_and_mesh",
     "rename_object",
     "repair_limb_penetration",

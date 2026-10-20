@@ -298,3 +298,30 @@ def test_an_unknown_procedural_source_is_refused(empty_scene, tmp_path):
 
     with pytest.raises(ValueError, match="Unknown relief source"):
         add_relief_slab("Bad", albedo, size_m=2.0, cell_count=64, source="voronoii")
+
+
+def test_the_slab_records_where_its_relief_came_from(empty_scene, tmp_path):
+    """The slab says which source it used.
+
+    A procedural height field is PERIODIC and an albedo-derived one
+    is not, so the maps baked from them tile differently - and the
+    slab's GEOMETRY cannot say which it is, because the two are the
+    same shape of thing. So the slab records it, and the report reads
+    it back.
+    """
+    from golem_blender.ops.relief import add_relief_slab, relief_slab_report
+
+    albedo = tmp_path / "albedo.png"
+    _write_cobble_albedo(albedo)
+
+    add_relief_slab("FromAlbedo", albedo, size_m=2.0, cell_count=64)
+    report = relief_slab_report("FromAlbedo")
+    assert report.height_source == "albedo"
+
+    add_relief_slab("Procedural", albedo, size_m=2.0, cell_count=64, source="voronoi")
+    report = relief_slab_report("Procedural")
+    assert report.height_source == "voronoi", (
+        f"the report says the height field came from {report.height_source!r}, "
+        f"not from the procedural pattern"
+    )
+    assert report.source_scale_cells > 0.0

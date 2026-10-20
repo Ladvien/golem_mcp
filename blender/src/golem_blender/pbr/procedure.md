@@ -102,6 +102,12 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    "wave" and "noise"; `source_scale_cells` sets the pattern's scale
    in cells across the slab.
 
+   The slab RECORDS which source it used, and
+   `relief_slab_report(object_name="<the slab>")` reads it back -
+   because the two look identical and only the record says which,
+   and the difference is the difference between a relief that tiles
+   and one that cannot.
+
    The relief comes from the ALBEDO, so the baked maps' joints land on
    the texture's own mortar lines instead of near them. Without it the
    maps have nothing to carry: the occlusion finds no crevice and the
@@ -261,7 +267,8 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 | `generate_texture_base` | The AI half: the base-colour map. No Blender needed. |
 | `generate_procedural_base_color` | The procedural half: the base colour from Blender's nodes. Tiles exactly. |
 | `preview_texture` | The EEVEE render that lets you SEE the texture. Needs the open Blender. |
-| `add_relief_slab` | Builds the mesh the maps are baked from, with its relief from the albedo. |
+| `add_relief_slab` | Builds the mesh the maps are baked from, with its relief from the albedo or from a procedural pattern. |
+| `relief_slab_report` | Says which source a slab's relief came from. |
 | `assign_pbr_texture_set` | Puts the maps on the mesh as one material. |
 | `bake_orm_map` | Bakes the AO and packs it with roughness and metallic. |
 | `bake_normal_map` | Writes the tangent-space normal map. |

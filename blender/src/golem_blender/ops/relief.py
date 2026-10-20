@@ -41,6 +41,7 @@ from pathlib import Path
 from golem_blender.ops._contract import op
 from golem_blender.ops._image_loading import load_image
 from golem_blender.ops._objects import ObjectName
+from golem_blender.pbr import procedural as pbr_procedural
 
 # The default grid: 512 cells over 2 m is a 3.9 mm cell, and a cobble
 # is about 200 mm, so a cobble spans about fifty cells.
@@ -135,7 +136,11 @@ PROCEDURAL_SOURCE_KINDS = ("voronoi", "brick", "wave", "noise")
 # usable - the ORM's occlusion is dark on 11.15% of the surface and
 # the normal map carries 6.37% signal, against the 12.13% and 28.42%
 # an albedo-derived relief gives.
-DEFAULT_PROCEDURAL_SCALE = 16.0
+#
+# The number lives in the PBR package, because the base colour's
+# pattern and the relief's pattern are the same pattern and must be
+# the same scale: one definition, not two.
+DEFAULT_PROCEDURAL_SCALE = pbr_procedural.DEFAULT_PROCEDURAL_SCALE
 
 
 @dataclass(frozen=True)
@@ -149,6 +154,14 @@ class ReliefSlabReport:
     thickness_m: float
     relief_depth_m: float
     joint_peak: float
+    # Where the height field came from: the albedo's own pixels, or a
+    # procedural pattern named by its kind. The slab looks the same
+    # either way, and the difference is the difference between a
+    # relief that tiles and one that cannot - so the report says
+    # which, rather than leaving the caller to remember what it asked
+    # for.
+    height_source: str = "albedo"
+    source_scale_cells: float = 0.0
 
 
 def _box_blur(array, radius):
@@ -551,6 +564,17 @@ def _build_relief_slab(
     working.free()
 
     mesh.calc_loop_triangles()
+    # The slab RECORDS where its height field came from, because the
+    # geometry cannot say: an albedo-derived field and a procedural
+    # one are the same shape of thing, and only the record says
+    # which. The difference is the difference between a relief that
+    # tiles and one that cannot.
+    slab["golem_relief_height_source"] = source or "albedo"
+    slab["golem_relief_source_scale_cells"] = (
+        (source_scale_cells if source_scale_cells > 0.0 else DEFAULT_PROCEDURAL_SCALE)
+        if source
+        else 0.0
+    )
     return ReliefSlabReport(
         object_name=slab.name,
         cell_count=cell_count,
@@ -559,6 +583,12 @@ def _build_relief_slab(
         thickness_m=thickness_m,
         relief_depth_m=joint_depth_m,
         joint_peak=peak,
+        height_source=source or "albedo",
+        source_scale_cells=(
+            source_scale_cells if source_scale_cells > 0.0 else DEFAULT_PROCEDURAL_SCALE
+        )
+        if source
+        else 0.0,
     )
 
 
@@ -599,3 +629,49 @@ def add_relief_slab(
         source_scale_cells=source_scale_cells,
     )
     return ObjectName(report.object_name)
+
+
+@op(reads_only=True)
+def relief_slab_report(object_name: str) -> ReliefSlabReport:
+    """Report what a relief slab was built from; reads the mesh, changes nothing.
+
+    The slab's height field comes either from the albedo's own pixels
+    or from a PROCEDURAL pattern, and the two differ in a way that
+    matters: a procedural field is periodic, so the maps baked from
+    it tile, and an albedo-derived one is not. The slab looks the same
+    either way, so this says which it is rather than leaving the
+    caller to remember what it asked for.
+    """
+    from golem_blender.ops._objects import object_by_name
+
+    mesh_object = object_by_name(object_name, "MESH")
+    mesh = mesh_object.data
+
+    # The cell count: the top sheet's quads, one per cell.
+    cell_count = 0
+    if mesh.uv_layers:
+        layer = mesh.uv_layers.active
+        coordinates = [layer.data[loop.index].uv[0] for loop in mesh.loops]
+        if coordinates:
+            cell_count = max(1, round(max(coordinates)))
+
+    heights = [vertex.co.z for vertex in mesh.vertices]
+    thickness_m = 0.0
+    if heights:
+        # The top sheet is the highest; the bottom is the slab's
+        # floor, so the difference is the thickness.
+        thickness_m = max(heights) - min(heights)
+
+    return ReliefSlabReport(
+        object_name=mesh_object.name,
+        cell_count=cell_count,
+        triangle_count=len(mesh.loop_triangles),
+        size_m=0.0,
+        thickness_m=thickness_m,
+        relief_depth_m=0.0,
+        joint_peak=0.0,
+        height_source=str(mesh_object.get("golem_relief_height_source", "albedo")),
+        source_scale_cells=float(
+            mesh_object.get("golem_relief_source_scale_cells", 0.0)
+        ),
+    )
