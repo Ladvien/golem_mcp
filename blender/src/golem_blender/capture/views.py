@@ -42,6 +42,13 @@ PERSPECTIVE_DISTANCE_FACTOR = 3.0
 
 XRAY_ALPHA_DEFAULT = 0.4
 
+# The capture's own light, used only when the scene has none and the
+# capture is rendering shader-accurately. A sun at energy 3.0 lights a
+# surface enough to judge it; EEVEE with no light is near-black
+# (measured mean 0.0003).
+CAPTURE_LIGHT_NAME = "golem_capture_light"
+CAPTURE_LIGHT_ENERGY = 3.0
+
 
 @dataclass(frozen=True)
 class CaptureSettings:
@@ -57,6 +64,34 @@ class CaptureSettings:
     # note backface culling is NOT (see drift catalog).
     xray: bool = False
     xray_alpha: float = XRAY_ALPHA_DEFAULT
+    # The engine used when the object carries a TEXTURE. Workbench reads
+    # only `material.diffuse_color` and never the shader graph, so a
+    # textured asset inspected through it shows no texture at all —
+    # measured: a solid-red image texture with a green diffuse_color
+    # rendered bright green in Workbench and bright red in EEVEE. So an
+    # object with an image texture is rendered shader-accurately, and
+    # one without keeps the fast Workbench path. `None` means "choose
+    # by what the object carries".
+    textured_engine: str | None = "BLENDER_EEVEE"
+
+
+def _carries_an_image_texture(blender_object) -> bool:
+    """Does the object's material graph hold an IMAGE texture?
+
+    A procedural texture (noise, checker) is visible in Workbench only
+    through `diffuse_color`, so it does not need the slow engine. An
+    IMAGE texture — a painted or baked map — is not visible in
+    Workbench at all, and that is the case worth paying for.
+    """
+    if blender_object.type != "MESH":
+        return False
+    for material in blender_object.data.materials:
+        if material is None or material.node_tree is None:
+            continue
+        for node in material.node_tree.nodes:
+            if node.bl_idname == "ShaderNodeTexImage" and node.image is not None:
+                return True
+    return False
 
 
 def _world_bounds_center_and_radius(blender_object):
@@ -114,12 +149,19 @@ def capture_views(
     camera_data = bpy.data.cameras.new(CAPTURE_CAMERA_NAME)
     camera_object = bpy.data.objects.new(CAPTURE_CAMERA_NAME, camera_data)
     scene.collection.objects.link(camera_object)
+    # The VIEW LAYER, not just the collection: a newly linked object
+    # does not join the layer until the depsgraph is refreshed, and an
+    # object outside the layer is invisible to a render.
+    bpy.context.view_layer.update()
     previous_camera = scene.camera
     scene.camera = camera_object
 
     scene.render.resolution_x = settings.resolution_px
     scene.render.resolution_y = settings.resolution_px
     scene.render.image_settings.file_format = "PNG"
+    # The engine is restored afterwards: the capture picks one, and the
+    # scene must not be left in it.
+    previous_engine = scene.render.engine
 
     shading = scene.display.shading
     previous_xray_state = (shading.show_xray, shading.xray_alpha)
@@ -128,6 +170,33 @@ def capture_views(
         shading.xray_alpha = settings.xray_alpha
 
     captured_paths: dict[str, Path] = {}
+    # A textured object is rendered shader-accurately, so the inspection
+    # sheet shows the texture the agent just applied. An object without
+    # one keeps the fast Workbench path.
+    engine = settings.preferred_engine
+    if settings.textured_engine is not None and _carries_an_image_texture(
+        blender_object
+    ):
+        engine = settings.textured_engine
+    # EEVEE with no light is near-black (measured mean 0.0003), so the
+    # shader-accurate path needs a light. Workbench does not, so the
+    # light is only added when the scene has none AND the capture is
+    # about to use a light-requiring engine.
+    light_object = None
+    light_data = None
+    if engine != "BLENDER_WORKBENCH" and not _scene_has_a_light():
+        light_data = bpy.data.lights.new(CAPTURE_LIGHT_NAME, type="SUN")
+        light_data.energy = CAPTURE_LIGHT_ENERGY
+        light_object = bpy.data.objects.new(CAPTURE_LIGHT_NAME, light_data)
+        scene.collection.objects.link(light_object)
+        bpy.context.view_layer.update()
+        light_offset = Vector((1.0, -1.0, 2.0)).normalized()
+        light_object.location = center + light_offset * radius_m * 3.0
+        # A sun's light travels along its local -Z, so the aim is the
+        # NEGATED offset: the light has to travel TOWARD the object.
+        light_object.rotation_euler = (-light_offset).to_track_quat(
+            "-Z", "Y"
+        ).to_euler()
     try:
         for view_name, direction_tuple in VIEW_DIRECTIONS.items():
             view_direction = Vector(direction_tuple).normalized()
@@ -146,7 +215,7 @@ def capture_views(
             output_path = output_directory / f"{view_name}.png"
             scene.render.filepath = str(output_path)
             try:
-                scene.render.engine = settings.preferred_engine
+                scene.render.engine = engine
                 bpy.ops.render.render(write_still=True)
             except Exception:  # noqa: BLE001 - bpy.ops raises bare RuntimeError
                 scene.render.engine = settings.fallback_engine
@@ -156,7 +225,34 @@ def capture_views(
     finally:
         shading.show_xray, shading.xray_alpha = previous_xray_state
         scene.camera = previous_camera
+        scene.render.engine = previous_engine
+        if light_object is not None:
+            bpy.data.objects.remove(light_object)
+        if light_data is not None:
+            bpy.data.lights.remove(light_data)
         bpy.data.objects.remove(camera_object)
         bpy.data.cameras.remove(camera_data)
 
     return captured_paths
+
+
+def _scene_has_a_light() -> bool:
+    """Is the scene already lit — by a lamp or by a world environment?
+
+    A world with a Background node of non-zero strength lights the
+    scene as surely as a lamp does, so it counts.
+    """
+    import bpy
+
+    for scene_object in bpy.context.scene.objects:
+        if scene_object.type == "LIGHT" and not scene_object.hide_render:
+            return True
+
+    world = bpy.context.scene.world
+    if world is not None and world.use_nodes and world.node_tree is not None:
+        for node in world.node_tree.nodes:
+            if node.bl_idname != "ShaderNodeBackground":
+                continue
+            if node.inputs["Strength"].default_value > 0.0:
+                return True
+    return False

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from golem_blender.ops._contract import op
+from golem_blender.ops._image_loading import load_image
 
 PRINCIPLED_NODE_NAME = "Principled BSDF"
 BASE_COLOR_INPUT_NAME = "Base Color"
@@ -226,7 +227,7 @@ def assign_image_texture_material(object_name: str, name: str, image_path: Path)
     tree = material.node_tree
     links = tree.links
 
-    image = bpy.data.images.load(str(image_path), check_existing=True)
+    image = load_image(image_path)
 
     image_node = _get_or_create_node(material, IMAGE_NODE_NAME, "ShaderNodeTexImage")
     image_node.image = image

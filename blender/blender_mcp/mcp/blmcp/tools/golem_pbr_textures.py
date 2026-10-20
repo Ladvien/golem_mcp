@@ -335,12 +335,11 @@ def _resolve_generated_png(payload: dict) -> Path | None:
         if candidate is not None and candidate.is_file():
             return candidate
 
-    local_path = payload.get("local_path")
-    if local_path:
-        candidate = Path(local_path)
-        if candidate.is_file():
-            return candidate
-
+    # NOT `local_path`: that is big's own output directory, which the
+    # Mac cannot open. Reading it as a Mac path found a STALE file at
+    # the same absolute path and reported success — the same failure
+    # this function's docstring describes. If nothing under the codex
+    # root resolves, the caller says so.
     return None
 
 

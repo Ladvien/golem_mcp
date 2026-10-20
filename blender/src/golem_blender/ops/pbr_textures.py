@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from golem_blender.ops._contract import op
+from golem_blender.ops._image_loading import load_image
 from golem_blender.ops.material_nodes import (
     BASE_COLOR_INPUT_NAME,
     IMAGE_NODE_NAME,
@@ -121,7 +122,7 @@ def assign_pbr_texture_set(
     links = tree.links
 
     # --- base colour -----------------------------------------------------
-    base_color_image = bpy.data.images.load(str(base_color_path), check_existing=True)
+    base_color_image = load_image(base_color_path)
     base_color_node = _get_or_create_node(
         material, IMAGE_NODE_NAME, "ShaderNodeTexImage"
     )
@@ -162,14 +163,11 @@ def _link_direct(links, from_socket, to_socket) -> None:
 
 def _wire_orm(material, links, principled, base_color_node, orm_path: Path) -> None:
     """Wire the ORM: AO multiplied into the base colour, G to roughness, B to metallic."""
-    import bpy
-
-    orm_image = bpy.data.images.load(str(orm_path), check_existing=True)
     # The ORM carries VALUES, not colour: R = occlusion, G = roughness,
     # B = metallic. Loaded as sRGB its channels would be gamma-decoded
     # on the way in, so a roughness of 0.7 would reach the shader as
     # 0.7^(1/2.2) = 0.85. Non-Color is the only correct space for it.
-    orm_image.colorspace_settings.name = "Non-Color"
+    orm_image = load_image(orm_path, non_color=True)
     orm_node = _get_or_create_node(material, ORM_IMAGE_NODE_NAME, "ShaderNodeTexImage")
     orm_node.image = orm_image
 
@@ -226,10 +224,7 @@ def _wire_normal_map(
     material, links, principled, mesh_object, normal_path: Path
 ) -> None:
     """Wire the tangent-space normal map into the Principled's Normal input."""
-    import bpy
-
-    normal_image = bpy.data.images.load(str(normal_path), check_existing=True)
-    normal_image.colorspace_settings.name = "Non-Color"
+    normal_image = load_image(normal_path, non_color=True)
     normal_node = _get_or_create_node(
         material, NORMAL_IMAGE_NODE_NAME, "ShaderNodeTexImage"
     )

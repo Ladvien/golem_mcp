@@ -46,6 +46,12 @@ def import_glb(glb_path: Path, object_name: str):
     joined_mesh = bpy.data.meshes.new(object_name)
     working_mesh = bmesh.new()
     try:
+        # `matrix_world` is evaluated LAZILY: a freshly imported object
+        # reads the STALE (identity) matrix until the depsgraph has
+        # been refreshed, so the transform below would be a no-op and
+        # every part would land at the origin. `ops/assets.py` refreshes
+        # for the same reason.
+        bpy.context.view_layer.update()
         for mesh_object in imported_meshes:
             part_mesh = mesh_object.data.copy()
             part_mesh.transform(mesh_object.matrix_world)

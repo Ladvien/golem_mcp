@@ -210,6 +210,10 @@ class _preview_scene:
         self.camera_data = bpy.data.cameras.new(PREVIEW_CAMERA_NAME)
         self.camera_object = bpy.data.objects.new(PREVIEW_CAMERA_NAME, self.camera_data)
         scene.collection.objects.link(self.camera_object)
+        # The VIEW LAYER, not just the collection: a newly linked object
+        # does not join the layer until the depsgraph is refreshed, and
+        # an object outside the layer is invisible to a render.
+        bpy.context.view_layer.update()
         self.camera_object.location = (
             self.center + self.direction * self.radius_m * PERSPECTIVE_DISTANCE_FACTOR
         )
@@ -234,6 +238,7 @@ class _preview_scene:
                 PREVIEW_LIGHT_NAME, self.light_data
             )
             scene.collection.objects.link(self.light_object)
+            bpy.context.view_layer.update()
             # The sun sits ABOVE and to the side, and its light must
             # travel TOWARD the object — so the rotation aims the
             # light's -Z (the direction it shines) down at the

@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from golem_blender.ops._contract import op
+from golem_blender.ops._image_loading import load_image
 from golem_blender.ops._objects import ObjectName
 
 # The default grid. 256 cells over 2 m is a 7.8 mm cell, and a cobble
@@ -150,10 +151,9 @@ def _joint_response(albedo_path: Path, cell_count: int) -> tuple:
     1.57% at 128 cells and 3.36% at 256, and the map's encoded X
     channel spans 0.004 to 1.000 instead of a few percent of it.
     """
-    import bpy
     import numpy
 
-    image = bpy.data.images.load(str(albedo_path), check_existing=True)
+    image = load_image(albedo_path)
     width, height = image.size
     pixels = numpy.empty(width * height * 4, dtype=numpy.float32)
     image.pixels.foreach_get(pixels)
