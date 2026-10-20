@@ -65,14 +65,32 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    (0.6-0.9). Change the `seed` for a different result at the same
    strength.
 
-5. **Apply it to the object.**
-   `assign_pbr_texture_set(object_name="<the mesh>", name="<Material>",
-   base_color_path="<the accepted map>")`. The op takes the ORM and the
-   normal map too, when they exist.
+5. **Give the mesh a RELIEF to bake from.**
+   `add_relief_slab(name="<mesh>", albedo_path="<the accepted map>",
+   size_m=2.0, thickness_m=0.08, cell_count=512, depth_m=0.06)`.
+
+   The relief comes from the ALBEDO, so the baked maps' joints land on
+   the texture's own mortar lines instead of near them. Without it the
+   maps have nothing to carry: the occlusion finds no crevice and the
+   normal map is flat.
+
+   Two of its parameters are physical sizes, not counts, and both are
+   measured:
+   - `depth_m` is the joint's DEPTH. Below about half a centimetre the
+     joint is a ramp the occlusion cannot find: 20 mm left 0.00% of
+     the surface dark, 50 mm left 0.12% and 100 mm left 5.66%. Past
+     about a tenth of a metre the cobbles stop being a paved surface
+     and become islands in a pit. 60 mm is the deepest joint that
+     still reads as a cobble street.
+   - `cell_count` is how finely the mesh resolves the texture. With the
+     depth held physical, every measure grows with it: at 128, 256 and
+     512 cells the render's contrast gain was +0.016, +0.023 and
+     +0.028, the normal map's signal 12.2%, 16.2% and 25.7%, and the
+     occlusion's dark fraction 0.48%, 3.03% and 5.74%.
 
 6. **Bake the maps that come from the MESH.**
    `bake_orm_map(object_name="<the mesh>", output_path="<the ORM path>",
-   resolution_px=2048, ao_distance_m=0.05, roughness=0.7, metallic=0.0)`
+   resolution_px=2048, ao_distance_m=0.06, roughness=0.85, metallic=0.0)`
    and `bake_normal_map(object_name="<the mesh>",
    output_path="<the normal path>", resolution_px=2048)`.
    The mesh needs a UV layer — call `unwrap_uvs` first if it has none.
@@ -83,11 +101,18 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    spanned 0.482 to 0.518 and the from-height one spanned 0.388 to
    0.965. Use `bake` for a mesh whose relief is a crease or an edge
    rather than a surface.
+   The AO's reach is not a lever: across a tenfold range the
+   occlusion's dark fraction moved 5.62% to 5.79%. The joint's DEPTH
+   is the lever, and that is the mesh's, not the bake's.
 
-7. **Re-apply with all three maps** (the material is reused by name, so
-   this updates the graph in place rather than stacking a second image
-   node), and check it: `pbr_texture_report(object_name="<the mesh>")`
-   says what is actually wired.
+7. **Apply the maps to the mesh.**
+   `assign_pbr_texture_set(object_name="<the mesh>", name="<Material>",
+   base_color_path="<the accepted map>", orm_path="<the ORM path>",
+   normal_path="<the normal path>")`. The material is reused by name,
+   so this updates the graph in place rather than stacking a second
+   image node. Check it with
+   `pbr_texture_report(object_name="<the mesh>")`, which says what is
+   actually wired.
 
 8. **Look at the object in context.**
    `preview_texture(object_name="<the mesh>")`. Now you are judging the
@@ -95,6 +120,8 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 
 9. **Export the set.** `export_texture_set(texture_name="<Name>")`
    copies the three maps and writes a `metadata.json` beside them.
+   Pass `extras=[...]` to copy the environment map and the reference
+   photographs with it, so the export is reusable on its own.
 
 ## The conventions
 
@@ -151,6 +178,7 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 | `save_reference_images` | Files the picked references with their licences. |
 | `generate_texture_base` | The AI half: the base-colour map. No Blender needed. |
 | `preview_texture` | The EEVEE render that lets you SEE the texture. Needs the open Blender. |
+| `add_relief_slab` | Builds the mesh the maps are baked from, with its relief from the albedo. |
 | `assign_pbr_texture_set` | Puts the maps on the mesh as one material. |
 | `bake_orm_map` | Bakes the AO and packs it with roughness and metallic. |
 | `bake_normal_map` | Writes the tangent-space normal map. |
