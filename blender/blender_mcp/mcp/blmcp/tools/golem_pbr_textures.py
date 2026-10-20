@@ -278,6 +278,11 @@ def register(mcp: FastMCP) -> None:
         map the set was lit with, the reference photos it was authored
         from. Without them the export says how the set was MADE but not
         how to light it, so it is not reusable on its own.
+
+        The export directory is written as a CLEAN SET: a file a
+        previous export put there and this one does not include is
+        removed, and the result says what was removed under "removed".
+        A file no export claims is left alone.
         """
         directory = Path(texture_dir) if texture_dir else pbr_paths.texture_root()
         target = Path(destination) if destination else directory / texture_name

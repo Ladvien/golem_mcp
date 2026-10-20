@@ -400,7 +400,12 @@ EXPECTED_TOOLS = [
         "`extras` are files copied alongside the maps \u2014 the environment\n"
         "map the set was lit with, the reference photos it was authored\n"
         "from. Without them the export says how the set was MADE but not\n"
-        "how to light it, so it is not reusable on its own.\n",
+        "how to light it, so it is not reusable on its own.\n"
+        "\n"
+        "The export directory is written as a CLEAN SET: a file a\n"
+        "previous export put there and this one does not include is\n"
+        "removed, and the result says what was removed under \"removed\".\n"
+        "A file no export claims is left alone.\n",
         "inputSchema": {
             "properties": {
                 "texture_name": {"title": "Texture Name", "type": "string"},
