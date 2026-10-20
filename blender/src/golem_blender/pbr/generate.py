@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -101,6 +102,7 @@ def export_texture_set(
     texture_directory: Path,
     destination: Path,
     metadata: dict | None = None,
+    extras: Sequence[Path] = (),
 ) -> dict:
     """Copy a texture set's maps to `destination` and write a metadata.json beside them.
 
@@ -108,6 +110,12 @@ def export_texture_set(
     ORM and the normal map. A map that does not exist is reported in the
     result rather than silently skipped, so a half-exported set is
     visible.
+
+    `extras` are files copied alongside the maps: the environment map the
+    set was lit with, the reference photos it was authored from. A set
+    exported without them says how it was MADE but not how to LIGHT it
+    or where the pattern came from, so the export is not reusable on
+    its own.
     """
     texture_directory = Path(texture_directory)
     destination = Path(destination)
@@ -129,6 +137,21 @@ def export_texture_set(
         shutil.copy2(source, target)
         copied[key] = str(target)
 
+    # The extras, under their own names so the export says what each
+    # one is. A macOS sidecar file ("._name.png") is skipped: it is
+    # filesystem metadata, not part of the set, and a set exported with
+    # them carries noise.
+    extras_copied: dict[str, str] = {}
+    for extra in extras:
+        extra_path = Path(extra)
+        if not extra_path.is_file():
+            continue
+        if extra_path.name.startswith("._"):
+            continue
+        target = destination / extra_path.name
+        shutil.copy2(extra_path, target)
+        extras_copied[extra_path.name] = str(target)
+
     metadata_path = destination / METADATA_FILE_NAME
     metadata_path.write_text(
         json.dumps(
@@ -137,6 +160,7 @@ def export_texture_set(
                 "channel_packing": pbr_paths.ORM_CHANNEL_PACKING,
                 "files": copied,
                 "missing": missing,
+                "extras": extras_copied,
                 **(metadata or {}),
             },
             indent=2,
@@ -150,6 +174,7 @@ def export_texture_set(
         "destination": str(destination),
         "files": copied,
         "missing": missing,
+        "extras": extras_copied,
         "metadata_path": str(metadata_path),
         "channel_packing": pbr_paths.ORM_CHANNEL_PACKING,
     }

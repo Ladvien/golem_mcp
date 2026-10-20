@@ -138,6 +138,43 @@ def test_exporting_a_set_copies_the_maps_and_writes_the_metadata(tmp_path):
     assert metadata["model"] == "flux2-klein-4b"
 
 
+def test_exporting_copies_the_extras_so_the_set_is_self_contained(tmp_path):
+    """The environment map and the references travel with the set.
+
+    A set exported without them says how it was MADE but not how to
+    light it or where the pattern came from, so it is not reusable on
+    its own.
+    """
+    texture_directory = tmp_path / "textures"
+    texture_directory.mkdir()
+    (texture_directory / "T_Brick_BaseColor.png").write_bytes(b"base")
+    (texture_directory / "T_Brick_ORM.png").write_bytes(b"orm")
+    (texture_directory / "T_Brick_Normal.png").write_bytes(b"normal")
+
+    environment = tmp_path / "T_TownEnv_BaseColor.png"
+    environment.write_bytes(b"environment")
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(b"reference")
+
+    destination = tmp_path / "export"
+    report = pbr_generate.export_texture_set(
+        "Brick",
+        texture_directory,
+        destination,
+        extras=[environment, reference],
+    )
+
+    assert set(report["extras"]) == {
+        "T_TownEnv_BaseColor.png",
+        "reference.png",
+    }
+    assert (destination / "T_TownEnv_BaseColor.png").read_bytes() == b"environment"
+    assert (destination / "reference.png").read_bytes() == b"reference"
+
+    metadata = json.loads((destination / "metadata.json").read_text())
+    assert "T_TownEnv_BaseColor.png" in metadata["extras"]
+
+
 def test_exporting_reports_a_map_that_is_missing_instead_of_hiding_it(tmp_path):
     texture_directory = tmp_path / "textures"
     texture_directory.mkdir()

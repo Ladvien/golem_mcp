@@ -264,8 +264,15 @@ def register(mcp: FastMCP) -> None:
         texture_name: str,
         texture_dir: str = "",
         destination: str = "",
+        extras: list[str] | None = None,
     ) -> str:
-        """Copy a texture set's maps and its metadata into the export directory; returns the written paths as JSON."""
+        """Copy a texture set's maps and its metadata into the export directory; returns the written paths as JSON.
+
+        `extras` are files copied alongside the maps — the environment
+        map the set was lit with, the reference photos it was authored
+        from. Without them the export says how the set was MADE but not
+        how to light it, so it is not reusable on its own.
+        """
         directory = Path(texture_dir) if texture_dir else pbr_paths.texture_root()
         target = Path(destination) if destination else directory / texture_name
         report = pbr_generate.export_texture_set(
@@ -273,6 +280,7 @@ def register(mcp: FastMCP) -> None:
             directory,
             target,
             metadata={"channel_packing": pbr_paths.ORM_CHANNEL_PACKING},
+            extras=[Path(extra) for extra in (extras or ())],
         )
         return json.dumps(report, indent=2)
 

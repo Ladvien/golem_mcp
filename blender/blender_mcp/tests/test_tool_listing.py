@@ -394,7 +394,12 @@ EXPECTED_TOOLS = [
     },
     {
         "name": "export_texture_set",
-        "description": "Copy a texture set's maps and its metadata into the export directory; returns the written paths as JSON.",
+        "description": "Copy a texture set's maps and its metadata into the export directory; returns the written paths as JSON.\n"
+        "\n"
+        "`extras` are files copied alongside the maps \u2014 the environment\n"
+        "map the set was lit with, the reference photos it was authored\n"
+        "from. Without them the export says how the set was MADE but not\n"
+        "how to light it, so it is not reusable on its own.\n",
         "inputSchema": {
             "properties": {
                 "texture_name": {"title": "Texture Name", "type": "string"},
@@ -407,6 +412,14 @@ EXPECTED_TOOLS = [
                     "default": "",
                     "title": "Destination",
                     "type": "string",
+                },
+                "extras": {
+                    "anyOf": [
+                        {"items": {"type": "string"}, "type": "array"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "title": "Extras",
                 },
             },
             "required": ["texture_name"],
