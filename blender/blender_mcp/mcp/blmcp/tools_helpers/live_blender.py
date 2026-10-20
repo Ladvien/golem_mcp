@@ -41,6 +41,8 @@ PAUSE_INSTRUCTIONS = (
 # the safe direction for a tool added later.
 TOOLS_WITHOUT_BLENDER = frozenset(
     {
+        "export_texture_set",
+        "generate_texture_base",
         "get_python_api_docs",
         "register_kit_pack",
         "save_reference_images",

@@ -317,6 +317,101 @@ EXPECTED_TOOLS = [
         },
     },
     {
+        "name": "generate_texture_base",
+        "description": "Generate a base-colour texture on the golem server and write it into the texture set; returns the image and its paths.\n"
+        "\n"
+        "`init_image_path` refines an existing map: it must be a path under\n"
+        "the codex root (the Mac's `~/mnt/codex_fs/...`), and a HIGHER\n"
+        "`image_strength` changes more of it while a LOWER one keeps more\n"
+        "of the original. The written file is `T_<output_name>_BaseColor.png`.\n",
+        "inputSchema": {
+            "properties": {
+                "prompt": {"title": "Prompt", "type": "string"},
+                "output_name": {
+                    "default": "",
+                    "title": "Output Name",
+                    "type": "string",
+                },
+                "model": {
+                    "default": "flux2-klein-4b",
+                    "title": "Model",
+                    "type": "string",
+                },
+                "seed": {"default": 42, "title": "Seed", "type": "integer"},
+                "steps": {"default": 8, "title": "Steps", "type": "integer"},
+                "width": {"default": 1024, "title": "Width", "type": "integer"},
+                "height": {"default": 1024, "title": "Height", "type": "integer"},
+                "init_image_path": {
+                    "default": "",
+                    "title": "Init Image Path",
+                    "type": "string",
+                },
+                "image_strength": {
+                    "default": 0.4,
+                    "title": "Image Strength",
+                    "type": "number",
+                },
+                "texture_dir": {
+                    "default": "",
+                    "title": "Texture Dir",
+                    "type": "string",
+                },
+            },
+            "required": ["prompt"],
+            "title": "generate_texture_baseArguments",
+            "type": "object",
+        },
+    },
+    {
+        "name": "preview_texture",
+        "description": "Render the named object in a shader-accurate engine so its texture can be seen; returns the render as an image.\n"
+        "\n"
+        "This is the EEVEE render, NOT the Workbench contact sheet: Workbench\n"
+        "reads only the material's viewport colour, so a texture reviewed\n"
+        "through it is reviewed blind. `contact_sheet=True` returns the\n"
+        "five-view sheet; `False` returns a single view.\n",
+        "inputSchema": {
+            "properties": {
+                "object_name": {"title": "Object Name", "type": "string"},
+                "resolution_px": {
+                    "default": 512,
+                    "title": "Resolution Px",
+                    "type": "integer",
+                },
+                "contact_sheet": {
+                    "default": True,
+                    "title": "Contact Sheet",
+                    "type": "boolean",
+                },
+            },
+            "required": ["object_name"],
+            "title": "preview_textureArguments",
+            "type": "object",
+        },
+    },
+    {
+        "name": "export_texture_set",
+        "description": "Copy a texture set's maps and its metadata into the export directory; returns the written paths as JSON.",
+        "inputSchema": {
+            "properties": {
+                "texture_name": {"title": "Texture Name", "type": "string"},
+                "texture_dir": {
+                    "default": "",
+                    "title": "Texture Dir",
+                    "type": "string",
+                },
+                "destination": {
+                    "default": "",
+                    "title": "Destination",
+                    "type": "string",
+                },
+            },
+            "required": ["texture_name"],
+            "title": "export_texture_setArguments",
+            "type": "object",
+        },
+    },
+    {
         "name": "search_reference_images",
         "description": "Search Openverse, Wikimedia Commons, Pexels and Brave for reference images; returns a numbered contact sheet and the items' sources and licenses.",
         "inputSchema": {

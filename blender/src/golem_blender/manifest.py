@@ -32,6 +32,8 @@ OP_MODULE_NAMES = (
     "modifiers",
     "heal",
     "uv",
+    "pbr_textures",
+    "pbr_bake",
     "rigging",
     "weights",
     "animation",

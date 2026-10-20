@@ -293,6 +293,7 @@ def test_the_readers_are_the_only_plan_free_op_tools():
         "material_report",
         "middle_extent_m",
         "orientation_reading",
+        "pbr_texture_report",
         "rig_report",
         "select_edges",
         "select_faces",

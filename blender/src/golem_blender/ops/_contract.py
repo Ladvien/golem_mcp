@@ -40,6 +40,8 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         "start_frame",
         "end_frame",
         "roughness",
+        "metallic",
+        "strength",
         "scale",
         "weight",
         "triangle_count",

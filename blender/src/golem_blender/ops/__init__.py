@@ -58,6 +58,16 @@ from golem_blender.ops.motion import (
     clip_self_intersection_report,
     repair_limb_penetration,
 )
+from golem_blender.ops.pbr_bake import (
+    assign_pbr_constants,
+    bake_normal_map,
+    bake_orm_map,
+)
+from golem_blender.ops.pbr_textures import (
+    PbrTextureReport,
+    assign_pbr_texture_set,
+    pbr_texture_report,
+)
 from golem_blender.ops.primitives import (
     NameTaken,
     add_box,
@@ -118,6 +128,7 @@ __all__ = [
     "NameTaken",
     "NoEdgesSelected",
     "PairContour",
+    "PbrTextureReport",
     "RigReport",
     "RingSkirtSpec",
     "SplayedLegSpec",
@@ -137,10 +148,14 @@ __all__ = [
     "apply_object_transform",
     "assign_image_texture_material",
     "assign_material",
+    "assign_pbr_constants",
+    "assign_pbr_texture_set",
     "assign_procedural_material",
     "assign_vertex_group_weights",
     "assign_weights_by_height",
     "bake_cloth_chains",
+    "bake_normal_map",
+    "bake_orm_map",
     "bind_mesh_to_armature",
     "body_capsules_report",
     "boolean_difference",
@@ -164,6 +179,7 @@ __all__ = [
     "middle_extent_m",
     "move_object_to",
     "orientation_reading",
+    "pbr_texture_report",
     "remove_object_and_mesh",
     "rename_object",
     "repair_limb_penetration",
