@@ -111,6 +111,18 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
   are 15 mm across and a map whose stones are 200 mm across will not
   line up. Count the stones in the map, and size the mesh so the
   stone lands on the right number of cells.
+- **The ORM's AO channel is what makes the relief read, not the
+  normal map.** Measured on a cobblestone slab: the ORM added +0.0193
+  of contrast to the render against the albedo alone, and the normal
+  map added +0.0027. The AO darkens the joints; the normal map only
+  tilts the stones. So bake the ORM, and treat the normal map as the
+  finishing detail.
+- **The AO's reach saturates.** Measured on the same slab, a reach of
+  0.01 m left 0.88% of the surface dark, 0.03 m left 2.90%, and
+  0.06 m and beyond all left 3.08%: the joints are deep enough that
+  any reach covering them darkens them completely. The default of
+  0.06 m is the first value past the knee; a larger one only costs
+  time.
 - **Shade the mesh SMOOTH before baking its normal map.** The map
   holds the surface normal, and a FLAT SHADED mesh's surface normal
   is its face normal, so a FLAT SHADED mesh bakes a constant map
@@ -124,6 +136,12 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
   texels, a two-cell joint on 0.02% and a three-cell joint on none:
   a wider joint is averaged away by the mesh, and the map then has
   nothing to hold.
+- **The mesh's grid has to BE the texture's grid.** Cobbles are not
+  on a grid — the joints of a real cobblestone texture measured gaps
+  of 198, 166, 35, 195, 193, 15 and 175 pixels — so no regular cell
+  grid lands on them and the mesh averages every joint away.
+  `add_relief_slab` samples the texture's own grid for exactly this
+  reason.
 
 ## What each op does
 

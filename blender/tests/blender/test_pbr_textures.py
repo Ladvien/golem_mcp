@@ -116,11 +116,16 @@ def test_the_preview_refuses_the_workbench_engine(empty_scene, tmp_path):
 
 
 def test_the_preview_camera_aims_at_the_largest_face(empty_scene):
-    """A flat slab's camera must look at its TOP, not along its edge.
+    """A flat slab's camera must look at its TOP, from above it.
 
     The camera used to aim down the object's WIDEST extent. A flat
     slab has two equal widest extents, so the camera landed edge-on to
     the surface and the preview showed a flat field.
+
+    It also used to be placed on the NEGATIVE side of that face, so
+    for a slab the camera ended up UNDER the floor looking up at the
+    slab's underside — measured: a camera at z = -4.26 for a slab
+    whose top is at z = 0.03.
     """
     from golem_blender.capture.texture_preview import _facing_direction
 
@@ -131,8 +136,10 @@ def test_the_preview_camera_aims_at_the_largest_face(empty_scene):
     box.data.update()
 
     direction = _facing_direction(box)
-    # The largest face spans X and Y, so the camera looks down Z.
+    # The largest face spans X and Y, so the camera looks down Z — and
+    # from ABOVE, on the positive side.
     assert abs(direction.z) == 1.0
+    assert direction.z > 0.0, "the camera is on the underside of the slab"
 
 
 def test_the_preview_leaves_the_scene_as_it_found_it(empty_scene, tmp_path):
@@ -279,9 +286,14 @@ def test_baking_writes_an_orm_with_a_varying_occlusion_channel(empty_scene, tmp_
     # nothing.
     distinct = {round(float(value), 3) for value in array[:, 0]}
     assert len(distinct) > 1, "the ORM's occlusion channel is constant"
-    # G and B are the constants the op was given.
-    assert all(abs(float(value) - 0.7) < 0.02 for value in array[:, 1])
-    assert all(abs(float(value)) < 0.02 for value in array[:, 2])
+    # G and B are the constants the op was given — the op's OWN
+    # defaults, read from the module rather than written out here, so
+    # a change to the default cannot leave this asserting a number
+    # the op no longer uses.
+    from golem_blender.ops.pbr_bake import DEFAULT_METALLIC, DEFAULT_ROUGHNESS
+
+    assert all(abs(float(value) - DEFAULT_ROUGHNESS) < 0.02 for value in array[:, 1])
+    assert all(abs(float(value) - DEFAULT_METALLIC) < 0.02 for value in array[:, 2])
 
 
 def test_baking_a_normal_map_of_relief_produces_a_varying_map(empty_scene, tmp_path):

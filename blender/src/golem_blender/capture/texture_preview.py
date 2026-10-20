@@ -234,13 +234,20 @@ class _preview_scene:
                 PREVIEW_LIGHT_NAME, self.light_data
             )
             scene.collection.objects.link(self.light_object)
-            light_direction = Vector((1.0, -1.0, 2.0)).normalized()
+            # The sun sits ABOVE and to the side, and its light must
+            # travel TOWARD the object — so the rotation aims the
+            # light's -Z (the direction it shines) down at the
+            # centre, which is the NEGATED offset. Aimed the other
+            # way it shines away: measured, the offset aimed directly
+            # at the object rendered black (mean 0.0003) and the
+            # negated one rendered lit (0.2278).
+            light_offset = Vector((1.0, -1.0, 2.0)).normalized()
             self.light_object.location = (
-                self.center + light_direction * self.radius_m * 3.0
+                self.center + light_offset * self.radius_m * 3.0
             )
-            self.light_object.rotation_euler = light_direction.to_track_quat(
-                "-Z", "Y"
-            ).to_euler()
+            self.light_object.rotation_euler = (
+                (-light_offset).to_track_quat("-Z", "Y").to_euler()
+            )
 
         scene.render.engine = self.engine
         scene.render.resolution_x = self.resolution_px
@@ -326,5 +333,11 @@ def _facing_direction(blender_object):
     first_axis, second_axis = max(face_areas, key=face_areas.get)
     normal_axis = ({0, 1, 2} - {first_axis, second_axis}).pop()
     direction = Vector((0.0, 0.0, 0.0))
-    direction[normal_axis] = -1.0
+    # POSITIVE, so the camera sits on the side the face points at: a
+    # slab's largest face points UP, and a camera placed on the
+    # negative side ends up UNDER the floor looking up at the slab's
+    # underside. Measured: the camera was at z = -4.26 for a slab
+    # whose top is at z = 0.03, and the render showed the world
+    # instead of the asset.
+    direction[normal_axis] = 1.0
     return direction.normalized()

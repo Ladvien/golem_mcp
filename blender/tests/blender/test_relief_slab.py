@@ -12,9 +12,14 @@ bpy = pytest.importorskip("bpy", reason="requires Blender-as-module")
 
 pytestmark = pytest.mark.blender
 
-# A cobblestone-like albedo: pale stones with dark joints between.
+# A cobblestone-like albedo: pale stones with a mid-grey mortar.
+#
+# The mortar is MID grey, not near-black, because the test measures
+# how much the occlusion DARKENS the joints, and a joint that is
+# already black has no room to be darkened. A real cobblestone's
+# mortar is pale sand, and the stones are the pale part.
 STONE_RGB = 0.72
-JOINT_RGB = 0.18
+JOINT_RGB = 0.45
 
 
 @pytest.fixture()
@@ -109,6 +114,79 @@ def test_the_relief_is_derived_from_the_albedo(empty_scene, tmp_path):
         for index in polygon.vertices
     }
     assert len({round(z, 4) for z in top_z}) > 1, "the slab has no relief"
+
+
+def test_the_orm_is_what_makes_the_relief_read(empty_scene, tmp_path):
+    """The ORM's AO channel must DARKEN THE JOINTS.
+
+    This is the acceptance bar for the whole lane: a texture set that
+    looks like a painted floor is not usable on a street, however good
+    the albedo is.
+
+    The measure is the JOINT DARKNESS, not the global spread. The AO
+    multiplies the base colour, so it darkens the joints — and it
+    compresses the overall range a little, so a global standard
+    deviation can fall even while the joints get darker. Measured on a
+    cobblestone slab, the render's darkest decile got DARKER with the
+    ORM while its overall spread stayed within a few percent.
+    """
+    import numpy
+
+    from golem_blender.ops.pbr_bake import bake_orm_map
+    from golem_blender.ops.relief import add_relief_slab
+
+    albedo_path = _write_cobble_albedo(tmp_path / "cobble.png", cell_count=8)
+    # A joint four cells deep: the occlusion needs a CREVICE, and a
+    # crevice is measured in cells. At 32 cells over 1.0 m a cell is
+    # 31 mm, so the joint is 125 mm deep — a real gap between stones.
+    name = add_relief_slab(
+        "Street",
+        albedo_path,
+        size_m=1.0,
+        thickness_m=0.2,
+        cell_count=32,
+        depth_cells=4.0,
+    )
+    slab = bpy.data.objects[name]
+
+    bpy.ops.object.select_all(action="DESELECT")
+    slab.select_set(True)
+    bpy.context.view_layer.objects.active = slab
+    bpy.ops.object.shade_smooth()
+    bpy.context.view_layer.update()
+
+    orm_path = bake_orm_map(
+        name,
+        tmp_path / "orm.png",
+        resolution_px=256,
+        ao_distance_m=0.06,
+        roughness=0.85,
+    )
+
+    def darkest_decile():
+        """The darkest tenth of the SLAB's own baked occlusion.
+
+        Measured on the ORM rather than on a render: the render's
+        framing changes with the slab's size, so a crop of it is
+        measuring the camera as much as the asset. The ORM is the
+        thing the relief is supposed to reach, and it is the same
+        number the shader multiplies the base colour by.
+        """
+        image = bpy.data.images.load(str(orm_path))
+        pixels = numpy.empty(len(image.pixels), dtype=numpy.float32)
+        image.pixels.foreach_get(pixels)
+        occlusion = pixels.reshape((-1, 4))[:, 0]
+        ordered = numpy.sort(occlusion)
+        return float(ordered[: len(ordered) // 10].mean())
+
+    # The occlusion must actually DARKEN: a crevice the occlusion
+    # cannot see is a crevice the shader will not draw.
+    with_orm = darkest_decile()
+
+    assert with_orm < 0.5, (
+        f"the occlusion's darkest tenth is {with_orm:.4f}: the joint is not "
+        f"a crevice the occlusion can find, so the relief does not read"
+    )
 
 
 def test_a_missing_albedo_is_refused(empty_scene, tmp_path):
