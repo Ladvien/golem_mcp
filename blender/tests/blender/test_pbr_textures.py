@@ -589,3 +589,31 @@ def test_the_report_survives_a_base_colour_with_no_orm(empty_scene, tmp_path):
     assert report.base_color_linked
     assert report.base_color_path.endswith("T_Set_BaseColor.png")
     assert not report.ao_multiplied
+
+
+def test_a_second_material_on_a_single_material_mesh_is_what_the_mesh_shows(
+    empty_scene, tmp_path
+):
+    """Applying a texture must make the object SHOW it.
+
+    Preserving the other slots must not leave the new material on a
+    slot nothing points at. This is the case the round-9 fix broke:
+    the mesh had one slot, the new material became the second, and
+    the faces stayed on the first - so the texture was invisible and
+    the render came back with the OLD material.
+    """
+    from golem_blender.ops.pbr_textures import assign_pbr_texture_set
+
+    box = _box()
+    base = _write_image(tmp_path / "T_Set_BaseColor.png", (*TEXTURE_RGB, 1.0))
+
+    assign_pbr_texture_set(box.name, "FirstSet", base)
+    assign_pbr_texture_set(box.name, "SecondSet", base)
+
+    used = {polygon.material_index for polygon in box.data.polygons}
+    assert len(used) == 1, f"the faces are split across slots {used}"
+    slot = used.pop()
+    assert box.data.materials[slot].name == "SecondSet", (
+        f"the mesh shows {box.data.materials[slot].name!r}, not the material "
+        f"that was just applied"
+    )

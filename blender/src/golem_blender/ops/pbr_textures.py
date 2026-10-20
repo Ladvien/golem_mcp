@@ -185,6 +185,8 @@ def _apply_material_to_faces(mesh_object, material, faces: FaceSelector) -> None
             break
     if slot_index is None:
         slots.append(material)
+    if was_single:
+        _move_all_faces(mesh_object, len(slots) - 1)
         slot_index = len(slots) - 1
     for polygon in mesh_object.data.polygons:
         if polygon.index in indices:
@@ -201,32 +203,52 @@ def _assign_material_to_object(mesh_object, material) -> None:
     barrel with its faces split 12/11/11 came out as ONE slot with
     all 34 faces on it, and the face-to-material mapping was gone.
 
-    So the material REPLACES the slot it already held, and every other
-    slot keeps its place and its faces. A mesh with no material gets
-    the new one on slot zero.
-    """
-    import bpy
+    So the material takes a slot of its own, and the faces move onto
+    it in one of two ways:
 
+    - on a mesh with ONE material, every face moves onto it. That is
+      what applying a texture to an object means - the object shows
+      the texture - and it is what used to happen by accident, because
+      clearing the slots left the new material as the only one.
+    - on a mesh with SEVERAL, no face moves. The other slots keep
+      their faces, and the caller says which faces the texture is
+      for with the `faces` selector.
+
+    The second case is the one that needs the selector: a texture on
+    a barrel with no selector would sit on a slot nothing points at,
+    and be invisible.
+    """
     slots = mesh_object.data.materials
+    # How many slots the mesh had BEFORE this call, which is what
+    # decides whether the faces move. Counting after the assignment
+    # would be wrong: a mesh with one material becomes two.
+    was_single = len(slots) <= 1
 
     # The slot this material already holds: the faces pointing at it
     # keep pointing at it, and the OTHER slots are untouched.
     for index, existing in enumerate(slots):
         if existing is not None and existing.name == material.name:
-            if existing is material:
-                return
-            # A different datablock with the same name: the slot
-            # holds a stale one, so replace it where it stands.
-            slots[index] = material
+            if existing is not material:
+                # A different datablock with the same name: the slot
+                # holds a stale one, so replace it where it stands.
+                slots[index] = material
             return
 
     # An empty slot takes it, so the other slots keep their indices.
     for index, existing in enumerate(slots):
         if existing is None:
             slots[index] = material
+            if was_single:
+                _move_all_faces(mesh_object, index)
             return
 
     slots.append(material)
+
+
+def _move_all_faces(mesh_object, slot_index: int) -> None:
+    """Put every face on the given slot."""
+    for polygon in mesh_object.data.polygons:
+        polygon.material_index = slot_index
 
 
 def _link_direct(links, from_socket, to_socket) -> None:
