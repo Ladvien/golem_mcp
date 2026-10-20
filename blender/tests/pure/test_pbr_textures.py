@@ -286,6 +286,7 @@ PROCEDURE_TOOL_NAMES = (
     "export_texture_set",
     "search_reference_images",
     "save_reference_images",
+    "generate_procedural_base_color",
 )
 PROCEDURE_OP_NAMES = (
     "add_relief_slab",
@@ -644,3 +645,93 @@ def test_the_seam_measure_compares_against_the_largest_features(tmp_path):
         f"largest features (0.5). It is being compared against the wrong "
         f"baseline."
     )
+
+
+def test_an_export_does_not_delete_another_sets_files(tmp_path):
+    """A destination can hold more than one set.
+
+    The lane has a generated set and a procedural one, and they are
+    the same kind of deliverable - so they can be exported side by
+    side. The clean-set rule removes what a PREVIOUS export put here
+    and this one does not include, and it must not take another set's
+    maps with it: the removal is scoped by the set's own file names.
+    """
+    source = tmp_path / "source"
+    source.mkdir()
+    destination = tmp_path / "out"
+
+    for name in (
+        "T_Brick_BaseColor.png",
+        "T_Brick_ORM.png",
+        "T_Brick_Normal.png",
+    ):
+        (source / name).write_bytes(b"png")
+
+    pbr_generate.export_texture_set("Brick", source, destination)
+    assert (destination / "T_Brick_BaseColor.png").is_file()
+
+    # A DIFFERENT set, exported into the same directory.
+    for name in (
+        "T_Cobble_BaseColor.png",
+        "T_Cobble_ORM.png",
+        "T_Cobble_Normal.png",
+    ):
+        (source / name).write_bytes(b"png")
+    pbr_generate.export_texture_set("Cobble", source, destination)
+
+    assert (destination / "T_Brick_BaseColor.png").is_file(), (
+        "the second export deleted the first set's base colour"
+    )
+    assert (destination / "T_Cobble_BaseColor.png").is_file()
+
+
+def test_an_export_does_not_delete_another_sets_extras(tmp_path):
+    """The same, for the extras: the reference photos of one set are
+    the reference photos of that set, not of the next."""
+    source = tmp_path / "source"
+    source.mkdir()
+    destination = tmp_path / "out"
+
+    for name in (
+        "T_Brick_BaseColor.png",
+        "T_Brick_ORM.png",
+        "T_Brick_Normal.png",
+    ):
+        (source / name).write_bytes(b"png")
+    brick_photo = source / "brick_reference.png"
+    brick_photo.write_bytes(b"photo")
+
+    pbr_generate.export_texture_set("Brick", source, destination, extras=[brick_photo])
+    assert (destination / "brick_reference.png").is_file()
+
+    for name in (
+        "T_Cobble_BaseColor.png",
+        "T_Cobble_ORM.png",
+        "T_Cobble_Normal.png",
+    ):
+        (source / name).write_bytes(b"png")
+    cobble_photo = source / "cobble_reference.png"
+    cobble_photo.write_bytes(b"photo")
+
+    report = pbr_generate.export_texture_set(
+        "Cobble", source, destination, extras=[cobble_photo]
+    )
+
+    assert (destination / "brick_reference.png").is_file(), (
+        "the second export deleted the first set's reference photo"
+    )
+    assert (destination / "cobble_reference.png").is_file()
+    # The cobble set's export removes nothing: the brick's photo is
+    # the brick set's, and the cobble's own photo is still wanted.
+    assert report["removed"] == []
+
+    # And the BRICK set's export removes the cobble's photo, because
+    # that is not the brick set's file either - and the brick's own
+    # photo is still wanted, so nothing is removed there either.
+    report = pbr_generate.export_texture_set(
+        "Brick", source, destination, extras=[brick_photo]
+    )
+    assert (destination / "cobble_reference.png").is_file(), (
+        "the brick set's export deleted the cobble set's reference photo"
+    )
+    assert report["removed"] == []

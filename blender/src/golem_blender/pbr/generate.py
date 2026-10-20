@@ -32,37 +32,60 @@ def _remove_stale_set_files(
     destination: Path,
     current_files: set[str],
     current_extras: set[str],
+    set_file_names: set[str],
+    texture_name: str,
 ) -> list[str]:
-    """Remove the files a PREVIOUS export put in `destination` and this one does not.
+    """Remove the files THIS SET put here and this one does not.
 
-    The previous export's own ``metadata.json`` is the record of what
-    belongs to the set: it lists the maps and the extras it copied.
-    Reading that record is what makes the removal safe - a file no
-    export claims is left alone, because the destination may hold
-    other work that is none of this export's business.
+    Two rules, because a set's files and its extras are identified in
+    two different ways:
+
+    - the MAPS are named for the set, so a stale one is found by its
+      name: `T_<Name>_BaseColor.png` and its siblings. Another set's
+      maps have other names and are left alone.
+    - the EXTRAS have no such name - they are the environment map and
+      the reference photos - so the only record of whose they are is
+      the previous export's own `metadata.json`. It is consulted only
+      when it is about THIS set, so a set's export never removes
+      another set's extras.
+
+    A destination can hold more than one set: the lane has a
+    generated one and a procedural one, and they are the same kind of
+    deliverable.
 
     Returns the names removed.
     """
-    metadata_path = destination / METADATA_FILE_NAME
-    if not metadata_path.is_file():
-        return []
-    try:
-        previous = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-
     keep = {Path(path).name for path in current_files | current_extras}
     keep.add(METADATA_FILE_NAME)
     removed: list[str] = []
-    for group in ("files", "extras"):
-        for path in (previous.get(group) or {}).values():
-            name = Path(path).name
-            if name in keep or name.startswith("._"):
-                continue
-            target = destination / name
-            if target.is_file():
-                target.unlink()
-                removed.append(name)
+
+    # The set's own stale maps, found by name.
+    for file_name in set_file_names:
+        if file_name in keep or file_name.startswith("._"):
+            continue
+        target = destination / file_name
+        if target.is_file():
+            target.unlink()
+            removed.append(file_name)
+
+    # The set's own stale extras, found in its own previous export.
+    metadata_path = destination / METADATA_FILE_NAME
+    if not metadata_path.is_file():
+        return removed
+    try:
+        previous = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return removed
+    if previous.get("texture_name") != texture_name:
+        return removed
+    for path in (previous.get("extras") or {}).values():
+        name = Path(path).name
+        if name in keep or name.startswith("._"):
+            continue
+        target = destination / name
+        if target.is_file():
+            target.unlink()
+            removed.append(name)
     return removed
 
 
@@ -206,7 +229,11 @@ def export_texture_set(
     # rather than guessed. A file nobody's export claims is left
     # alone: the destination may hold other work.
     removed = _remove_stale_set_files(
-        destination, set(copied.values()), set(extras_copied.values())
+        destination,
+        set(copied.values()),
+        set(extras_copied.values()),
+        set(wanted.values()),
+        texture_name,
     )
 
     metadata_path = destination / METADATA_FILE_NAME
