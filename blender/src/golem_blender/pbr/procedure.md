@@ -17,6 +17,30 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 
 ## The steps, in order
 
+0. **Choose how the base colour is made.** There are two routes, and
+   the choice is not obvious from the result.
+
+   - `generate_procedural_base_color(texture_name="<Name>")` builds it
+     from Blender's own nodes - a Voronoi pattern's cell edges are the
+     joints, each cell is a stone, and the cell's own random value is
+     its colour. The whole set can then be made with bpy alone: the
+     base colour, the relief, and the ORM and normal map baked from
+     that relief.
+   - `generate_texture_base(prompt="...")` generates it with FLUX on
+     the golem server. That is the photoreal route, and the only one
+     that is.
+
+   Measured: the procedural map TILES and the generated one does not.
+   The procedural map's seam is 0.025x the texture's largest ordinary
+   features; the generated one's is 1.38x, and it is a property of
+   the SAMPLE - four generations of one prompt measured 1.38x, 1.57x,
+   1.10x and 1.38x. The procedural relief inherits that: the normal
+   map baked from it has a seam of 0.18x against the generated map's
+   0.39x.
+
+   So: for a surface that repeats across a floor, take the procedural
+   route. For a hero asset's colour, take the generated one.
+
 1. **Look at a REAL reference first.**
    `search_reference_images(query="<the surface>", count=12)` and then
    `save_reference_images(search_id="<the id>", numbers=[...],
@@ -235,6 +259,7 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 | `search_reference_images` | Finds a REAL photo of the surface. Do this first. |
 | `save_reference_images` | Files the picked references with their licences. |
 | `generate_texture_base` | The AI half: the base-colour map. No Blender needed. |
+| `generate_procedural_base_color` | The procedural half: the base colour from Blender's nodes. Tiles exactly. |
 | `preview_texture` | The EEVEE render that lets you SEE the texture. Needs the open Blender. |
 | `add_relief_slab` | Builds the mesh the maps are baked from, with its relief from the albedo. |
 | `assign_pbr_texture_set` | Puts the maps on the mesh as one material. |

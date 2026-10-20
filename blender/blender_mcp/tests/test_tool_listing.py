@@ -442,6 +442,55 @@ EXPECTED_TOOLS = [
         },
     },
     {
+        "name": "generate_procedural_base_color",
+        "description": "Write a PROCEDURAL base colour into the texture set; returns the image and its paths.\n"
+        "\n"
+        "The whole set can be made this way, with bpy alone: the base\n"
+        "colour is computed from Blender's own nodes, the relief is\n"
+        "computed from them too, and the ORM and the normal map are\n"
+        "baked from that relief.\n"
+        "\n"
+        "What it is NOT is photoreal - the stones are Voronoi cells, so\n"
+        "they are polygonal rather than rounded, and the variation\n"
+        "within a stone is a noise texture rather than wear. What it\n"
+        "IS is reproducible, adjustable with a number instead of a\n"
+        "prompt, and TILEABLE: the pattern is evaluated on a wrapped\n"
+        "lattice, so the image's edge meets its own edge exactly.\n"
+        "\n"
+        "Measured, the seam is 0.025x the texture's largest ordinary\n"
+        "features, against a generated map's 1.38x - and the generated\n"
+        "map's seam is a property of the SAMPLE, so four generations\n"
+        "of one prompt measured 1.38x, 1.57x, 1.10x and 1.38x.\n"
+        "\n"
+        "`kind` is the cell shape: \"voronoi\" for rounded stones,\n"
+        "\"brick\" for courses. `scale_cells` is how many cells across\n"
+        "the image.\n",
+        "inputSchema": {
+            "properties": {
+                "texture_name": {
+                    "title": "Texture Name",
+                    "type": "string",
+                },
+                "kind": {"default": "voronoi", "title": "Kind", "type": "string"},
+                "scale_cells": {
+                    "default": 16.0,
+                    "title": "Scale Cells",
+                    "type": "number",
+                },
+                "width_px": {"default": 2048, "title": "Width Px", "type": "integer"},
+                "height_px": {"default": 2048, "title": "Height Px", "type": "integer"},
+                "texture_dir": {
+                    "default": "",
+                    "title": "Texture Dir",
+                    "type": "string",
+                },
+            },
+            "required": ["texture_name"],
+            "title": "generate_procedural_base_colorArguments",
+            "type": "object",
+        },
+    },
+    {
         "name": "search_reference_images",
         "description": "Search Openverse, Wikimedia Commons, Pexels and Brave for reference images; returns a numbered contact sheet and the items' sources and licenses.",
         "inputSchema": {
