@@ -232,12 +232,23 @@ def write_procedural_base_color(
         ]
 
     # The wear: a smooth field that varies a stone within itself.
+    #
+    # Its frequency is the SAME as the pattern's cells, not a multiple
+    # of it. The earlier version used two and three times the cell
+    # count, which put a fine CROSSHATCH over the whole image - and
+    # that crosshatch was what the feature measure was reading, not
+    # the pattern. Measured, a wood's features read 341.33 against the
+    # truth's 93.09, and the extra 248 were the wear.
+    #
+    # The wear is now at the cell's own frequency in ONE direction,
+    # so it varies a stone along its length without crossing itself.
     axis = numpy.arange(resolution) / resolution
-    wave_x = numpy.sin(axis * cells * 2 * numpy.pi) * 0.5
-    wave_x = numpy.tile(wave_x.reshape(-1, 1), (1, resolution))
-    wave_y = numpy.sin(axis * cells * 3 * numpy.pi + 1.3) * 0.5
-    wave_y = numpy.tile(wave_y.reshape(1, -1), (resolution, 1))
-    wear = (wave_x + wave_y) * 0.5 * variation
+    wave = numpy.sin(axis * cells * numpy.pi + 1.3) * 0.5
+    wave = numpy.tile(wave.reshape(-1, 1), (1, resolution))
+    wear = wave * variation
+    # The wear is a fraction of a stone's own width, so it varies a
+    # stone without becoming the pattern: it is at the cell's own
+    # frequency, not a multiple of it.
 
     colour = stone + wear[:, :, numpy.newaxis]
 

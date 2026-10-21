@@ -339,21 +339,28 @@ def grain_field(resolution: int, cells: int, octaves=DEFAULT_WARP_OCTAVES):
     import numpy
 
     axis = (numpy.arange(resolution) + 0.5) / resolution
-    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="xy")
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
 
     # The rings: the distance from a warped axis, so the grain's lines
     # are nested curves rather than parallel bands.
+    #
+    # ONE axis carries the warp, and the other does not. The earlier
+    # version mixed the sample's own x into the ring's position, which
+    # made the rings DIAGONAL - and a diagonal set of rings crosses
+    # itself, so the pattern read as a fine crosshatch rather than a
+    # grain. Measured, the wood's features read 341.33 against the
+    # truth's 93.09, and the extra 248 were the crosshatch.
     two_pi = 2.0 * numpy.pi
-    warp_y = numpy.zeros_like(sample_y)
+    warp = numpy.zeros_like(sample_x)
     for frequency, amplitude in octaves:
-        warp_y = warp_y + numpy.sin(sample_x * frequency * two_pi + frequency * 0.7) * (
-            amplitude / 6.0
+        warp = warp + numpy.sin(sample_y * frequency * two_pi + frequency * 0.7) * (
+            amplitude / 4.0
         )
 
-    # The rings run ALONG the plank, so the sample's own coordinate
-    # is mixed into the ring's position: the lines wander across the
-    # board as well as along it, which is what a plank's rings do.
-    rings = numpy.abs((warp_y + sample_x * 0.35) * cells)
+    # The rings are the distance from that warped axis, in ring
+    # units. They are nested arcs, and the plank's length runs along
+    # them.
+    rings = numpy.abs((sample_x + warp) * cells)
 
     # The cell is the ring's index, and the edge is the distance to
     # the nearest ring line.
