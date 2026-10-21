@@ -17,10 +17,10 @@ Over twenty materials, against the truth's:
 
 | | the lane's | the truth's |
 |---|---|---|
-| the brightness | 0.95x | 1.00x |
-| the contrast | 1.04x | 1.00x |
-| the feature scale | 0.88x | 1.00x |
-| the seam | 0.35x | 0.60x |
+| the brightness | 0.99x | 1.00x |
+| the contrast | 1.05x | 1.00x |
+| the feature scale | 0.98x | 1.00x |
+| the seam | 0.50x | 0.60x |
 
 The reference sets' own seams run from 0.32x to 2.35x, so the lane is
 inside the range real PBR sets occupy.
