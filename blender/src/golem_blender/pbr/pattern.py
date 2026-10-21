@@ -233,12 +233,8 @@ def brick_field(resolution: int, cells: int):
     # exactly. Measured, the field's seam is 0.00x at sixteen
     # courses, 0.61x at twelve, 1.88x at eight and 31.99x at two.
     courses = _power_of_two_at_least(cells)
-    # A brick is about three times wider than it is tall, so a course
-    # holds a third as many bricks as there are courses in the same
-    # span - and the course count is what the pattern's scale sets.
-    # Measured: with the same count for both, the bricks came out as
-    # thin horizontal stripes rather than bricks.
-    bricks = _power_of_two_at_least(max(2, round(courses / BRICK_ASPECT)))
+    # The bricks across a course follow from the aspect: the image's
+    # width is `courses * aspect` brick-widths.
 
     axis = numpy.arange(resolution)
     # The position along the wall, in BRICK UNITS: a brick is one
@@ -251,8 +247,19 @@ def brick_field(resolution: int, cells: int):
     # brick is three units wide. Measured with one scale for both,
     # the pattern came out as thin horizontal stripes - the bricks'
     # own interiors read as the courses.
-    vertical = axis * courses / resolution
-    horizontal = axis * courses * BRICK_ASPECT / resolution
+    #
+    # And the courses are CENTRED on the domain, so both edges fall
+    # in the middle of a course rather than on its boundary. That is
+    # what makes the wrap join: with the courses starting at the
+    # domain's edge, the last course is `courses - 1` and the first is
+    # 0, and those have DIFFERENT offsets - the last is offset by half
+    # a brick and the first is not - so the wrap shows a step. Centred,
+    # the two edges are the same distance into a course and the same
+    # parity, and the wall closes. Measured, the field's vertical
+    # seam was 10.64x at four courses with the courses starting at
+    # the edge.
+    vertical = (axis + 0.5) * courses / resolution - 0.5
+    horizontal = (axis + 0.5) * courses * BRICK_ASPECT / resolution - 0.5
     row = numpy.floor(vertical).astype(numpy.int32)
     course = vertical - row
     column = numpy.floor(horizontal).astype(numpy.int32)
@@ -262,10 +269,9 @@ def brick_field(resolution: int, cells: int):
     # joints do not line up.
     #
     # The offset is taken on the course's index MODULO the course
-    # count, so it comes back to where it started at the wrap. And
-    # the course count is even, so the parity comes back too -
-    # otherwise the course at the top of the image and the course at
-    # the bottom are offset differently and the wrap shows.
+    # count, so it comes back to where it started at the wrap - and
+    # the courses are centred, so the index can be NEGATIVE, which
+    # Python's modulo handles and a plain parity would not.
     offset = ((row % courses) % 2) * 0.5
 
     # The sample's position within its brick, along the brick's own
