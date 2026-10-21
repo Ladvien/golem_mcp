@@ -61,6 +61,10 @@ from __future__ import annotations
 DEFAULT_WARP_OCTAVES = ((3, 0.34), (5, 0.22), (8, 0.14))
 # How much of the domain a cell takes, before the warp.
 DEFAULT_CELL_FRACTION = 1.0
+# How much wider a brick is than it is tall. A brick is about three
+# to one, so a course holds a third as many bricks as there are
+# courses in the same span.
+BRICK_ASPECT = 3.0
 # The smallest a cell may be, as a fraction of the largest cell's edge
 # distance. Below it the cell is treated as having no interior, so it
 # reads as stone rather than as a blotch of joint.
@@ -218,56 +222,80 @@ def brick_field(resolution: int, cells: int):
     # vertical joints at all and the wall was stripes. Measured, the
     # pattern's features read 73.14 against the truth's 7.76.
     #
-    # The brick count must be EVEN, because every other course is
-    # offset by half a brick and the offset has to come back to where
-    # it started at the wrap.
+    # A BRICK IS WIDER THAN IT IS TALL - about three to one - so a
+    # course of `bricks` bricks is `bricks * 3` units wide and one
+    # unit tall. The image is square, so the courses and the bricks
+    # are scaled to suit: the number of courses is the image's height
+    # in brick-heights, and the number of bricks across is the
+    # image's width in brick-widths.
     #
-    # And the counts are POWERS OF TWO. Every other course is offset
-    # by half a brick, so the offset has to come back to where it
-    # started at the wrap - and it only does when the count divides
-    # the domain exactly. Measured, the field's seam is 0.00x at
-    # sixteen courses, 0.61x at twelve, 1.88x at eight and 31.99x
-    # at two. A power of two always divides, so the wall closes.
+    # The counts are POWERS OF TWO, so they divide the domain
+    # exactly. Measured, the field's seam is 0.00x at sixteen
+    # courses, 0.61x at twelve, 1.88x at eight and 31.99x at two.
     courses = _power_of_two_at_least(cells)
-    bricks = courses
+    # A brick is about three times wider than it is tall, so a course
+    # holds a third as many bricks as there are courses in the same
+    # span - and the course count is what the pattern's scale sets.
+    # Measured: with the same count for both, the bricks came out as
+    # thin horizontal stripes rather than bricks.
+    bricks = _power_of_two_at_least(max(2, round(courses / BRICK_ASPECT)))
 
     axis = numpy.arange(resolution)
-    # The position along the wall: the course's number, and how far
-    # across the course the sample is.
-    course_position = axis * courses / resolution
-    row = numpy.floor(course_position).astype(numpy.int32)
-    across = course_position - row
+    # The position along the wall, in BRICK UNITS: a brick is one
+    # unit tall and `aspect` units wide, so the image's height is
+    # `courses` brick-heights and its width is `courses * aspect`
+    # brick-widths.
+    #
+    # The vertical and horizontal scales are SEPARATE, and that is the
+    # whole geometry of a brick: a course is one brick tall and a
+    # brick is three units wide. Measured with one scale for both,
+    # the pattern came out as thin horizontal stripes - the bricks'
+    # own interiors read as the courses.
+    vertical = axis * courses / resolution
+    horizontal = axis * courses * BRICK_ASPECT / resolution
+    row = numpy.floor(vertical).astype(numpy.int32)
+    course = vertical - row
+    column = numpy.floor(horizontal).astype(numpy.int32)
+    across = horizontal - column
 
     # Every other course is offset by half a brick, so the vertical
     # joints do not line up.
     #
-    # And the offset has to be the SAME on the course at the top of
-    # the image and the course at the bottom, or the wrap shows. The
-    # courses are counted from 0, so the last course is `courses - 1`
-    # - and with an even number of courses that is an ODD course, so
-    # it is offset and the first is not. The parity is therefore taken
-    # on the course's index MODULO the even count, which keeps the
-    # two ends in step. Measured, the brick's vertical seam was 50/255
-    # against its horizontal 16/255.
-    offset = ((row % 2) if courses % 2 == 0 else (row + 1) % 2) * 0.5
+    # The offset is taken on the course's index MODULO the course
+    # count, so it comes back to where it started at the wrap. And
+    # the course count is even, so the parity comes back too -
+    # otherwise the course at the top of the image and the course at
+    # the bottom are offset differently and the wrap shows.
+    offset = ((row % courses) % 2) * 0.5
 
-    # Where the sample sits within its brick, in bricks: 0 at a joint,
-    # 0.5 in the middle.
-    within_brick = (across * bricks + offset) % 1.0
-    within_course = course_position % 1.0
+    # The sample's position within its brick, along the brick's own
+    # width, with the course's offset applied.
+    #
+    # The horizontal position is NOT reduced modulo one before the
+    # offset is added: reducing it first sends the sample at the
+    # course's far edge to zero, and the offset vanishes there, so
+    # the brick shifts at the wrap. Measured, the brick's vertical
+    # seam was 50/255 against its horizontal 16/255, and NEITHER
+    # moved with the course count: it was this, and not the number
+    # of courses.
+    within_brick = (across + offset) % 1.0
+    within_course = course % 1.0
 
-    # The distance to the nearest mortar line, in cells.
-    to_vertical = numpy.minimum(within_brick, 1.0 - within_brick) * bricks
-    to_horizontal = numpy.minimum(within_course, 1.0 - within_course) * courses
+    # The distance to the nearest mortar line, in brick units.
+    to_vertical = numpy.minimum(within_brick, 1.0 - within_brick)
+    to_horizontal = numpy.minimum(within_course, 1.0 - within_course)
     edge = numpy.minimum(
         numpy.tile(to_vertical.reshape(-1, 1), (1, resolution)),
         numpy.tile(to_horizontal.reshape(1, -1), (resolution, 1)),
     )
 
-    # The cell: which brick, and which course.
-    brick = numpy.floor(((across * bricks + offset) % 1.0) * bricks).astype(numpy.int32)
-    cell = numpy.tile((row * bricks + brick).reshape(-1, 1), (1, resolution))
-    return cell.astype(numpy.int32), edge, (bricks, courses)
+    # The cell: which brick, and which course. The brick's index is
+    # the column, shifted by the course's half-brick offset, taken
+    # modulo the row's width so the wrap joins.
+    row_width = courses * BRICK_ASPECT
+    shifted = (column + numpy.round(offset * row_width).astype(numpy.int32)) % row_width
+    cell = numpy.tile((row * row_width + shifted).reshape(-1, 1), (1, resolution))
+    return cell.astype(numpy.int32), edge, (row_width, courses)
 
 
 def _power_of_two_at_least(value: int) -> int:
@@ -358,6 +386,7 @@ def joint_response(
 
 
 __all__ = (
+    "BRICK_ASPECT",
     "DEFAULT_CELL_FRACTION",
     "DEFAULT_WARP_OCTAVES",
     "MINIMUM_CELL_FRACTION",
