@@ -1600,12 +1600,22 @@ def flat_field(
     # The sheet's slow variation, and it is the ENVELOPE: the truth's
     # plaster measures its features here, because there is nothing
     # else.
+    # The sheet is ONE octave, and not an fBm.
+    #
+    # The truth's own plaster has a correlation that decays smoothly -
+    # 0.45 at a lag of five, 0.11 at fifty, nothing at ninety-five -
+    # and an fBm's higher octaves put a ripple in it: the measure
+    # finds the ripple and the plaster's feature scale read 9.27x the
+    # truth's.
+    #
+    # A plaster is a smooth sheet with a tooth on it, and the tooth
+    # is the fine layer and not the envelope.
     lattice = max(2, cells)
     sheet = noise.fbm_2d_value(
         sample_x * lattice,
         sample_y * lattice,
         size=lattice,
-        octaves=4,
+        octaves=1,
         seed=4,
     )
 
@@ -1613,20 +1623,27 @@ def flat_field(
     # frequencies, and the frequencies are integers over the domain
     # so the field is periodic and the map still tiles.
     #
-    # This is what a plaster is - a surface with a fine tooth on it -
-    # and a field of cells is not.
-    fine = numpy.zeros_like(sample_x)
-    for index, (frequency, amplitude) in enumerate(DEFAULT_WARP_OCTAVES):
-        across = frequency * 5 + index
-        along = frequency * 7 + index + 1
-        fine = fine + numpy.sin(sample_x * across * 2.0 * numpy.pi) * amplitude
-        fine = fine + numpy.sin(sample_y * along * 2.0 * numpy.pi) * amplitude * 0.6
-    fine = fine / max(1e-6, float(numpy.abs(fine).max()))
+    # The sheet's own fine variation is the SINE sum, and it is what
+    # a plaster's tooth is.
+    #
+    # But the truth's own plaster has no fine structure at all: its
+    # correlation decays smoothly from 0.45 at a lag of five to 0.11
+    # at fifty and to nothing at ninety-five, with no ripple in it.
+    # A sum of sines at high frequencies puts a ripple in the
+    # correlation, and the measure finds it: the plaster's feature
+    # scale read 9.27x the truth's.
+    #
+    # So the fine variation is the sheet's own mottle - a Perlin at a
+    # fine lattice - and not a sum of sines. A Perlin has no
+    # preferred direction, so the tooth does not read as a weave.
+    fine = surface_texture(resolution, max(cells * 2, 8))
+    reach = max(1e-6, float(fine.max() - fine.min()))
+    fine = (fine - float(fine.min())) / reach
 
     # The sheet's SURFACE, and it is a DARKNESS: one where the sheet
     # is darkest.
     edge = 1.0 - sheet
-    fine_edge = 0.5 + 0.5 * fine
+    fine_edge = fine
     return 0, edge, (cells, cells), fine_edge
 
 

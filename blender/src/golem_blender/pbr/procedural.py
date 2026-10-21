@@ -301,7 +301,6 @@ def write_procedural_base_color(
     is what turns a Voronoi diagram into a cobblestone. Its
     frequency is an INTEGER, because the field has to be periodic.
     """
-    import bpy
     import numpy
 
     from golem_blender.pbr import pattern
@@ -409,7 +408,38 @@ def write_procedural_base_color(
         )
     cell_width, cell_height = grid
 
-    if kind in ("grain", "metal", "flat"):
+    if kind == "flat":
+        # A FLAT sheet is a SOFT variation about its base, and not a
+        # set of lines.
+        #
+        # The line pattern draws a line per cycle, and a line is a
+        # strong single frequency: the plaster's feature scale read
+        # 9.27x the truth's with it.
+        #
+        # So the sheet's variation is its own mottle, taken about the
+        # middle of its range, and the base colour is the middle.
+        import numpy as _np
+
+        base = _np.array(stone_dark_rgb, dtype=numpy.float32).reshape(1, 1, 3)
+        # The sheet's own SLOW variation, and it is the ENVELOPE - the
+        # Perlin at the cell count. The truth's own plaster measures
+        # ten features across, and that is the cell count.
+        #
+        # The mottle was the variation, and the mottle is at twice the
+        # cell count: the plaster's feature scale read 25.50x the
+        # truth's with it.
+        reach = max(1e-6, float(edge.max() - edge.min()))
+        variation = (edge - float(edge.min())) / reach - 0.5
+        # The sheet's variation is the SPREAD the description asks
+        # for, and it is not capped: the truth's own plaster carries a
+        # spread of 0.0218 and ours read 0.20x that.
+        colour = base + variation[:, :, _np.newaxis] * (
+            base * max(1e-6, float(target_spread)) * 4.0
+        )
+        colour = _np.clip(colour, 0.0, 1.0)
+        return _write_image(output_path, resolution, width_px, height_px, colour)
+
+    if kind in ("grain", "metal"):
         # A GRAIN and a METAL are LINES on a surface, not stones in a
         # joint. A cobblestone's treatment - a random colour per
         # cell, a mortar joint, a wear wave - is wrong for both: a
@@ -641,6 +671,25 @@ def write_procedural_base_color(
     # at, which is the requested one - there is no upscale, because an
     # upscale shifts the pattern's periodicity and the map's seam
     # shows.
+    return _write_image(output_path, resolution, width_px, height_px, colour)
+
+
+def _write_image(
+    output_path: Path,
+    resolution: int,
+    width_px: int,
+    height_px: int,
+    colour,
+) -> Path:
+    """Write a colour field as a PNG, and return the path.
+
+    The field is written through Blender's own image API, and the
+    values that go in are the values that come out - so nothing
+    renders them and nothing can distort them.
+    """
+    import bpy
+    import numpy
+
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     source = bpy.data.images.new(
