@@ -120,6 +120,23 @@ PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "grain", "metal")
 # Measured on the truth's own row: the range is 0.0797 and the
 # spread 0.0135, so the fibre occupies a fifth of the row's range.
 DEFAULT_LINE_WIDTH = 0.35
+# The ENVELOPE's line: how wide it is, as a fraction of its own
+# field's reach, and how much of the spread it carries.
+#
+# The envelope is a BROAD gradient - the slow cathedral swirl a
+# plank's fibre follows - and it is drawn wide, so it reads as a
+# gradient and not as a set of rings. Measured, a narrow envelope
+# drew hard white waves where the truth has a soft gradient.
+ENVELOPE_LINE_WIDTH = 1.0
+ENVELOPE_STRENGTH = 0.45
+# The FIBRE's line: how wide it is, and how much of the spread it
+# carries.
+#
+# The fibre is FINE and it is most of the spread: the truth's own
+# wood carries 0.51 of its spread in the fibre and 0.49 in the
+# envelope, and the two are nearly equal.
+FIBRE_LINE_WIDTH = 0.35
+FIBRE_STRENGTH = 0.55
 # How many FINE lines each cell of a line pattern carries.
 #
 # A grain is TWO scales: the envelope - the slow cathedral swirl a
@@ -283,11 +300,11 @@ def write_procedural_base_color(
     elif kind == "brick":
         cell, edge, grid = pattern.brick_field(resolution, cells)
     elif kind == "grain":
-        cell, edge, grid = pattern.grain_field(
+        cell, edge, grid, fibre = pattern.grain_field(
             resolution, cells, lines_per_cell=lines_per_cell
         )
     else:
-        cell, edge, grid = pattern.metal_field(
+        cell, edge, grid, fibre = pattern.metal_field(
             resolution, cells, lines_per_cell=lines_per_cell
         )
     cell_width, cell_height = grid
@@ -325,6 +342,7 @@ def write_procedural_base_color(
         return _write_line_pattern(
             output_path,
             edge=edge,
+            fibre=fibre,
             grid=(cell_width, cell_height),
             resolution=resolution,
             width_px=width_px,
@@ -488,6 +506,7 @@ def _scale_to_spread(colour, base, target_spread):
 def _write_line_pattern(
     output_path: Path,
     edge,
+    fibre,
     grid,
     resolution: int,
     width_px: int,
@@ -508,25 +527,53 @@ def _write_line_pattern(
     blend is a smooth falloff, not a hard edge, because a wood's
     rings and a metal's grain are soft.
 
-    The lines' width is a fraction of the distance to the nearest
-    line, so a line is a fixed fraction of its own spacing whatever
-    the scale.
+    THE TWO SCALES ARE DRAWN SEPARATELY. A grain is an ENVELOPE -
+    the slow cathedral swirl the fibre follows - and a FIBRE, and
+    they are different widths and different strengths. Combining
+    them into one field and drawing that put the envelope's rings
+    over the fibre, and the close crop showed hard white waves
+    where the truth has fibre: the envelope was doing all the
+    reading and the fibre was invisible.
+
+    So the envelope is drawn as a broad gradient and the fibre as a
+    set of fine lines, and each has its own width and its own
+    strength. The truth's own wood carries 0.51 of its spread in the
+    fibre and 0.49 in the envelope, so the two are nearly equal -
+    and the envelope's RING POSITIONS are what the feature scale
+    reads.
     """
     import bpy
     import numpy as _np
 
-    reach = max(1e-6, float(edge.max()))
-    line = _np.clip(edge / reach / max(1e-6, line_width), 0.0, 1.0)
-    # A smooth falloff, so the line is soft rather than a hard edge.
-    line = line * line * (3.0 - 2.0 * line)
+    def line_of(field, width):
+        """The field's own line: a smooth falloff from its darkest.
+
+        The field is a DISTANCE - zero at the darkest - so the line is
+        the field's own value, and the line is dark where the field
+        is small.
+        """
+        reach = max(1e-6, float(field.max()))
+        line = _np.clip(field / reach / max(1e-6, width), 0.0, 1.0)
+        return line * line * (3.0 - 2.0 * line)
+
+    # The envelope: a broad gradient, at a third of the spread.
+    envelope_line = line_of(edge, ENVELOPE_LINE_WIDTH)
+    # The fibre: fine lines, at the rest of the spread.
+    fibre_line = line_of(fibre, FIBRE_LINE_WIDTH)
 
     base = _np.array(base_rgb, dtype=_np.float32).reshape(1, 1, 3)
     lines = _np.array(line_rgb, dtype=_np.float32).reshape(1, 1, 3)
-    colour = base * (1.0 - line[:, :, _np.newaxis]) + lines * line[:, :, _np.newaxis]
+    darkness = _np.clip(
+        envelope_line * ENVELOPE_STRENGTH + fibre_line * FIBRE_STRENGTH, 0.0, 1.0
+    )
+    colour = (
+        base * (1.0 - darkness[:, :, _np.newaxis]) + lines * darkness[:, :, _np.newaxis]
+    )
     colour = _np.clip(colour, 0.0, 1.0)
     # The image's variation is scaled so its spread IS the
     # description's - a line's falloff carries a different amount of
-    # contrast than a joint's, and only measuring says which.
+    # contrast than a joint's, and only measuring says how much of
+    # the spread this one carries.
     colour = _scale_to_spread(colour, float(base_rgb[0]), target_spread)
 
     output_path = Path(output_path)
@@ -539,8 +586,6 @@ def _write_line_pattern(
         pixels.reshape((resolution, resolution, 4))[:, :, :3] = colour
         pixels.reshape((resolution, resolution, 4))[:, :, 3] = 1.0
         source.pixels.foreach_set(pixels.ravel())
-        if resolution != width_px or resolution != height_px:
-            source.scale(width_px, height_px)
         pixels = _np.empty(width_px * height_px * 4, dtype=_np.float32)
         source.pixels.foreach_get(pixels)
     finally:

@@ -98,6 +98,7 @@ def fbm_2d_value(
     persistence: float = 0.5,
     lacunarity: int = 2,
     seed: int = 0,
+    folds: int = 0,
 ):
     """The fBm of the value noise, in 0..1.
 
@@ -108,6 +109,12 @@ def fbm_2d_value(
     The lattice's size is always a power of two, so the wrap is
     exact: a size of 4 doubled four times is 64, and every octave's
     lattice divides the domain.
+
+    `folds` RIDGES the noise: each fold takes the absolute value of
+    the octave about its middle, which turns a smooth field into one
+    with sharp creases. Material-maker's `fbm4` has the same fold,
+    and it is what a fibre wants - a smooth value noise is soft
+    waves, and a ridged one is lines.
     """
     import numpy
 
@@ -116,13 +123,12 @@ def fbm_2d_value(
     amplitude = 1.0
     lattice = size
     for octave in range(octaves):
-        value = (
-            value
-            + value_noise_2d(
-                sample_x * lattice, sample_y * lattice, lattice, seed + octave
-            )
-            * amplitude
+        octave_value = value_noise_2d(
+            sample_x * lattice, sample_y * lattice, lattice, seed + octave
         )
+        for _ in range(folds):
+            octave_value = numpy.abs(2.0 * octave_value - 1.0)
+        value = value + octave_value * amplitude
         norm = norm + amplitude
         amplitude *= persistence
         lattice *= lacunarity

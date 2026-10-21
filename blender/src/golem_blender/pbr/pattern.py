@@ -99,28 +99,72 @@ SURFACE_OCTAVES = 4
 SURFACE_PERSISTENCE = 0.5
 # How strong the FIBRE is against the envelope it rides on.
 #
-# The envelope is what the feature measure reads, and the truth's
-# fibre is faint: the truth's wood crosses its own midpoint
-# sixty-nine times where its envelope says thirteen features, and
-# the envelope still dominates the autocorrelation. So the fibre is a
-# fraction of the envelope's strength.
+# The fibre is FAINT, and that is what makes the envelope decide the
+# feature scale. The feature measure is the autocorrelation's first
+# crossing, and the truth's wood has an envelope of thirteen features
+# and a fibre of a hundred and forty lines - and the autocorrelation
+# reads thirteen, because the truth's fibre is IRREGULAR and its
+# envelope is a slow variation.
 #
-# Measured, a fibre as strong as the envelope put the wood's scale
-# at 3.79x the truth's and the metal's at 9.74x - the measure was
-# reading the fibre and not the envelope.
-FIBRE_WEIGHT = 0.25
+# Our fibre is a regular fractal, so a strong fibre locks the
+# autocorrelation onto itself and the scale reads a hundred and
+# fifty times too fine. Measured: at a weight of 0.05 to 0.10 the
+# wood's scale reads 1.26x the truth's and the metal's 1.29x, and at
+# 0.35 the wood reads 78x and the metal 112x.
+FIBRE_WEIGHT = 0.10
 # How strong the ENVELOPE is against the fibre it carries.
-#
-# The envelope is the slow variation the fibre follows, and it is
-# only that - the surface is the fibre. Measured, the envelope at
-# full strength drew three fat waves across a quarter of the image
-# where the truth has fine fibre, so the envelope was doing all the
-# reading and the fibre was invisible.
 #
 # The envelope's RING POSITIONS still set the feature scale, and the
 # positions are not changed by the depth - so the scale survives
 # while the surface becomes the fibre.
-ENVELOPE_WEIGHT = 0.35
+ENVELOPE_WEIGHT = 1.0
+# The FIBRE's own shape: how much it is stretched along the plank,
+# how many octaves it has, how quickly each one quiets down, and how
+# strong it is against the envelope.
+#
+# The stretch is what makes the noise read as LINES rather than as
+# blobs: the noise's lattice is stretched along the plank's length,
+# so its patches are narrow across the board and long along it.
+#
+# The strength is measured: the truth's wood carries 0.51 of its
+# spread in the fibre and 0.49 in the envelope - so the two are
+# nearly equal, and the fibre is the one that is slightly the
+# weaker.
+# How much the fibre's noise is compressed ALONG the plank.
+#
+# The smaller the number the longer the noise's patches run along the
+# plank, and a fibre is a long streak. At 0.25 the streaks ran
+# diagonally - the lattice's own geometry is square, so a mild
+# compression leaves the patches as squares with a diagonal long
+# axis - and the truth's fibre is along the board.
+FIBRE_STRETCH = 0.08
+FIBRE_OCTAVES = 3
+FIBRE_PERSISTENCE = 0.5
+# How wide the fibre's line is, as a fraction of the noise's own
+# range around the crossing.
+#
+# The truth's lines are 3 to 17 pixels apart in a 1024 image, and
+# they are THIN - a fibre is a line and not a band. The gradient's
+# own measure of a line is broad, and the close crop showed soft
+# waves where the truth has fibre, so the line is the noise's ridge
+# with a band around it.
+#
+# The band has to be wide enough to hold a line: at 0.08 it caught
+# only the odd pixel and the map came out as blue speckle.
+FIBRE_BAND = 0.22
+# How many times the noise is RIDGED, per octave.
+#
+# A smooth value noise is soft waves, and a fibre is a line with a
+# crease in it. Material-maker's `fbm4` folds the noise the same
+# way, and the fold is what turns the wave into a line.
+FIBRE_FOLDS = 1
+# How many fibre lines the image carries across, per 1024 pixels.
+#
+# The truth's wood has its lines 7.4 pixels apart in a 1024 row, so
+# about a hundred and forty of them - and a value noise's ridge
+# crosses the middle of its range twice per lattice cell, so the
+# lattice is half that.
+FIBRE_LINES_PER_IMAGE = 70
 # How much of the domain a cell takes, before the warp.
 DEFAULT_CELL_FRACTION = 1.0
 # How much wider a brick is than it is tall.
@@ -588,85 +632,166 @@ def grain_field(
     within = rings - band
     edge = numpy.minimum(within, 1.0 - within)
 
+    # The ENVELOPE is a smooth field, not a set of rings.
+    #
+    # The envelope is the slow variation the fibre follows - a
+    # cathedral swirl - and the truth's is a smooth gradient that
+    # darkens slowly across the board. Measured on the truth's own
+    # wood: its envelope amplitude is 0.0079 against a total spread
+    # of 0.0155, so it is half the spread, and it is a smooth one.
+    #
+    # A set of RINGS is not that: the rings are hard lines half a
+    # cell apart, and the close crop showed hard white waves where
+    # the truth has a soft gradient. So the envelope is a low
+    # frequency Perlin - a smooth field with no preferred
+    # direction - and the rings stay only as the CELL INDEX, which
+    # is what the feature scale reads.
+    from golem_blender.pbr import noise_perlin
+
+    envelope_lattice = max(2, cells)
+    envelope_field = noise_perlin.perlin_2d(
+        sample_x * envelope_lattice,
+        sample_y * envelope_lattice,
+        period=envelope_lattice,
+        seed=3,
+    )
+    envelope_reach = max(1e-6, float(envelope_field.max() - envelope_field.min()))
+    # The envelope is the RINGS' own smooth shape - a SINE, so a
+    # broad gradient rather than a hard line - with the Perlin
+    # modulating how strong each part of it is.
+    #
+    # The rings' POSITIONS are what the feature scale reads, so they
+    # have to stay: measured, the envelope on its own - the Perlin
+    # with no rings - read 3.25x the truth's, because the measure
+    # found the Perlin's own features instead of the rings.
+    #
+    # So the envelope is the sine wave times the Perlin's own
+    # magnitude, which is smooth and has no direction of its own.
+    #
+    # A TRIANGLE was a hard ridge at each ring's peak, and the close
+    # crop showed hard white waves where the truth has a soft
+    # gradient - so it is a sine, which has no ridge.
+    sine = numpy.sin((within - 0.5) * numpy.pi)
+    edge = (0.5 + 0.5 * sine) * (0.5 + 0.5 * numpy.abs(envelope_field) / envelope_reach)
+
+    # The fibre's own edge, which is the ENVELOPE's edge when there is
+    # no fibre - so the writer always has two fields to draw.
+    fine_edge = edge
+    # The envelope is a DARKNESS, not a distance: one at the ring's
+    # own dark line and zero at its lightest. The writer draws a
+    # darkness directly, and a distance would have to be inverted -
+    # and an inverted one put the envelope's light bands where its
+    # dark ones were, so the crop showed white waves.
+    edge = 1.0 - edge
+
     # A GRAIN IS TWO SCALES. The rings above are the ENVELOPE - the
     # slow cathedral swirl a plank's fibre follows - and the truth's
-    # own row crosses its midpoint 69 times where the envelope's
-    # autocorrelation says thirteen features. So the fibre itself is
-    # a set of fine lines inside the envelope, and the count of them
-    # is what the surface actually looks like.
+    # own row crosses its midpoint sixty-nine times where the
+    # envelope's autocorrelation says thirteen features. So the fibre
+    # itself is a set of fine streaks inside the envelope, and the
+    # count of them is what the surface actually looks like.
     #
-    # So the fine lines are added here, at the cell's own frequency
-    # and a small drift of their own, and the edge is the nearer of
-    # the two.
+    # THE FIBRE IS NOISE, not a set of rings. A set of rings is
+    # REGULAR, and a regular pattern's autocorrelation locks onto it
+    # - so the feature measure read the fibre and the scale came out
+    # 4.09x the truth's. The truth's fibre does not lock: its lines
+    # come 3, 5, 6, 9, 14 and 17 pixels apart, and its envelope says
+    # thirteen features.
+    #
+    # So the fibre is material-maker's periodic value noise, at the
+    # fibre's own scale and STRETCHED along the plank - so it reads
+    # as lines running the length of the board rather than as blobs.
     if lines_per_cell > 1:
-        # The fibre FOLLOWS the envelope, and it is IRREGULAR.
+        from golem_blender.pbr import noise
+
+        # The lattice is the fibre's own scale, and it is set by
+        # the LINE SPACING rather than by the cell count: the truth's
+        # wood has its lines 7.4 pixels apart in a 1024 row, and a
+        # value noise's ridge crosses the middle of its range twice
+        # per lattice cell - so the lattice is seventy across for the
+        # truth's spacing.
         #
-        # Measured on the truth's own row, the fibre's crossings come
-        # 1, 3, 4, 8, 10, 29 and 53 pixels apart - so a wood's fibre
-        # is not a regular line pattern at all but a set of fine
-        # streaks of varying thickness, with the slow envelope's
-        # variation on top.
+        # Measured, a lattice of 128 with three octaves put the lines
+        # 2.3 pixels apart, where the truth's are 7.4.
         #
-        # So the fibre's position is a sum of sines at MANY
-        # frequencies - a fractal - rather than one clean sine. The
-        # frequencies are integers over the domain, so the field is
-        # periodic and the map still tiles.
-        # The fibre's own drift, and it is SMALL and IRREGULAR: the
-        # truth's lines are nearly straight with a few swirls, and
-        # the drift rides along the line rather than across it.
-        fine = numpy.zeros_like(sample_x)
-        for frequency, amplitude in octaves:
-            fine = fine + numpy.sin(
-                sample_y * frequency * two_pi * 7.0 + frequency * 0.9
-            ) * (amplitude * GRAIN_WANDER_FRACTION * 0.12)
-            fine = fine + numpy.sin(
-                sample_y * frequency * two_pi * 11.0 + frequency * 0.3
-            ) * (amplitude * GRAIN_WANDER_FRACTION * 0.07)
-        # Every multiplier above is an INTEGER over the domain, on
-        # both axes, so the fibre is periodic and the map tiles.
-        fine_rings = (sample_x + fine) * cells * lines_per_cell
-        fine_band = numpy.floor(fine_rings).astype(numpy.int32)
-        fine_within = fine_rings - fine_band
-        fine_edge = numpy.minimum(fine_within, 1.0 - fine_within)
-        # The fibre's distance is the pattern's distance, and the
-        # envelope bends it by shifting the fibre's position. Taking
-        # the SMALLER of the two broke the fibre into dashes, because
-        # the envelope's own distance is large away from the
-        # envelope's rings.
+        # The noise is a VALUE NOISE and not a Perlin. A Perlin's
+        # zero crossings are its own ridges, which read as streaks
+        # running the WRONG way - measured, the wood's scale read
+        # 67.70x the truth's - and a value noise's threshold crossing
+        # is a line of the direction asked for.
+        lattice = _fibre_lattice(resolution)
+        fibre_field = noise.fbm_2d_value(
+            sample_x * lattice * FIBRE_STRETCH,
+            sample_y * lattice,
+            size=lattice,
+            octaves=FIBRE_OCTAVES,
+            persistence=FIBRE_PERSISTENCE,
+            seed=0,
+            folds=FIBRE_FOLDS,
+        )
+        # The fibre's own line: a PERLIN field's ZERO CROSSINGS.
         #
-        # And the fibre is FAINTER than the envelope, because the
-        # envelope is what the feature measure reads. The truth's
-        # wood crosses its own midpoint sixty-nine times where its
-        # envelope says thirteen features - so the truth's fibre is
-        # irregular and faint, and the envelope dominates its
-        # autocorrelation. The lane's fibre was as strong as the
-        # envelope, so the measure read the FIBRE and the scale came
-        # out 3.79x the truth's for a wood and 9.74x for a metal.
+        # A Perlin is a gradient noise, and its sign changes on a
+        # lattice of ridges - so the crossing IS the line, with no
+        # band to choose and no threshold to tune. A value noise has
+        # no such thing: its crossing is where it happens to pass
+        # through the middle of its range, and the line that makes
+        # came out as speckle.
         #
-        # So the two are combined with the fibre the weaker: the
-        # envelope sets the scale and the fibre rides on it.
+        # The line's darkness is how steep the field is there, and the
+        # steepness is normalised by a HIGH PERCENTILE and not by its
+        # maximum: one pixel's slope can be ten times its
+        # neighbours', and dividing by it leaves every other pixel at
+        # zero - so the whole map came out flat grey.
+        # The fibre's own line: the distance to the noise's ridge,
+        # which is where the noise crosses the middle of its range.
         #
-        # The line the pattern reads is the NEARER of the envelope's
-        # line and the fibre's - and the ENVELOPE's line is the
-        # shallower one, because the fibre is what a plank's surface
-        # actually shows and the envelope is only the slow variation
-        # the fibre follows.
+        # The band is a fraction of the noise's own SPREAD - its
+        # range from its minimum to its maximum - and not of its
+        # half-range: a band of 0.22 measured from the middle of a
+        # field that only spans 0.0 to 0.5 catches a thin sliver, and
+        # the map came out as speckle rather than as fibre.
+        spread = max(1e-6, float(fibre_field.max() - fibre_field.min()))
+        band = max(1e-6, FIBRE_BAND * spread)
+        fibre_dark = numpy.clip(
+            1.0 - numpy.abs(fibre_field - 0.5 * spread - fibre_field.min()) / band,
+            0.0,
+            1.0,
+        )
+
+        # The envelope and the fibre are combined as DARKNESSES, not
+        # as distances.
+        #
+        # The edge is a DISTANCE - zero on a line - and the writer
+        # turns it into a darkness. So scaling the envelope's edge
+        # DOWN makes it smaller everywhere, and the smaller one
+        # always wins - which is backwards: the envelope would then
+        # decide the pattern everywhere and the fibre would never
+        # show.
+        #
+        # So the two are turned into darknesses, the envelope's is
+        # weighted down, and the pattern reads the darker of them.
+        # The envelope's RING POSITIONS are unchanged, so the
+        # feature scale survives while the surface becomes the
+        # fibre.
         #
         # Measured, the envelope at full strength drew three fat
         # waves across a quarter of the image where the truth has
-        # fine fibre - so the envelope was doing all the reading and
-        # the fibre was invisible. And the feature measure reads the
-        # envelope, so the envelope has to stay the one that decides
-        # the scale: it is the envelope's RING POSITIONS that set it,
-        # not its depth.
-        #
-        # So the envelope's line is scaled down and the fibre's is
-        # left alone, and the pattern reads the fibre.
-        envelope_line = edge * ENVELOPE_WEIGHT
-        fibre_line = fine_edge * 2.0
-        edge = numpy.minimum(envelope_line, fibre_line)
+        # fine fibre.
+        envelope_reach = max(1e-6, float(edge.max()))
+        envelope_dark = numpy.clip(1.0 - edge / envelope_reach, 0.0, 1.0)
+        darkness = numpy.maximum(
+            envelope_dark * ENVELOPE_WEIGHT, fibre_dark * FIBRE_WEIGHT
+        )
+        # The edge is a DISTANCE, and the writer divides it by its own
+        # maximum - so the edge has to run from zero on a line to its
+        # maximum away from one. A darkness that never reaches one
+        # leaves the edge in a narrow band near its maximum, and the
+        # writer's line is then above one everywhere and clips to a
+        # flat grey.
+        edge = 1.0 - darkness / max(1e-6, float(darkness.max()))
 
-    return band, edge, (cells, cells)
+    return band, edge, (cells, cells), fine_edge
 
 
 def metal_field(
@@ -730,36 +855,88 @@ def metal_field(
     within = bands - band
     edge = numpy.minimum(within, 1.0 - within)
 
+    # The grain's own edge, which is the BANDS' edge when there is no
+    # grain - so the writer always has two fields to draw.
+    fine_edge = edge
+    # The bands are a DARKNESS, not a distance - the writer draws a
+    # darkness directly.
+    edge = 1.0 - edge
+
     # A METAL IS TWO SCALES too: the bands are the envelope and the
     # sheet's own grain is a set of fine lines inside them. Measured,
     # the truth's polished silver crosses its midpoint 122 times
     # where its envelope is nine features.
     if lines_per_cell > 1:
-        fine = numpy.zeros_like(sample_x)
-        for frequency, amplitude in octaves:
-            fine = fine + numpy.sin(
-                sample_y * frequency * two_pi * 7.0 + frequency * 0.9
-            ) * (amplitude * METAL_WANDER_FRACTION * 0.12)
-            fine = fine + numpy.sin(
-                sample_y * frequency * two_pi * 11.0 + frequency * 0.3
-            ) * (amplitude * METAL_WANDER_FRACTION * 0.07)
-        fine_bands = (sample_x + fine) * cells * lines_per_cell
-        fine_band = numpy.floor(fine_bands).astype(numpy.int32)
-        fine_within = fine_bands - fine_band
-        fine_edge = numpy.minimum(fine_within, 1.0 - fine_within)
-        # The sheet's grain is what the pattern reads, and the bands
-        # only bend it. Taking the smaller of the two broke the grain
-        # into dashes.
-        #
-        # And the grain is FAINTER than the bands, for the same
-        # reason the wood's fibre is fainter than its envelope: the
-        # bands are what the feature measure reads. Measured, a grain
-        # as strong as the bands put the metal's scale at 9.74x the
-        # truth's.
-        fibre_line = fine_edge * (2.0 * FIBRE_WEIGHT)
-        edge = numpy.minimum(edge, fibre_line)
+        # The sheet's GRAIN is NOISE, for the same reason the wood's
+        # fibre is: a set of rings is regular, and a regular
+        # pattern's autocorrelation locks onto it - so the feature
+        # measure read the grain and the scale came out 9.74x the
+        # truth's. A stretched value noise does not lock, and it
+        # reads as the brushed streaks a sheet actually shows.
+        from golem_blender.pbr import noise
 
-    return band, edge, (cells, cells)
+        lattice = _fibre_lattice(resolution)
+        grain_field = noise.fbm_2d_value(
+            sample_x * lattice * FIBRE_STRETCH,
+            sample_y * lattice,
+            size=lattice,
+            octaves=FIBRE_OCTAVES,
+            persistence=FIBRE_PERSISTENCE,
+            seed=1,
+            folds=FIBRE_FOLDS,
+        )
+        # The sheet's grain is the noise's GRADIENT, for the same
+        # reason the wood's fibre is: a threshold crossing gives a
+        # band and a band reads as flat grey.
+        # The sheet's grain is the noise's RIDGE, for the same reason
+        # the wood's fibre is: a threshold crossing with a narrow band
+        # is a thin line, and a gradient is a broad one.
+        spread = max(1e-6, float(grain_field.max() - grain_field.min()))
+        band = max(1e-6, FIBRE_BAND * spread)
+        fibre_dark = numpy.clip(
+            1.0 - numpy.abs(grain_field - 0.5 * spread - grain_field.min()) / band,
+            0.0,
+            1.0,
+        )
+
+        # The bands and the grain are combined as DARKNESSES, so the
+        # weaker one can be the shallower one - the same reason the
+        # wood's envelope and fibre are.
+        envelope_reach = max(1e-6, float(edge.max()))
+        envelope_dark = numpy.clip(1.0 - edge / envelope_reach, 0.0, 1.0)
+        darkness = numpy.maximum(
+            envelope_dark * ENVELOPE_WEIGHT, fibre_dark * FIBRE_WEIGHT
+        )
+        # The edge is a DISTANCE, and the writer divides it by its own
+        # maximum - so the edge has to run from zero on a line to its
+        # maximum away from one. A darkness that never reaches one
+        # leaves the edge in a narrow band near its maximum, and the
+        # writer's line is then above one everywhere and clips to a
+        # flat grey.
+        edge = 1.0 - darkness / max(1e-6, float(darkness.max()))
+
+    return band, edge, (cells, cells), fine_edge
+
+
+def _fibre_lattice(resolution: int) -> int:
+    """The lattice the FIBRE's noise is sampled on.
+
+    The truth's wood has its lines 7.4 pixels apart in a 1024 row,
+    and a value noise's ridge crosses the middle of its range twice
+    per lattice cell - so the lattice is seventy across for the
+    truth's spacing.
+
+    The lattice DIVIDES the resolution, so the noise's own wrap is
+    exact and the map tiles. So it is the largest power of two that
+    divides the resolution and is no bigger than the wanted count.
+    """
+    wanted = max(2, round(FIBRE_LINES_PER_IMAGE * resolution / 1024.0))
+    size = 2
+    while size * 2 <= wanted and resolution % (size * 2) == 0:
+        size *= 2
+    while resolution % size != 0:
+        size //= 2
+    return max(2, size)
 
 
 def cell_local_frame(cell, sample_x, sample_y, grid):
@@ -834,20 +1011,25 @@ def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES
     The mottle is NOISE, not a sum of sines. A sum of sines is a
     PLAID: it has a direction and a period, and the close crop
     showed a woven corduroy over the stones rather than a mottle.
-    So the surface is material-maker's periodic value-noise fBm -
-    a lattice of random values interpolated with the quintic fade,
-    and the lattice WRAPS so the field tiles.
 
-    Measured: the sine sum's edge step was 0.766 against an interior
-    step of 0.13, and the noise's own edge step matches its
-    interior step.
+    The noise is a TILEABLE PERLIN, ported from pvigier/perlin-numpy
+    (MIT). A Perlin is a GRADIENT noise - it interpolates random
+    GRADIENTS rather than random values - and a gradient noise has
+    no preferred direction, which is what a mottle wants. A value
+    noise's own value is smooth between its corners, and a smooth
+    field shows its lattice.
+
+    The Perlin is periodic by construction: its gradient table is
+    indexed modulo the period, so the field's edge meets its own
+    edge exactly. Measured, the ported Perlin's seam is 0.0 and its
+    shift by a whole period is 5e-15 - machine precision.
 
     The field's own spread is the surface's contrast, and the
     caller scales it to the description's.
     """
     import numpy
 
-    from golem_blender.pbr import noise
+    from golem_blender.pbr import noise_perlin
 
     axis = (numpy.arange(resolution) + 0.5) / resolution
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
@@ -856,22 +1038,17 @@ def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES
     # hundred or so of the patches, so the lattice is that many
     # cells across the domain and the field is periodic over it.
     #
-    # The size is a POWER OF TWO, because each octave DOUBLES it and
-    # the wrap has to be exact: a size of 120 doubled four times is
-    # 1920, which does not divide the domain, and the mottle's own
-    # seam showed. Measured, the brick's seam read 3.86x the truth's
-    # with a size of 120 and 0.00x with a power of two.
+    # The size is a POWER OF TWO and it DIVIDES the resolution, so
+    # the mottle's own wrap joins two whole cells. Measured, the
+    # brick's seam read 3.86x the truth's with a size of 120 and
+    # 0.00x with a power of two.
     size = _power_of_two_nearest(cells * SURFACE_PATCHES_PER_CELL)
-    # The lattice's size divides the resolution, so the mottle's own
-    # wrap joins two whole cells.
     while size > 1 and resolution % size != 0:
         size //= 2
-    return noise.fbm_2d_value(
-        sample_x,
-        sample_y,
-        size=size,
-        octaves=SURFACE_OCTAVES,
-        persistence=SURFACE_PERSISTENCE,
+    return noise_perlin.perlin_2d(
+        sample_x * size,
+        sample_y * size,
+        period=size,
         seed=0,
     )
 
