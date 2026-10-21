@@ -94,7 +94,21 @@ DEFAULT_WANDER = 0.35
 # image's edge unjoined.
 DEFAULT_WANDER_FREQUENCY = 3
 # The cell shapes a pattern can have.
-PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "grain")
+PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "grain", "metal")
+# How wide a LINE is, as a fraction of the distance to the nearest
+# line. A grain's rings and a metal's grain are soft, and the truth's
+# wood measures a luma spread of 0.0162 - so the line is narrow and
+# the falloff is smooth.
+#
+# Measured, the width trades the scale against the contrast: at 0.5
+# the wood's contrast read 0.69x the truth's and its scale 0.95x, and
+# at 0.8 the contrast read 0.73x with the scale at 0.96x. So 0.8 is
+# the width that keeps the scale and takes the most contrast.
+DEFAULT_LINE_WIDTH = 0.8
+# The contrast a LINE pattern gets when the description says nothing
+# about its spread. The truth sets' spreads run from 0.0061 on a
+# polished metal to 0.0926 on a mossy rock, and this is the middle.
+LINE_CONTRAST = 0.030
 
 
 def _cell_hash(cell, width: int, height: int):
@@ -134,6 +148,8 @@ def write_procedural_base_color(
     mortar_rgb: tuple[float, float, float] = DEFAULT_MORTAR_RGB,
     mortar_width: float = DEFAULT_MORTAR_WIDTH,
     variation: float = DEFAULT_VARIATION,
+    line_width: float = DEFAULT_LINE_WIDTH,
+    line_contrast: float | None = None,
 ) -> Path:
     """Write a procedural base colour as a PNG; returns the path.
 
@@ -195,9 +211,53 @@ def write_procedural_base_color(
         cell, edge, grid = pattern.cell_and_edge(resolution, cells)
     elif kind == "brick":
         cell, edge, grid = pattern.brick_field(resolution, cells)
-    else:
+    elif kind == "grain":
         cell, edge, grid = pattern.grain_field(resolution, cells)
+    else:
+        cell, edge, grid = pattern.metal_field(resolution, cells)
     cell_width, cell_height = grid
+
+    if kind in ("grain", "metal"):
+        # A GRAIN and a METAL are LINES on a surface, not stones in a
+        # joint. A cobblestone's treatment - a random colour per
+        # cell, a mortar joint, a wear wave - is wrong for both: a
+        # wood's rings are a subtle variation on ONE colour, and a
+        # steel plate is an even sheet.
+        #
+        # Measured, the truth's wood has a luma spread of 0.0162 and
+        # 13.13 features, and the cobblestone treatment read 3.00x
+        # that contrast. The lines carry the whole image, so the
+        # colour is the palette's base and the lines are the only
+        # variation.
+        #
+        # The line is the base DARKER, and by how much is the
+        # description's own SPREAD - the same number the stone ramp
+        # uses, and for the same reason: the truth sets' spreads run
+        # from 0.0061 on a polished metal to 0.0926 on a mossy rock,
+        # and the words carry them.
+        #
+        # The spread is ABSOLUTE, so the darkening is a fraction of
+        # the base: a dark surface's lines are darker by less in
+        # absolute terms than a pale one's, which is what the truth
+        # does.
+        if line_contrast is None:
+            line_contrast = LINE_CONTRAST
+        base = sum(stone_dark_rgb) / 3.0
+        darkening = 0.0 if base <= 0.0 else min(1.0, line_contrast / base)
+        line_rgb = tuple(
+            max(0.0, channel * (1.0 - darkening)) for channel in stone_dark_rgb
+        )
+        return _write_line_pattern(
+            output_path,
+            edge=edge,
+            grid=(cell_width, cell_height),
+            resolution=resolution,
+            width_px=width_px,
+            height_px=height_px,
+            base_rgb=stone_dark_rgb,
+            line_rgb=line_rgb,
+            line_width=line_width,
+        )
 
     # The joint's width, as a fraction of the distance to the edge.
     if kind == "voronoi":
@@ -274,6 +334,76 @@ def write_procedural_base_color(
         if resolution != width_px or resolution != height_px:
             source.scale(width_px, height_px)
         pixels = numpy.empty(width_px * height_px * 4, dtype=numpy.float32)
+        source.pixels.foreach_get(pixels)
+    finally:
+        bpy.data.images.remove(source)
+
+    image = bpy.data.images.new(
+        output_path.stem, width=width_px, height=height_px, alpha=False
+    )
+    try:
+        image.colorspace_settings.name = "sRGB"
+        image.pixels.foreach_set(pixels.ravel())
+        image.filepath_raw = str(output_path)
+        image.file_format = "PNG"
+        image.save()
+    finally:
+        bpy.data.images.remove(image)
+    return output_path
+
+
+def _write_line_pattern(
+    output_path: Path,
+    edge,
+    grid,
+    resolution: int,
+    width_px: int,
+    height_px: int,
+    base_rgb,
+    line_rgb,
+    line_width: float,
+) -> Path:
+    """Write a pattern of LINES on a base colour; returns the path.
+
+    A grain and a metal are both LINES on a surface, and a line
+    pattern is a different thing from a cell pattern: the whole image
+    is ONE colour, and the lines are the only variation on it.
+
+    So the base is the palette's colour and the lines are a second
+    colour blended in by their distance to the nearest line. The
+    blend is a smooth falloff, not a hard edge, because a wood's
+    rings and a metal's grain are soft.
+
+    The lines' width is a fraction of the distance to the nearest
+    line, so a line is a fixed fraction of its own spacing whatever
+    the scale.
+    """
+    import bpy
+    import numpy as _np
+
+    reach = max(1e-6, float(edge.max()))
+    line = _np.clip(edge / reach / max(1e-6, line_width), 0.0, 1.0)
+    # A smooth falloff, so the line is soft rather than a hard edge.
+    line = line * line * (3.0 - 2.0 * line)
+
+    base = _np.array(base_rgb, dtype=_np.float32).reshape(1, 1, 3)
+    lines = _np.array(line_rgb, dtype=_np.float32).reshape(1, 1, 3)
+    colour = base * (1.0 - line[:, :, _np.newaxis]) + lines * line[:, :, _np.newaxis]
+    colour = _np.clip(colour, 0.0, 1.0)
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    source = bpy.data.images.new(
+        f"{output_path.stem}_pattern", width=resolution, height=resolution, alpha=False
+    )
+    try:
+        pixels = _np.empty(resolution * resolution * 4, dtype=_np.float32)
+        pixels.reshape((resolution, resolution, 4))[:, :, :3] = colour
+        pixels.reshape((resolution, resolution, 4))[:, :, 3] = 1.0
+        source.pixels.foreach_set(pixels.ravel())
+        if resolution != width_px or resolution != height_px:
+            source.scale(width_px, height_px)
+        pixels = _np.empty(width_px * height_px * 4, dtype=_np.float32)
         source.pixels.foreach_get(pixels)
     finally:
         bpy.data.images.remove(source)

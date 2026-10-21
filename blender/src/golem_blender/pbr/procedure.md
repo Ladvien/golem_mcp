@@ -108,8 +108,29 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    gravel, ground and asphalt; a course is a course, so "brick" is
    right for a brick wall and a tile floor; and a plank shows the
    nested curves a tree's growth makes, so "grain" is right for wood.
-   Measured against ten real PBR sets: the feature scale reads
-   1.19x the truth's and the contrast 2.26x.
+
+   **A METAL is neither.** A steel plate is a SHEET, not a set of
+   pieces, so the "metal" source is a set of BANDS - the grain of
+   the rolling, the corrugation of the pressing - and the voronoi's
+   separated cells are exactly wrong for it. Measured against ten
+   real PBR sets, the metals read the worst of the twenty before
+   this: one metal's contrast was 7.59x the truth's and another's
+   brightness 0.15x, because a description saying "aged, black,
+   brown, oxidized, steel" made the palette read black and the
+   pattern read pieces - and neither is a steel plate.
+
+   **The scale is the number of features, and the features are the
+   pattern's own.** Measured, a line pattern's cell count IS its
+   feature count, with the metal's bands running about twice as
+   close together as the grain's lines:
+   - a "grain" at 13 cells reads 0.96x the truth's feature count,
+     and at 6 cells 0.92x;
+   - a "metal" needs about 1.9 cells per feature: at 17 cells it
+     reads 1.00x the truth's, at 42 cells 1.05x and at 14 cells
+     1.03x.
+
+   So the count of features in the surface you are matching sets the
+   cells, and a metal takes about twice the grain's count.
 
    The slab RECORDS which source it used, and
    `relief_slab_report(object_name="<the slab>")` reads it back -
@@ -138,7 +159,35 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 
 6. **Bake the maps that come from the MESH.**
    `bake_orm_map(object_name="<the mesh>", output_path="<the ORM path>",
-   resolution_px=2048, ao_distance_m=0.06, roughness=0.85, metallic=0.0)`
+   resolution_px=2048, ao_distance_m=0.06, roughness=0.6, metallic=0.0)`
+
+   **The roughness and the metallic come from the DESCRIPTION.** They
+   are not one constant for every material: the truth's roughness
+   runs from 0.034 on a polished metal to 0.793 on a fabric, and a
+   metal is METALLIC - its metallic channel is 1, and that is the one
+   thing that makes it read as metal at all. `pbr.material` reads both
+   from the description's words, the way the pattern and the palette
+   do.
+
+   The roughness to use, by what the description names, with the
+   truth's own measured values:
+
+   | The description says | The roughness is | The truth measures |
+   |---|---|---|
+   | a polished, mirror or chrome metal | 0.03-0.10 | 0.034 |
+   | a brushed metal | 0.12 | - |
+   | an aged, oxidised or rusty metal | 0.13-0.35 | 0.134 |
+   | a corrugated or ribbed metal | 0.47 | 0.474 |
+   | a smooth, plain wood | 0.50 | 0.492 |
+   | a concrete or a plaster | 0.52 | 0.516 |
+   | a tile | 0.45-0.51 | 0.335-0.514 |
+   | a brick | 0.64 | 0.628-0.657 |
+   | a ground, dirt or gravel | 0.50-0.54 | 0.497-0.541 |
+   | an asphalt | 0.75 | 0.745 |
+   | a fabric, wool or fur | 0.79 | 0.784-0.793 |
+
+   A metal's metallic is 1.0 and everything else's is 0.0.
+
    and `bake_normal_map(object_name="<the mesh>",
    output_path="<the normal path>", resolution_px=2048)`.
    The mesh needs a UV layer — call `unwrap_uvs` first if it has none.

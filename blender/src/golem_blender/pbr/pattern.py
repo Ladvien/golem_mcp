@@ -59,12 +59,36 @@ from __future__ import annotations
 # be periodic over the domain, and they are HIGH, because a smooth
 # warp bends a lattice rather than breaking it.
 DEFAULT_WARP_OCTAVES = ((3, 0.34), (5, 0.22), (8, 0.14))
+# A LINE pattern's drift octaves: (frequency in cycles per domain,
+# amplitude). They are LOW frequencies, because a line that wanders
+# fast is a zigzag and not a grain - and the drift has to be slow
+# enough that the pattern's autocorrelation decays over the truth's
+# own period rather than a fraction of it.
+DEFAULT_LINE_OCTAVES = ((1, 1.0), (2, 0.5), (3, 0.3))
 # How much of the domain a cell takes, before the warp.
 DEFAULT_CELL_FRACTION = 1.0
 # How much wider a brick is than it is tall. A brick is about three
 # to one, so a course holds a third as many bricks as there are
 # courses in the same span.
 BRICK_ASPECT = 3.0
+# How far a GRAIN's line drifts from its own line, as a fraction of
+# the cell.
+#
+# It is what makes the pattern's scale a single number: the drift's
+# rate is what sets how quickly the pattern stops matching itself,
+# and the autocorrelation's first crossing - which is the feature
+# measure - reads that. So with the drift fixed as a fraction, the
+# CELL COUNT alone sets the scale.
+#
+# Measured against the truth's wood, whose autocorrelation decays
+# smoothly from +1.00 to zero over seventy-eight pixels with no
+# plateau: a fifteenth of a cell reads the truth's thirteen features
+# at thirteen cells, and a tenth reads 1.44x.
+GRAIN_WANDER_FRACTION = 0.07
+# The METAL's drift, which is smaller: a sheet's grain is steadier
+# than a plank's. Measured, the metals' own autocorrelations decay
+# over about a hundred and twelve pixels.
+METAL_WANDER_FRACTION = 0.04
 # The smallest a cell may be, as a fraction of the largest cell's edge
 # distance. Below it the cell is treated as having no interior, so it
 # reads as stone rather than as a blotch of joint.
@@ -318,7 +342,7 @@ def _power_of_two_at_least(value: int) -> int:
     return count
 
 
-def grain_field(resolution: int, cells: int, octaves=DEFAULT_WARP_OCTAVES):
+def grain_field(resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES):
     """A wood grain: the cell each sample is in, and the distance to
     its grain line.
 
@@ -332,40 +356,115 @@ def grain_field(resolution: int, cells: int, octaves=DEFAULT_WARP_OCTAVES):
     is a distance to a set of nested curves, and the cell is a band
     between two of them.
 
-    The rings come from a distance to a warped axis, so they are
-    irregular the way a plank's are - and the warp's frequencies are
-    integers, so the field is periodic.
+    THE RINGS RUN ALONG THE PLANK. A plank is cut from a log, so its
+    grain lines run the length of the board, and the truth's wood -
+    measured - has its lines running HORIZONTALLY with a luma spread
+    of 0.0162 and 13.13 features.
+
+    So the rings are counted on the X axis, which makes them
+    VERTICAL columns - and a column is the ring's line, and the
+    plank's length runs ACROSS them, which is what a plank cut
+    across a log shows. The warp rides on the Y axis, which bends
+    each column along its length, and the columns are the cathedral
+    swirls of a cut board.
+
+    The earlier version had the axes the other way round, and the
+    lines came out as a zigzag of waves across the image - not a
+    wood at all.
     """
     import numpy
 
     axis = (numpy.arange(resolution) + 0.5) / resolution
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
 
-    # The rings: the distance from a warped axis, so the grain's lines
-    # are nested curves rather than parallel bands.
+    # The rings: counted on the X axis, so they run as columns. The
+    # warp rides on the Y axis, so it bends each column along its
+    # length rather than across it.
     #
-    # ONE axis carries the warp, and the other does not. The earlier
-    # version mixed the sample's own x into the ring's position, which
-    # made the rings DIAGONAL - and a diagonal set of rings crosses
-    # itself, so the pattern read as a fine crosshatch rather than a
-    # grain. Measured, the wood's features read 341.33 against the
-    # truth's 93.09, and the extra 248 were the crosshatch.
+    # The warp's AMPLITUDE IS A SMALL PART OF A CELL, and that is what
+    # makes the pattern's scale a single number. The warp's amplitude
+    # sets how far a column drifts from its own line, and the drift's
+    # rate sets how quickly the pattern stops matching itself - which
+    # is what the autocorrelation's first crossing reads.
+    #
+    # The amplitude is in CELL units and it is SMALL - a tenth of a
+    # cell at most. A drift of most of a cell moves the line past its
+    # own neighbour and the structure stops being a set of lines at
+    # all: measured, at thirteen cells a drift of 0.9 of a cell moved
+    # the line by most of its own spacing between neighbouring rows.
+    #
+    # The drift's RATE, not its amplitude, is what sets the scale, and
+    # the rate is the octaves' frequency over the domain. So the cells
+    # set the line spacing and the drift sets the correlation's decay,
+    # and the two together give the pattern its one scale.
     two_pi = 2.0 * numpy.pi
     warp = numpy.zeros_like(sample_x)
     for frequency, amplitude in octaves:
         warp = warp + numpy.sin(sample_y * frequency * two_pi + frequency * 0.7) * (
-            amplitude / 4.0
+            amplitude * GRAIN_WANDER_FRACTION
         )
 
-    # The rings are the distance from that warped axis, in ring
-    # units. They are nested arcs, and the plank's length runs along
-    # them.
-    rings = numpy.abs((sample_x + warp) * cells)
+    rings = (sample_x + warp) * cells
 
     # The cell is the ring's index, and the edge is the distance to
     # the nearest ring line.
     band = numpy.floor(rings).astype(numpy.int32)
     within = rings - band
+    edge = numpy.minimum(within, 1.0 - within)
+
+    return band, edge, (cells, cells)
+
+
+def metal_field(resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES):
+    """A metal sheet: the cell each sample is in, and the distance to
+    its grain.
+
+    A metal is NOT made of pieces. A steel plate is a SHEET: an even
+    surface with a direction - the grain of the rolling, the corrugation
+    of the pressing, or the patches of rust where it has been left -
+    and the voronoi's separated cells are exactly wrong for it.
+    Measured, the metals read the worst of the twenty: Metal049A's
+    contrast was 7.59x the truth's and Metal063's brightness 0.15x.
+
+    So the metal's structure is a set of BANDS along one direction, at
+    the cell's own frequency, and the cells are the bands. That is
+    what a rolled or a brushed sheet looks like: long, parallel, and
+    the same everywhere along them.
+
+    The bands come from a warp of the band's coordinate, so they are
+    not perfectly straight, and the warp's frequencies are integers,
+    so the field is periodic.
+    """
+    import numpy
+
+    axis = (numpy.arange(resolution) + 0.5) / resolution
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+
+    # The bands are counted on the X axis, so they run as COLUMNS -
+    # and the feature measure reads along a row, so a column is what
+    # it counts. The earlier version counted them on the Y axis, so
+    # the bands ran as rows and every row was identical: the
+    # autocorrelation found the bands' own spacing along the row's
+    # length and read four times the truth's features.
+    #
+    # The warp is SMALL and a FRACTION OF THE CELL, for the same
+    # reason the grain's is: the drift's rate is what sets the
+    # pattern's scale, so the cell count alone has to set it. A
+    # brushed or rolled sheet's grain is directional and nearly
+    # parallel, and the earlier version bent the bands so far that
+    # the pattern read as a woven fabric - wavy crossing lines, which
+    # is the opposite of a metal. Measured, the pattern's features
+    # read 85.33 against the truth's 9.14.
+    two_pi = 2.0 * numpy.pi
+    warp = numpy.zeros_like(sample_x)
+    for frequency, amplitude in octaves:
+        warp = warp + numpy.sin(sample_y * frequency * two_pi + frequency * 0.7) * (
+            amplitude * METAL_WANDER_FRACTION
+        )
+
+    bands = (sample_x + warp) * cells
+    band = numpy.floor(bands).astype(numpy.int32)
+    within = bands - band
     edge = numpy.minimum(within, 1.0 - within)
 
     return band, edge, (cells, cells)

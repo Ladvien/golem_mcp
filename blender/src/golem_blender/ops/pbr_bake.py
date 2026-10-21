@@ -58,7 +58,16 @@ BAKE_MARGIN_PX = 4
 # A stone street is rough, not polished: measured, a cobblestone slab
 # at roughness 0.85 read as stone, and the ORM's G channel is what
 # puts it there.
-DEFAULT_ROUGHNESS = 0.85
+# The roughness and the metallic a bake writes when the caller does
+# not say.
+#
+# They used to be a constant 0.85 and 0.0 for EVERY material, and
+# the truth's roughness runs from 0.034 on a polished metal to 0.793
+# on a fabric - so the ORM was wrong for every material the lane
+# made. The default is now the description's own value, read from
+# `pbr.material`, and the constant here is only the fallback for a
+# caller that passes neither.
+DEFAULT_ROUGHNESS = 0.60
 DEFAULT_METALLIC = 0.0
 # How far the baked occlusion reaches, in metres. It is the world's
 # ambient-occlusion distance for the duration of the bake.

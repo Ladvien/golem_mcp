@@ -61,6 +61,25 @@ NAMED_COLOURS: dict[str, float] = {
     "lime": 0.74,
     "wool": 0.58,
     "linen": 0.70,
+    # The metals, which are the brightest surfaces the lane makes: a
+    # polished steel plate measures luma 0.983, and a silver one is
+    # nearly as bright. Without these, a description reading "clean,
+    # metal, silver, smooth" found no colour at all and fell back to
+    # the default.
+    "silver": 0.92,
+    "steel": 0.52,
+    "chrome": 0.95,
+    "aluminium": 0.88,
+    "aluminum": 0.88,
+    "brass": 0.62,
+    "bronze": 0.42,
+    "copper": 0.52,
+    "gold": 0.70,
+    "rust": 0.34,
+    "rusty": 0.34,
+    "oxidized": 0.30,
+    "moss": 0.30,
+    "mossy": 0.30,
 }
 
 # The value used when the description names no colour.
@@ -177,11 +196,39 @@ def palette_for_description(
     }
 
 
+def line_palette_for_description(description: str):
+    """The colours a LINE pattern calls for: one base colour.
+
+    A grain and a metal are LINES on a surface, and a line pattern has
+    no cells to vary - the whole image is ONE colour and the lines are
+    the only variation on it. So the palette for a line pattern is a
+    single value: the description's own colour.
+
+    The spread is the description's too, and it is what sets the
+    LINE's own contrast. The truth sets' spread-to-luma ratios run
+    from 0.0063 on a polished metal to 0.2184 on a mossy rock, and
+    the words carry them the way they carry the colour.
+
+    Measured, the truth's wood has a luma of 0.534 and a spread of
+    0.0162 - so the base is the value and the spread is a fortieth
+    of it, not the stone ramp's half-spread.
+    """
+    value = value_for_description(description)
+    spread = spread_for_description(description)
+    return {
+        "stone_dark_rgb": (value, value, value),
+        "stone_light_rgb": (value, value, value),
+        "mortar_rgb": (value, value, value),
+        "line_contrast": spread,
+    }
+
+
 __all__ = (
     "DEFAULT_SPREAD",
     "DEFAULT_VALUE",
     "NAMED_COLOURS",
     "SPREADS",
+    "line_palette_for_description",
     "palette_for_description",
     "spread_for_description",
     "value_for_description",
