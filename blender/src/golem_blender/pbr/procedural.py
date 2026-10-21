@@ -82,7 +82,18 @@ DEFAULT_PROCEDURAL_SCALE = 5.0
 MAXIMUM_PATTERN_RESOLUTION = 1024
 # The mortar's colour, and how wide it is.
 DEFAULT_MORTAR_RGB = (0.38, 0.36, 0.33)
-DEFAULT_MORTAR_WIDTH = 0.30
+# How wide the JOINT is, as a fraction of the distance to the nearest
+# edge.
+#
+# It was 0.30, and that made the joint cover 28.8% of the image -
+# so every pattern read as a soft blob with a blurred band through
+# it, and a brick wall read as blue-white pillows. A brick's mortar
+# is a LINE: measured, a width of 0.05 covers 6.2% of the image and
+# a width of 0.10 covers 12.1%.
+#
+# The joint's width is also a MATERIAL's word: a stone's joint is
+# wide and a tile's is a thin line, and the truths show it.
+DEFAULT_MORTAR_WIDTH = 0.08
 # How much the noise varies a stone within itself, as a fraction of
 # the stone's colour.
 DEFAULT_VARIATION = 0.15
@@ -102,9 +113,23 @@ PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "grain", "metal")
 #
 # Measured, the width trades the scale against the contrast: at 0.5
 # the wood's contrast read 0.69x the truth's and its scale 0.95x, and
-# at 0.8 the contrast read 0.73x with the scale at 0.96x. So 0.8 is
-# the width that keeps the scale and takes the most contrast.
-DEFAULT_LINE_WIDTH = 0.8
+# at 0.8 the contrast read 0.73x with the scale at 0.96x.
+#
+# But a wide line is a BAND, and a grain's fibre is a thin dark line
+# on a base - so the line is narrow and the falloff carries it.
+# Measured on the truth's own row: the range is 0.0797 and the
+# spread 0.0135, so the fibre occupies a fifth of the row's range.
+DEFAULT_LINE_WIDTH = 0.35
+# How many FINE lines each cell of a line pattern carries.
+#
+# A grain is TWO scales: the envelope - the slow cathedral swirl a
+# plank's fibre follows - and the fibre itself. Measured, the truth's
+# wood crosses its own midpoint 69 times where its envelope's
+# autocorrelation says thirteen features, and the truth's polished
+# silver crosses it 122 times where its envelope says nine.
+#
+# So the cells are the envelope and the lines are inside them.
+DEFAULT_LINES_PER_CELL = 5
 # The contrast a LINE pattern gets when the description says nothing
 # about its spread. The truth sets' spreads run from 0.0061 on a
 # polished metal to 0.0926 on a mossy rock, and this is the middle.
@@ -150,6 +175,8 @@ def write_procedural_base_color(
     variation: float = DEFAULT_VARIATION,
     line_width: float = DEFAULT_LINE_WIDTH,
     line_contrast: float | None = None,
+    target_spread: float | None = None,
+    lines_per_cell: int = DEFAULT_LINES_PER_CELL,
 ) -> Path:
     """Write a procedural base colour as a PNG; returns the path.
 
@@ -212,9 +239,13 @@ def write_procedural_base_color(
     elif kind == "brick":
         cell, edge, grid = pattern.brick_field(resolution, cells)
     elif kind == "grain":
-        cell, edge, grid = pattern.grain_field(resolution, cells)
+        cell, edge, grid = pattern.grain_field(
+            resolution, cells, lines_per_cell=lines_per_cell
+        )
     else:
-        cell, edge, grid = pattern.metal_field(resolution, cells)
+        cell, edge, grid = pattern.metal_field(
+            resolution, cells, lines_per_cell=lines_per_cell
+        )
     cell_width, cell_height = grid
 
     if kind in ("grain", "metal"):
@@ -257,6 +288,7 @@ def write_procedural_base_color(
             base_rgb=stone_dark_rgb,
             line_rgb=line_rgb,
             line_width=line_width,
+            target_spread=target_spread,
         )
 
     # The joint's width, as a fraction of the distance to the edge.
@@ -302,10 +334,18 @@ def write_procedural_base_color(
     #
     # The wear is now at the cell's own frequency in ONE direction,
     # so it varies a stone along its length without crossing itself.
+    #
+    # And the wear is a fraction of the RAMP's spread, not a
+    # constant. It used to be a fixed 0.15 of a stone's own colour,
+    # which is sixteen times the whole spread of a soft fabric - and
+    # the fabric's contrast read 4.84x the truth's while the ramp
+    # alone read 0.35x. So the wear is the ramp's spread, and the
+    # pattern's contrast is the ramp's spread and nothing else.
     axis = numpy.arange(resolution) / resolution
     wave = numpy.sin(axis * cells * numpy.pi + 1.3) * 0.5
     wave = numpy.tile(wave.reshape(-1, 1), (1, resolution))
-    wear = wave * variation
+    ramp_spread = max(0.0, (max(stone_light_rgb) - min(stone_dark_rgb)) / 2.0)
+    wear = wave * min(variation, 1.0) * ramp_spread
     # The wear is a fraction of a stone's own width, so it varies a
     # stone without becoming the pattern: it is at the cell's own
     # frequency, not a multiple of it.
@@ -317,6 +357,11 @@ def write_procedural_base_color(
     joint = joint[:, :, numpy.newaxis]
     colour = colour * (1.0 - joint) + mortar * joint
     colour = numpy.clip(colour, 0.0, 1.0)
+    # The image's variation is scaled so its spread IS the
+    # description's - a pattern's contrast depends on its SHAPE and
+    # not only on its numbers, and only measuring says how much of
+    # the spread this one carries.
+    colour = _scale_to_spread(colour, float(sum(stone_dark_rgb) / 3.0), target_spread)
 
     # The image is the pattern at the pattern's resolution, resized to
     # the requested size - a bilinear upscale, which is what a viewer
@@ -352,6 +397,43 @@ def write_procedural_base_color(
     return output_path
 
 
+def _scale_to_spread(colour, base, target_spread):
+    """Scale the image's variation so its spread IS the target.
+
+    A pattern's contrast depends on its SHAPE and not only on its
+    numbers: a soft line's falloff carries a fraction of what a hard
+    joint's does, and the two patterns carry it differently again. So
+    a factor per pattern is not enough - the metal's spread read
+    0.18x the truth's for one material and 2.25x for another with
+    the same factor.
+
+    So the image is MEASURED and SCALED: the pattern is built, its
+    own spread is taken, and the variation about the base is scaled
+    by the ratio of the target to what it read. The base colour is
+    not moved, so the brightness is the description's own.
+
+    The measurement is on the RAW values, which is the space the file
+    holds and the space the truths are measured in. Blender's image
+    API takes and returns the file's own values unchanged - measured
+    on a ramp of eight values, what was written came back as what
+    was written - so there is no transfer to undo.
+
+    That makes the contrast the description's spread, whatever the
+    pattern's shape.
+    """
+    import numpy as _np
+
+    if target_spread is None or target_spread <= 0.0:
+        return colour
+    channel = colour[:, :, 0] - base
+    measured = float(channel.std())
+    if measured <= 1e-9:
+        return colour
+    scale = target_spread / measured
+    scaled = base + (colour - base) * scale
+    return _np.clip(scaled, 0.0, 1.0)
+
+
 def _write_line_pattern(
     output_path: Path,
     edge,
@@ -362,6 +444,7 @@ def _write_line_pattern(
     base_rgb,
     line_rgb,
     line_width: float,
+    target_spread: float | None = None,
 ) -> Path:
     """Write a pattern of LINES on a base colour; returns the path.
 
@@ -390,6 +473,10 @@ def _write_line_pattern(
     lines = _np.array(line_rgb, dtype=_np.float32).reshape(1, 1, 3)
     colour = base * (1.0 - line[:, :, _np.newaxis]) + lines * line[:, :, _np.newaxis]
     colour = _np.clip(colour, 0.0, 1.0)
+    # The image's variation is scaled so its spread IS the
+    # description's - a line's falloff carries a different amount of
+    # contrast than a joint's, and only measuring says which.
+    colour = _scale_to_spread(colour, float(base_rgb[0]), target_spread)
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

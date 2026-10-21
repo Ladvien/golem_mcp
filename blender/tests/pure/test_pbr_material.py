@@ -181,3 +181,44 @@ def test_the_spreads_are_the_truths_own():
     }
     for description, expected in cases.items():
         assert spread_for_description(description) == pytest.approx(expected, abs=0.004)
+
+
+def test_the_stone_ramp_reads_the_spread_it_was_built_for():
+    """The stones' colours are drawn UNIFORMLY across the ramp, and a
+    uniform distribution's standard deviation is its half-width over
+    the root of three.
+
+    So a ramp of the right half-width reads 0.58x the spread it was
+    built for, and the ramp is widened by the root of three to
+    compensate. Measured against every truth: the fabric read 0.57x,
+    the brick 0.47x, the rock 0.49x and the asphalt 0.55x.
+    """
+    import random
+    import statistics
+
+    from golem_blender.pbr.palette import RAMP_SPREAD_FACTOR
+
+    spread = 0.05
+    half_width = spread * RAMP_SPREAD_FACTOR
+    generator = random.Random(0)
+    drawn = [generator.uniform(-half_width, half_width) for _ in range(20000)]
+    assert statistics.pstdev(drawn) == pytest.approx(spread, rel=0.05)
+
+
+def test_the_joint_is_as_dark_as_the_surface_varies():
+    """A joint is part of the surface's variation, not a separate
+    darkness. A fixed 0.06 offset is six times the whole spread of a
+    soft fabric."""
+    from golem_blender.pbr.palette import (
+        palette_for_description,
+        spread_for_description,
+    )
+
+    palette = palette_for_description("blue, fabric, fur, microfiber, soft")
+    spread = spread_for_description("blue, fabric, fur, microfiber, soft")
+    # The mortar is the value less the SPREAD, so the joint is as
+    # dark as the surface varies and no darker. The ramp's own dark
+    # end is further out, because the ramp is widened to compensate
+    # for the uniform draw.
+    value = (palette["stone_dark_rgb"][0] + palette["stone_light_rgb"][0]) / 2.0
+    assert palette["mortar_rgb"][0] == pytest.approx(value - spread, abs=1e-6)

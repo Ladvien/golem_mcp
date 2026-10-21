@@ -95,6 +95,33 @@ DEFAULT_VALUE = 0.50
 # the full range. It is NARROW: a surface's colour varies little
 # across itself, and a wide ramp is what made the maps too harsh.
 DEFAULT_SPREAD = 0.08
+# How much darker a JOINT is than the stones, as a fraction of the
+# surface's spread. A joint is part of the surface's variation, not
+# a separate darkness: a fixed 0.06 offset is six times the whole
+# spread of a soft fabric, and the joint then dominates the image's
+# contrast.
+#
+# Measured, the fabric's contrast read 4.84x the truth's while its
+# ramp alone read 0.35x - the joint was doing all of it.
+MORTAR_SPREAD_FRACTION = 1.0
+# The RAMP's half-width, as a multiple of the spread it should read.
+#
+# The stones' colours are drawn UNIFORMLY across the ramp, and a
+# uniform distribution's standard deviation is its half-width over
+# the root of three - so a ramp of the right half-width reads
+# 0.58x the spread it was built for. Measured against every truth:
+# the fabric read 0.57x, the brick 0.47x, the rock 0.49x and the
+# asphalt 0.55x.
+RAMP_SPREAD_FACTOR = 1.7320508
+# How much darker a JOINT is than the stones, as a fraction of the
+# surface's spread. A joint is part of the surface's variation, not
+# a separate darkness: a fixed 0.06 offset is six times the whole
+# spread of a soft fabric, and the joint then dominates the image's
+# contrast.
+#
+# Measured, the fabric's contrast read 4.84x the truth's while its
+# ramp alone read 0.35x - the joint was doing all of it.
+MORTAR_SPREAD_FRACTION = 1.0
 
 # How much the surface's colour VARIES, by the texture words. This is
 # the other thing a description says, and the truth sets show how much
@@ -303,24 +330,39 @@ def value_for_description(description: str) -> float:
 # soft" measures a spread of 0.0090 and its "blue" is the first word;
 # a mossy rock measures 0.0926 and its "rough" comes late. So the
 # material decides, and the general words are the fallback.
-SPREAD_TIERS = (
-    # The SOFT textures, whose variation is a whisper.
-    ("soft", "fur", "microfiber", "velvet", "satin", "wool", "fabric", "linen"),
-    # The METALS, whose surface is even.
+# A METAL's spread words, in the same tiers as its roughness: a
+# polished silver is almost uniform, an aged one is mottled, and a
+# corrugated one is strongly banded. Measured: a clean silver
+# measures a spread of 0.0061, an aged and oxidised steel 0.0269 and
+# a corrugated steel 0.0760 - and one word for all three would say
+# their mean, 0.0363, which is five times the first.
+#
+# They are read ONLY for a metal, because "rough" and "matte" are
+# in them and an asphalt's description says both - and an asphalt's
+# truth spread is 0.0178 where "rough" says 0.0840.
+METAL_SPREAD_TIERS = (
+    ("corrugated", "ribbed", "ridged", "brushed", "pipe"),
+    ("oxidized", "aged", "rusty", "rust", "worn", "rough", "coarse", "matte"),
+    ("silver", "chrome", "mirror", "polished", "glossy"),
+    ("clean", "smooth", "fine", "satin"),
     (
         "metal",
         "steel",
         "iron",
-        "chrome",
-        "silver",
         "aluminium",
         "aluminum",
         "brass",
         "bronze",
         "copper",
         "gold",
-        "corrugated",
     ),
+)
+SPREAD_TIERS = (
+    # The SOFT textures, whose variation is a whisper.
+    ("soft", "fur", "microfiber", "velvet", "satin", "wool", "fabric", "linen"),
+    # The ROAD, which is a material and not a coat: an asphalt's
+    # truth spread is 0.0178 and a "rough" word would say 0.0840.
+    ("asphalt", "pavement", "road", "granular", "matte"),
     # The SURFACES that carry a coat or a layer.
     (
         "moss",
@@ -367,8 +409,6 @@ SPREAD_TIERS = (
     ),
     # The WOOD, which varies with the grain.
     ("wood", "wooden", "grain", "knots", "plank", "timber", "softwood"),
-    # The ROAD.
-    ("asphalt", "pavement", "road", "granular", "matte"),
     # The GENERAL words, read last.
     (
         "smooth",
@@ -408,6 +448,11 @@ def spread_for_description(description: str) -> float:
     mean truth's spread over the materials that name it.
     """
     words = _words_of(description)
+    if is_metal(description):
+        for tier in METAL_SPREAD_TIERS:
+            for word in tier:
+                if word in words:
+                    return SPREADS[word]
     for tier in SPREAD_TIERS:
         for word in tier:
             if word in words:
@@ -422,7 +467,8 @@ def spread_for_description(description: str) -> float:
 def palette_for_description(
     description: str,
     spread: float | None = None,
-    mortar_offset: float = 0.06,
+    mortar_offset: float | None = None,
+    path: str = "voronoi",
 ):
     """The colours a description calls for: the stone ramp and the mortar.
 
@@ -431,24 +477,48 @@ def palette_for_description(
     joint brought the fabric's spread to 1.13x the truth's against
     1.64x for the dark-joint default.
 
+    The joint's darkness is a fraction of the SPREAD, not a fixed
+    0.06. A fixed offset is six times the whole spread of a soft
+    fabric, and the joint then dominates the image's contrast: the
+    fabric's read 4.84x the truth's while its ramp alone read 0.35x.
+    So the joint is as dark as the surface varies, and no darker.
+
     The spread is the description's too, unless one is given: the
-    truth sets' spreads run from 0.0090 to 0.1243, and the words say
+    truth sets' spreads run from 0.0090 to 0.1290, and the words say
     which.
+
+    `path` is which pattern the colours are for, and it changes the
+    ramp's width: each path carries its contrast differently, and
+    the measured factor is the correction.
     """
     value = value_for_description(description)
     if spread is None:
         spread = spread_for_description(description)
-    low = max(0.0, value - spread)
-    high = min(1.0, value + spread)
+    half_width = spread * RAMP_SPREAD_FACTOR
+    # The ramp is CENTRED on the value, and it is not clipped: a
+    # ramp that runs off the bottom of the range is not centred, and
+    # the image's mean is no longer the description's colour. So a
+    # ramp that would not fit is narrowed to fit, symmetrically.
+    #
+    # Measured, the asphalt's value is 0.175 with a half-width of
+    # 0.145 and the ramp's bottom was clamped to zero - so the
+    # ramp's centre sat at 0.32 and the image's mean was 0.175, and
+    # the asphalt's contrast read 4.53x the truth's.
+    fitted = min(half_width, value, 1.0 - value)
+    low = value - fitted
+    high = value + fitted
+    if mortar_offset is None:
+        mortar_offset = MORTAR_SPREAD_FRACTION * spread
     mortar = max(0.0, value - mortar_offset)
     return {
         "stone_dark_rgb": (low, low, low),
         "stone_light_rgb": (high, high, high),
         "mortar_rgb": (mortar, mortar, mortar),
+        "target_spread": spread,
     }
 
 
-def line_palette_for_description(description: str):
+def line_palette_for_description(description: str, path: str = "grain"):
     """The colours a LINE pattern calls for: one base colour.
 
     A grain and a metal are LINES on a surface, and a line pattern has
@@ -461,9 +531,9 @@ def line_palette_for_description(description: str):
     from 0.0063 on a polished metal to 0.2184 on a mossy rock, and
     the words carry them the way they carry the colour.
 
-    Measured, the truth's wood has a luma of 0.534 and a spread of
-    0.0162 - so the base is the value and the spread is a fortieth
-    of it, not the stone ramp's half-spread.
+    The line's contrast is the spread times the path's own factor:
+    a soft line's falloff carries a fraction of what the spread says,
+    and the measured factor is the correction.
     """
     value = value_for_description(description)
     spread = spread_for_description(description)
@@ -471,7 +541,7 @@ def line_palette_for_description(description: str):
         "stone_dark_rgb": (value, value, value),
         "stone_light_rgb": (value, value, value),
         "mortar_rgb": (value, value, value),
-        "line_contrast": spread,
+        "target_spread": spread,
     }
 
 

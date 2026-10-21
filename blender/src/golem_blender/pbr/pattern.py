@@ -67,10 +67,28 @@ DEFAULT_WARP_OCTAVES = ((3, 0.34), (5, 0.22), (8, 0.14))
 DEFAULT_LINE_OCTAVES = ((1, 1.0), (2, 0.5), (3, 0.3))
 # How much of the domain a cell takes, before the warp.
 DEFAULT_CELL_FRACTION = 1.0
-# How much wider a brick is than it is tall. A brick is about three
-# to one, so a course holds a third as many bricks as there are
-# courses in the same span.
-BRICK_ASPECT = 3.0
+# How much wider a brick is than it is tall.
+#
+# Measured against the truth's own brick: its bricks are 171 pixels
+# wide and its courses 128 pixels tall, so a brick is about four
+# thirds as wide as it is tall. The three-to-one default put 48
+# bricks across where the truth shows 6.
+BRICK_ASPECT = 1.34
+
+
+# The bricks ACROSS a course, from the number of courses.
+#
+# The image is square and a brick is BRICK_ASPECT times as wide as
+# it is tall, so a course that is one brick tall holds courses /
+# aspect bricks across - the aspect makes each brick WIDER, so fewer
+# of them fit.
+#
+# Measured: the truth's brick has eight courses and six bricks
+# across, and the aspect of 1.34 gives 8 / 1.34 = 6.
+def _bricks_across(courses: int) -> int:
+    return max(1, round(courses / BRICK_ASPECT))
+
+
 # How far a GRAIN's line drifts from its own line, as a fraction of
 # the cell.
 #
@@ -256,14 +274,20 @@ def brick_field(resolution: int, cells: int):
     # The counts are POWERS OF TWO, so they divide the domain
     # exactly. Measured, the field's seam is 0.00x at sixteen
     # courses, 0.61x at twelve, 1.88x at eight and 31.99x at two.
-    courses = _power_of_two_at_least(cells)
-    # The bricks across a course follow from the aspect: the image's
-    # width is `courses * aspect` brick-widths.
+    courses = _power_of_two_nearest(cells)
+    # The bricks ACROSS a course. The image is square, a course is
+    # one brick tall, and a brick is BRICK_ASPECT times as wide as
+    # it is tall - so the image's width is `courses / aspect`
+    # brick-widths.
+    #
+    # The `cells` are the COURSES, and the truth's brick has 8
+    # courses and 6 bricks across: 8 / 1.34 = 6.
+    row_width = _bricks_across(courses)
 
     axis = numpy.arange(resolution)
     # The position along the wall, in BRICK UNITS: a brick is one
     # unit tall and `aspect` units wide, so the image's height is
-    # `courses` brick-heights and its width is `courses * aspect`
+    # `courses` brick-heights and its width is `row_width`
     # brick-widths.
     #
     # The vertical and horizontal scales are SEPARATE, and that is the
@@ -282,12 +306,20 @@ def brick_field(resolution: int, cells: int):
     # parity, and the wall closes. Measured, the field's vertical
     # seam was 10.64x at four courses with the courses starting at
     # the edge.
+    #
+    # The two axes are INDEPENDENT: the course runs down the image
+    # and the brick across it, and each is built from its own
+    # coordinate. The earlier version built both from the same
+    # one-dimensional array, so the two were the same axis written
+    # twice - and the bricks in a course came out sharing a colour.
     vertical = (axis + 0.5) * courses / resolution - 0.5
-    horizontal = (axis + 0.5) * courses * BRICK_ASPECT / resolution - 0.5
-    row = numpy.floor(vertical).astype(numpy.int32)
-    course = vertical - row
-    column = numpy.floor(horizontal).astype(numpy.int32)
-    across = horizontal - column
+    horizontal = (axis + 0.5) * row_width / resolution - 0.5
+    # The course's index and the position within it, down the image.
+    course_index = numpy.floor(vertical).astype(numpy.int32)
+    within_course = vertical - course_index
+    # The brick's index and the position within it, across the image.
+    brick_index = numpy.floor(horizontal).astype(numpy.int32)
+    within_brick = horizontal - brick_index
 
     # Every other course is offset by half a brick, so the vertical
     # joints do not line up.
@@ -296,7 +328,7 @@ def brick_field(resolution: int, cells: int):
     # count, so it comes back to where it started at the wrap - and
     # the courses are centred, so the index can be NEGATIVE, which
     # Python's modulo handles and a plain parity would not.
-    offset = ((row % courses) % 2) * 0.5
+    offset = ((course_index % courses) % 2) * 0.5
 
     # The sample's position within its brick, along the brick's own
     # width, with the course's offset applied.
@@ -308,23 +340,48 @@ def brick_field(resolution: int, cells: int):
     # seam was 50/255 against its horizontal 16/255, and NEITHER
     # moved with the course count: it was this, and not the number
     # of courses.
-    within_brick = (across + offset) % 1.0
-    within_course = course % 1.0
+    #
+    # The offset is HALF A BRICK, added as a fraction of one. The
+    # earlier version multiplied it by the row's width, which moved
+    # a course by three bricks instead of by half - so the colour did
+    # not line up with the mortar and the stagger was not a stagger.
+    offset_down = numpy.tile(offset.reshape(-1, 1), (1, resolution))
+    across_with_offset = (
+        numpy.tile(within_brick.reshape(1, -1), (resolution, 1)) + offset_down
+    )
+    within_brick = across_with_offset % 1.0
+    within_course = numpy.tile(within_course.reshape(-1, 1), (1, resolution))
 
     # The distance to the nearest mortar line, in brick units.
-    to_vertical = numpy.minimum(within_brick, 1.0 - within_brick)
-    to_horizontal = numpy.minimum(within_course, 1.0 - within_course)
-    edge = numpy.minimum(
-        numpy.tile(to_vertical.reshape(-1, 1), (1, resolution)),
-        numpy.tile(to_horizontal.reshape(1, -1), (resolution, 1)),
-    )
+    #
+    # The BRICK's own width is along the image's SECOND axis - a
+    # course runs left to right and holds bricks side by side - so the
+    # brick's distance is tiled across and the COURSE's distance runs
+    # down. The earlier version had them the other way round, so the
+    # brick's own width was measured down the image and the pattern
+    # came out with twice as many bricks as it should.
+    to_brick = numpy.minimum(within_brick, 1.0 - within_brick)
+    to_course = numpy.minimum(within_course, 1.0 - within_course)
+    edge = numpy.minimum(to_course, to_brick)
 
     # The cell: which brick, and which course. The brick's index is
     # the column, shifted by the course's half-brick offset, taken
     # modulo the row's width so the wrap joins.
-    row_width = courses * BRICK_ASPECT
-    shifted = (column + numpy.round(offset * row_width).astype(numpy.int32)) % row_width
-    cell = numpy.tile((row * row_width + shifted).reshape(-1, 1), (1, resolution))
+    #
+    # The COURSE is on the image's first axis and the BRICK on its
+    # second, and the cell is the two combined. The earlier version
+    # built the cell from the two 1D arrays as if they were the two
+    # axes of the same line - so every brick in a course got the same
+    # cell, and the whole course one colour. Measured: one row of
+    # the brick had a single distinct colour, and the wall read as
+    # soft blue-white blobs with no brick in them.
+    course_down = numpy.tile(course_index.reshape(-1, 1), (1, resolution))
+    # The brick's index within its course, with the course's offset
+    # applied: the position across the image plus the offset, taken
+    # to the brick it lands in.
+    across_image = numpy.tile(horizontal.reshape(1, -1), (resolution, 1))
+    shifted = numpy.floor(across_image + offset_down).astype(numpy.int32)
+    cell = course_down * row_width + (shifted % row_width)
     return cell.astype(numpy.int32), edge, (row_width, courses)
 
 
@@ -342,7 +399,28 @@ def _power_of_two_at_least(value: int) -> int:
     return count
 
 
-def grain_field(resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES):
+def _power_of_two_nearest(value: float) -> int:
+    """The power of two CLOSEST to `value`.
+
+    The brick's courses have to be a power of two, and the count
+    wanted is the truth's feature count - which sits between the
+    powers. Rounding UP doubled the courses and so halved the
+    bricks' size: the truth's brick has eight courses and six bricks
+    across, and the pattern's features read 9.39 - so the nearest
+    power of two is eight and the nearest is the right one, not the
+    one above.
+    """
+    count = 2
+    while count * 2 <= value:
+        count *= 2
+    while count < value and count * 2 - value < value - count:
+        count *= 2
+    return count
+
+
+def grain_field(
+    resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES, lines_per_cell: int = 1
+):
     """A wood grain: the cell each sample is in, and the distance to
     its grain line.
 
@@ -361,23 +439,24 @@ def grain_field(resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES):
     measured - has its lines running HORIZONTALLY with a luma spread
     of 0.0162 and 13.13 features.
 
-    So the rings are counted on the X axis, which makes them
-    VERTICAL columns - and a column is the ring's line, and the
-    plank's length runs ACROSS them, which is what a plank cut
-    across a log shows. The warp rides on the Y axis, which bends
-    each column along its length, and the columns are the cathedral
-    swirls of a cut board.
+    So the rings are counted on the X axis, which makes them COLUMNS
+    running down the image, and the warp rides on the Y axis, which
+    bends each column along its length. That is what a plank's fibre
+    looks like: long lines with a few cathedral swirls where the board
+    was cut across the log's rings.
 
-    The earlier version had the axes the other way round, and the
-    lines came out as a zigzag of waves across the image - not a
-    wood at all.
+    A ring counted on the X axis is a line of CONSTANT x, which runs
+    down the image; a ring counted on the Y axis is a line of
+    constant y, which runs across it. The earlier version had them
+    the other way round, and the lines came out as a zigzag of waves
+    across the image - not a wood at all.
     """
     import numpy
 
     axis = (numpy.arange(resolution) + 0.5) / resolution
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
 
-    # The rings: counted on the X axis, so they run as columns. The
+    # The rings: counted on the X axis, so they run as COLUMNS. The
     # warp rides on the Y axis, so it bends each column along its
     # length rather than across it.
     #
@@ -412,10 +491,34 @@ def grain_field(resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES):
     within = rings - band
     edge = numpy.minimum(within, 1.0 - within)
 
+    # A GRAIN IS TWO SCALES. The rings above are the ENVELOPE - the
+    # slow cathedral swirl a plank's fibre follows - and the truth's
+    # own row crosses its midpoint 69 times where the envelope's
+    # autocorrelation says thirteen features. So the fibre itself is
+    # a set of fine lines inside the envelope, and the count of them
+    # is what the surface actually looks like.
+    #
+    # So the fine lines are added here, at the cell's own frequency
+    # and a small drift of their own, and the edge is the nearer of
+    # the two.
+    if lines_per_cell > 1:
+        fine = numpy.zeros_like(sample_x)
+        for frequency, amplitude in octaves:
+            fine = fine + numpy.sin(
+                sample_y * frequency * two_pi * 3.0 + frequency * 1.3
+            ) * (amplitude * GRAIN_WANDER_FRACTION * 0.35)
+        fine_rings = (sample_x + fine) * cells * lines_per_cell
+        fine_band = numpy.floor(fine_rings).astype(numpy.int32)
+        fine_within = fine_rings - fine_band
+        fine_edge = numpy.minimum(fine_within, 1.0 - fine_within)
+        edge = numpy.minimum(edge, fine_edge * 2.0)
+
     return band, edge, (cells, cells)
 
 
-def metal_field(resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES):
+def metal_field(
+    resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES, lines_per_cell: int = 1
+):
     """A metal sheet: the cell each sample is in, and the distance to
     its grain.
 
@@ -466,6 +569,22 @@ def metal_field(resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES):
     band = numpy.floor(bands).astype(numpy.int32)
     within = bands - band
     edge = numpy.minimum(within, 1.0 - within)
+
+    # A METAL IS TWO SCALES too: the bands are the envelope and the
+    # sheet's own grain is a set of fine lines inside them. Measured,
+    # the truth's polished silver crosses its midpoint 122 times
+    # where its envelope is nine features.
+    if lines_per_cell > 1:
+        fine = numpy.zeros_like(sample_x)
+        for frequency, amplitude in octaves:
+            fine = fine + numpy.sin(
+                sample_y * frequency * two_pi * 3.0 + frequency * 1.3
+            ) * (amplitude * METAL_WANDER_FRACTION * 0.35)
+        fine_bands = (sample_x + fine) * cells * lines_per_cell
+        fine_band = numpy.floor(fine_bands).astype(numpy.int32)
+        fine_within = fine_bands - fine_band
+        fine_edge = numpy.minimum(fine_within, 1.0 - fine_within)
+        edge = numpy.minimum(edge, fine_edge * 2.0)
 
     return band, edge, (cells, cells)
 
