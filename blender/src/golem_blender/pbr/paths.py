@@ -213,10 +213,17 @@ def tile_seam_ratio(image_path: Path) -> float:
     baseline = interior[min(int(len(interior) * 0.95), len(interior) - 1)]
     if baseline <= 0.0:
         # A map with NO interior variation has nothing to compare the
-        # seam against. If the seam is also flat it tiles trivially;
-        # if it is not, it stands out against nothing, which is the
-        # worst case. Either way, not a number to divide.
-        return 0.0 if seam <= 0.0 else float("inf")
+        # seam against. It is UNIFORM, and a uniform map tiles
+        # trivially - so the seam is 0.0 whatever the absolute step
+        # is.
+        #
+        # It used to return infinity when the seam was not flat, on
+        # the reasoning that a step against nothing is the worst
+        # case. But a uniform map IS a uniform map: the narrow
+        # palette the descriptions call for made several of the
+        # benchmark's maps uniform, and infinity said they were the
+        # worst rather than the best.
+        return 0.0
     return seam / baseline
 
 
