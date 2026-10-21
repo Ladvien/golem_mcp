@@ -164,7 +164,7 @@ FIBRE_FOLDS = 1
 # about a hundred and forty of them - and a value noise's ridge
 # crosses the middle of its range twice per lattice cell, so the
 # lattice is half that.
-FIBRE_LINES_PER_IMAGE = 70
+FIBRE_LINES_PER_IMAGE = 140
 # How much of the domain a cell takes, before the warp.
 DEFAULT_CELL_FRACTION = 1.0
 # How much wider a brick is than it is tall.
@@ -219,6 +219,43 @@ METAL_WANDER_FRACTION = 0.04
 # the seam 1.26x. At 0.12 the contrast fell to 0.0655 and the seam
 # rose to 1.62x, and at 0.25 the joints were gone.
 MINIMUM_CELL_FRACTION = 0.05
+# The STONES' fractal: how many octaves, how quickly each one quiets
+# down, how much the lattice doubles, and how far the feature points
+# are from their cell's centre.
+#
+# A ground is a dense spread of small pebbles and our recreation was
+# a handful of giant amoebas - the cell count was right (22.26
+# features across against the truth's 20.48) but each cell was one
+# smooth blob. So the stones are fractal, and the FBM-Worley's mean
+# cell area falls by four times an octave - measured on the vendored
+# module: 1.0 base cell at the first octave and a sixteenth of one at
+# the fourth.
+STONE_OCTAVES = 4
+STONE_PERSISTENCE = 0.5
+STONE_LACUNARITY = 2
+STONE_JITTER = 1.0
+# How much finer the STONES are than the feature count.
+#
+# The truth's Ground110 measures 20.48 features across, and that is
+# the ENVELOPE's count - the big shapes the ground is organised
+# into. A close crop of the truth is a dense spread of hundreds of
+# pebbles, and our recreation was a handful of giant amoebas.
+#
+# So the stones' lattice is this many times finer than the feature
+# count.
+STONE_LATTICE_FACTOR = 2
+# How far the STONES are warped, in cell units.
+#
+# The warp is what keeps the fine octaves from locking the feature
+# measure. The truth's ground measures 19.32 features across and
+# carries 0.1027 of its 0.1244 spread in the FINE structure, so its
+# fine structure is strong and the autocorrelation still reads the
+# envelope - and the only way both can hold is if the fine structure
+# is irregular.
+#
+# A regular fine lattice locks the autocorrelation, and the measure
+# reads it instead: measured, the scale read 7.19x the truth's.
+STONE_WARP_AMOUNT = 0.6
 
 
 def warp(
@@ -264,6 +301,107 @@ def warp(
         sample_x + offset_x * WARP_AMOUNT / cells,
         sample_y + offset_y * WARP_AMOUNT / cells,
     )
+
+
+def stone_lattice(cells: int, resolution: int) -> int:
+    """The lattice the STONES are drawn on - how many across the image.
+
+    The truth's Ground110 measures 20.48 features across, and that is
+    the ENVELOPE's count - the big shapes the ground is organised
+    into. The pebbles themselves are far smaller: a close crop of the
+    truth is a dense spread of hundreds of them, and the envelope's
+    autocorrelation is what says twenty.
+
+    So the stones' lattice is much finer than the feature count: the
+    feature count is the envelope, and the stones are the texture
+    inside it.
+
+    The lattice is a power of two that divides the resolution, so the
+    map tiles.
+    """
+    wanted = max(2, round(cells * STONE_LATTICE_FACTOR))
+    size = 2
+    while size * 2 <= wanted and resolution % (size * 2) == 0:
+        size *= 2
+    while resolution % size != 0:
+        size //= 2
+    return max(2, size)
+
+
+def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
+    """A field of FRACTAL stones: big ones made of small ones.
+
+    A ground is not a field of equal stones. The truth's Ground110 is
+    a dense spread of small pebbles, and our recreation was a handful
+    of giant amoebas - the cell count was RIGHT (our recreation read
+    22.26 features across against the truth's 20.48) but each of our
+    cells was one smooth blob where the truth's is a crowd.
+
+    So the stones are FRACTAL: the base octave is the cell count the
+    truth asks for, and each octave above it adds a finer set of
+    cells inside the same field. The FBM-Worley - built on the
+    vendored tileable Worley - is what does that, and its mean cell
+    area falls by four times an octave, so the pebbles get small
+    quickly.
+
+    The field is the base octave's DISTANCE TO THE BISECTOR, which
+    is an exact distance to the cell's border - so a joint drawn from
+    it has a fixed width in pixels whatever the cell's size. The
+    F2 - F1 is zero on the border but is not a distance: its growth
+    depends on the two points' spacing, so a joint of fixed width
+    would not be fixed.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise_worley_fbm
+
+    samples = (numpy.arange(resolution) + 0.5) / resolution
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
+    # The stones are WARPED, and that is what keeps the fine octaves
+    # from locking the feature measure.
+    #
+    # The truth's ground measures 19.32 features across, and it carries
+    # 0.1027 of its 0.1244 spread in the FINE structure - so its
+    # fine structure is strong and the autocorrelation still reads the
+    # envelope. The only way both can hold is if the fine structure
+    # is IRREGULAR: a regular fine lattice locks the
+    # autocorrelation, and the measure reads it instead.
+    #
+    # So the sample positions are warped before the cells are drawn,
+    # and the warp's frequencies are integers over the domain so the
+    # field still tiles.
+    two_pi = 2.0 * numpy.pi
+    offset_x = numpy.zeros_like(sample_x)
+    offset_y = numpy.zeros_like(sample_y)
+    for index, (frequency, amplitude) in enumerate(DEFAULT_WARP_OCTAVES):
+        across = frequency * 2 + index
+        along = frequency * 3 + index + 1
+        offset_x = (
+            offset_x
+            + numpy.sin(sample_y * across * two_pi + frequency * 0.7) * amplitude
+        )
+        offset_x = offset_x + numpy.sin(sample_x * along * two_pi + 1.1) * (
+            amplitude * 0.7
+        )
+        offset_y = (
+            offset_y
+            + numpy.sin(sample_x * across * two_pi + frequency * 0.3) * amplitude
+        )
+        offset_y = offset_y + numpy.sin(sample_y * along * two_pi + 2.3) * (
+            amplitude * 0.7
+        )
+    warp_amount = STONE_WARP_AMOUNT
+    field = noise_worley_fbm.worley_fbm_2d(
+        (sample_x + offset_x * warp_amount / cells) * cells,
+        (sample_y + offset_y * warp_amount / cells) * cells,
+        period=cells,
+        octaves=octaves,
+        persistence=STONE_PERSISTENCE,
+        lacunarity=STONE_LACUNARITY,
+        jitter=STONE_JITTER,
+        seed=0,
+    )
+    return field
 
 
 def cell_and_edge(
@@ -759,37 +897,10 @@ def grain_field(
             1.0,
         )
 
-        # The envelope and the fibre are combined as DARKNESSES, not
-        # as distances.
-        #
-        # The edge is a DISTANCE - zero on a line - and the writer
-        # turns it into a darkness. So scaling the envelope's edge
-        # DOWN makes it smaller everywhere, and the smaller one
-        # always wins - which is backwards: the envelope would then
-        # decide the pattern everywhere and the fibre would never
-        # show.
-        #
-        # So the two are turned into darknesses, the envelope's is
-        # weighted down, and the pattern reads the darker of them.
-        # The envelope's RING POSITIONS are unchanged, so the
-        # feature scale survives while the surface becomes the
-        # fibre.
-        #
-        # Measured, the envelope at full strength drew three fat
-        # waves across a quarter of the image where the truth has
-        # fine fibre.
-        envelope_reach = max(1e-6, float(edge.max()))
-        envelope_dark = numpy.clip(1.0 - edge / envelope_reach, 0.0, 1.0)
-        darkness = numpy.maximum(
-            envelope_dark * ENVELOPE_WEIGHT, fibre_dark * FIBRE_WEIGHT
-        )
-        # The edge is a DISTANCE, and the writer divides it by its own
-        # maximum - so the edge has to run from zero on a line to its
-        # maximum away from one. A darkness that never reaches one
-        # leaves the edge in a narrow band near its maximum, and the
-        # writer's line is then above one everywhere and clips to a
-        # flat grey.
-        edge = 1.0 - darkness / max(1e-6, float(darkness.max()))
+        # The fibre's own field, for the writer to draw on its own -
+        # the same two-scale structure the metal has, so the wood's
+        # fibre does not draw over its own envelope.
+        fine_edge = 1.0 - fibre_dark
 
     return band, edge, (cells, cells), fine_edge
 
@@ -853,7 +964,16 @@ def metal_field(
     bands = (sample_x + warp) * cells
     band = numpy.floor(bands).astype(numpy.int32)
     within = bands - band
-    edge = numpy.minimum(within, 1.0 - within)
+
+    # The bands are a SMOOTH GRADIENT, not a set of hard lines.
+    #
+    # A distance to the nearest band edge is a ridge at each edge, and
+    # the close crop showed hard black and white bands where the
+    # truth's steel is a soft brushed variation. So the band is a
+    # SINE - a broad gradient with no ridge in it - and the sheet's
+    # grain rides on it.
+    sine = numpy.sin((within - 0.5) * numpy.pi)
+    edge = 0.5 + 0.5 * sine
 
     # The grain's own edge, which is the BANDS' edge when there is no
     # grain - so the writer always has two fields to draw.
@@ -899,21 +1019,10 @@ def metal_field(
             1.0,
         )
 
-        # The bands and the grain are combined as DARKNESSES, so the
-        # weaker one can be the shallower one - the same reason the
-        # wood's envelope and fibre are.
-        envelope_reach = max(1e-6, float(edge.max()))
-        envelope_dark = numpy.clip(1.0 - edge / envelope_reach, 0.0, 1.0)
-        darkness = numpy.maximum(
-            envelope_dark * ENVELOPE_WEIGHT, fibre_dark * FIBRE_WEIGHT
-        )
-        # The edge is a DISTANCE, and the writer divides it by its own
-        # maximum - so the edge has to run from zero on a line to its
-        # maximum away from one. A darkness that never reaches one
-        # leaves the edge in a narrow band near its maximum, and the
-        # writer's line is then above one everywhere and clips to a
-        # flat grey.
-        edge = 1.0 - darkness / max(1e-6, float(darkness.max()))
+        # The grain's own field, for the writer to draw on its own -
+        # the same two-scale structure the wood has, so the sheet's
+        # grain does not draw over its own bands.
+        fine_edge = 1.0 - fibre_dark
 
     return band, edge, (cells, cells), fine_edge
 
@@ -1044,6 +1153,14 @@ def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES
     # 0.00x with a power of two.
     size = _power_of_two_nearest(cells * SURFACE_PATCHES_PER_CELL)
     while size > 1 and resolution % size != 0:
+        size //= 2
+    # The lattice's size is CAPPED, so a cell is always several
+    # pixels across. A cell that is one pixel wide is degenerate -
+    # the Perlin's own lattice shows, and the close crop read as a
+    # checkerboard rather than as a fabric. Measured: a fabric with
+    # 256 cells wanted a lattice of 2048, which is one cell a pixel
+    # at 2048 across.
+    while size > 1 and size * 8 > resolution:
         size //= 2
     return noise_perlin.perlin_2d(
         sample_x * size,

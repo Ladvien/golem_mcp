@@ -128,7 +128,7 @@ DEFAULT_LINE_WIDTH = 0.35
 # gradient and not as a set of rings. Measured, a narrow envelope
 # drew hard white waves where the truth has a soft gradient.
 ENVELOPE_LINE_WIDTH = 1.0
-ENVELOPE_STRENGTH = 0.45
+ENVELOPE_STRENGTH = 0.40
 # The FIBRE's line: how wide it is, and how much of the spread it
 # carries.
 #
@@ -136,7 +136,17 @@ ENVELOPE_STRENGTH = 0.45
 # wood carries 0.51 of its spread in the fibre and 0.49 in the
 # envelope, and the two are nearly equal.
 FIBRE_LINE_WIDTH = 0.35
-FIBRE_STRENGTH = 0.55
+FIBRE_STRENGTH = 0.35
+# The METAL's grain is fainter than the wood's fibre.
+#
+# A sheet's grain is a brushed streak - a very fine variation - and
+# the truth's polished silver carries a spread of 0.0061 against the
+# wood's 0.0162. So the grain is a tenth of the wood's fibre.
+#
+# Measured, a grain as strong as the wood's fibre put the metal's
+# scale at 3.33x the truth's - the measure read the grain and not
+# the sheet's bands.
+METAL_FIBRE_STRENGTH = 0.12
 # How many FINE lines each cell of a line pattern carries.
 #
 # A grain is TWO scales: the envelope - the slow cathedral swirl a
@@ -235,6 +245,7 @@ def write_procedural_base_color(
     line_contrast: float | None = None,
     target_spread: float | None = None,
     lines_per_cell: int = DEFAULT_LINES_PER_CELL,
+    fibre_strength: float = FIBRE_STRENGTH,
 ) -> Path:
     """Write a procedural base colour as a PNG; returns the path.
 
@@ -291,12 +302,22 @@ def write_procedural_base_color(
     cell_width = cells
     cell_height = cells
     if kind == "voronoi":
-        # The shared pattern: a REGULAR lattice with a wrapping search
-        # and a domain warp. The regular lattice is what makes the
-        # pattern periodic - a jittered one cannot be, because the
-        # jitter has to be the same at both ends - and the warp is
-        # what makes the cells look like stones rather than a grid.
-        cell, edge, grid = pattern.cell_and_edge(resolution, cells)
+        # The stones are FRACTAL: the base octave is the cell count
+        # the truth asks for, and each octave above it adds a finer
+        # set of cells inside the same field. A ground is a dense
+        # spread of small pebbles, and one octave's cells were a
+        # handful of giant amoebas.
+        #
+        # The FBM-Worley's own distance to the BISECTOR is what a
+        # joint's width needs, because it is an exact distance to the
+        # cell's border - so a joint drawn from it is the same width
+        # in pixels whatever the cell's size.
+        stones = pattern.fractal_stones(
+            resolution, pattern.stone_lattice(cells, resolution)
+        )
+        cell = stones["cell"]
+        edge = stones["distance"]
+        grid = (cells, cells)
     elif kind == "brick":
         cell, edge, grid = pattern.brick_field(resolution, cells)
     elif kind == "grain":
@@ -351,6 +372,9 @@ def write_procedural_base_color(
             line_rgb=line_rgb,
             line_width=line_width,
             target_spread=target_spread,
+            fibre_strength=(
+                METAL_FIBRE_STRENGTH if kind == "metal" else fibre_strength
+            ),
         )
 
     # The joint's width, as a fraction of the distance to the edge.
@@ -515,6 +539,7 @@ def _write_line_pattern(
     line_rgb,
     line_width: float,
     target_spread: float | None = None,
+    fibre_strength: float = FIBRE_STRENGTH,
 ) -> Path:
     """Write a pattern of LINES on a base colour; returns the path.
 
@@ -559,12 +584,12 @@ def _write_line_pattern(
     # The envelope: a broad gradient, at a third of the spread.
     envelope_line = line_of(edge, ENVELOPE_LINE_WIDTH)
     # The fibre: fine lines, at the rest of the spread.
-    fibre_line = line_of(fibre, FIBRE_LINE_WIDTH)
+    fibre_line = line_of(fibre, FIBRE_LINE_WIDTH) * fibre_strength
 
     base = _np.array(base_rgb, dtype=_np.float32).reshape(1, 1, 3)
     lines = _np.array(line_rgb, dtype=_np.float32).reshape(1, 1, 3)
     darkness = _np.clip(
-        envelope_line * ENVELOPE_STRENGTH + fibre_line * FIBRE_STRENGTH, 0.0, 1.0
+        envelope_line * ENVELOPE_STRENGTH + fibre_line * fibre_strength, 0.0, 1.0
     )
     colour = (
         base * (1.0 - darkness[:, :, _np.newaxis]) + lines * darkness[:, :, _np.newaxis]
