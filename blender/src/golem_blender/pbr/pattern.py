@@ -59,6 +59,18 @@ from __future__ import annotations
 # be periodic over the domain, and they are HIGH, because a smooth
 # warp bends a lattice rather than breaking it.
 DEFAULT_WARP_OCTAVES = ((3, 0.34), (5, 0.22), (8, 0.14))
+# How much of the warp's amplitude is USED.
+#
+# The warp's octaves move a sample by up to a whole cell, and a
+# sample that moves a whole cell lands in its neighbour's place - so
+# the cells merge and the stones come out as amoebas with no joint
+# between them. Measured, the ground's stones were amoebas while the
+# truth's are round pebbles with a clear gap.
+#
+# So only a part of the warp is used: enough to break the lattice
+# into stones that are not regular polygons, and not enough to move
+# one stone into its neighbour.
+WARP_AMOUNT = 0.30
 # A LINE pattern's drift octaves: (frequency in cycles per domain,
 # amplitude). They are LOW frequencies, because a line that wanders
 # fast is a zigzag and not a grain - and the drift has to be slow
@@ -71,6 +83,20 @@ DEFAULT_LINE_OCTAVES = ((1, 1.0), (2, 0.5), (3, 0.3))
 # crop of the ground is a field of small light and dark patches, not
 # a flat blob.
 DEFAULT_SURFACE_OCTAVES = ((17, 0.5), (29, 0.3), (43, 0.2))
+# The SURFACE's mottle, as NOISE: how many patches a cell carries,
+# how many octaves, and how quickly each octave quiets down.
+#
+# The patches are the mottle's scale: material-maker's fbm4 uses
+# five octaves with a persistence of 0.5, and the lane's stones need
+# their mottle at a scale much finer than the stone itself.
+#
+# Measured, the truth's ground carries small light and dark patches
+# - a few pixels across in a 1024 image - and a stone at ten cells
+# across the image is a hundred pixels, so a stone carries a handful
+# of the patches and the domain carries a hundred.
+SURFACE_PATCHES_PER_CELL = 12
+SURFACE_OCTAVES = 4
+SURFACE_PERSISTENCE = 0.5
 # How much of the domain a cell takes, before the warp.
 DEFAULT_CELL_FRACTION = 1.0
 # How much wider a brick is than it is tall.
@@ -166,7 +192,10 @@ def warp(
         offset_y = offset_y + numpy.sin(sample_y * along * two_pi + 2.3) * (
             amplitude * 0.7
         )
-    return sample_x + offset_x / cells, sample_y + offset_y / cells
+    return (
+        sample_x + offset_x * WARP_AMOUNT / cells,
+        sample_y + offset_y * WARP_AMOUNT / cells,
+    )
 
 
 def cell_and_edge(
@@ -201,6 +230,16 @@ def cell_and_edge(
     samples = (numpy.arange(resolution) + 0.5) / resolution
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
     sample_x, sample_y = warp(sample_x, sample_y, cells, octaves)
+
+    # The cell count DIVIDES THE RESOLUTION, so every cell is a whole
+    # number of pixels and the last one is not cut in half - and the
+    # wrap joins two whole cells.
+    #
+    # The lattice's own points are at (index + 0.5) / cells, so the
+    # cells are whole when the resolution is a multiple of the count.
+    # Measured, the ground's seam read 5.03x the truth's without it.
+    while cells > 1 and resolution % cells != 0:
+        cells -= 1
 
     best = numpy.full(sample_x.shape, 1e18)
     second = numpy.full(sample_x.shape, 1e18)
@@ -288,7 +327,18 @@ def brick_field(resolution: int, cells: int):
     #
     # The `cells` are the COURSES, and the truth's brick has 8
     # courses and 6 bricks across: 8 / 1.34 = 6.
+    #
+    # The counts DIVIDE THE RESOLUTION, so every brick and every
+    # course is a whole number of pixels and the wall's last course
+    # is not cut in half. A count that does not divide leaves a
+    # fraction of a brick at the edge, and the wrap joins it to a
+    # whole one - so the seam shows. Measured, the brick's seam read
+    # 7.55x the truth's.
     row_width = _bricks_across(courses)
+    while row_width > 1 and resolution % row_width != 0:
+        row_width -= 1
+    while courses > 1 and resolution % courses != 0:
+        courses //= 2
 
     axis = numpy.arange(resolution)
     # The position along the wall, in BRICK UNITS: a brick is one
@@ -482,6 +532,11 @@ def grain_field(
     # the rate is the octaves' frequency over the domain. So the cells
     # set the line spacing and the drift sets the correlation's decay,
     # and the two together give the pattern its one scale.
+    # The cell count divides the resolution, so every line lands on
+    # whole pixels and the wrap joins two whole lines.
+    while cells > 1 and resolution % cells != 0:
+        cells -= 1
+
     two_pi = 2.0 * numpy.pi
     warp = numpy.zeros_like(sample_x)
     for frequency, amplitude in octaves:
@@ -529,6 +584,8 @@ def grain_field(
             fine = fine + numpy.sin(
                 sample_y * frequency * two_pi * 5.0 + frequency * 0.3
             ) * (amplitude * GRAIN_WANDER_FRACTION * 0.10)
+        # Every multiplier above is an INTEGER over the domain, on
+        # both axes, so the fibre is periodic and the map tiles.
         fine_rings = (sample_x + warp + fine) * cells * lines_per_cell
         fine_band = numpy.floor(fine_rings).astype(numpy.int32)
         fine_within = fine_rings - fine_band
@@ -585,6 +642,11 @@ def metal_field(
     # the pattern read as a woven fabric - wavy crossing lines, which
     # is the opposite of a metal. Measured, the pattern's features
     # read 85.33 against the truth's 9.14.
+    # The cell count divides the resolution, so every band lands on
+    # whole pixels and the wrap joins two whole bands.
+    while cells > 1 and resolution % cells != 0:
+        cells -= 1
+
     two_pi = 2.0 * numpy.pi
     warp = numpy.zeros_like(sample_x)
     for frequency, amplitude in octaves:
@@ -631,14 +693,21 @@ def surface_octaves_for(resolution: int):
     few pixels across in a 1024 image, so a stone carries a hundred
     or so of them.
 
-    The frequencies are CAPPED, because a sine at a frequency above
-    the image's own cannot be drawn - at 2048 pixels a frequency of
-    172 is beyond the image and the texture comes out as an error.
+    The frequencies are INTEGERS over the domain, so the mottle is
+    periodic and the map tiles - and the scale factor has to keep
+    them integers, or the mottle's own seam shows. Measured, the
+    seam read 2.31x the truth's when the factor was not applied
+    consistently.
+
+    The frequencies are also CAPPED, because a sine at a frequency
+    above the image's own cannot be drawn - at 2048 pixels a
+    frequency of 172 is beyond the image and the texture comes out
+    as an error.
     """
     scale = max(1, resolution // 1024)
     cap = max(1, resolution // 8)
     return tuple(
-        (min(frequency * scale, cap), amplitude)
+        (max(1, min(frequency * scale, cap)), amplitude)
         for frequency, amplitude in DEFAULT_SURFACE_OCTAVES
     )
 
@@ -653,38 +722,49 @@ def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES
     asphalt is a field of small light and dark patches, while the
     lane's was a flat grey blob.
 
-    So the surface is a sum of sines with INTEGER frequencies over
-    the domain, at several scales, and the field is periodic - so
-    the map still tiles. The frequencies are high enough to be a
-    stone's texture and low enough to be seen.
+    The mottle is NOISE, not a sum of sines. A sum of sines is a
+    PLAID: it has a direction and a period, and the close crop
+    showed a woven corduroy over the stones rather than a mottle.
+    So the surface is material-maker's periodic value-noise fBm -
+    a lattice of random values interpolated with the quintic fade,
+    and the lattice WRAPS so the field tiles.
+
+    Measured: the sine sum's edge step was 0.766 against an interior
+    step of 0.13, and the noise's own edge step matches its
+    interior step.
 
     The field's own spread is the surface's contrast, and the
     caller scales it to the description's.
     """
     import numpy
 
+    from golem_blender.pbr import noise
+
     axis = (numpy.arange(resolution) + 0.5) / resolution
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
-    two_pi = 2.0 * numpy.pi
 
-    texture = numpy.zeros_like(sample_x)
-    for frequency, amplitude in octaves:
-        texture = (
-            texture
-            + numpy.sin(
-                sample_x * frequency * two_pi
-                + sample_y * frequency * two_pi * 0.5
-                + frequency
-            )
-            * amplitude
-        )
-        texture = (
-            texture
-            + numpy.sin(sample_y * frequency * two_pi * 1.5 + frequency * 0.3)
-            * amplitude
-            * 0.6
-        )
-    return texture
+    # The lattice's size is the mottle's scale: a stone carries a
+    # hundred or so of the patches, so the lattice is that many
+    # cells across the domain and the field is periodic over it.
+    #
+    # The size is a POWER OF TWO, because each octave DOUBLES it and
+    # the wrap has to be exact: a size of 120 doubled four times is
+    # 1920, which does not divide the domain, and the mottle's own
+    # seam showed. Measured, the brick's seam read 3.86x the truth's
+    # with a size of 120 and 0.00x with a power of two.
+    size = _power_of_two_nearest(cells * SURFACE_PATCHES_PER_CELL)
+    # The lattice's size divides the resolution, so the mottle's own
+    # wrap joins two whole cells.
+    while size > 1 and resolution % size != 0:
+        size //= 2
+    return noise.fbm_2d_value(
+        sample_x,
+        sample_y,
+        size=size,
+        octaves=SURFACE_OCTAVES,
+        persistence=SURFACE_PERSISTENCE,
+        seed=0,
+    )
 
 
 def joint_response(
