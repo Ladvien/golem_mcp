@@ -65,6 +65,12 @@ DEFAULT_WARP_OCTAVES = ((3, 0.34), (5, 0.22), (8, 0.14))
 # enough that the pattern's autocorrelation decays over the truth's
 # own period rather than a fraction of it.
 DEFAULT_LINE_OCTAVES = ((1, 1.0), (2, 0.5), (3, 0.3))
+# A STONE's own surface: (frequency in cycles per domain, amplitude).
+# These are HIGH frequencies, because a stone's mottle is much finer
+# than the stone itself - and the truth's stones show it: a close
+# crop of the ground is a field of small light and dark patches, not
+# a flat blob.
+DEFAULT_SURFACE_OCTAVES = ((17, 0.5), (29, 0.3), (43, 0.2))
 # How much of the domain a cell takes, before the warp.
 DEFAULT_CELL_FRACTION = 1.0
 # How much wider a brick is than it is tall.
@@ -502,16 +508,37 @@ def grain_field(
     # and a small drift of their own, and the edge is the nearer of
     # the two.
     if lines_per_cell > 1:
+        # The fibre FOLLOWS the envelope, and it is IRREGULAR.
+        #
+        # Measured on the truth's own row, the fibre's crossings come
+        # 1, 3, 4, 8, 10, 29 and 53 pixels apart - so a wood's fibre
+        # is not a regular line pattern at all but a set of fine
+        # streaks of varying thickness, with the slow envelope's
+        # variation on top.
+        #
+        # So the fibre's position is a sum of sines at MANY
+        # frequencies - a fractal - rather than one clean sine. The
+        # frequencies are integers over the domain, so the field is
+        # periodic and the map still tiles.
         fine = numpy.zeros_like(sample_x)
         for frequency, amplitude in octaves:
             fine = fine + numpy.sin(
-                sample_y * frequency * two_pi * 3.0 + frequency * 1.3
-            ) * (amplitude * GRAIN_WANDER_FRACTION * 0.35)
-        fine_rings = (sample_x + fine) * cells * lines_per_cell
+                sample_x * frequency * two_pi * 7.0
+                + sample_y * frequency * two_pi * 3.0
+            ) * (amplitude * GRAIN_WANDER_FRACTION * 0.18)
+            fine = fine + numpy.sin(
+                sample_y * frequency * two_pi * 5.0 + frequency * 0.3
+            ) * (amplitude * GRAIN_WANDER_FRACTION * 0.10)
+        fine_rings = (sample_x + warp + fine) * cells * lines_per_cell
         fine_band = numpy.floor(fine_rings).astype(numpy.int32)
         fine_within = fine_rings - fine_band
         fine_edge = numpy.minimum(fine_within, 1.0 - fine_within)
-        edge = numpy.minimum(edge, fine_edge * 2.0)
+        # The fibre's distance is the pattern's distance, and the
+        # envelope bends it by shifting the fibre's position. Taking
+        # the SMALLER of the two broke the fibre into dashes, because
+        # the envelope's own distance is large away from the
+        # envelope's rings.
+        edge = fine_edge * 2.0
 
     return band, edge, (cells, cells)
 
@@ -580,13 +607,84 @@ def metal_field(
             fine = fine + numpy.sin(
                 sample_y * frequency * two_pi * 3.0 + frequency * 1.3
             ) * (amplitude * METAL_WANDER_FRACTION * 0.35)
-        fine_bands = (sample_x + fine) * cells * lines_per_cell
+        fine_bands = (sample_x + warp + fine) * cells * lines_per_cell
         fine_band = numpy.floor(fine_bands).astype(numpy.int32)
         fine_within = fine_bands - fine_band
         fine_edge = numpy.minimum(fine_within, 1.0 - fine_within)
-        edge = numpy.minimum(edge, fine_edge * 2.0)
+        # The sheet's grain is what the pattern reads, and the bands
+        # only bend it. Taking the smaller of the two broke the grain
+        # into dashes.
+        edge = fine_edge * 2.0
 
     return band, edge, (cells, cells)
+
+
+def surface_octaves_for(resolution: int):
+    """The surface's octaves, scaled to the resolution it is drawn at.
+
+    A stone's mottle is a fixed size ON THE PAGE, so the number of
+    cycles across the image has to grow with the resolution - or the
+    mottle is smoothed away by the upscale and the stone reads as a
+    flat grey blob.
+
+    Measured against the truth's ground: the mottle's patches are a
+    few pixels across in a 1024 image, so a stone carries a hundred
+    or so of them.
+
+    The frequencies are CAPPED, because a sine at a frequency above
+    the image's own cannot be drawn - at 2048 pixels a frequency of
+    172 is beyond the image and the texture comes out as an error.
+    """
+    scale = max(1, resolution // 1024)
+    cap = max(1, resolution // 8)
+    return tuple(
+        (min(frequency * scale, cap), amplitude)
+        for frequency, amplitude in DEFAULT_SURFACE_OCTAVES
+    )
+
+
+def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES):
+    """A stone's own SURFACE: the mottle within it, and the grain of
+    it.
+
+    A stone is not a flat colour. Its face is mottled - patches of
+    light and shade at a scale much finer than the stone - and the
+    truth's stones show it clearly: a close crop of the ground and
+    asphalt is a field of small light and dark patches, while the
+    lane's was a flat grey blob.
+
+    So the surface is a sum of sines with INTEGER frequencies over
+    the domain, at several scales, and the field is periodic - so
+    the map still tiles. The frequencies are high enough to be a
+    stone's texture and low enough to be seen.
+
+    The field's own spread is the surface's contrast, and the
+    caller scales it to the description's.
+    """
+    import numpy
+
+    axis = (numpy.arange(resolution) + 0.5) / resolution
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+    two_pi = 2.0 * numpy.pi
+
+    texture = numpy.zeros_like(sample_x)
+    for frequency, amplitude in octaves:
+        texture = (
+            texture
+            + numpy.sin(
+                sample_x * frequency * two_pi
+                + sample_y * frequency * two_pi * 0.5
+                + frequency
+            )
+            * amplitude
+        )
+        texture = (
+            texture
+            + numpy.sin(sample_y * frequency * two_pi * 1.5 + frequency * 0.3)
+            * amplitude
+            * 0.6
+        )
+    return texture
 
 
 def joint_response(

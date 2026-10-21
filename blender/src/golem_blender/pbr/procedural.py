@@ -129,7 +129,11 @@ DEFAULT_LINE_WIDTH = 0.35
 # silver crosses it 122 times where its envelope says nine.
 #
 # So the cells are the envelope and the lines are inside them.
-DEFAULT_LINES_PER_CELL = 5
+#
+# Measured, the pattern's own line count is about 14 lines per cell
+# per unit of the multiplier: at three lines per cell and thirteen
+# cells the row carries 43 lines, and the truth's own row carries 39.
+DEFAULT_LINES_PER_CELL = 3
 # The contrast a LINE pattern gets when the description says nothing
 # about its spread. The truth sets' spreads run from 0.0061 on a
 # polished metal to 0.0926 on a mossy rock, and this is the middle.
@@ -325,31 +329,38 @@ def write_procedural_base_color(
 
     # The wear: a smooth field that varies a stone within itself.
     #
-    # Its frequency is the SAME as the pattern's cells, not a multiple
-    # of it. The earlier version used two and three times the cell
-    # count, which put a fine CROSSHATCH over the whole image - and
-    # that crosshatch was what the feature measure was reading, not
-    # the pattern. Measured, a wood's features read 341.33 against the
-    # truth's 93.09, and the extra 248 were the wear.
+    # It is the stone's own SURFACE, and it is at a much finer scale
+    # than the stone: a close crop of the truth's ground is a field
+    # of small light and dark patches, and the lane's was a flat grey
+    # blob. So the surface is a sum of sines at high frequencies, and
+    # the frequencies are integers so the field is periodic and the
+    # map still tiles.
     #
-    # The wear is now at the cell's own frequency in ONE direction,
-    # so it varies a stone along its length without crossing itself.
-    #
-    # And the wear is a fraction of the RAMP's spread, not a
-    # constant. It used to be a fixed 0.15 of a stone's own colour,
-    # which is sixteen times the whole spread of a soft fabric - and
-    # the fabric's contrast read 4.84x the truth's while the ramp
-    # alone read 0.35x. So the wear is the ramp's spread, and the
-    # pattern's contrast is the ramp's spread and nothing else.
-    axis = numpy.arange(resolution) / resolution
-    wave = numpy.sin(axis * cells * numpy.pi + 1.3) * 0.5
-    wave = numpy.tile(wave.reshape(-1, 1), (1, resolution))
+    # The wear is a fraction of the RAMP's spread, not a constant. It
+    # used to be a fixed 0.15 of a stone's own colour, which is
+    # sixteen times the whole spread of a soft fabric - and the
+    # fabric's contrast read 4.84x the truth's while the ramp alone
+    # read 0.35x.
     ramp_spread = max(0.0, (max(stone_light_rgb) - min(stone_dark_rgb)) / 2.0)
-    wear = wave * min(variation, 1.0) * ramp_spread
-    # The wear is a fraction of a stone's own width, so it varies a
-    # stone without becoming the pattern: it is at the cell's own
-    # frequency, not a multiple of it.
-
+    # The surface is computed at the PATTERN's resolution, which is
+    # small - a few hundred pixels - and the image is upscaled
+    # afterwards. A stone's mottle is finer than that, so the
+    # upscale would smooth it away: the stone read as a flat grey
+    # blob.
+    #
+    # So the surface's FREQUENCIES are scaled up with the output's
+    # resolution, and the field is still computed at the pattern's
+    # resolution - so the mottle is as fine as the page asks for and
+    # the upscale carries it.
+    surface = pattern.surface_texture(
+        resolution,
+        cells,
+        octaves=pattern.surface_octaves_for(max(width_px, height_px)),
+    )
+    surface_amplitude = float(surface.max() - surface.min())
+    if surface_amplitude > 0.0:
+        surface = surface / surface_amplitude * 2.0 - 1.0
+    wear = surface * min(variation, 1.0) * ramp_spread
     colour = stone + wear[:, :, numpy.newaxis]
 
     # The joint replaces the stone where the joint is.
