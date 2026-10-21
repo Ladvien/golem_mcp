@@ -267,8 +267,27 @@ BRICK_ASPECT = 1.34
 #
 # Measured: the truth's brick has eight courses and six bricks
 # across, and the aspect of 1.34 gives 8 / 1.34 = 6.
-def _bricks_across(courses: int) -> int:
-    return max(1, round(courses / BRICK_ASPECT))
+def _bricks_across(courses: int, aspect: float = BRICK_ASPECT) -> int:
+    return max(1, round(courses / aspect))
+
+
+def _nearest_divisor(resolution: int, wanted: int) -> int:
+    """The divisor of the resolution CLOSEST to the count wanted.
+
+    A count that does not divide the resolution leaves a fraction of
+    a brick at the edge, and the wrap joins it to a whole one - so
+    the seam shows. Measured, the brick's seam read 7.55x the
+    truth's.
+
+    So the count is a divisor, and the one nearest the count wanted:
+    the aspect's own count when it divides, and its closest
+    divisor when it does not.
+    """
+    best = 1
+    for candidate in range(1, min(wanted, resolution) + 1):
+        if resolution % candidate == 0:
+            best = candidate
+    return best
 
 
 # How far a GRAIN's line drifts from its own line, as a fraction of
@@ -490,7 +509,12 @@ def _nearest(values, rows, columns):
     return values[row, column]
 
 
-def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
+def fractal_stones(
+    resolution: int,
+    cells: int,
+    octaves=STONE_OCTAVES,
+    pebble_factor: float = 1.0,
+):
     """A field of FRACTAL stones: big ones made of small ones.
 
     A ground is not a field of equal stones. The truth's Ground110 is
@@ -588,7 +612,7 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     #
     # So the lattice is as fine as the pebbles ask for: the pebbles'
     # own count, times a handful of pixels each.
-    pebble_side = cells * STONE_PEBBLE_COUNT_FACTOR
+    pebble_side = max(cells, round(cells * pebble_factor))
     coarse_side = max(4, min(resolution, max(512, pebble_side * STONE_PEBBLE_PIXELS)))
     axis = (numpy.arange(coarse_side) + 0.5) / coarse_side
     grid_x, grid_y = numpy.meshgrid(axis, axis, indexing="xy")
@@ -634,7 +658,7 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     # The PEBBLES' own count, which is several times the feature
     # count: the truth's ground has about a hundred and seventy
     # pebbles across where its autocorrelation says twenty.
-    fine_cells = cells * STONE_PEBBLE_COUNT_FACTOR
+    fine_cells = max(cells, round(cells * pebble_factor))
     # The PEBBLES' own lattice, which is several times finer than the
     # feature count.
     #
@@ -846,7 +870,7 @@ def cell_and_edge(
     return nearest, edge, (cells, cells)
 
 
-def brick_field(resolution: int, cells: int):
+def brick_field(resolution: int, cells: int, aspect: float = BRICK_ASPECT):
     """Courses of bricks: the cell each sample is in, and the distance to
     its mortar.
 
@@ -899,9 +923,21 @@ def brick_field(resolution: int, cells: int):
     # fraction of a brick at the edge, and the wrap joins it to a
     # whole one - so the seam shows. Measured, the brick's seam read
     # 7.55x the truth's.
-    row_width = _bricks_across(courses)
-    while row_width > 1 and resolution % row_width != 0:
-        row_width -= 1
+    # The row's width is the largest DIVISOR of the resolution that is
+    # closest to the aspect's count.
+    #
+    # It was stepped down one at a time from the aspect's count until
+    # it divided the resolution, and that walked it off the aspect:
+    # the aspect wants six bricks across, and six does not divide a
+    # thousand and twenty-four, so the count stepped down to four and
+    # the bricks came out twice as wide as they are tall. The truth's
+    # brick is nine courses and seven across, and the feature scale
+    # read 0.60x the truth's.
+    #
+    # So the width is the largest divisor of the resolution nearest
+    # the aspect's count, and the courses are stepped down the same
+    # way - to the nearest power of two that divides it.
+    row_width = _bricks_across(courses, aspect)
     while courses > 1 and resolution % courses != 0:
         courses //= 2
 

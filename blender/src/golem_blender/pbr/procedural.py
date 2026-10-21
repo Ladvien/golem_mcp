@@ -104,6 +104,10 @@ DEFAULT_MORTAR_RGB = (0.38, 0.36, 0.33)
 # surface - the dark tail covers 16.9% of it - and a width of 0.95
 # of the median distance covers 17% of ours.
 DEFAULT_MORTAR_WIDTH = 0.95
+# How much of the full width a SOLID surface's joint gets. A loose
+# ground's matrix between its stones is a sixth of the surface, and a
+# concrete's or a tile's joint is a hairline.
+JOINT_SOLID_FRACTION = 0.12
 # How much the noise varies a stone within itself, as a fraction of
 # the stone's colour.
 DEFAULT_VARIATION = 0.15
@@ -256,7 +260,11 @@ def write_procedural_base_color(
     target_spread: float | None = None,
     lines_per_cell: int = DEFAULT_LINES_PER_CELL,
     fibre_strength: float = FIBRE_STRENGTH,
+    pebble_factor: float = 1.0,
+    brick_aspect: float | None = None,
 ) -> Path:
+    # `pebble_factor` is how many PEBBLES a cell holds: a loose
+    # ground's four, and a solid surface's one.
     """Write a procedural base colour as a PNG; returns the path.
 
     The pattern is computed in numpy and written into the image with
@@ -323,12 +331,16 @@ def write_procedural_base_color(
         # joint's width needs, because it is an exact distance to the
         # cell's border - so a joint drawn from it is the same width
         # in pixels whatever the cell's size.
-        stones = pattern.fractal_stones(resolution, cells)
+        stones = pattern.fractal_stones(resolution, cells, pebble_factor=pebble_factor)
         cell = stones["cell"]
         edge = stones["distance"]
         grid = (cells, cells)
     elif kind == "brick":
-        cell, edge, grid = pattern.brick_field(resolution, cells)
+        cell, edge, grid = pattern.brick_field(
+            resolution,
+            cells,
+            aspect=brick_aspect if brick_aspect is not None else pattern.BRICK_ASPECT,
+        )
     elif kind == "grain":
         cell, edge, grid, fibre = pattern.grain_field(
             resolution, cells, lines_per_cell=lines_per_cell
@@ -411,7 +423,25 @@ def write_procedural_base_color(
     # a fraction of the DISTANCE FIELD's maximum, and the maximum is
     # the widest cell's - so the joint came out as a thread and the
     # ground read as a mosaic of flat stones.
-    joint = numpy.clip(1.0 - joint / max(mortar_width, 1e-6), 0.0, 1.0)
+    #
+    # And the width is the PEBBLE factor's: a loose ground crazes
+    # with a wide matrix between its stones, and a solid surface's
+    # joint is a hairline.
+    #
+    # Measured on the truth's own ground: the dark tail between the
+    # stones covers 16.9% of the surface. The truth's tiles' grout
+    # line is one or two pixels in a thousand, and the truth's
+    # asphalt has no visible joint at all.
+    #
+    # The SPREAD is not the discriminator - the truth's bricks have a
+    # spread of 0.076 and a hairline grout, and the truth's ground
+    # has a spread of 0.124 and a wide matrix. The SURFACE'S KIND
+    # is.
+    if pebble_factor > 1.5:
+        width = mortar_width
+    else:
+        width = mortar_width * JOINT_SOLID_FRACTION
+    joint = numpy.clip(1.0 - joint / max(width, 1e-6), 0.0, 1.0)
 
     # The stones' colours, from each cell's own random value.
     #

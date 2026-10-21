@@ -91,4 +91,50 @@ def pattern_for_description(description: str) -> str:
     return DEFAULT_PATTERN
 
 
-__all__ = ("DEFAULT_PATTERN", "pattern_for_description")
+# The words whose surface is made of SMALL, LOOSE PIECES - gravel,
+# dirt, rubble, sand - as against a surface that is one solid thing
+# cut into pieces.
+#
+# A loose ground is a PEBBLE field: the truth's own ground carries
+# eighty-one pebble-gaps across where the feature measure reads
+# twenty, so the pebbles are four times finer than the envelope. A
+# concrete or a plaster is not - it is one surface, and it does not
+# crackle.
+#
+# So the crazing is the loose grounds' and not the solid ones'.
+_PEBBLED_WORDS = (
+    "gravel",
+    "dirt",
+    "ground",
+    "earth",
+    "rubble",
+    "debris",
+    "sand",
+    "pebble",
+    "cobble",
+    "cobblestone",
+    "scattered",
+    "rocky",
+    "riverbed",
+)
+
+
+def is_pebbled(description: str) -> bool:
+    """Whether the description names a surface of SMALL, LOOSE PIECES.
+
+    A loose ground crazes - the truth's own ground is a field of
+    pebbles with a dark matrix between them - and a solid surface
+    does not: the truth's tiles are flat squares with a thin grout
+    line, and the truth's concrete is a plain sheet.
+    """
+    # The words are matched WHOLE: "dirty" contains "dirt", and a
+    # dirty tile floor is a tile floor and not a ground.
+    words = set(description.lower().replace(",", " ").split())
+    return any(word in words for word in _PEBBLED_WORDS)
+
+
+__all__ = (
+    "DEFAULT_PATTERN",
+    "is_pebbled",
+    "pattern_for_description",
+)

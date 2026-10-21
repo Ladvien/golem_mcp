@@ -136,6 +136,12 @@ HUES: dict[str, tuple[float, float, float]] = {
 }
 # The hue a description with no colour word gets: neutral.
 DEFAULT_HUE = (0.3333, 0.3333, 0.3333)
+# How many PEBBLES a cell holds, for a surface of loose pieces.
+#
+# Measured on the truth's own ground: a row carries eighty-one
+# pebble-gaps where the feature measure reads twenty features across,
+# so the pebbles are four times finer than the envelope.
+PEBBLE_FACTOR = 4.0
 # How far the ramp runs either side of the value, as a fraction of
 # the full range. It is NARROW: a surface's colour varies little
 # across itself, and a wide ramp is what made the maps too harsh.
@@ -513,6 +519,20 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     return DEFAULT_HUE
 
 
+def _spread_of(word: str) -> float:
+    """The spread a word carries, or the DEFAULT when it carries none.
+
+    The tiers name words the truth set does not have - "tile",
+    "satin", "chrome" - and a tier says what those words MEAN, so
+    the word's own spread is not needed: the tier's FIRST word is the
+    measured one and the rest follow it.
+
+    Without this, a description naming any of them raised a
+    KeyError: the lookup went straight to the table.
+    """
+    return SPREADS.get(word, DEFAULT_SPREAD)
+
+
 def spread_for_description(description: str) -> float:
     """How much the surface's colour varies, from the description's
     texture words.
@@ -537,16 +557,58 @@ def spread_for_description(description: str) -> float:
         for tier in METAL_SPREAD_TIERS:
             for word in tier:
                 if word in words:
-                    return SPREADS[word]
+                    return _spread_of(word)
     for tier in SPREAD_TIERS:
         for word in tier:
             if word in words:
-                return SPREADS[word]
+                return _spread_of(word)
     for word in description.lower().replace(",", " ").split():
         spread = SPREADS.get(word.strip(".,"))
         if spread is not None:
             return spread
     return DEFAULT_SPREAD
+
+
+def brick_aspect_for_description(description: str) -> float:
+    """How wide a brick is, as a multiple of its height.
+
+    A BRICK is oblong - the truth's brick is about four thirds as
+    wide as it is tall, and it has eight courses and six bricks
+    across.
+
+    A TILE is SQUARE. The truth's tiles are a six-by-six grid of
+    squares with a hairline grout, and a brick's aspect turned them
+    into a wall of long oblongs - the tile's feature scale then read
+    0.58x the truth's.
+
+    So the aspect is the description's: a "tile" is square, and
+    everything else is a brick.
+    """
+    from golem_blender.pbr.pattern import BRICK_ASPECT
+
+    words = set(description.lower().replace(",", " ").split())
+    if words & {"tile", "tiles"}:
+        return 1.0
+    return BRICK_ASPECT
+
+
+def pebble_factor_for_description(description: str) -> float:
+    """How many PEBBLES a cell holds, for a surface of loose pieces.
+
+    A loose ground crazes - the truth's own ground carries
+    eighty-one pebble-gaps across where the feature measure reads
+    twenty, so the pebbles are four times finer than the envelope.
+    A concrete or a plaster does not: it is one surface, cut into
+    pieces, and it does not crackle.
+
+    So the factor is the loose grounds' four and everything else's
+    one.
+    """
+    from golem_blender.pbr.patterns import is_pebbled
+
+    if is_pebbled(description):
+        return PEBBLE_FACTOR
+    return 1.0
 
 
 def palette_for_description(
@@ -605,6 +667,8 @@ def palette_for_description(
         "stone_light_rgb": _coloured(high, hue),
         "mortar_rgb": _coloured(mortar, hue),
         "target_spread": spread,
+        "pebble_factor": pebble_factor_for_description(description),
+        "brick_aspect": brick_aspect_for_description(description),
     }
 
 
