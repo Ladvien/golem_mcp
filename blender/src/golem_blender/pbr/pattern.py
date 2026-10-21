@@ -915,6 +915,18 @@ def fractal_stones(
     # reads, and the colour hash is what the feature measure reads -
     # and the joints are the pebbles' own gaps.
     field["distance"] = _bilinear(fine["distance"], grid_row, grid_column)
+    # The ENVELOPE: the surface's own slow variation, and it is
+    # SMOOTH.
+    #
+    # The truth's own ground has a correlation that decays smoothly -
+    # 0.24 at a lag of ten, 0.10 at twenty, 0.04 at thirty-two and
+    # 0.005 at fifty - and a per-cell hash has NO such decay: it is
+    # uncorrelated from one cell to the next, and the measure finds
+    # the cells' own count.
+    #
+    # So the surface's variation is a SMOOTH field, and the cells
+    # only decide where the joints fall.
+    field["envelope"] = _bilinear(coarse["distance"], grid_row, grid_column)
     # The CELL is the BASE octave's.
     #
     # The cell is what gives a stone its own colour, and the colour's
