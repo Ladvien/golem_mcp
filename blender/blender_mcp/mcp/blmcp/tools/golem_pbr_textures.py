@@ -96,6 +96,7 @@ def register(mcp: FastMCP) -> None:
         init_image_path: str = "",
         image_strength: float = DEFAULT_IMAGE_STRENGTH,
         texture_dir: str = "",
+        make_tileable: bool = True,
     ) -> list:
         """Generate a base-colour texture on the golem server and write it into the texture set; returns the image and its paths.
 
@@ -107,6 +108,18 @@ def register(mcp: FastMCP) -> None:
         0.6, 45.2 at 0.25 and 37.3 at 0.0. So to REPLACE the map, use a
         LOW strength; to keep it and nudge it, use a HIGH one. The
         written file is `T_<output_name>_BaseColor.png`.
+
+        `make_tileable` hides the map's seam, by the method
+        material-maker uses: three copies of the map, blended so that
+        the edge carries the image's own middle. A GENERATED map does
+        not tile otherwise - its seam is a property of the sample, not
+        of the size - and the blend is cheap at the width it uses.
+        Measured, the seam goes from 1.377x to 0.304x of the texture's
+        largest ordinary features, which is better than the reference
+        sets ambientcg makes to tile (0.32x to 0.47x), and the
+        correlation with the original is 0.7711. It is not free: the
+        blend moves the image, so the seam is measured afterwards and
+        reported as `tile_seam_ratio`.
 
         `width` and `height` default to the SET's resolution, the same
         number the bakes use, so a set's three maps agree. Every other
@@ -173,6 +186,7 @@ def register(mcp: FastMCP) -> None:
             prompt=prompt,
             image_strength=image_strength,
             init_image_path=init_image_path,
+            make_tileable=make_tileable,
         )
 
         summary = {
@@ -188,6 +202,9 @@ def register(mcp: FastMCP) -> None:
             "prompt": written.prompt,
             "image_strength": written.image_strength,
             "init_image_path": written.init_image_path,
+            "tile_seam_ratio": written.tile_seam_ratio,
+            "tile_seam_limit": pbr_paths.TILE_SEAM_LIMIT,
+            "tiles_cleanly": written.tile_seam_ratio <= pbr_paths.TILE_SEAM_LIMIT,
         }
 
         # Does the generated map TILE? A set is something you repeat

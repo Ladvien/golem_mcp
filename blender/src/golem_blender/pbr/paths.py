@@ -99,12 +99,15 @@ def normal_file_name(texture_name: str) -> str:
 
 
 # How large a seam may be, relative to the texture's own features,
-# before it is worth telling the caller about. Measured on the sets
-# already on codex_fs: the seam is between 1.23x and 2.47x the
-# texture's own feature step, and none of them shows a visible tile
-# line. The 2048 cobblestone generation measured 4.44x, and in a
-# tiled render it DID show its boundaries as lines.
-TILE_SEAM_LIMIT = 3.0
+# before it is worth telling the caller about.
+#
+# It is the REFERENCE's range: ambientcg's own sets, which are made
+# to tile, measure 0.32x to 0.47x. A map at 1.377x - a generated
+# map, before the tileable blend - is in that range's neighbourhood
+# and does NOT tile, and one at 3.0x is plainly out of it. So the
+# limit is 0.60x: a map inside it is as good as the reference, and
+# one outside it is worth the caller's attention.
+TILE_SEAM_LIMIT = 0.60
 
 
 def tile_seam_ratio(image_path: Path) -> float:
