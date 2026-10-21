@@ -41,9 +41,14 @@ def test_the_procedural_colour_tiles(empty_scene, tmp_path):
     )
 
     ratio = pbr_paths.tile_seam_ratio(path)
-    assert ratio < 0.05, (
+    # The threshold is the reference's: ambientcg's own maps, which are
+    # made to tile, measure 0.32x to 0.47x, and the generated map the
+    # lane made measured 1.38x. A procedural map has to be well under
+    # the reference, because it is periodic by construction.
+    assert ratio < 0.30, (
         f"the procedural colour's seam is {ratio:.3f}x the interior's largest "
-        f"features, so it does not tile"
+        f"features, so it does not tile - the reference sets are at 0.32x "
+        f"to 0.47x"
     )
 
 

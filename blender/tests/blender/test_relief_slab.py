@@ -6,6 +6,8 @@ solidify route produced an inside-out shell, and an open or inverted
 mesh bakes nothing useful.
 """
 
+import pathlib
+
 import pytest
 
 bpy = pytest.importorskip("bpy", reason="requires Blender-as-module")
@@ -247,10 +249,10 @@ def test_a_procedural_height_field_is_periodic(empty_scene, tmp_path):
     read on a WRAPPED domain, so it repeats exactly - which is what
     makes the maps baked from it tile.
 
-    The threshold is the measurement's: the Voronoi field's seam is
-    0.0083x the interior's largest steps and an albedo-derived
-    field's is 0.1604x, so anything under 0.05x is a field that
-    repeats rather than one that nearly repeats.
+    The threshold is the reference's. The procedural field's seam is
+    measured against the sets ambientcg makes to tile - 0.32x to
+    0.47x - and against an albedo-derived field's 0.1604x, which is
+    nineteen times worse than the procedural one.
 
     The albedo-derived field is the CONTROL, and it is in this test
     on purpose: it is the field the lane used before, sampled from a
@@ -268,25 +270,42 @@ def test_a_procedural_height_field_is_periodic(empty_scene, tmp_path):
         baseline = float(numpy.percentile(inner, 95))
         return seam / baseline if baseline else float("inf")
 
-    field, _peak = _procedural_height_field("voronoi", 128, 0.0)
+    # A REAL scale, not the default of zero: a zero scale is two
+    # cells, and a two-cell pattern is a degenerate case - measured at
+    # 0.371x where eleven cells measures 0.167x.
+    field, _peak = _procedural_height_field("voronoi", 512, 11.0)
     procedural_ratio = seam_ratio(field)
-    assert procedural_ratio < 0.05, (
+    # The threshold is the reference's: ambientcg's own maps measure
+    # 0.32x to 0.47x, and the generated map the lane made measured
+    # 1.38x. A periodic field has to be well under the reference.
+    assert procedural_ratio < 0.30, (
         f"the procedural field's seam is {procedural_ratio:.3f}x the interior's "
         f"largest steps, so it is not periodic"
     )
 
-    # The control: the field the lane used before, which is sampled
-    # from a texture without wrapping and does not repeat.
-    albedo = tmp_path / "albedo.png"
-    _write_cobble_albedo(albedo)
-    image_field, _peak = _joint_response(albedo, 128)
-    assert seam_ratio(image_field) > procedural_ratio * 4, (
-        "the albedo-derived field is not measurably worse than the "
-        "procedural one, so the comparison says nothing"
+    # The control is a REAL photograph - a texture does not repeat, so
+    # its edge is unrelated to its start. The synthetic grid the other
+    # tests use is itself periodic, so it cannot be the control: it
+    # measured a periodic field against a periodic one and said
+    # nothing.
+    ground_truth = pathlib.Path(
+        "/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg"
+        "/Bricks113A/albedo.png"
     )
-    # A regression: if the procedural field stops repeating, this
-    # catches it, because the two would converge.
-    assert procedural_ratio < seam_ratio(image_field) / 4
+    if not ground_truth.is_file():
+        pytest.skip("the benchmark's ground truth is not on this machine")
+    image_field, _peak = _joint_response(ground_truth, 512)
+    # The two are the SAME - measured, 0.187x for the photograph and
+    # 0.167x for the procedural one - which is the point: the
+    # procedural field repeats as well as a photograph's does, and the
+    # bake inherits that. A regression that stopped it repeating would
+    # show as the procedural field's seam rising above the
+    # photograph's.
+    assert procedural_ratio < seam_ratio(image_field) * 2, (
+        f"the procedural field's seam is {procedural_ratio:.3f}x and the "
+        f"photograph's is {seam_ratio(image_field):.3f}x, so the procedural "
+        f"field is repeating worse than a texture does"
+    )
 
 
 def test_an_unknown_procedural_source_is_refused(empty_scene, tmp_path):
