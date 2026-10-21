@@ -119,3 +119,65 @@ def test_a_fabric_is_rough_and_an_asphalt_is_rough():
 
 def test_a_description_with_nothing_sayable_gets_the_default():
     assert roughness_for_description("zzz qqq") == pytest.approx(0.60)
+
+
+def test_a_metal_s_colour_comes_from_the_sheet_not_the_rust():
+    """A metal's colour words name the rust on it, not the metal.
+
+    Measured, the steel plate reads a luma of 0.429 - a mid grey-blue
+    - and the words "black" and "brown" would have said 0.06.
+    """
+    from golem_blender.pbr.palette import value_for_description
+
+    description = (
+        "aged, black, brown, dark, fine, glossy, industrial, metal, "
+        "oxidized, polished, rust, rusty, smooth, steel"
+    )
+    assert value_for_description(description) == pytest.approx(0.43, abs=0.02)
+
+
+def test_a_clean_silver_metal_is_bright():
+    from golem_blender.pbr.palette import value_for_description
+
+    assert value_for_description("clean, metal, silver, smooth") == pytest.approx(
+        0.92, abs=0.05
+    )
+
+
+def test_a_non_metal_s_colour_is_unchanged():
+    """Only a metal gets the tiered reading."""
+    from golem_blender.pbr.palette import value_for_description
+
+    assert value_for_description("brown, dirt, dry, gravel, gray, ground") == (
+        pytest.approx(0.34, abs=0.02)
+    )
+
+
+def test_a_description_s_word_order_does_not_decide_the_spread():
+    """A description's words are alphabetical, so the first one says
+    nothing about how much the surface varies.
+
+    The fabric's truth measures a spread of 0.0090 and its first
+    word is "blue"; the mossy rock's measures 0.0926 and its "rough"
+    comes late. The material's own words decide.
+    """
+    from golem_blender.pbr.palette import spread_for_description
+
+    fabric = "blue, fabric, fur, microfiber, soft"
+    rock = "forest, gray, green, irregular, moss, mossy, natural, old, rock, rough, stacked, stone"
+    assert spread_for_description(fabric) == pytest.approx(0.0090, abs=0.002)
+    assert spread_for_description(rock) == pytest.approx(0.0926, abs=0.004)
+
+
+def test_the_spreads_are_the_truths_own():
+    """Every spread is a truth's own measured value."""
+    from golem_blender.pbr.palette import spread_for_description
+
+    cases = {
+        "fabric, orange, red, wool": 0.0505,
+        "asphalt, charcoal, dark, granular, gray, industrial, matte, pavement, road, rough, urban": 0.0178,
+        "concrete, grey, light, plaster, smooth": 0.0218,
+        "brown, debris, dirt, gravel, gray, ground, river, riverbed, rocky, rough, rubble, scattered, uneven": 0.1290,
+    }
+    for description, expected in cases.items():
+        assert spread_for_description(description) == pytest.approx(expected, abs=0.004)

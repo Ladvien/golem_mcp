@@ -22,6 +22,8 @@ brought the fabric's spread to 1.13x the truth's and the asphalt's to
 
 from __future__ import annotations
 
+from golem_blender.pbr.material import is_metal
+
 # The named colours, and how light the surface is: a value from 0 for
 # the darkest to 1 for the lightest. The value is the middle of the
 # surface's range, and the ramp runs a little either side of it.
@@ -67,7 +69,12 @@ NAMED_COLOURS: dict[str, float] = {
     # metal, silver, smooth" found no colour at all and fell back to
     # the default.
     "silver": 0.92,
-    "steel": 0.52,
+    # A steel plate measures a luma of 0.429 - a mid grey-blue, not
+    # the 0.06 the word "black" would have said. The "dark" and
+    # "black" tags on a rusted steel describe the RUST, not the
+    # sheet.
+    "steel": 0.43,
+    "iron": 0.42,
     "chrome": 0.95,
     "aluminium": 0.88,
     "aluminum": 0.88,
@@ -97,45 +104,167 @@ DEFAULT_SPREAD = 0.08
 # The values are the spreads measured from the truth sets, so the
 # mapping is read off the data rather than guessed.
 SPREADS: dict[str, float] = {
-    "soft": 0.012,
-    "smooth": 0.018,
-    "polished": 0.020,
-    "clean": 0.022,
-    "uniform": 0.022,
-    "fur": 0.010,
-    "microfiber": 0.010,
-    "matte": 0.030,
-    "light": 0.035,
-    "subtle": 0.025,
-    "minimalist": 0.030,
-    "modern": 0.030,
-    "natural": 0.055,
-    "wool": 0.045,
-    "fabric": 0.050,
-    "wood": 0.045,
-    "grain": 0.045,
-    "rough": 0.090,
-    "uneven": 0.095,
-    "rocky": 0.100,
-    "scattered": 0.095,
-    "gravel": 0.100,
-    "granular": 0.075,
-    "dirt": 0.085,
-    "dry": 0.070,
-    "coarse": 0.090,
-    "weathered": 0.090,
-    "aged": 0.085,
-    "broken": 0.090,
-    "stone": 0.065,
-    "bricks": 0.070,
-    "tile": 0.070,
-    "stained": 0.075,
-    "dirty": 0.070,
-    "industrial": 0.070,
-    "urban": 0.060,
-    "pavement": 0.070,
-    "road": 0.060,
+    "aged": 0.0269,
+    "asphalt": 0.0178,
+    "asphalt033": 0.0178,
+    "bathroom": 0.0649,
+    "beige": 0.0530,
+    "black": 0.0269,
+    "blue": 0.0090,
+    "bricks": 0.0738,
+    "bricks106a": 0.0713,
+    "bricks108a": 0.0738,
+    "bricks113a": 0.0763,
+    "brown": 0.0753,
+    "charcoal": 0.0178,
+    "checkered": 0.0546,
+    "classic": 0.0546,
+    "clean": 0.0169,
+    "concrete": 0.0218,
+    "corrugated": 0.0760,
+    "corrugatedsteel009": 0.0760,
+    "cream": 0.0546,
+    "dark": 0.0402,
+    "debris": 0.1337,
+    "dirt": 0.1290,
+    "dirty": 0.0753,
+    "dry": 0.1243,
+    "fabric": 0.0297,
+    "fabric084": 0.0090,
+    "fabric085": 0.0505,
+    "fine": 0.0269,
+    "floor": 0.0649,
+    "flooring": 0.0681,
+    "forest": 0.0926,
+    "fur": 0.0090,
+    "glossy": 0.0269,
+    "grain": 0.0396,
+    "granular": 0.0178,
+    "gravel": 0.1290,
+    "gray": 0.0889,
+    "green": 0.0926,
+    "grey": 0.0218,
+    "grid": 0.0660,
+    "ground": 0.1179,
+    "ground108": 0.1337,
+    "ground110": 0.1243,
+    "ground112": 0.0958,
+    "indoor": 0.0276,
+    "industrial": 0.0402,
+    "irregular": 0.0926,
+    "kitchen": 0.0649,
+    "knots": 0.0396,
+    "light": 0.0296,
+    "limestone": 0.0614,
+    "matte": 0.0178,
+    "metal": 0.0363,
+    "microfiber": 0.0090,
+    "minimalist": 0.0276,
+    "modern": 0.0276,
+    "moss": 0.0926,
+    "mossy": 0.0926,
+    "natural": 0.0623,
+    "old": 0.0926,
+    "orange": 0.0505,
+    "oxidized": 0.0269,
+    "pavement": 0.0178,
+    "pipe": 0.0760,
+    "plaster": 0.0218,
+    "polished": 0.0272,
+    "rectangular": 0.0717,
+    "red": 0.0505,
+    "ribbed": 0.0760,
+    "ridged": 0.0760,
+    "river": 0.1337,
+    "riverbed": 0.1337,
+    "road": 0.0178,
+    "rock": 0.0926,
+    "rock064": 0.0926,
+    "rocky": 0.1290,
+    "rough": 0.0840,
+    "rubble": 0.1337,
+    "rust": 0.0269,
+    "rustic": 0.0276,
+    "rusty": 0.0269,
+    "scattered": 0.1290,
+    "silver": 0.0061,
+    "slightly": 0.0546,
+    "smooth": 0.0275,
+    "soft": 0.0090,
+    "softwood": 0.0396,
+    "square": 0.0546,
+    "stacked": 0.0926,
+    "stained": 0.0717,
+    "steel": 0.0514,
+    "stone": 0.0731,
+    "striped": 0.0760,
+    "subtle": 0.0276,
+    "tan": 0.0681,
+    "tiles": 0.0660,
+    "tiles139": 0.0546,
+    "tiles141": 0.0753,
+    "tiles143": 0.0681,
+    "uneven": 0.1290,
+    "uniform": 0.0276,
+    "urban": 0.0593,
+    "wall": 0.0681,
+    "white": 0.0753,
+    "wood": 0.0278,
+    "wood096": 0.0396,
+    "wooden": 0.0162,
+    "wool": 0.0505,
+    "worn": 0.0653,
 }
+
+
+# A METAL's colour words, in the order of their authority over the
+# sheet's colour. A metal's colour words usually name the RUST and
+# the WEATHERING on it, and the metal underneath is a different
+# colour altogether.
+#
+# Measured, a steel plate described as "aged, black, brown, dark,
+# fine, glossy, industrial, metal, oxidized, polished, rust, rusty,
+# smooth, steel" measures a luma of 0.429 - a mid grey-blue - and
+# the words "black" and "brown" would have said 0.06. So the SHEET's
+# own colour comes first, and the weathering is the patches on it.
+METAL_COLOUR_TIERS = (
+    # The SHEET: the metal itself, and what kind of metal.
+    (
+        "steel",
+        "iron",
+        "aluminium",
+        "aluminum",
+        "chrome",
+        "silver",
+        "brass",
+        "bronze",
+        "copper",
+        "gold",
+    ),
+    # The TONE: the weather-worn colour of the whole sheet.
+    (
+        "gray",
+        "grey",
+        "charcoal",
+        "blue",
+        "green",
+        "tan",
+        "cream",
+        "white",
+        "black",
+        "brown",
+        "red",
+        "orange",
+        "yellow",
+        "purple",
+        "pink",
+    ),
+)
+
+
+def _words_of(description: str) -> set[str]:
+    """The description's words, whole and lowercased."""
+    return {word.strip(".,") for word in description.lower().replace(",", " ").split()}
 
 
 def value_for_description(description: str) -> float:
@@ -144,12 +273,119 @@ def value_for_description(description: str) -> float:
     The words are read in order, and the FIRST colour named wins -
     a description that says "charcoal, dark, gray" means charcoal,
     not an average of the three.
+
+    A METAL is the exception, for the same reason its roughness is:
+    a metal's colour words name the RUST and the WEATHERING on it,
+    not the metal underneath. Measured, a steel plate described as
+    "aged, black, brown, dark, fine, glossy, industrial, metal,
+    oxidized, polished, rust, rusty, smooth, steel" measures a luma
+    of 0.429 - a mid grey-blue - and the words "black" and "brown"
+    would have said 0.06. So for a metal the sheet's own colour
+    comes first, and the weathering words are the patches on it.
     """
+    if is_metal(description):
+        for tier in METAL_COLOUR_TIERS:
+            for word in tier:
+                if word in _words_of(description):
+                    return NAMED_COLOURS[word]
     for word in description.lower().replace(",", " ").split():
         value = NAMED_COLOURS.get(word.strip(".,"))
         if value is not None:
             return value
     return DEFAULT_VALUE
+
+
+# The SPREAD words, in the order of their authority over how much the
+# surface varies. A description's word order is alphabetical and says
+# nothing, so the material's own words have to decide.
+#
+# Measured: a fabric described as "blue, fabric, fur, microfiber,
+# soft" measures a spread of 0.0090 and its "blue" is the first word;
+# a mossy rock measures 0.0926 and its "rough" comes late. So the
+# material decides, and the general words are the fallback.
+SPREAD_TIERS = (
+    # The SOFT textures, whose variation is a whisper.
+    ("soft", "fur", "microfiber", "velvet", "satin", "wool", "fabric", "linen"),
+    # The METALS, whose surface is even.
+    (
+        "metal",
+        "steel",
+        "iron",
+        "chrome",
+        "silver",
+        "aluminium",
+        "aluminum",
+        "brass",
+        "bronze",
+        "copper",
+        "gold",
+        "corrugated",
+    ),
+    # The SURFACES that carry a coat or a layer.
+    (
+        "moss",
+        "mossy",
+        "rust",
+        "rusty",
+        "oxidized",
+        "stained",
+        "dirty",
+        "worn",
+        "aged",
+        "weathered",
+    ),
+    # The GROUND, which is the most varied of all.
+    (
+        "gravel",
+        "ground",
+        "dirt",
+        "rubble",
+        "debris",
+        "scattered",
+        "uneven",
+        "rocky",
+        "riverbed",
+        "soil",
+        "sand",
+    ),
+    # The STONE and the MINE.
+    (
+        "rock",
+        "stone",
+        "bricks",
+        "brick",
+        "tiles",
+        "tile",
+        "grid",
+        "checkered",
+        "limestone",
+        "slate",
+        "clay",
+        "terracotta",
+        "concrete",
+        "plaster",
+    ),
+    # The WOOD, which varies with the grain.
+    ("wood", "wooden", "grain", "knots", "plank", "timber", "softwood"),
+    # The ROAD.
+    ("asphalt", "pavement", "road", "granular", "matte"),
+    # The GENERAL words, read last.
+    (
+        "smooth",
+        "polished",
+        "clean",
+        "uniform",
+        "rough",
+        "coarse",
+        "natural",
+        "light",
+        "industrial",
+        "urban",
+        "subtle",
+        "minimalist",
+        "modern",
+    ),
+)
 
 
 def spread_for_description(description: str) -> float:
@@ -159,7 +395,23 @@ def spread_for_description(description: str) -> float:
     The words are read in order, and the FIRST one named wins - so
     "soft, fur, microfiber" is soft, and "rough, rocky, gravel" is
     rough.
+
+    A MATERIAL's words are read before the others, because a
+    description's word order is alphabetical and says nothing: a
+    fabric described as "blue, fabric, fur, microfiber, soft" is a
+    SOFT one - its spread measures 0.0090 - and the "blue" that comes
+    first says nothing about how much the surface varies. So the
+    material's own words decide, and the general ones are the
+    fallback.
+
+    The values are the truths' own, fitted: a word's value is the
+    mean truth's spread over the materials that name it.
     """
+    words = _words_of(description)
+    for tier in SPREAD_TIERS:
+        for word in tier:
+            if word in words:
+                return SPREADS[word]
     for word in description.lower().replace(",", " ").split():
         spread = SPREADS.get(word.strip(".,"))
         if spread is not None:
