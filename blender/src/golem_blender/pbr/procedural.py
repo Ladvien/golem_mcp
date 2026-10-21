@@ -104,6 +104,11 @@ DEFAULT_MORTAR_RGB = (0.38, 0.36, 0.33)
 # surface - the dark tail covers 16.9% of it - and a width of 0.95
 # of the median distance covers 17% of ours.
 DEFAULT_MORTAR_WIDTH = 0.95
+# How much LIGHTER than the base a line pattern's light parts go.
+#
+# The truth's own wood is drawn both ways about its median: its p5 is
+# 0.604 and its p95 is 0.690, around a mean of 0.649.
+LINE_LIGHT_FRACTION = 0.18
 # How much of the full width a SOLID surface's joint gets. A loose
 # ground's matrix between its stones is a sixth of the surface, and a
 # concrete's or a tile's joint is a hairline.
@@ -692,9 +697,43 @@ def _write_line_pattern(
     peak = max(1e-6, float(darkness.max()))
     if peak > 1.0:
         darkness = darkness / peak
-    colour = (
-        base * (1.0 - darkness[:, :, _np.newaxis]) + lines * darkness[:, :, _np.newaxis]
-    )
+    # The darkness is RE-CENTRED, so the base colour is reached.
+    #
+    # The two darknesses summed to a mean of 0.657, so the base
+    # colour was reachable in no part of the image at all - the whole
+    # surface was drawn in the line colour, which is the base
+    # darkened, and the wood came out at 0.73x the truth's brightness.
+    #
+    # The truth's own wood is the other way round: its p5 is 0.604
+    # and its p95 is 0.690, and its mean is 0.649 - so the base
+    # colour is the wood's MEDIAN and the surface is drawn both
+    # lighter and darker than it.
+    #
+    # So the darkness is shifted so that its own mean is the half,
+    # and the base is reached in the light parts and the line colour
+    # in the dark ones.
+    darkness = darkness - 0.5 * float(darkness.mean())
+    darkness = _np.clip(darkness * 2.0, 0.0, 1.0)
+    # The surface is drawn BOTH LIGHTER AND DARKER than the base.
+    #
+    # The blend was one-sided - the base colour everywhere the
+    # darkness was zero and the line colour everywhere else - and the
+    # darkness's mean was 0.657, so the base was reachable in no part
+    # of the image and the whole surface was drawn in the line
+    # colour, which is the base DARKENED. The wood came out at 0.73x
+    # the truth's brightness.
+    #
+    # The truth's own wood is the other way round: its p5 is 0.604
+    # and its p95 is 0.690 and its mean is 0.649 - the base colour
+    # is the wood's MEDIAN, and the surface is drawn both lighter and
+    # darker than it.
+    #
+    # So the colour is the base plus a signed variation: the light
+    # parts go above the base and the dark parts below it, and the
+    # base is the middle.
+    signed = darkness * 2.0 - 1.0
+    light = base * (1.0 + LINE_LIGHT_FRACTION)
+    colour = base + signed[:, :, _np.newaxis] * (light - lines) * 0.5
     colour = _np.clip(colour, 0.0, 1.0)
     # The image's variation is scaled so its spread IS the
     # description's - a line's falloff carries a different amount of

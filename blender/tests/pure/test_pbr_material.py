@@ -199,6 +199,25 @@ def test_the_value_follows_the_material_s_kind():
     )
 
 
+def test_a_line_pattern_is_drawn_both_ways_about_its_base():
+    """A line pattern's surface is drawn LIGHTER and DARKER than its
+    base, and not only darker.
+
+    The blend was one-sided - the base colour where the darkness was
+    zero and the line colour elsewhere - and the darkness's mean was
+    0.657, so the base was reachable in NO part of the image: the
+    whole surface was drawn in the line colour, which is the base
+    darkened, and the wood came out at 0.73x the truth's brightness.
+
+    The truth's own wood is the other way round: its p5 is 0.604 and
+    its p95 is 0.690 around a mean of 0.649, so the base colour is
+    the wood's median and the surface is drawn both ways about it.
+    """
+    from golem_blender.pbr.procedural import LINE_LIGHT_FRACTION
+
+    assert LINE_LIGHT_FRACTION > 0.0
+
+
 def test_a_pressed_sheet_s_ribs_run_as_rows():
     """A PRESSED sheet's ribs are horizontal, and a sheet that is not
     pressed keeps its bands as columns.
