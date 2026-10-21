@@ -694,6 +694,41 @@ def _coloured(
     return tuple(max(0.0, min(1.0, share * scale)) for share in hue)
 
 
+# The HUE each MATERIAL word carries, as channel shares.
+#
+# A material's hue is tighter than a colour word's - measured, the
+# spread over the truths naming "ground" is 0.012 and over those
+# naming "wood" 0.030, against 0.045 for "beige" and 0.048 for
+# "gray". So the material says the hue and the colour word is the
+# fallback, the same way the value is read.
+#
+# Measured from the truth's own pixels: the marble tile is R 0.347 G
+# 0.333 B 0.320 - almost neutral - and the word "beige" says 0.389
+# 0.334 0.278, which is much warmer.
+MATERIAL_HUES: dict[str, tuple[float, float, float]] = {
+    "marble": (0.347, 0.333, 0.320),
+    "limestone": (0.390, 0.334, 0.276),
+    "tiles": (0.376, 0.334, 0.290),
+    "bricks": (0.381, 0.341, 0.278),
+    "wood": (0.412, 0.332, 0.256),
+    "wooden": (0.412, 0.332, 0.256),
+    "ground": (0.380, 0.338, 0.282),
+    "gravel": (0.378, 0.339, 0.282),
+    "dirt": (0.378, 0.339, 0.282),
+    "concrete": (0.333, 0.333, 0.333),
+    "metal": (0.336, 0.335, 0.329),
+    "silver": (0.336, 0.335, 0.329),
+    "steel": (0.336, 0.335, 0.329),
+    "asphalt": (0.359, 0.342, 0.299),
+    "moss": (0.393, 0.368, 0.239),
+    "mossy": (0.393, 0.368, 0.239),
+    "fabric": (0.379, 0.304, 0.317),
+    "wool": (0.542, 0.275, 0.183),
+    "clay": (0.420, 0.333, 0.247),
+    "sand": (0.400, 0.333, 0.267),
+}
+
+
 def hue_for_description(description: str) -> tuple[float, float, float]:
     """The HUE the description's colour words carry, as channel shares.
 
@@ -709,8 +744,30 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     is exactly neutral. A palette with no hue made every material
     grey.
     """
-    for word in description.lower().replace(",", " ").split():
+    words = description.lower().replace(",", " ").split()
+    # The MATERIAL's word says the hue, and the colour word is the
+    # fallback - the same order the value is read in, and for the
+    # same reason: a material's hue is tighter than a colour word's.
+    #
+    # And a GENERIC material lets the colour decide, exactly as it
+    # does for the value: a "fabric" on its own says a thing's kind
+    # and not its colour, and the truth's two fabrics are R 0.217 G
+    # 0.333 B 0.451 and R 0.542 G 0.275 B 0.183 - the blue one and
+    # the orange one.
+    #
+    # Measured: with the material's hue first and no generic
+    # exception, the blue fabric's colour error read 0.352 against
+    # the truth's, where the colour word's own reads 0.032.
+    for word in words:
+        hue = MATERIAL_HUES.get(word.strip(".,"))
+        if hue is not None and word.strip(".,") not in GENERIC_MATERIALS:
+            return hue
+    for word in words:
         hue = HUES.get(word.strip(".,"))
+        if hue is not None:
+            return hue
+    for word in words:
+        hue = MATERIAL_HUES.get(word.strip(".,"))
         if hue is not None:
             return hue
     return DEFAULT_HUE

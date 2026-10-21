@@ -66,8 +66,45 @@ def download(url, target):
         raise RuntimeError(f"the download of {url} failed: {result.stderr[:200]}")
 
 
+# How many materials of each KIND the benchmark fetches, and how many
+# in all.
+#
+# Three of each and twenty in all was a sample, and a fit against
+# twenty materials is a fit against twenty materials - the palette's
+# tables and the pattern's scales are all fitted to the truths they
+# are measured against, and a small sample overfits.
+#
+# So the sample is wider: eight of each kind and seventy in all, over
+# fifteen kinds.
+PER_KIND = 8
+WANTED = 70
+# The KINDS the benchmark fetches, and the words that name each.
+#
+# The popular list is all bricks, so the kinds are chosen to cover
+# the surfaces the lane claims to make - and the more kinds there are,
+# the less any one of them can be fitted to.
+KINDS = (
+    "brick",
+    "wood",
+    "tiles",
+    "metal",
+    "ground",
+    "rock",
+    "fabric",
+    "concrete",
+    "plaster",
+    "gravel",
+    "sand",
+    "asphalt",
+    "leather",
+    "carpet",
+    "roof",
+    "wallpaper",
+)
+
+
 def main():
-    wanted = 20
+    wanted = WANTED
     data = fetch_json(API.format(limit=400))
     assets = data["foundAssets"]
     print(f"BENCH the API offers {data['numberOfResults']} materials")
@@ -85,30 +122,13 @@ def main():
             continue
         tags = [tag.lower() for tag in (asset.get("tags") or [])]
         kind = next(
-            (
-                candidate
-                for candidate in (
-                    "brick",
-                    "wood",
-                    "tiles",
-                    "metal",
-                    "ground",
-                    "rock",
-                    "fabric",
-                    "concrete",
-                    "plaster",
-                    "gravel",
-                    "sand",
-                    "asphalt",
-                )
-                if any(candidate in tag for tag in tags)
-            ),
+            (candidate for candidate in KINDS if any(candidate in tag for tag in tags)),
             "",
         )
         if not kind:
             continue
         count = seen_kinds.get(kind, 0)
-        if count >= 3:
+        if count >= PER_KIND:
             continue
         seen_kinds[kind] = count + 1
         chosen.append((asset, url))
