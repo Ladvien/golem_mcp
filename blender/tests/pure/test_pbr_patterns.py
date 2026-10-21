@@ -32,9 +32,15 @@ from golem_blender.pbr.patterns import DEFAULT_PATTERN, pattern_for_description
         # A brick wall is courses.
         ("bricks, stone", "brick"),
         # Separate rounded pieces.
-        ("cobblestone, grey, pavement", "voronoi"),
+        ("cobblestone, grey, pavement", "scattered"),
         ("asphalt, charcoal, dark, granular, road, urban", "voronoi"),
-        ("brown, dirt, dry, gravel, ground, rocky, scattered", "voronoi"),
+        # A loose ground is SCATTERED stones and not a Voronoi: a
+        # Voronoi's cells tile the plane and a heap of loose stones
+        # does not. The truth's own ground is fifty-six bright stones
+        # along a row of a thousand and twenty-four, a matrix twelve
+        # pixels wide between them, and the stones' sizes varying by
+        # eight times.
+        ("brown, dirt, dry, gravel, ground, rocky, scattered", "scattered"),
         ("fabric, orange, red, wool", "voronoi"),
         # Nothing that says: pieces, which is the commonest surface.
         ("something entirely unfamiliar", DEFAULT_PATTERN),

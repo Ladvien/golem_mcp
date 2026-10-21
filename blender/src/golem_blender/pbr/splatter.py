@@ -65,6 +65,8 @@ def splatter_field(
 
     generator = np.random.default_rng(seed)
     field = np.zeros((resolution, resolution), dtype=np.float64)
+    # The splats' own places and shapes, so a caller can cut them.
+    places = []
 
     for _ in range(count):
         centre_x = generator.random()
@@ -89,8 +91,9 @@ def splatter_field(
         # The splat is a DOME: one at its centre and zero at its edge.
         dome = np.clip(1.0 - distance, 0.0, 1.0)
         field = np.maximum(field, dome * dome * (3.0 - 2.0 * dome))
+        places.append((centre_x, centre_y, this_size, angle, cosine, sine))
 
-    return field
+    return field, places
 
 
 __all__ = (

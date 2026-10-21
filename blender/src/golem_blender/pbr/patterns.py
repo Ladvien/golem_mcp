@@ -71,14 +71,24 @@ _FLAT_PATTERNS = (
 # is not a course, a grain or a flat sheet is made of separate
 # pieces.
 _MATERIAL_PATTERNS = (
-    ("cobble", "voronoi"),
-    ("cobblestone", "voronoi"),
+    # The LOOSE grounds are SCATTERED stones and not a Voronoi.
+    #
+    # A Voronoi's cells tile the plane, and a heap of loose stones
+    # does not: the truth's own ground is fifty-six bright stones
+    # along a row of a thousand and twenty-four, a matrix twelve
+    # pixels wide between them, and the stones' sizes varying by
+    # eight times.
+    ("cobble", "scattered"),
+    ("cobblestone", "scattered"),
+    ("gravel", "scattered"),
+    ("ground", "scattered"),
+    ("dirt", "scattered"),
+    ("earth", "scattered"),
+    ("rubble", "scattered"),
+    ("debris", "scattered"),
+    ("scattered", "scattered"),
     ("stone", "voronoi"),
     ("rock", "voronoi"),
-    ("gravel", "voronoi"),
-    ("ground", "voronoi"),
-    ("dirt", "voronoi"),
-    ("earth", "voronoi"),
     ("sand", "voronoi"),
     ("asphalt", "voronoi"),
     ("concrete", "voronoi"),

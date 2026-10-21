@@ -109,6 +109,10 @@ DEFAULT_MORTAR_WIDTH = 0.95
 # The truth's own wood is drawn both ways about its median: its p5 is
 # 0.604 and its p95 is 0.690, around a mean of 0.649.
 LINE_LIGHT_FRACTION = 0.18
+# A SCATTER's MATRIX is wide: the truth's own ground is a gravel
+# with a matrix twelve pixels wide between stones that are sixteen
+# pixels across.
+SCATTER_MATRIX_WIDTH = 2.0
 # How much of the full width a SOLID surface's joint gets. A loose
 # ground's matrix between its stones is a sixth of the surface, and a
 # concrete's or a tile's joint is a hairline.
@@ -124,7 +128,14 @@ DEFAULT_WANDER = 0.35
 # image's edge unjoined.
 DEFAULT_WANDER_FREQUENCY = 3
 # The cell shapes a pattern can have.
-PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "grain", "metal", "flat")
+PROCEDURAL_COLOUR_KINDS = (
+    "voronoi",
+    "brick",
+    "grain",
+    "metal",
+    "flat",
+    "scattered",
+)
 # How wide a LINE is, as a fraction of the distance to the nearest
 # line. A grain's rings and a metal's grain are soft, and the truth's
 # wood measures a luma spread of 0.0162 - so the line is narrow and
@@ -329,7 +340,26 @@ def write_procedural_base_color(
 
     cell_width = cells
     cell_height = cells
-    if kind == "voronoi":
+    if kind == "scattered":
+        # A loose ground is SCATTERED stones, not a Voronoi.
+        #
+        # A Voronoi's cells tile the plane, and a heap of loose stones
+        # does not: the truth's own ground is fifty-six bright stones
+        # along a row of a thousand and twenty-four, a matrix twelve
+        # pixels wide between them, and the stones' sizes varying by
+        # eight times.
+        #
+        # So the stones are SCATTERED - Material Maker's `splatter`
+        # node, MIT licensed, and ours wraps so the map tiles.
+        #
+        # The joint is the MATRIX between the stones, and the stones'
+        # own tone is the matrix's mottle.
+        cell, edge, grid, fibre = pattern.scattered_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
+        )
+    elif kind == "voronoi":
         # The stones are FRACTAL: the base octave is the cell count
         # the truth asks for, and each octave above it adds a finer
         # set of cells inside the same field. A ground is a dense
@@ -476,6 +506,17 @@ def write_procedural_base_color(
         width = mortar_width
     else:
         width = mortar_width * JOINT_SOLID_FRACTION
+    if kind == "scattered":
+        # A SCATTER's joint is the MATRIX between its stones, and
+        # the matrix is WIDE: the truth's own ground is a gravel with
+        # a matrix twelve pixels wide between stones that are sixteen
+        # pixels across.
+        #
+        # So the joint's width is a large fraction of the stone's own
+        # size, and not the hairline a cell's joint is. Measured with
+        # the hairline: the ground's feature scale read 10.00x the
+        # truth's.
+        width = mortar_width * SCATTER_MATRIX_WIDTH
     joint = numpy.clip(1.0 - joint / max(width, 1e-6), 0.0, 1.0)
 
     # The stones' colours, from each cell's own random value.
@@ -500,6 +541,18 @@ def write_procedural_base_color(
         stone[:, :, channel] = ramp[
             _np.clip((hashed * 255).astype(numpy.int32), 0, 255)
         ]
+    if kind == "scattered":
+        # The STONES' own tone is the matrix's mottle, and the matrix
+        # between them is dark.
+        #
+        # A scatter has no cells to hash - the stones are placed, not
+        # tiled - so the tone is the mottle and the joint is the
+        # scatter's own field.
+        for channel in range(3):
+            ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
+            stone[:, :, channel] = ramp[
+                _np.clip((fibre * 255).astype(numpy.int32), 0, 255)
+            ]
     if pebble_factor > 1.5:
         # A STONE's own tone is a SMALL part of the surface's
         # variation, and the MATRIX is the rest.
