@@ -130,10 +130,14 @@ DEFAULT_LINE_WIDTH = 0.35
 #
 # So the cells are the envelope and the lines are inside them.
 #
-# Measured, the pattern's own line count is about 14 lines per cell
-# per unit of the multiplier: at three lines per cell and thirteen
-# cells the row carries 43 lines, and the truth's own row carries 39.
-DEFAULT_LINES_PER_CELL = 3
+# Measured, the truth's fibre is much finer than that: its lines come
+# 3, 5, 6, 9, 14 and 17 pixels apart in a 1024 image, so a wood
+# carries a hundred or more of them - and they are irregular, which
+# is what the fractal is for.
+#
+# So the multiplier is 8: at eight lines per cell and sixteen cells
+# the row carries 128 lines, which is the truth's own order.
+DEFAULT_LINES_PER_CELL = 8
 # The contrast a LINE pattern gets when the description says nothing
 # about its spread. The truth sets' spreads run from 0.0061 on a
 # polished metal to 0.0926 on a mossy rock, and this is the middle.

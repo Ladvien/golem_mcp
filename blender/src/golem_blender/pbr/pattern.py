@@ -97,6 +97,30 @@ DEFAULT_SURFACE_OCTAVES = ((17, 0.5), (29, 0.3), (43, 0.2))
 SURFACE_PATCHES_PER_CELL = 12
 SURFACE_OCTAVES = 4
 SURFACE_PERSISTENCE = 0.5
+# How strong the FIBRE is against the envelope it rides on.
+#
+# The envelope is what the feature measure reads, and the truth's
+# fibre is faint: the truth's wood crosses its own midpoint
+# sixty-nine times where its envelope says thirteen features, and
+# the envelope still dominates the autocorrelation. So the fibre is a
+# fraction of the envelope's strength.
+#
+# Measured, a fibre as strong as the envelope put the wood's scale
+# at 3.79x the truth's and the metal's at 9.74x - the measure was
+# reading the fibre and not the envelope.
+FIBRE_WEIGHT = 0.25
+# How strong the ENVELOPE is against the fibre it carries.
+#
+# The envelope is the slow variation the fibre follows, and it is
+# only that - the surface is the fibre. Measured, the envelope at
+# full strength drew three fat waves across a quarter of the image
+# where the truth has fine fibre, so the envelope was doing all the
+# reading and the fibre was invisible.
+#
+# The envelope's RING POSITIONS still set the feature scale, and the
+# positions are not changed by the depth - so the scale survives
+# while the surface becomes the fibre.
+ENVELOPE_WEIGHT = 0.35
 # How much of the domain a cell takes, before the warp.
 DEFAULT_CELL_FRACTION = 1.0
 # How much wider a brick is than it is tall.
@@ -238,8 +262,16 @@ def cell_and_edge(
     # The lattice's own points are at (index + 0.5) / cells, so the
     # cells are whole when the resolution is a multiple of the count.
     # Measured, the ground's seam read 5.03x the truth's without it.
+    #
+    # And the count is a POWER OF TWO, because the resolution is:
+    # 2048 is two to the eleventh, so a count of thirty-one divides
+    # it not at all - and walking the count down until it did
+    # collapsed it to two, which is why the stones came out as a
+    # handful of amoebas. So the count is the nearest power of two to
+    # the one wanted, and the truth's thirty-one becomes thirty-two.
+    cells = _power_of_two_nearest(cells)
     while cells > 1 and resolution % cells != 0:
-        cells -= 1
+        cells //= 2
 
     best = numpy.full(sample_x.shape, 1e18)
     second = numpy.full(sample_x.shape, 1e18)
@@ -532,10 +564,14 @@ def grain_field(
     # the rate is the octaves' frequency over the domain. So the cells
     # set the line spacing and the drift sets the correlation's decay,
     # and the two together give the pattern its one scale.
-    # The cell count divides the resolution, so every line lands on
-    # whole pixels and the wrap joins two whole lines.
+    # The cell count is a POWER OF TWO that divides the resolution,
+    # so every line lands on whole pixels and the wrap joins two
+    # whole lines. 2048 is two to the eleventh, so a count of
+    # thirteen divides it not at all - and walking the count down
+    # until it did collapsed it to one.
+    cells = _power_of_two_nearest(cells)
     while cells > 1 and resolution % cells != 0:
-        cells -= 1
+        cells //= 2
 
     two_pi = 2.0 * numpy.pi
     warp = numpy.zeros_like(sample_x)
@@ -575,18 +611,20 @@ def grain_field(
         # frequencies - a fractal - rather than one clean sine. The
         # frequencies are integers over the domain, so the field is
         # periodic and the map still tiles.
+        # The fibre's own drift, and it is SMALL and IRREGULAR: the
+        # truth's lines are nearly straight with a few swirls, and
+        # the drift rides along the line rather than across it.
         fine = numpy.zeros_like(sample_x)
         for frequency, amplitude in octaves:
             fine = fine + numpy.sin(
-                sample_x * frequency * two_pi * 7.0
-                + sample_y * frequency * two_pi * 3.0
-            ) * (amplitude * GRAIN_WANDER_FRACTION * 0.18)
+                sample_y * frequency * two_pi * 7.0 + frequency * 0.9
+            ) * (amplitude * GRAIN_WANDER_FRACTION * 0.12)
             fine = fine + numpy.sin(
-                sample_y * frequency * two_pi * 5.0 + frequency * 0.3
-            ) * (amplitude * GRAIN_WANDER_FRACTION * 0.10)
+                sample_y * frequency * two_pi * 11.0 + frequency * 0.3
+            ) * (amplitude * GRAIN_WANDER_FRACTION * 0.07)
         # Every multiplier above is an INTEGER over the domain, on
         # both axes, so the fibre is periodic and the map tiles.
-        fine_rings = (sample_x + warp + fine) * cells * lines_per_cell
+        fine_rings = (sample_x + fine) * cells * lines_per_cell
         fine_band = numpy.floor(fine_rings).astype(numpy.int32)
         fine_within = fine_rings - fine_band
         fine_edge = numpy.minimum(fine_within, 1.0 - fine_within)
@@ -595,7 +633,38 @@ def grain_field(
         # the SMALLER of the two broke the fibre into dashes, because
         # the envelope's own distance is large away from the
         # envelope's rings.
-        edge = fine_edge * 2.0
+        #
+        # And the fibre is FAINTER than the envelope, because the
+        # envelope is what the feature measure reads. The truth's
+        # wood crosses its own midpoint sixty-nine times where its
+        # envelope says thirteen features - so the truth's fibre is
+        # irregular and faint, and the envelope dominates its
+        # autocorrelation. The lane's fibre was as strong as the
+        # envelope, so the measure read the FIBRE and the scale came
+        # out 3.79x the truth's for a wood and 9.74x for a metal.
+        #
+        # So the two are combined with the fibre the weaker: the
+        # envelope sets the scale and the fibre rides on it.
+        #
+        # The line the pattern reads is the NEARER of the envelope's
+        # line and the fibre's - and the ENVELOPE's line is the
+        # shallower one, because the fibre is what a plank's surface
+        # actually shows and the envelope is only the slow variation
+        # the fibre follows.
+        #
+        # Measured, the envelope at full strength drew three fat
+        # waves across a quarter of the image where the truth has
+        # fine fibre - so the envelope was doing all the reading and
+        # the fibre was invisible. And the feature measure reads the
+        # envelope, so the envelope has to stay the one that decides
+        # the scale: it is the envelope's RING POSITIONS that set it,
+        # not its depth.
+        #
+        # So the envelope's line is scaled down and the fibre's is
+        # left alone, and the pattern reads the fibre.
+        envelope_line = edge * ENVELOPE_WEIGHT
+        fibre_line = fine_edge * 2.0
+        edge = numpy.minimum(envelope_line, fibre_line)
 
     return band, edge, (cells, cells)
 
@@ -642,10 +711,12 @@ def metal_field(
     # the pattern read as a woven fabric - wavy crossing lines, which
     # is the opposite of a metal. Measured, the pattern's features
     # read 85.33 against the truth's 9.14.
-    # The cell count divides the resolution, so every band lands on
-    # whole pixels and the wrap joins two whole bands.
+    # The cell count is a POWER OF TWO that divides the resolution,
+    # so every band lands on whole pixels and the wrap joins two
+    # whole bands.
+    cells = _power_of_two_nearest(cells)
     while cells > 1 and resolution % cells != 0:
-        cells -= 1
+        cells //= 2
 
     two_pi = 2.0 * numpy.pi
     warp = numpy.zeros_like(sample_x)
@@ -667,18 +738,56 @@ def metal_field(
         fine = numpy.zeros_like(sample_x)
         for frequency, amplitude in octaves:
             fine = fine + numpy.sin(
-                sample_y * frequency * two_pi * 3.0 + frequency * 1.3
-            ) * (amplitude * METAL_WANDER_FRACTION * 0.35)
-        fine_bands = (sample_x + warp + fine) * cells * lines_per_cell
+                sample_y * frequency * two_pi * 7.0 + frequency * 0.9
+            ) * (amplitude * METAL_WANDER_FRACTION * 0.12)
+            fine = fine + numpy.sin(
+                sample_y * frequency * two_pi * 11.0 + frequency * 0.3
+            ) * (amplitude * METAL_WANDER_FRACTION * 0.07)
+        fine_bands = (sample_x + fine) * cells * lines_per_cell
         fine_band = numpy.floor(fine_bands).astype(numpy.int32)
         fine_within = fine_bands - fine_band
         fine_edge = numpy.minimum(fine_within, 1.0 - fine_within)
         # The sheet's grain is what the pattern reads, and the bands
         # only bend it. Taking the smaller of the two broke the grain
         # into dashes.
-        edge = fine_edge * 2.0
+        #
+        # And the grain is FAINTER than the bands, for the same
+        # reason the wood's fibre is fainter than its envelope: the
+        # bands are what the feature measure reads. Measured, a grain
+        # as strong as the bands put the metal's scale at 9.74x the
+        # truth's.
+        fibre_line = fine_edge * (2.0 * FIBRE_WEIGHT)
+        edge = numpy.minimum(edge, fibre_line)
 
     return band, edge, (cells, cells)
+
+
+def cell_local_frame(cell, sample_x, sample_y, grid):
+    """Each sample's position WITHIN ITS OWN CELL, in 0..1.
+
+    A stone's texture should be the stone's own, and a global mottle
+    gives every stone the same phase - so a field of stones reads as a
+    field of identical blotches.
+
+    Material-maker does this with `oldbrick_uv`: each brick gets a
+    local coordinate centred on itself and scaled by its own size,
+    plus a per-brick random. So the mottle is evaluated in each
+    stone's own frame, and no two stones share a phase.
+
+    The frame is the cell's own square - the sample's position within
+    its cell - and the cell's index is taken modulo the grid, so the
+    frame is the same at the wrap.
+    """
+    width, height = int(grid[0]), int(grid[1])
+    column = cell % max(1, width)
+    row = (cell // max(1, width)) % max(1, height)
+    # The cell's own square in the domain, and the sample's position
+    # within it.
+    cell_x = (column + 0.5) / max(1, width)
+    cell_y = (row + 0.5) / max(1, height)
+    local_x = (sample_x - cell_x) * width + 0.5
+    local_y = (sample_y - cell_y) * height + 0.5
+    return local_x, local_y
 
 
 def surface_octaves_for(resolution: int):
