@@ -146,7 +146,7 @@ FIBRE_STRENGTH = 0.35
 # Measured, a grain as strong as the wood's fibre put the metal's
 # scale at 3.33x the truth's - the measure read the grain and not
 # the sheet's bands.
-METAL_FIBRE_STRENGTH = 0.12
+METAL_FIBRE_STRENGTH = 0.30
 # How many FINE lines each cell of a line pattern carries.
 #
 # A grain is TWO scales: the envelope - the slow cathedral swirl a
@@ -571,11 +571,16 @@ def _write_line_pattern(
     import numpy as _np
 
     def line_of(field, width):
-        """The field's own line: a smooth falloff from its darkest.
+        """The field's own DARKNESS: a smooth falloff from its darkest.
 
-        The field is a DISTANCE - zero at the darkest - so the line is
-        the field's own value, and the line is dark where the field
-        is small.
+        The field is a DARKNESS - one at the darkest and zero at the
+        lightest - so the line is the field's own value and the line
+        is dark where the field is large.
+
+        It used to be a DISTANCE, read as one, and the two are
+        opposites: a distance is small where the field is dark, so
+        the light and the dark were swapped - and the wood's mean
+        came out at 0.159 against a base of 0.600.
         """
         reach = max(1e-6, float(field.max()))
         line = _np.clip(field / reach / max(1e-6, width), 0.0, 1.0)

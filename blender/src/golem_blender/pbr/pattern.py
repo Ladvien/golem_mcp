@@ -256,6 +256,23 @@ STONE_LATTICE_FACTOR = 2
 # A regular fine lattice locks the autocorrelation, and the measure
 # reads it instead: measured, the scale read 7.19x the truth's.
 STONE_WARP_AMOUNT = 0.6
+# A METAL's SCRATCHES: how long a streak is, how wide, at what angle,
+# and how the sheet is divided into cells.
+#
+# Material-maker's `scratches` node is the design, and its defaults
+# are the numbers: the sheet is divided into cells a quarter of the
+# way along, each cell gets one streak at a random angle, the streak
+# is faded at the cell's border so it does not cross it, and the
+# layers combine by their maximum.
+#
+# The truth's polished silver crosses its midpoint 122 times where
+# its envelope is nine features, so a sheet's fine structure is a
+# field of streaks and not a set of parallel bands.
+SCRATCH_CELL_FRACTION = 4.0
+SCRATCH_ANGLE = 0.5
+SCRATCH_HALF_LENGTH = 0.5
+SCRATCH_HALF_WIDTH = 0.04
+SCRATCH_BORDER_FADE = 0.12
 
 
 def warp(
@@ -353,7 +370,7 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     """
     import numpy
 
-    from golem_blender.pbr import noise_worley_fbm
+    from golem_blender.pbr import noise_worley, noise_worley_fbm
 
     samples = (numpy.arange(resolution) + 0.5) / resolution
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
@@ -391,16 +408,41 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
             amplitude * 0.7
         )
     warp_amount = STONE_WARP_AMOUNT
+    warped_x = (sample_x + offset_x * warp_amount / cells) * cells
+    warped_y = (sample_y + offset_y * warp_amount / cells) * cells
     field = noise_worley_fbm.worley_fbm_2d(
-        (sample_x + offset_x * warp_amount / cells) * cells,
-        (sample_y + offset_y * warp_amount / cells) * cells,
+        warped_x,
+        warped_y,
         period=cells,
         octaves=octaves,
         persistence=STONE_PERSISTENCE,
         lacunarity=STONE_LACUNARITY,
         jitter=STONE_JITTER,
         seed=0,
+        distance=False,
     )
+    # The JOINT's distance is computed here, from the base octave's
+    # own F1 and F2, and not taken from the FBM-Worley's "distance".
+    #
+    # That key is an EXACT bisector distance, and it is a 5x5 sweep
+    # over the nearest point's neighbours: measured, it costs 28
+    # seconds of a 42-second material at 2048 across. And it is
+    # computed from the UNWARPED samples, so it does not line up with
+    # the stones the warp moved.
+    #
+    # So the joint's distance is F2 - F1, scaled by the factor that
+    # turns it into a distance. F2 - F1 is zero on the border and
+    # grows away from it, and for a regular lattice it grows at
+    # exactly HALF the rate of a true distance - so the factor is
+    # two, and the joint is the same width whatever the cell's size.
+    base = noise_worley.worley_2d(
+        warped_x,
+        warped_y,
+        period=cells,
+        jitter=STONE_JITTER,
+        seed=0,
+    )
+    field["distance"] = (base["F2"] - base["F1"]) * 2.0
     return field
 
 
@@ -826,8 +868,14 @@ def grain_field(
     # The rings' own shape modulates it, so the envelope is stronger
     # near a ring and weaker between them - and the ring's positions
     # are what the feature measure reads.
-    ring_weight = 0.5 + 0.5 * numpy.cos((within - 0.5) * numpy.pi)
-    edge = (0.5 + 0.5 * numpy.abs(envelope_field) / envelope_reach) * ring_weight
+    #
+    # The envelope is a DARKNESS and it runs the WHOLE range, from
+    # zero to one. It used to run from 0.248 to 0.750 - the ring's
+    # weight had a floor of a quarter - so the base colour was never
+    # reached and every wood and metal came out dark: the wood's mean
+    # was 0.210 against a base of 0.600.
+    ring_weight = numpy.abs(numpy.cos((within - 0.5) * numpy.pi))
+    edge = numpy.abs(envelope_field) / envelope_reach * ring_weight
 
     # The fibre's own edge, which is the ENVELOPE's edge when there is
     # no fibre - so the writer always has two fields to draw.
@@ -914,10 +962,15 @@ def grain_field(
             1.0,
         )
 
-        # The fibre's own field, for the writer to draw on its own -
-        # the same two-scale structure the metal has, so the wood's
-        # fibre does not draw over its own envelope.
-        fine_edge = 1.0 - fibre_dark
+        # The fibre's own DARKNESS, for the writer to draw on its
+        # own - the same two-scale structure the metal has, so the
+        # wood's fibre does not draw over its own envelope.
+        #
+        # The writer reads a DARKNESS: one at the line and zero
+        # between the lines. It used to read a distance, and the two
+        # are opposites - so the light and the dark were swapped and
+        # the wood's mean came out at 0.159 against a base of 0.600.
+        fine_edge = fibre_dark
 
     return band, edge, (cells, cells), fine_edge
 
@@ -982,15 +1035,35 @@ def metal_field(
     band = numpy.floor(bands).astype(numpy.int32)
     within = bands - band
 
-    # The bands are a SMOOTH GRADIENT, not a set of hard lines.
+    # The bands are a SMOOTH, IRREGULAR GRADIENT - the same shape the
+    # wood's envelope has.
     #
     # A distance to the nearest band edge is a ridge at each edge, and
     # the close crop showed hard black and white bands where the
-    # truth's steel is a soft brushed variation. So the band is a
-    # SINE - a broad gradient with no ridge in it - and the sheet's
-    # grain rides on it.
-    sine = numpy.sin((within - 0.5) * numpy.pi)
-    edge = 0.5 + 0.5 * sine
+    # truth's steel is a soft brushed variation. And a SINE over the
+    # bands is a regular WAVE across the whole image, which is not a
+    # sheet either.
+    #
+    # So the bands are a low-frequency Perlin's magnitude - smooth,
+    # irregular, and with no line in it - and the bands' own positions
+    # modulate it, so the positions are still what the feature measure
+    # reads.
+    from golem_blender.pbr import noise_perlin
+
+    band_lattice = max(2, cells)
+    band_field = noise_perlin.perlin_2d(
+        sample_x * band_lattice,
+        sample_y * band_lattice,
+        period=band_lattice,
+        seed=5,
+    )
+    band_reach = max(1e-6, float(band_field.max() - band_field.min()))
+    # The bands are a DARKNESS and they run the WHOLE range - the
+    # same reason the wood's envelope does: a floor on the weight
+    # means the base colour is never reached and every metal comes out
+    # dark.
+    ring_weight = numpy.abs(numpy.cos((within - 0.5) * numpy.pi))
+    edge = numpy.abs(band_field) / band_reach * ring_weight
 
     # The grain's own edge, which is the BANDS' edge when there is no
     # grain - so the writer always has two fields to draw.
@@ -1010,36 +1083,23 @@ def metal_field(
         # measure read the grain and the scale came out 9.74x the
         # truth's. A stretched value noise does not lock, and it
         # reads as the brushed streaks a sheet actually shows.
-        from golem_blender.pbr import noise
-
-        lattice = _fibre_lattice(resolution)
-        grain_field = noise.fbm_2d_value(
-            sample_x * lattice * FIBRE_STRETCH,
-            sample_y * lattice,
-            size=lattice,
-            octaves=FIBRE_OCTAVES,
-            persistence=FIBRE_PERSISTENCE,
-            seed=1,
-            folds=FIBRE_FOLDS,
-        )
-        # The sheet's grain is the noise's GRADIENT, for the same
-        # reason the wood's fibre is: a threshold crossing gives a
-        # band and a band reads as flat grey.
-        # The sheet's grain is the noise's RIDGE, for the same reason
-        # the wood's fibre is: a threshold crossing with a narrow band
-        # is a thin line, and a gradient is a broad one.
-        spread = max(1e-6, float(grain_field.max() - grain_field.min()))
-        band = max(1e-6, FIBRE_BAND * spread)
-        fibre_dark = numpy.clip(
-            1.0 - numpy.abs(grain_field - 0.5 * spread - grain_field.min()) / band,
-            0.0,
-            1.0,
-        )
+        # The sheet's fine structure is SCRATCHES, not a noise's
+        # threshold crossing. A brushed or rolled sheet is a set of
+        # STREAKS - each one a short line at its own angle, with its
+        # own length - and material-maker's `scratches` node is the
+        # design.
+        #
+        # The truth's polished silver crosses its midpoint 122 times
+        # where its envelope is nine features, so a sheet's fine
+        # structure is a field of streaks and not a set of parallel
+        # bands.
+        streaks = scratch_streaks(resolution, cells, seed=1)
+        fibre_dark = streaks
 
         # The grain's own field, for the writer to draw on its own -
         # the same two-scale structure the wood has, so the sheet's
         # grain does not draw over its own bands.
-        fine_edge = 1.0 - fibre_dark
+        fine_edge = fibre_dark
 
     return band, edge, (cells, cells), fine_edge
 
@@ -1185,6 +1245,72 @@ def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES
         period=size,
         seed=0,
     )
+
+
+def scratch_streaks(resolution: int, cells: int, seed: int = 0):
+    """A sheet's SCRATCHES: discrete streaks of random length and angle.
+
+    A brushed or rolled sheet is not a set of parallel bands. It is a
+    set of STREAKS - each one a short line at its own angle, with its
+    own length and its own waviness - and material-maker's `scratches`
+    node is the design: the sheet is divided into cells, each cell
+    gets one streak at a random angle, the streak is faded at the
+    cell's border so it does not cross it, and the layers combine by
+    their maximum.
+
+    The streaks are what a metal's close crop shows, and the truth's
+    is a field of them: the truth's polished silver crosses its
+    midpoint 122 times where its envelope is nine features.
+
+    The streak's own profile is a taper along its length - so it
+    fades at both ends - and it is THIN across, so it reads as a
+    scratch and not as a band.
+    """
+    import numpy
+
+    axis = (numpy.arange(resolution) + 0.5) / resolution
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+    two_pi = 2.0 * numpy.pi
+
+    # The sheet is divided into cells, and each cell gets one streak.
+    # The cells are the streaks' length scale.
+    lattice = max(2, round(cells * SCRATCH_CELL_FRACTION))
+    cell_x = numpy.floor(sample_x * lattice)
+    cell_y = numpy.floor(sample_y * lattice)
+    # The cell's own random values, from the same hash the lane's
+    # cell colours use - so the streaks and the sheet's own colours
+    # come from the same sheet.
+    from golem_blender.pbr.procedural import _cell_hash
+
+    hash_x = cell_x.astype(numpy.int32)
+    hash_y = cell_y.astype(numpy.int32)
+    # The seed is folded into the cell's own index, so each streak's
+    # randomness is a function of where it is and of which sheet it is
+    # on - and the same hash the lane's cell colours use.
+    index = (hash_y % lattice) * lattice + (hash_x % lattice)
+    index = index + seed * lattice * lattice
+    random_a = _cell_hash(index, lattice, lattice)
+
+    # The streak's own frame: the cell's centre, rotated by its angle.
+    local_x = (sample_x * lattice - cell_x) - 0.5
+    local_y = (sample_y * lattice - cell_y) - 0.5
+    angle_rad = (random_a - 0.5) * two_pi * SCRATCH_ANGLE
+    rotated_x = local_x * numpy.cos(angle_rad) + local_y * numpy.sin(angle_rad)
+    rotated_y = -local_x * numpy.sin(angle_rad) + local_y * numpy.cos(angle_rad)
+
+    # The streak runs along its own frame's x, and is faded at the
+    # cell's border so it does not cross into its neighbour.
+    fade = numpy.minimum(
+        numpy.minimum(local_x + 0.5, 0.5 - local_x),
+        numpy.minimum(local_y + 0.5, 0.5 - local_y),
+    )
+    fade = numpy.clip(fade / SCRATCH_BORDER_FADE, 0.0, 1.0)
+    # The streak's own profile: a taper along its length and a thin
+    # line across it.
+    along = numpy.abs(rotated_x) / SCRATCH_HALF_LENGTH
+    across = numpy.abs(rotated_y) / SCRATCH_HALF_WIDTH
+    streak = numpy.clip(1.0 - along, 0.0, 1.0) * numpy.clip(1.0 - across, 0.0, 1.0)
+    return numpy.clip(streak * fade, 0.0, 1.0)
 
 
 def joint_response(
