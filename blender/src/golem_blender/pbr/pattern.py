@@ -447,6 +447,19 @@ STONE_WARP_AMOUNT = 0.6
 # fine lattice does the opposite: the autocorrelation locks onto the
 # pebbles' own spacing, and the scale read 4.17x the truth's.
 STONE_PEBBLE_JITTER = 0.35
+# The PEBBLES' warp: how far the lattice is displaced, the step the
+# slope is measured over, and how many steps are taken.
+#
+# It is a DOMAIN WARP and not a per-cell jitter, and that is the
+# point: a per-cell hash is a step function, so every pebble is
+# displaced by a constant and the lattice is still a lattice. A
+# domain warp is a continuous displacement, so the pebbles drift,
+# cluster and thin out the way loose stones do.
+#
+# This is Material Maker's `warp` node, MIT licensed.
+STONE_PEBBLE_WARP_AMOUNT = 0.1
+STONE_PEBBLE_WARP_STEP = 0.1
+STONE_PEBBLE_WARP_ITERATIONS = 1
 # How many octaves the PEBBLES' field has.
 #
 # The pebbles' SIZES have to vary, and that is what the octaves do:
@@ -612,7 +625,7 @@ def fractal_stones(
     """
     import numpy
 
-    from golem_blender.pbr import noise_worley_fbm
+    from golem_blender.pbr import noise_worley_fbm, warp
     from golem_blender.pbr.noise_worley_fbm import _bilinear
     from golem_blender.pbr.procedural import _cell_hash
 
@@ -731,6 +744,18 @@ def fractal_stones(
     # The PEBBLES' own count, which is several times the feature
     # count: the truth's ground has about a hundred and seventy
     # pebbles across where its autocorrelation says twenty.
+    # The STONES' own count, and it is several times the feature
+    # count.
+    #
+    # The truth's own ground is a gravel: a row carries fifty-six
+    # bright stones and they are a third of the row, so the ground is
+    # mostly DARK MATRIX with small bright stones in it - and the
+    # stones are sixteen pixels across, which is sixty-four of them
+    # across a thousand and twenty-four.
+    #
+    # And the measure reads NINETEEN, and not sixty-four: the
+    # stones' own tones are all much the same grey, so the measure
+    # finds the MATRIX's structure and not the stones'.
     fine_cells = max(cells, round(cells * pebble_factor))
     # The PEBBLES' own lattice, which is several times finer than the
     # feature count.
@@ -751,12 +776,45 @@ def fractal_stones(
         seed=0,
         distance=True,
     )
+    # The pebbles' points are JITTERED PER CELL, and the lattice is
+    # WARPED as well.
+    #
+    # The jitter is a step function - every stone is displaced by a
+    # constant - and the truth's stones are irregularly PLACED and
+    # not irregularly SHAPED. So the jitter is what makes the
+    # placement irregular, and it is what the measure can live with:
+    # a jittered lattice has no period the autocorrelation can lock
+    # onto.
+    #
+    # The warp deforms the stones' SHAPES, and a warp's own noise is
+    # broadband - so the measure finds the warp's noise and not the
+    # ground. Measured: at thirty-two cells the ground's feature
+    # scale read 1.37x the truth's with no warp and 3.47x with a
+    # warp of a tenth, and the picture went from flat plates to a
+    # fine speckle.
+    #
+    # So the warp is small, and the jitter does the work.
+    #
+    # The warp is Material Maker's `warp` node, MIT licensed: the
+    # displacement is the field's slope, sampled at the sample's own
+    # coordinates, and every sample is wrapped so the map still
+    # tiles.
     jitter_field = _cell_hash(
         fine_plain["cell"].astype(numpy.int32), fine_cells, fine_cells
     ).astype(numpy.float64)
+    warp_height = fine_plain["distance"].astype(numpy.float64)
+    warp_height = warp_height / max(1e-6, float(warp_height.max()))
+    warp_x, warp_y = warp.warped_coordinates(
+        grid_x,
+        grid_y,
+        warp_height,
+        amount=STONE_PEBBLE_WARP_AMOUNT,
+        step=STONE_PEBBLE_WARP_STEP,
+        iterations=STONE_PEBBLE_WARP_ITERATIONS,
+    )
     fine = noise_worley_fbm.worley_fbm_2d(
-        (grid_x + jitter_field * STONE_PEBBLE_JITTER) * fine_cells,
-        (grid_y + jitter_field * STONE_PEBBLE_JITTER * 0.7) * fine_cells,
+        (warp_x + jitter_field * STONE_PEBBLE_JITTER) * fine_cells,
+        (warp_y + jitter_field * STONE_PEBBLE_JITTER * 0.7) * fine_cells,
         period=fine_cells,
         octaves=1,
         persistence=STONE_PERSISTENCE,
@@ -822,6 +880,19 @@ def fractal_stones(
     # ramp the scale still read 3.33x. So the cell is the coarse
     # lattice's, and the pebbles are the JOINT - the crazing between
     # them - which is what the truth's ground shows.
+    # The CELL is the COARSE lattice's, and not the stones'.
+    #
+    # The truth's own ground is a gravel: a row carries fifty-six
+    # bright stones and they are a third of the row, so the ground is
+    # mostly DARK MATRIX with small bright stones in it - and the
+    # stones are sixteen pixels across.
+    #
+    # And the measure reads the MATRIX and not the stones, and that
+    # is what the cell has to be: measured, a cell at the stones'
+    # lattice put the ground's feature scale at 3.12x the truth's,
+    # and the stones' own tone made no difference to it - at a tenth
+    # of the ramp it still read 3.33x. So the cell is the matrix's
+    # and the stones are the JOINT.
     field["cell"] = _nearest(coarse["cell"], grid_row, grid_column).astype(numpy.int32)
     # The JOINT is the COARSE lattice's, and the pebbles' gaps are
     # not joints.
@@ -1470,6 +1541,66 @@ def grain_field(
         fine_edge = fibre_dark
 
     return band, edge, (cells, cells), fine_edge
+
+
+def flat_field(
+    resolution: int,
+    cells: int,
+    octaves=DEFAULT_LINE_OCTAVES,
+    lines_per_cell: int = 1,
+):
+    """A FLAT sheet: one surface, with a fine soft variation on it.
+
+    A plaster, a paint, a wallpaper, a smooth concrete - none of them
+    is made of separate pieces, and the lane had no kind for them: they
+    all fell through to the Voronoi and became cobbles.
+
+    So the sheet's whole structure is a fine, soft variation, and the
+    measure reads it: the truth's own plaster carries no cells to be
+    read, so what the measure finds is the sheet's slow variation.
+
+    The field is the value noise's fBm, ridged, and its own
+    variation is a sum of sines at high frequencies - which is what
+    makes a plaster look like plaster and not like a cloud.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    axis = (numpy.arange(resolution) + 0.5) / resolution
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+
+    # The sheet's slow variation, and it is the ENVELOPE: the truth's
+    # plaster measures its features here, because there is nothing
+    # else.
+    lattice = max(2, cells)
+    sheet = noise.fbm_2d_value(
+        sample_x * lattice,
+        sample_y * lattice,
+        size=lattice,
+        octaves=4,
+        seed=4,
+    )
+
+    # The sheet's own FINE variation: a sum of sines at high
+    # frequencies, and the frequencies are integers over the domain
+    # so the field is periodic and the map still tiles.
+    #
+    # This is what a plaster is - a surface with a fine tooth on it -
+    # and a field of cells is not.
+    fine = numpy.zeros_like(sample_x)
+    for index, (frequency, amplitude) in enumerate(DEFAULT_WARP_OCTAVES):
+        across = frequency * 5 + index
+        along = frequency * 7 + index + 1
+        fine = fine + numpy.sin(sample_x * across * 2.0 * numpy.pi) * amplitude
+        fine = fine + numpy.sin(sample_y * along * 2.0 * numpy.pi) * amplitude * 0.6
+    fine = fine / max(1e-6, float(numpy.abs(fine).max()))
+
+    # The sheet's SURFACE, and it is a DARKNESS: one where the sheet
+    # is darkest.
+    edge = 1.0 - sheet
+    fine_edge = 0.5 + 0.5 * fine
+    return 0, edge, (cells, cells), fine_edge
 
 
 def metal_field(

@@ -21,11 +21,17 @@ picks the 1K set - the same size the lane works at.
 """
 
 import json
+import os
 import pathlib
 import subprocess
 import zipfile
 
-ROOT = pathlib.Path("/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg")
+ROOT = pathlib.Path(
+    os.environ.get(
+        "GOLEM_BENCH_ROOT",
+        "/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg",
+    )
+)
 ROOT.mkdir(parents=True, exist_ok=True)
 
 API = "https://ambientcg.com/api/v2/full_json?type=Material&sort=popular&limit={limit}&include=downloadData"

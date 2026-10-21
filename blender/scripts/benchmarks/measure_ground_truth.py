@@ -18,6 +18,7 @@ procedural path is being measured against.
 
 import glob
 import json
+import os
 import pathlib
 import sys
 
@@ -29,7 +30,12 @@ sys.path.insert(0, "/Users/ladvien/golem_mcp/blender/src")
 from golem_blender.pbr import benchmark
 from golem_blender.pbr import paths as pbr_paths
 
-ROOT = pathlib.Path("/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg")
+ROOT = pathlib.Path(
+    os.environ.get(
+        "GOLEM_BENCH_ROOT",
+        "/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg",
+    )
+)
 manifest = json.loads((ROOT / "manifest.json").read_text())
 
 results = []

@@ -124,7 +124,7 @@ DEFAULT_WANDER = 0.35
 # image's edge unjoined.
 DEFAULT_WANDER_FREQUENCY = 3
 # The cell shapes a pattern can have.
-PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "grain", "metal")
+PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "grain", "metal", "flat")
 # How wide a LINE is, as a fraction of the distance to the nearest
 # line. A grain's rings and a metal's grain are soft, and the truth's
 # wood measures a luma spread of 0.0162 - so the line is narrow and
@@ -270,6 +270,7 @@ def write_procedural_base_color(
     metal_horizontal: bool = False,
     metal_banded: bool = True,
     metal_envelope_factor: float = 1.0,
+    stone_tone_fraction: float = 1.0,
 ) -> Path:
     # `pebble_factor` is how many PEBBLES a cell holds: a loose
     # ground's four, and a solid surface's one.
@@ -353,7 +354,7 @@ def write_procedural_base_color(
         cell, edge, grid, fibre = pattern.grain_field(
             resolution, cells, lines_per_cell=lines_per_cell
         )
-    else:
+    elif kind == "metal":
         cell, edge, grid, fibre = pattern.metal_field(
             resolution,
             cells,
@@ -362,9 +363,23 @@ def write_procedural_base_color(
             banded=metal_banded,
             envelope_factor=metal_envelope_factor,
         )
+    else:
+        # A FLAT sheet: a plaster, a paint, a wallpaper, a smooth
+        # concrete. It has no cells at all - it is one surface - and
+        # its whole structure is a fine, soft variation.
+        #
+        # The lane had no such a kind, so every smooth surface became
+        # a field of separate pieces: a plaster became cobbles.
+        # Measured on the truth's own plaster - its correlation
+        # decays smoothly and its cells are not there to be read.
+        cell, edge, grid, fibre = pattern.flat_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
+        )
     cell_width, cell_height = grid
 
-    if kind in ("grain", "metal"):
+    if kind in ("grain", "metal", "flat"):
         # A GRAIN and a METAL are LINES on a surface, not stones in a
         # joint. A cobblestone's treatment - a random colour per
         # cell, a mortar joint, a wear wave - is wrong for both: a
@@ -424,6 +439,13 @@ def write_procedural_base_color(
     # 16.9% of it. So the joint's width is a fraction of the typical
     # distance to the edge.
     if kind == "voronoi":
+        # The joint is the MATRIX between the stones, and the matrix
+        # is the COARSE lattice's - so the joint's distance is the
+        # coarse one, and the stones are what is left.
+        #
+        # The truth's own ground is a gravel: a row carries fifty-six
+        # bright stones and they are a third of the row, so the
+        # ground is mostly DARK MATRIX with small bright stones in it.
         median_edge = float(numpy.median(edge))
         reach = median_edge if median_edge > 0 else 1.0
         joint = numpy.clip(edge / reach, 0.0, 1.0)
@@ -478,6 +500,25 @@ def write_procedural_base_color(
         stone[:, :, channel] = ramp[
             _np.clip((hashed * 255).astype(numpy.int32), 0, 255)
         ]
+    if pebble_factor > 1.5:
+        # A STONE's own tone is a SMALL part of the surface's
+        # variation, and the MATRIX is the rest.
+        #
+        # The truth's own ground is a gravel of stones that are all
+        # much the same grey - the variation is in the MATRIX and in
+        # the stones' EDGES, and not in the stones' tones. So a
+        # stone's tone is drawn about the middle of the ramp, and the
+        # ramp is the MATRIX's.
+        #
+        # With the stones on the whole ramp the colour's variation
+        # was as strong as the truth's, the feature measure read the
+        # stones' own count, and the ground's feature scale read
+        # 3.12x the truth's.
+        for channel in range(3):
+            middle = (stone_dark_rgb[channel] + stone_light_rgb[channel]) * 0.5
+            stone[:, :, channel] = (
+                middle + (stone[:, :, channel] - middle) * stone_tone_fraction
+            )
     # A PEBBLE's own tone was drawn about the middle of the ramp, at a
     # fraction of its width, so the MATRIX would carry the surface's
     # contrast. It was not needed: the cell is the COARSE lattice's

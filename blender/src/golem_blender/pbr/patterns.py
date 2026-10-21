@@ -47,8 +47,29 @@ _STRUCTURE_PATTERNS = (
     ("tile", "brick"),
 )
 
+# The FLAT surfaces: a sheet with no cells in it.
+#
+# The lane had no such a kind, so every smooth surface fell through
+# to the Voronoi and became a field of cobbles - a plaster became
+# pebbles.
+#
+# The words are read before the material's, and the STRUCTURE is
+# read before both: a "stone tile" is a stone tile, and a "painted
+# wall" is a painted wall.
+_FLAT_PATTERNS = (
+    ("plaster", "flat"),
+    ("wallpaper", "flat"),
+    ("paint", "flat"),
+    ("render", "flat"),
+    ("stucco", "flat"),
+    ("paper", "flat"),
+    ("cardboard", "flat"),
+    ("paperless", "flat"),
+)
+
 # The material words, and the pattern each calls for. Everything that
-# is not a course or a grain is made of separate pieces.
+# is not a course, a grain or a flat sheet is made of separate
+# pieces.
 _MATERIAL_PATTERNS = (
     ("cobble", "voronoi"),
     ("cobblestone", "voronoi"),
@@ -61,11 +82,11 @@ _MATERIAL_PATTERNS = (
     ("sand", "voronoi"),
     ("asphalt", "voronoi"),
     ("concrete", "voronoi"),
-    ("plaster", "voronoi"),
     ("fabric", "voronoi"),
     ("wool", "voronoi"),
     ("fur", "voronoi"),
     ("leather", "voronoi"),
+    ("carpet", "voronoi"),
     ("metal", "voronoi"),
 )
 
@@ -83,6 +104,9 @@ def pattern_for_description(description: str) -> str:
     """
     words = description.lower()
     for word, pattern in _STRUCTURE_PATTERNS:
+        if word in words:
+            return pattern
+    for word, pattern in _FLAT_PATTERNS:
         if word in words:
             return pattern
     for word, pattern in _MATERIAL_PATTERNS:

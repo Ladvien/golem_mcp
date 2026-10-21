@@ -11,6 +11,7 @@ ground truth is measured from the PNG the JPEG becomes, not from
 the JPEG.
 """
 
+import os
 import pathlib
 import sys
 
@@ -18,7 +19,12 @@ sys.path.insert(0, "/Users/ladvien/golem_mcp/blender/src")
 
 import bpy
 
-ROOT = pathlib.Path("/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg")
+ROOT = pathlib.Path(
+    os.environ.get(
+        "GOLEM_BENCH_ROOT",
+        "/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg",
+    )
+)
 
 converted = 0
 for directory in sorted(ROOT.iterdir()):

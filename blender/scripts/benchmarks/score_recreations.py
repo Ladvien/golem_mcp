@@ -21,6 +21,7 @@ is the standard - ambientcg's maps are made to tile.
 
 import glob
 import json
+import os
 import pathlib
 import sys
 
@@ -33,7 +34,12 @@ import bpy
 from golem_blender.pbr import benchmark
 from golem_blender.pbr import paths as pbr_paths
 
-ROOT = pathlib.Path("/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg")
+ROOT = pathlib.Path(
+    os.environ.get(
+        "GOLEM_BENCH_ROOT",
+        "/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg",
+    )
+)
 
 cube = bpy.data.objects.get("Cube")
 if cube:

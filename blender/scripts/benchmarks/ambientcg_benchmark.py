@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import glob
 import json
+import os
 import pathlib
 import sys
 import time
@@ -44,7 +45,12 @@ from golem_blender.pbr.procedural import (  # pylint: disable=import-outside-top
     write_procedural_base_color,
 )
 
-ROOT = pathlib.Path("/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg")
+ROOT = pathlib.Path(
+    os.environ.get(
+        "GOLEM_BENCH_ROOT",
+        "/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg",
+    )
+)
 OUT = ROOT / "recreated"
 
 
