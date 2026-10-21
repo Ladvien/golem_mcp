@@ -796,7 +796,6 @@ def fractal_stones(
     rows = numpy.linspace(0.0, coarse_side - 1.0, resolution)
     columns = numpy.linspace(0.0, coarse_side - 1.0, resolution)
     grid_row, grid_column = numpy.meshgrid(rows, columns, indexing="ij")
-    coarse_cell = _nearest(coarse["cell"], grid_row, grid_column)
     # The cell is DISCRETE - it is an index, and the hash reads it -
     # and an INTERPOLATED cell is a continuous value, so the hash
     # gives a smooth gradient and the feature measure reads that
@@ -811,7 +810,19 @@ def fractal_stones(
     # and it is taken NEAREST, so an INTERPOLATED cell cannot smooth
     # the hash into a gradient and give the feature measure a
     # structure to lock onto.
-    field["cell"] = coarse_cell.astype(numpy.int32)
+    # The CELL is the COARSE lattice's, and not the pebbles'.
+    #
+    # The pebbles' own lattice was tried, and the feature measure
+    # read the pebbles' own count - measured, the ground's feature
+    # scale read 2.94x the truth's - because the cell's own tone is
+    # what the measure reads, and the pebbles are a third of the
+    # truth's feature count.
+    #
+    # And the tone's amplitude does not save it: at a tenth of the
+    # ramp the scale still read 3.33x. So the cell is the coarse
+    # lattice's, and the pebbles are the JOINT - the crazing between
+    # them - which is what the truth's ground shows.
+    field["cell"] = _nearest(coarse["cell"], grid_row, grid_column).astype(numpy.int32)
     # The JOINT is the COARSE lattice's, and the pebbles' gaps are
     # not joints.
     #

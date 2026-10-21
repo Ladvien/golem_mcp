@@ -472,12 +472,20 @@ def write_procedural_base_color(
     import numpy as _np
 
     hashed = _cell_hash(cell, cell_width, cell_height)
-    stone = _np.empty(cell.shape + (3,), dtype=_np.float32)
+    stone = _np.empty(cell.shape + (3,), dtype=numpy.float32)
     for channel in range(3):
         ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
         stone[:, :, channel] = ramp[
             _np.clip((hashed * 255).astype(numpy.int32), 0, 255)
         ]
+    # A PEBBLE's own tone was drawn about the middle of the ramp, at a
+    # fraction of its width, so the MATRIX would carry the surface's
+    # contrast. It was not needed: the cell is the COARSE lattice's
+    # and the pebbles are the JOINT, so the cell's tone is already
+    # the envelope's. Measured, the fraction had to be the whole ramp
+    # for the ground's brightness to read 1.06x the truth's - and with
+    # the cell at the pebbles' lattice the ground's feature scale read
+    # 2.94x the truth's whatever the fraction was.
 
     # The wear: a smooth field that varies a stone within itself.
     #
