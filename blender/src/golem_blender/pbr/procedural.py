@@ -268,6 +268,7 @@ def write_procedural_base_color(
     pebble_factor: float = 1.0,
     brick_aspect: float | None = None,
     metal_horizontal: bool = False,
+    metal_banded: bool = True,
 ) -> Path:
     # `pebble_factor` is how many PEBBLES a cell holds: a loose
     # ground's four, and a solid surface's one.
@@ -357,6 +358,7 @@ def write_procedural_base_color(
             cells,
             lines_per_cell=lines_per_cell,
             horizontal=metal_horizontal,
+            banded=metal_banded,
         )
     cell_width, cell_height = grid
 

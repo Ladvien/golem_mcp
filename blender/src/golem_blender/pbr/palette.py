@@ -773,6 +773,35 @@ def brick_aspect_for_description(description: str) -> float:
     return BRICK_ASPECT
 
 
+def metal_is_banded(description: str) -> bool:
+    """Whether a metal sheet is ROLLED - and so carries BANDS.
+
+    A sheet that has been ROLLED or BRUSHED has a direction: the
+    grain of the rolling, the bands of the pressing. A sheet that has
+    been AGED has PATCHES - the rust, the staining, the weathering -
+    and no direction at all.
+
+    And the truth's own aged steel says so: its correlation is 0.023
+    at a lag of twenty and 0.003 at fifty, so there is no structure
+    in it at all along a row. A banded sheet has its bands' own
+    spacing in the row, and the measure reads that.
+
+    So a sheet that is not rolled is a field of patches, and its
+    patches are what the measure reads.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    return not words & {
+        "aged",
+        "oxidized",
+        "rusted",
+        "rusty",
+        "weathered",
+        "worn",
+        "stained",
+        "corroded",
+    }
+
+
 def metal_direction_for_description(description: str) -> bool:
     """Whether a metal sheet's BANDS run as rows, and not as columns.
 
@@ -872,6 +901,7 @@ def palette_for_description(
         "pebble_factor": pebble_factor_for_description(description),
         "brick_aspect": brick_aspect_for_description(description),
         "metal_horizontal": metal_direction_for_description(description),
+        "metal_banded": metal_is_banded(description),
     }
 
 
@@ -901,6 +931,7 @@ def line_palette_for_description(description: str, path: str = "grain"):
         "mortar_rgb": _coloured(value, hue),
         "target_spread": spread,
         "metal_horizontal": metal_direction_for_description(description),
+        "metal_banded": metal_is_banded(description),
     }
 
 

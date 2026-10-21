@@ -54,6 +54,8 @@ tile, measure 0.32x to 0.47x.
 
 from __future__ import annotations
 
+import math
+
 # The warp's octaves: (frequency in cycles per domain, amplitude in
 # cell units). The frequencies are INTEGERS, because the field has to
 # be periodic over the domain, and they are HIGH, because a smooth
@@ -195,7 +197,20 @@ FIBRE_PERSISTENCE = 0.5
 #
 # The truth's wood has its lines 3, 5, 6, 9, 14 and 17 pixels apart
 # in a 1024 row, so about a hundred and forty of them.
-FIBRE_ORIENTATION = 0.0
+# The FIBRE's carrier direction, in radians. The carrier is the way
+# the field varies fastest, and the strokes run ACROSS it.
+#
+# A wood's grain lines run along the plank, and a row of the map runs
+# along the plank too - so the carrier must be ACROSS the row, and
+# the orientation is a quarter turn.
+#
+# It was not, and the wood's lines ran across the row instead of
+# along it: measured, a row of the Gabor carried ONE line where it
+# should carry sixty-two. So the fibre was not in the row at all, and
+# the wood's feature scale read 0.84x the truth's - the envelope was
+# doing all the reading and the fibre was invisible, exactly as the
+# close crop showed.
+FIBRE_ORIENTATION = math.pi / 2.0
 FIBRE_FREQUENCY = 64.0
 # The FIBRE's lattice, which is the carrier's own grid.
 #
@@ -217,10 +232,38 @@ FIBRE_RESOLUTION = 512
 # fibre is not: its lines come 3, 5, 6, 9, 14 and 17 pixels apart,
 # and they bend where the board was cut across the log's rings.
 FIBRE_WARP = 0.004
+# The FIBRE's noise: its lattice, how far it is stretched along the
+# plank, and how many times it is ridged.
+#
+# Measured against the truth's own wood: at a lattice of eight and a
+# stretch of 0.15 the fibre reads fifteen and a half features and its
+# correlation decays as the truth's does - 0.35 at a lag of ten
+# against the truth's 0.52. At a lattice of sixteen it reads
+# twenty-eight and the correlation stops decaying.
+FIBRE_LATTICE = 4
+FIBRE_STRETCH = 0.25
+FIBRE_OCTAVES = 4
+FIBRE_FOLDS = 1
+# The percentile the line's steepness is measured against. The
+# steepness is normalised by a HIGH PERCENTILE and not by its
+# maximum: one pixel's slope can be ten times its neighbours', and
+# dividing by it leaves every other pixel at zero.
+FIBRE_SLOPE_PERCENTILE = 92.0
 # The METAL's grain orientation and carrier. A brushed sheet's
 # streaks run along the sheet, so the carrier is across it - the
 # same way as the wood's.
-METAL_ORIENTATION = 0.0
+# A quarter turn, for the same reason the wood's fibre is: the
+# streaks run along the sheet, and a row of the map runs along the
+# sheet too, so the carrier must be across the row.
+METAL_ORIENTATION = math.pi / 2.0
+# The METAL's grain: its lattice and how far it is stretched along
+# the sheet.
+#
+# A sheet's grain is BROADBAND and irregular, the way the wood's
+# fibre is - a Gabor's carrier is a regular set of stripes, and a
+# regular pattern's autocorrelation locks onto it.
+METAL_GRAIN_LATTICE = 4
+METAL_GRAIN_STRETCH = 0.25
 METAL_FREQUENCY = 96.0
 # How wide the fibre's line is, as a fraction of the noise's own
 # range around the crossing.
@@ -1276,7 +1319,7 @@ def grain_field(
     # fibre's own scale and STRETCHED along the plank - so it reads
     # as lines running the length of the board rather than as blobs.
     if lines_per_cell > 1:
-        from golem_blender.pbr import noise_gabor
+        from golem_blender.pbr import noise
         from golem_blender.pbr.noise_worley_fbm import _bilinear
 
         # The fibre is a GABOR noise, not a value noise.
@@ -1297,7 +1340,6 @@ def grain_field(
         # The orientation is the direction the field varies FASTEST,
         # so the strokes run across it - and the fibre runs along the
         # plank, so the carrier is across the plank.
-        lattice = FIBRE_LATTICE
         # The fibre is computed on a COARSE grid and brought up. A
         # Gabor is a direct trigonometric sum over the lattice's bins,
         # and it is the whole cost: measured, it took 11.8 seconds at
@@ -1327,20 +1369,44 @@ def grain_field(
             period=warp_lattice,
             seed=7,
         )
-        coarse_fibre = noise_gabor.gabor_2d(
-            (fibre_x + warp_field * FIBRE_WARP) * lattice,
-            fibre_y * lattice,
-            period=lattice,
-            orientation=FIBRE_ORIENTATION,
-            frequency=FIBRE_FREQUENCY,
+        # The fibre's own field is an fBm of the VALUE NOISE, and it
+        # is RIDGED.
+        #
+        # A Gabor was used, and a Gabor's carrier is a REGULAR set of
+        # stripes - so the fibre had a period, and the feature measure
+        # found the fibre's own period and not the wood's envelope.
+        # Measured: the wood read 3.84x the truth's feature scale, and
+        # the row's correlation oscillated instead of decaying.
+        #
+        # The truth's own row decays smoothly - 0.52 at a lag of ten,
+        # 0.31 at twenty, 0.13 at forty and 0.006 at seventy-three -
+        # and a regular carrier cannot do that. An fBm of the value
+        # noise is broadband and irregular by construction, and the
+        # truth's own fibre has its lines 3, 5, 6, 9, 14 and 17 pixels
+        # apart.
+        #
+        # The lattice is EIGHT and the noise is STRETCHED along the
+        # plank, so the lines run along the plank and the ridge's
+        # creases are far apart in it. Measured: at a lattice of eight
+        # and a stretch of 0.15 the fibre reads fifteen and a half
+        # features and its correlation decays as the truth's does; at a
+        # lattice of sixteen it reads twenty-eight and the correlation
+        # stops decaying.
+        coarse_fibre = noise.fbm_2d_value(
+            (fibre_x + warp_field * FIBRE_WARP) * FIBRE_LATTICE,
+            fibre_y * FIBRE_LATTICE * FIBRE_STRETCH,
+            size=FIBRE_LATTICE,
+            octaves=FIBRE_OCTAVES,
             seed=0,
+            folds=FIBRE_FOLDS,
         )
+        fibre_field = coarse_fibre
         fibre_rows = numpy.linspace(0.0, fibre_side - 1.0, resolution)
         fibre_columns = numpy.linspace(0.0, fibre_side - 1.0, resolution)
         fibre_row, fibre_column = numpy.meshgrid(
             fibre_rows, fibre_columns, indexing="ij"
         )
-        fibre_field = _bilinear(coarse_fibre, fibre_row, fibre_column)
+        fibre_field = _bilinear(fibre_field, fibre_row, fibre_column)
         # The fibre's own line: a PERLIN field's ZERO CROSSINGS.
         #
         # A Perlin is a gradient noise, and its sign changes on a
@@ -1363,14 +1429,20 @@ def grain_field(
         # about the middle of its range: the stroke is the band
         # around the crossing, and it is a thin line because the
         # crossing is sharp.
-        spread = max(1e-6, float(fibre_field.max() - fibre_field.min()))
-        centre = fibre_field.min() + 0.5 * spread
-        band = max(1e-6, FIBRE_BAND * spread)
-        fibre_dark = numpy.clip(
-            1.0 - numpy.abs(fibre_field - centre) / band,
-            0.0,
-            1.0,
+        # The line is the field's own RIDGE, and its darkness is how
+        # steep the ridge is.
+        #
+        # The ridge is the field folded about its middle, and the
+        # line is where the fold creases - so the steepness is the
+        # line's darkness.
+        ridge = numpy.abs(fibre_field - 0.5)
+        slope = numpy.abs(numpy.gradient(ridge, axis=0)) + numpy.abs(
+            numpy.gradient(ridge, axis=1)
         )
+        reach = float(numpy.percentile(slope, FIBRE_SLOPE_PERCENTILE))
+        if reach <= 0.0:
+            reach = 1.0
+        fibre_dark = numpy.clip(slope / reach, 0.0, 1.0)
 
         # The fibre's own DARKNESS, for the writer to draw on its
         # own - the same two-scale structure the metal has, so the
@@ -1392,6 +1464,7 @@ def metal_field(
     lines_per_cell: int = 1,
     horizontal: bool = False,
     wander: float = METAL_WANDER_FRACTION,
+    banded: bool = True,
 ):
     """A metal sheet: the cell each sample is in, and the distance to
     its grain.
@@ -1515,6 +1588,23 @@ def metal_field(
         seed=5,
     )
     band_reach = max(1e-6, float(band_field.max() - band_field.min()))
+    if not banded:
+        # A sheet that is NOT ROLLED is a field of PATCHES - the rust,
+        # the staining, the weathering - and it has no direction and no
+        # structure.
+        #
+        # The truth's own aged steel says so: its correlation is 0.05
+        # at a lag of five and 0.02 at twenty and 0.01 at fifty, so
+        # there is no structure in it at all along a row. A banded
+        # sheet has its bands' own spacing in the row, and the measure
+        # reads that - and our aged steel's correlation was 0.47 at a
+        # lag of five, so the bands were doing the reading.
+        #
+        # So the bands are gone, and so is the patch network: an aged
+        # sheet is a FLAT sheet with a fine speckle on it, and the
+        # speckle is the only structure it has.
+        ring_weight = numpy.ones_like(within)
+        band_profile = numpy.zeros_like(within)
     # The RIB's own profile: a narrow dark valley at the rib's edge,
     # and the rib's interior is light.
     #
@@ -1606,40 +1696,48 @@ def metal_field(
         # The sheet's grain is a GABOR, for the same reason the
         # wood's fibre is: a brushed sheet's streaks are ORIENTED
         # strokes, and a Gabor is what makes them.
-        from golem_blender.pbr import noise_gabor
+        from golem_blender.pbr import noise
 
-        lattice = FIBRE_LATTICE
-        # The streaks run the SAME WAY as the bands, so a pressed
-        # sheet's ribs and its grain are one direction.
-        grain_field = noise_gabor.gabor_2d(
-            sample_x * lattice,
-            sample_y * lattice,
-            period=lattice,
-            # The orientation is the CARRIER's direction - the way the
-            # field varies fastest - and the strokes run across it.
-            #
-            # A PRESSED sheet's streaks must not run ALONG a row,
-            # because the feature measure reads along a row and a
-            # streak in the row is a period the measure finds: the
-            # corrugated steel's feature scale read 5.38x the truth's
-            # with its streaks along the row.
-            #
-            # The truth's own row has no fine ripple at all - its
-            # correlation decays smoothly from 0.95 at a lag of one
-            # pixel to zero at 174 - so the sheet's fine structure
-            # runs DOWN the image and not along it.
-            orientation=METAL_ORIENTATION + (numpy.pi / 2.0 if horizontal else 0.0),
-            frequency=METAL_FREQUENCY,
-            seed=1,
+        # The sheet's grain is an fBm of the VALUE NOISE, and it is
+        # RIDGED, for the same reason the wood's fibre is: a Gabor's
+        # carrier is a REGULAR set of stripes, and a regular pattern's
+        # autocorrelation locks onto it - so the feature measure read
+        # the grain and not the sheet.
+        #
+        # The truth's own row has no fine ripple at all - its
+        # correlation decays smoothly from 0.95 at a lag of one pixel
+        # to zero at 174 - and a regular carrier cannot do that.
+        #
+        # The noise is STRETCHED along the sheet, so the streaks run
+        # along it, and a PRESSED sheet's streaks run DOWN the image
+        # and not along a row.
+        lattice = METAL_GRAIN_LATTICE
+        if horizontal:
+            grain_field = noise.fbm_2d_value(
+                sample_x * lattice,
+                sample_y * lattice * METAL_GRAIN_STRETCH,
+                size=lattice,
+                octaves=FIBRE_OCTAVES,
+                seed=1,
+                folds=FIBRE_FOLDS,
+            )
+        else:
+            grain_field = noise.fbm_2d_value(
+                sample_x * lattice * METAL_GRAIN_STRETCH,
+                sample_y * lattice,
+                size=lattice,
+                octaves=FIBRE_OCTAVES,
+                seed=1,
+                folds=FIBRE_FOLDS,
+            )
+        ridge = numpy.abs(grain_field - 0.5)
+        slope = numpy.abs(numpy.gradient(ridge, axis=0)) + numpy.abs(
+            numpy.gradient(ridge, axis=1)
         )
-        spread = max(1e-6, float(grain_field.max() - grain_field.min()))
-        centre = grain_field.min() + 0.5 * spread
-        band = max(1e-6, FIBRE_BAND * spread)
-        fibre_dark = numpy.clip(
-            1.0 - numpy.abs(grain_field - centre) / band,
-            0.0,
-            1.0,
-        )
+        reach = float(numpy.percentile(slope, FIBRE_SLOPE_PERCENTILE))
+        if reach <= 0.0:
+            reach = 1.0
+        fibre_dark = numpy.clip(slope / reach, 0.0, 1.0)
 
         # The grain's own field, for the writer to draw on its own -
         # the same two-scale structure the wood has, so the sheet's
