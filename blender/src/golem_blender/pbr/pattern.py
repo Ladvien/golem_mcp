@@ -809,8 +809,25 @@ def grain_field(
     # A TRIANGLE was a hard ridge at each ring's peak, and the close
     # crop showed hard white waves where the truth has a soft
     # gradient - so it is a sine, which has no ridge.
-    sine = numpy.sin((within - 0.5) * numpy.pi)
-    edge = (0.5 + 0.5 * sine) * (0.5 + 0.5 * numpy.abs(envelope_field) / envelope_reach)
+    # The envelope is the PERLIN's own shape - irregular, with no
+    # preferred direction - and the rings' positions only decide how
+    # big it is.
+    #
+    # A SINE over the rings was a regular WAVE across the whole image,
+    # and the close crop showed broad smooth bands where the truth has
+    # a cathedral swirl. The truth's envelope is irregular: measured,
+    # its amplitude is 0.0079 against a total spread of 0.0155, and
+    # it is a smooth and UNEVEN gradient.
+    #
+    # So the envelope is the Perlin's magnitude - smooth, irregular,
+    # and with no line in it - and the rings' own positions are the
+    # lattice it is sampled on, which is what the feature scale reads.
+    #
+    # The rings' own shape modulates it, so the envelope is stronger
+    # near a ring and weaker between them - and the ring's positions
+    # are what the feature measure reads.
+    ring_weight = 0.5 + 0.5 * numpy.cos((within - 0.5) * numpy.pi)
+    edge = (0.5 + 0.5 * numpy.abs(envelope_field) / envelope_reach) * ring_weight
 
     # The fibre's own edge, which is the ENVELOPE's edge when there is
     # no fibre - so the writer always has two fields to draw.
