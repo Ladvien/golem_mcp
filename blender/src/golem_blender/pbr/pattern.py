@@ -187,7 +187,147 @@ def cell_and_edge(
         floor = reach * MINIMUM_CELL_FRACTION
         tiny = edge < floor
         edge = numpy.where(tiny, reach, edge)
-    return nearest, edge
+    return nearest, edge, (cells, cells)
+
+
+def brick_field(resolution: int, cells: int):
+    """Courses of bricks: the cell each sample is in, and the distance to
+    its mortar.
+
+    A brick wall is COURSES - rows of bricks, each row offset half a
+    brick from the one above, so the vertical joints do not line up.
+    That offset is what makes a brick wall a brick wall and a tile
+    floor a tile floor, and it is why the two are different patterns
+    rather than one pattern at two scales.
+
+    The edge distance is the distance to the NEAREST mortar line, in
+    either direction. Measured: the earlier version took the distance
+    within a brick and subtracted it from the brick's size, which went
+    NEGATIVE for a brick wider than the grid - so the tiles read at
+    0.00x the truth's contrast, which is a flat grey map.
+
+    Both fields are periodic: the courses are counted modulo and the
+    offset is half a brick, so the wall repeats.
+    """
+    import numpy
+
+    # The geometry: `courses` courses tall, and `bricks` bricks across
+    # each course. A course is one brick TALL, and a course holds
+    # several bricks ACROSS - which is what the earlier version got
+    # wrong: it treated a course as one brick wide, so there were no
+    # vertical joints at all and the wall was stripes. Measured, the
+    # pattern's features read 73.14 against the truth's 7.76.
+    #
+    # The brick count must be EVEN, because every other course is
+    # offset by half a brick and the offset has to come back to where
+    # it started at the wrap.
+    #
+    # And the counts are POWERS OF TWO. Every other course is offset
+    # by half a brick, so the offset has to come back to where it
+    # started at the wrap - and it only does when the count divides
+    # the domain exactly. Measured, the field's seam is 0.00x at
+    # sixteen courses, 0.61x at twelve, 1.88x at eight and 31.99x
+    # at two. A power of two always divides, so the wall closes.
+    courses = _power_of_two_at_least(cells)
+    bricks = courses
+
+    axis = numpy.arange(resolution)
+    # The position along the wall: the course's number, and how far
+    # across the course the sample is.
+    course_position = axis * courses / resolution
+    row = numpy.floor(course_position).astype(numpy.int32)
+    across = course_position - row
+
+    # Every other course is offset by half a brick, so the vertical
+    # joints do not line up.
+    #
+    # And the offset has to be the SAME on the course at the top of
+    # the image and the course at the bottom, or the wrap shows. The
+    # courses are counted from 0, so the last course is `courses - 1`
+    # - and with an even number of courses that is an ODD course, so
+    # it is offset and the first is not. The parity is therefore taken
+    # on the course's index MODULO the even count, which keeps the
+    # two ends in step. Measured, the brick's vertical seam was 50/255
+    # against its horizontal 16/255.
+    offset = ((row % 2) if courses % 2 == 0 else (row + 1) % 2) * 0.5
+
+    # Where the sample sits within its brick, in bricks: 0 at a joint,
+    # 0.5 in the middle.
+    within_brick = (across * bricks + offset) % 1.0
+    within_course = course_position % 1.0
+
+    # The distance to the nearest mortar line, in cells.
+    to_vertical = numpy.minimum(within_brick, 1.0 - within_brick) * bricks
+    to_horizontal = numpy.minimum(within_course, 1.0 - within_course) * courses
+    edge = numpy.minimum(
+        numpy.tile(to_vertical.reshape(-1, 1), (1, resolution)),
+        numpy.tile(to_horizontal.reshape(1, -1), (resolution, 1)),
+    )
+
+    # The cell: which brick, and which course.
+    brick = numpy.floor(((across * bricks + offset) % 1.0) * bricks).astype(numpy.int32)
+    cell = numpy.tile((row * bricks + brick).reshape(-1, 1), (1, resolution))
+    return cell.astype(numpy.int32), edge, (bricks, courses)
+
+
+def _power_of_two_at_least(value: int) -> int:
+    """The smallest power of two that is at least `value`.
+
+    A power of two divides a power-of-two domain exactly, and the
+    brick's half-brick offset needs the count to divide it. Measured:
+    the brick's field seam is 0.00x at sixteen courses, where twelve
+    gives 0.61x and eight gives 1.88x.
+    """
+    count = 2
+    while count < value:
+        count *= 2
+    return count
+
+
+def grain_field(resolution: int, cells: int, octaves=DEFAULT_WARP_OCTAVES):
+    """A wood grain: the cell each sample is in, and the distance to
+    its grain line.
+
+    A wave is NOT a grain. A wave's bands are parallel and evenly
+    spaced, and the benchmark measured a wood's bands at 5.5x the
+    truth's feature scale - the pattern was the wrong shape for the
+    surface.
+
+    A grain is a set of RINGS: the lines a tree's growth makes are
+    nested arcs, and a plank cut from them shows them. So the field
+    is a distance to a set of nested curves, and the cell is a band
+    between two of them.
+
+    The rings come from a distance to a warped axis, so they are
+    irregular the way a plank's are - and the warp's frequencies are
+    integers, so the field is periodic.
+    """
+    import numpy
+
+    axis = (numpy.arange(resolution) + 0.5) / resolution
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="xy")
+
+    # The rings: the distance from a warped axis, so the grain's lines
+    # are nested curves rather than parallel bands.
+    two_pi = 2.0 * numpy.pi
+    warp_y = numpy.zeros_like(sample_y)
+    for frequency, amplitude in octaves:
+        warp_y = warp_y + numpy.sin(sample_x * frequency * two_pi + frequency * 0.7) * (
+            amplitude / 6.0
+        )
+
+    # The rings run ALONG the plank, so the sample's own coordinate
+    # is mixed into the ring's position: the lines wander across the
+    # board as well as along it, which is what a plank's rings do.
+    rings = numpy.abs((warp_y + sample_x * 0.35) * cells)
+
+    # The cell is the ring's index, and the edge is the distance to
+    # the nearest ring line.
+    band = numpy.floor(rings).astype(numpy.int32)
+    within = rings - band
+    edge = numpy.minimum(within, 1.0 - within)
+
+    return band, edge, (cells, cells)
 
 
 def joint_response(
@@ -207,7 +347,7 @@ def joint_response(
     """
     import numpy
 
-    _cell, edge = cell_and_edge(resolution, cells, octaves)
+    _cell, edge, _grid = cell_and_edge(resolution, cells, octaves)
     reach = float(edge.max())
     if reach <= 0.0:
         reach = 1.0

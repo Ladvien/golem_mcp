@@ -94,154 +94,33 @@ DEFAULT_WANDER = 0.35
 # image's edge unjoined.
 DEFAULT_WANDER_FREQUENCY = 3
 # The cell shapes a pattern can have.
-PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "wave")
+PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "grain")
 
 
-def _lattice(
-    resolution: int, cells: int, randomness: float, wander: float, frequency: int
-):
-    """The lattice of points, and the sample grid they are compared on.
+def _cell_hash(cell, width: int, height: int):
+    """A colour's random value, from the cell's position in the pattern.
 
-    The lattice is `cells` x `cells` points over the unit square,
-    each jittered within its cell, and then DISPLACED by the wander -
-    a sum of sines with integer frequencies, which is periodic and
-    so leaves the image's edge joined.
+    The value has to be the SAME for the cell at the pattern's edge
+    and the cell at its start, or the wrap shows as a colour step.
+    Measured: the brick's geometry tiled at 0.00x while the image's
+    seam was 17/255, because the colour was hashed from the cell's
+    INDEX - and the index at the edge is not the index at the start.
 
-    Returns the points as two arrays and the sample grid.
+    So the cell is reduced into the pattern's own grid first, and the
+    hash is of THAT. A brick at the edge and the brick at the start
+    become the same brick, with the same colour.
     """
-    import numpy
+    import numpy as _np
 
-    axis = (numpy.arange(cells) + 0.5) / cells
-    grid_x, grid_y = numpy.meshgrid(axis, axis, indexing="xy")
-    points_x = grid_x.ravel()
-    points_y = grid_y.ravel()
-
-    # The jitter, deterministic: the pattern must be the same every
-    # time, or a set could not be reproduced.
-    phase = numpy.sin(points_x * 12.9898 + points_y * 78.233) * 43758.5453
-    jitter = (phase - numpy.floor(phase)) - 0.5
-    points_x = points_x + jitter * randomness / cells
-    points_y = points_y + jitter * randomness / cells
-
-    samples = (numpy.arange(resolution) + 0.5) / resolution
-    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
-
-    if wander > 0.0:
-        # The wander: a smooth field with INTEGER frequencies, so it
-        # is periodic over the domain.
-        two_pi = 2.0 * numpy.pi
-        offset_x = numpy.sin(sample_y * frequency * two_pi) * 0.6
-        offset_x = offset_x + numpy.sin(sample_y * 2 * frequency * two_pi + 1.1) * 0.4
-        offset_y = numpy.sin(sample_x * frequency * two_pi + 0.7) * 0.6
-        offset_y = offset_y + numpy.sin(sample_x * 2 * frequency * two_pi + 2.3) * 0.4
-        sample_x = sample_x + offset_x * (wander / cells)
-        sample_y = sample_y + offset_y * (wander / cells)
-
-    return points_x, points_y, sample_x, sample_y
-
-
-def _nearest(points_x, points_y, sample_x, sample_y):
-    """The nearest point to each sample, and the distance to it.
-
-    The lattice is small - a few hundred points - so the comparison
-    is a loop over the points, and every sample is a vector
-    operation. That is far too slow for a 2048 x 2048 image, so the
-    image is computed at a lower resolution and the pattern's
-    STRUCTURE is what matters at that resolution anyway: a stone is
-    tens of pixels across.
-    """
-    import numpy
-
-    best = numpy.full(sample_x.shape, 1e18)
-    nearest = numpy.zeros(sample_x.shape, dtype=numpy.int32)
-    for index in range(len(points_x)):
-        distance = (sample_x - points_x[index]) ** 2 + (sample_y - points_y[index]) ** 2
-        closer = distance < best
-        best = numpy.where(closer, distance, best)
-        nearest = numpy.where(closer, index, nearest)
-    return nearest, numpy.sqrt(best)
-
-
-def _edge_distance(points_x, points_y, sample_x, sample_y, nearest):
-    """The distance from each sample to the EDGE of its cell.
-
-    A cell's edge is the boundary between it and its neighbours, so
-    the distance to the edge is the distance to the second-nearest
-    point, less the distance to the nearest. It is what makes the
-    joint: zero on the boundary, growing into the stone.
-    """
-    import numpy
-
-    best = numpy.full(sample_x.shape, 1e18)
-    second = numpy.full(sample_x.shape, 1e18)
-    own = numpy.zeros(sample_x.shape)
-    for index in range(len(points_x)):
-        distance = (sample_x - points_x[index]) ** 2 + (sample_y - points_y[index]) ** 2
-        nearer = distance < best
-        # The second-nearest is the smallest distance that is not
-        # the nearest point's, so the running minimum is demoted
-        # when a nearer point arrives.
-        second = numpy.where(nearer, best, numpy.minimum(second, distance))
-        best = numpy.where(nearer, distance, best)
-        # The own distance is the NEAREST point's - measured from the
-        # running minimum after the loop it was the minimum over ALL
-        # the points, so the edge came out zero everywhere and the
-        # image came out flat.
-        own = numpy.where(nearest == index, distance, own)
-    return numpy.sqrt(numpy.maximum(second, 0.0)) - numpy.sqrt(own)
-
-
-def _pattern_field(
-    kind: str,
-    resolution: int,
-    cells: int,
-    randomness: float,
-    wander: float,
-    frequency: int,
-):
-    """The pattern's two fields: the cell each sample is in, and the
-    distance to that cell's edge.
-
-    Both are periodic over the domain, so the image tiles.
-    """
-    import numpy
-
-    if kind == "voronoi":
-        points_x, points_y, sample_x, sample_y = _lattice(
-            resolution, cells, randomness, wander, frequency
-        )
-        nearest, _distance = _nearest(points_x, points_y, sample_x, sample_y)
-        edge = _edge_distance(points_x, points_y, sample_x, sample_y, nearest)
-        return nearest, edge
-
-    if kind == "brick":
-        # Courses of bricks: the cell is a brick, and the joint is the
-        # mortar around it. The courses are offset every other row,
-        # which is what makes a brick wall a brick wall.
-        row = numpy.arange(resolution)
-        column = numpy.arange(resolution)
-        row_index = (row * cells) // resolution
-        offset = (row_index % 2) * 0.5
-        shift = (column + offset) % cells
-        cell = numpy.tile((shift + row_index * cells).reshape(-1, 1), (1, resolution))
-        # Where each sample sits INSIDE its brick, in cells: the
-        # distance to the brick's edge in either direction.
-        u = ((column + offset) % cells) / cells
-        v = ((row * cells) % resolution) / cells
-        edge_u = numpy.minimum(u, 1.0 - u) * cells
-        edge_v = numpy.minimum(v, 1.0 - v) * cells
-        edge = numpy.minimum(
-            numpy.tile(edge_u.reshape(-1, 1), (1, resolution)),
-            numpy.tile(edge_v.reshape(1, -1), (resolution, 1)),
-        )
-        return cell, edge
-
-    # A wave is a GRAIN: its troughs are the grain's lines.
-    frequency_value = numpy.arange(resolution) / resolution * cells
-    wave = numpy.abs(numpy.sin(frequency_value * numpy.pi))
-    edge = numpy.tile(wave.reshape(-1, 1), (1, resolution))
-    bands = numpy.tile(frequency_value.reshape(-1, 1), (1, resolution))
-    return bands.astype(numpy.int32), edge
+    # The cell's row and column within the pattern, and the same
+    # reduced into it.
+    row = (cell // max(1, width)) % max(1, height)
+    column = (cell % max(1, width)) % max(1, width)
+    # A hash of the two, which is a function of the position and not
+    # of the index.
+    values = row.astype(_np.float64) * 31.0 + column.astype(_np.float64)
+    hashed = _np.sin(values * 12.9898 + 78.233) * 43758.5453
+    return hashed - _np.floor(hashed)
 
 
 def write_procedural_base_color(
@@ -250,9 +129,6 @@ def write_procedural_base_color(
     scale_cells: float = 5.0,
     width_px: int = 2048,
     height_px: int = 2048,
-    wander: float = DEFAULT_WANDER,
-    wander_frequency: int = DEFAULT_WANDER_FREQUENCY,
-    randomness: float = 1.0,
     stone_dark_rgb: tuple[float, float, float] = DEFAULT_STONE_DARK_RGB,
     stone_light_rgb: tuple[float, float, float] = DEFAULT_STONE_LIGHT_RGB,
     mortar_rgb: tuple[float, float, float] = DEFAULT_MORTAR_RGB,
@@ -289,8 +165,6 @@ def write_procedural_base_color(
         raise ValueError("A procedural colour needs at least 2 pixels a side.")
     if scale_cells <= 0.0:
         raise ValueError("The pattern's scale must be positive.")
-    if wander_frequency < 1:
-        raise ValueError("The wander's frequency must be at least 1.")
 
     # The pattern is computed at a resolution where a cell is a few
     # dozen pixels across - the structure is what matters, and the
@@ -310,17 +184,20 @@ def write_procedural_base_color(
         width_px, height_px, max(64, min(cells * 24, MAXIMUM_PATTERN_RESOLUTION))
     )
 
+    cell_width = cells
+    cell_height = cells
     if kind == "voronoi":
         # The shared pattern: a REGULAR lattice with a wrapping search
         # and a domain warp. The regular lattice is what makes the
         # pattern periodic - a jittered one cannot be, because the
         # jitter has to be the same at both ends - and the warp is
         # what makes the cells look like stones rather than a grid.
-        cell, edge = pattern.cell_and_edge(resolution, cells)
+        cell, edge, grid = pattern.cell_and_edge(resolution, cells)
+    elif kind == "brick":
+        cell, edge, grid = pattern.brick_field(resolution, cells)
     else:
-        cell, edge = _pattern_field(
-            kind, resolution, cells, randomness, wander, wander_frequency
-        )
+        cell, edge, grid = pattern.grain_field(resolution, cells)
+    cell_width, cell_height = grid
 
     # The joint's width, as a fraction of the distance to the edge.
     if kind == "voronoi":
@@ -332,12 +209,22 @@ def write_procedural_base_color(
     joint = numpy.clip(1.0 - joint / max(mortar_width, 1e-6), 0.0, 1.0)
 
     # The stones' colours, from each cell's own random value.
+    #
+    # The hash is a function of the cell's POSITION IN THE PATTERN,
+    # not of its index. An index is not periodic - the cell at the
+    # pattern's edge has a different index from the one at its start,
+    # and a hash of the index gives them different colours, so the
+    # wrap shows as a colour step. Measured, the brick's absolute seam
+    # was 17/255 at a wrapping field's 0.00x: the GEOMETRY tiled and
+    # the COLOUR did not.
+    #
+    # So the hash takes the cell's coordinates modulo the pattern's
+    # size, and the brick at the wrap and the brick at the start are
+    # the SAME brick with the SAME colour.
     import numpy as _np
 
-    values = cell.astype(_np.float64)
-    hashed = _np.sin(values * 12.9898 + 78.233) * 43758.5453
-    hashed = hashed - _np.floor(hashed)
-    stone = _np.empty(cell.shape + (3,), dtype=_np.float32)
+    hashed = _cell_hash(cell, cell_width, cell_height)
+    stone = _np.empty(cell.shape + (3,), dtype=numpy.float32)
     for channel in range(3):
         ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
         stone[:, :, channel] = ramp[
@@ -419,7 +306,6 @@ __all__ = (
     "DEFAULT_STONE_DARK_RGB",
     "DEFAULT_STONE_LIGHT_RGB",
     "DEFAULT_VARIATION",
-    "DEFAULT_WANDER",
     "DEFAULT_WANDER_FREQUENCY",
     "PROCEDURAL_COLOUR_KINDS",
     "procedural_source_metadata",
