@@ -263,6 +263,10 @@ METAL_ORIENTATION = math.pi / 2.0
 # fibre is - a Gabor's carrier is a regular set of stripes, and a
 # regular pattern's autocorrelation locks onto it.
 METAL_GRAIN_LATTICE = 4
+# How much COARSER the metal's envelope's lattice is than its cell
+# count. A Perlin's value oscillates faster than its lattice, and the
+# measure reads the value.
+METAL_DEFAULT_ENVELOPE_FACTOR = 1.0
 METAL_GRAIN_STRETCH = 0.25
 METAL_FREQUENCY = 96.0
 # How wide the fibre's line is, as a fraction of the noise's own
@@ -1465,6 +1469,7 @@ def metal_field(
     horizontal: bool = False,
     wander: float = METAL_WANDER_FRACTION,
     banded: bool = True,
+    envelope_factor: float = METAL_DEFAULT_ENVELOPE_FACTOR,
 ):
     """A metal sheet: the cell each sample is in, and the distance to
     its grain.
@@ -1580,7 +1585,15 @@ def metal_field(
     #
     # So the slow variation is a field of its own, at the envelope's
     # scale, and the ribs are a field of their own.
-    band_lattice = max(2, cells)
+    # The ENVELOPE's own lattice, and it is COARSER than the cell
+    # count.
+    #
+    # A Perlin's value oscillates faster than its lattice, and the
+    # measure reads the value: at a lattice of seven the corrugated
+    # steel's period was eighty-three pixels and its feature scale
+    # read 2.31x the truth's, and the truth's period is a hundred and
+    # seventy-three.
+    band_lattice = max(2, round(cells / envelope_factor))
     band_field = noise_perlin.perlin_2d(
         sample_x * band_lattice,
         sample_y * band_lattice,
@@ -1588,7 +1601,18 @@ def metal_field(
         seed=5,
     )
     band_reach = max(1e-6, float(band_field.max() - band_field.min()))
-    if not banded:
+    # The RIB's own profile: a narrow dark valley at the rib's edge,
+    # and the rib's interior is light.
+    #
+    # The rib's profile and the sheet's slow variation were
+    # MULTIPLIED together, so the ribs' darkness was the slow field's
+    # and the ribs' own spacing entered the row's signal - and the
+    # measure read the ribs and not the sheet, and the corrugated
+    # steel's feature scale read 3.36x the truth's.
+    if banded:
+        ring_weight = numpy.abs(numpy.cos((within - 0.5) * numpy.pi))
+        band_profile = numpy.abs(band_field) / band_reach * ring_weight
+    else:
         # A sheet that is NOT ROLLED is a field of PATCHES - the rust,
         # the staining, the weathering - and it has no direction and no
         # structure.
@@ -1600,21 +1624,9 @@ def metal_field(
         # reads that - and our aged steel's correlation was 0.47 at a
         # lag of five, so the bands were doing the reading.
         #
-        # So the bands are gone, and so is the patch network: an aged
-        # sheet is a FLAT sheet with a fine speckle on it, and the
-        # speckle is the only structure it has.
+        # So the bands are gone, and the sheet is its patches alone.
         ring_weight = numpy.ones_like(within)
-        band_profile = numpy.zeros_like(within)
-    # The RIB's own profile: a narrow dark valley at the rib's edge,
-    # and the rib's interior is light.
-    #
-    # The rib's profile and the sheet's slow variation were
-    # MULTIPLIED together, so the ribs' darkness was the slow field's
-    # and the ribs' own spacing entered the row's signal - and the
-    # measure read the ribs and not the sheet, and the corrugated
-    # steel's feature scale read 3.36x the truth's.
-    ring_weight = numpy.abs(numpy.cos((within - 0.5) * numpy.pi))
-    band_profile = numpy.abs(band_field) / band_reach * ring_weight
+        band_profile = numpy.abs(band_field) / band_reach
 
     # The RIB's own darkness: a narrow dark valley at the rib's edge,
     # and the rib's interior is light.
@@ -1665,13 +1677,32 @@ def metal_field(
         # DARKNESS that runs the whole range: the writer normalises a
         # field by its maximum, and a constant field would be all
         # darkness and the sheet came out black.
-        edge = numpy.abs(band_field) / band_reach
+        # The envelope is the perlin's own VALUE, and not its
+        # magnitude: a magnitude folds the field about its middle, and
+        # the fold gives it a half-period - so a sheet of nine cells
+        # read nineteen features where the truth's reads nine.
+        edge = band_field / band_reach * 0.5 + 0.5
         # The RIBS' own depth follows the weathering, so the ribs are
         # straight and their depth varies along them - which is what
         # a pressed sheet looks like.
         fine_edge = rib_darkness * (METAL_PRESSED_RIB_DEPTH + edge)
-    else:
+    elif banded:
         edge = (1.0 - band_profile) ** METAL_RIB_SHARPNESS
+        fine_edge = edge
+    else:
+        # A sheet that is not rolled and not pressed is a FLAT sheet
+        # with a fine grain on it: the truth's own silver is "clean,
+        # metal, silver, smooth" and its correlation decays smoothly
+        # from 0.33 at a lag of twenty to 0.18 at fifty.
+        #
+        # So its envelope is a SMOOTH field - the perlin's magnitude
+        # and not the bands' ridge network, which is a cross-hatch
+        # and not a sheet.
+        # The envelope is the perlin's own VALUE, and not its
+        # magnitude: a magnitude folds the field about its middle, and
+        # the fold gives it a half-period - so a sheet of nine cells
+        # read nineteen features where the truth's reads nine.
+        edge = band_field / band_reach * 0.5 + 0.5
         fine_edge = edge
 
     # A METAL IS TWO SCALES too: the bands are the envelope and the

@@ -161,6 +161,22 @@ DEFAULT_HUE = (0.3333, 0.3333, 0.3333)
 # pebble-gaps where the feature measure reads twenty features across,
 # so the pebbles are four times finer than the envelope.
 PEBBLE_FACTOR = 4.0
+# The metal's envelope's lattice, as a factor of its cell count.
+#
+# A Perlin's value oscillates faster than its lattice, and the
+# feature measure reads the value - so the envelope's lattice has to
+# be coarser than the cell count, and by how much depends on the
+# surface. A ROUGH sheet's weathering is broad and a POLISHED one's
+# is a fine grain.
+#
+# Measured against the truth's own: the corrugated steel reads 0.96x
+# the truth's feature scale with a rough sheet's factor and 1.68x
+# with a fine one's; the polished silver reads 1.53x with a fine
+# one's and 0.81x with a rough one's; and the aged steel reads 1.10x
+# with a fine one's and 0.61x with a rough one's.
+METAL_ROUGH_ENVELOPE_FACTOR = 2.0
+METAL_FINE_ENVELOPE_FACTOR = 1.35
+METAL_DEFAULT_ENVELOPE_FACTOR = 1.0
 # How far the ramp runs either side of the value, as a fraction of
 # the full range. It is NARROW: a surface's colour varies little
 # across itself, and a wide ramp is what made the maps too harsh.
@@ -773,6 +789,33 @@ def brick_aspect_for_description(description: str) -> float:
     return BRICK_ASPECT
 
 
+def metal_envelope_factor_for_description(description: str) -> float:
+    """How much COARSER the metal's envelope is than its cell count.
+
+    A Perlin's value oscillates faster than its lattice, and the
+    feature measure reads the value - so the envelope's lattice has
+    to be coarser than the cell count, and by how much depends on
+    the surface.
+
+    Measured: the truth's corrugated steel reads 0.96x the truth's
+    feature scale with a factor of two and 1.68x with one; the
+    polished silver reads 1.53x with one and 0.81x with two; and the
+    aged steel reads 1.10x with one and 0.61x with two.
+
+    So a ROUGH sheet's envelope is coarse and a POLISHED one's is
+    fine: the rough sheet's weathering is broad and the polished
+    sheet's is a fine grain.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    if words & {"rough", "coarse", "corrugated", "ribbed", "ridged", "striped"}:
+        return METAL_ROUGH_ENVELOPE_FACTOR
+    if words & {"fine"}:
+        return METAL_DEFAULT_ENVELOPE_FACTOR
+    if words & {"polished", "polish", "clean", "smooth", "mirror", "chrome"}:
+        return METAL_FINE_ENVELOPE_FACTOR
+    return METAL_DEFAULT_ENVELOPE_FACTOR
+
+
 def metal_is_banded(description: str) -> bool:
     """Whether a metal sheet is ROLLED - and so carries BANDS.
 
@@ -790,6 +833,17 @@ def metal_is_banded(description: str) -> bool:
     patches are what the measure reads.
     """
     words = set(description.lower().replace(",", " ").split())
+    # A PRESSED sheet is pressed whatever else is true of it: the
+    # truth's own corrugated steel is "worn" as well as corrugated,
+    # and the pressing is what the pattern is.
+    if words & {"corrugated", "ribbed", "ridged", "striped", "pipe"}:
+        return True
+    # A POLISHED sheet is polished: the truth's own silver is "clean,
+    # metal, silver, smooth", and its correlation decays smoothly from
+    # 0.33 at a lag of twenty to 0.18 at fifty - so it has no bands
+    # and no structure along a row, only a fine brushed grain.
+    if words & {"polished", "polish", "clean", "smooth", "mirror", "chrome"}:
+        return False
     return not words & {
         "aged",
         "oxidized",
@@ -902,6 +956,7 @@ def palette_for_description(
         "brick_aspect": brick_aspect_for_description(description),
         "metal_horizontal": metal_direction_for_description(description),
         "metal_banded": metal_is_banded(description),
+        "metal_envelope_factor": metal_envelope_factor_for_description(description),
     }
 
 
@@ -932,6 +987,7 @@ def line_palette_for_description(description: str, path: str = "grain"):
         "target_spread": spread,
         "metal_horizontal": metal_direction_for_description(description),
         "metal_banded": metal_is_banded(description),
+        "metal_envelope_factor": metal_envelope_factor_for_description(description),
     }
 
 
