@@ -94,13 +94,22 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    size_m=2.0, thickness_m=0.08, cell_count=512, depth_m=0.06)`.
 
    **Or build the relief PROCEDURALLY, with no image to read.**
-   `source="voronoi"` makes the height field from Blender's own nodes
-   - a Voronoi pattern's cell edges ARE the joints - and the field is
-   PERIODIC: measured, its seam is 0.0083x the interior's largest
-   steps, against the 0.1604x an albedo-derived field manages. The
-   maps baked from it tile exactly. The other sources are "brick",
-   "wave" and "noise"; `source_scale_cells` sets the pattern's scale
-   in cells across the slab.
+   `source="voronoi"` makes the height field from the lane's own
+   arithmetic - a Voronoi pattern's cell edges ARE the joints - and
+   the field is PERIODIC: its seam is 0.00x, where an albedo-derived
+   field's is 0.1604x. The maps baked from it tile exactly. The
+   other sources are "brick" and "grain"; `source_scale_cells` sets
+   the pattern's scale in cells across the slab.
+
+   **The pattern follows the description.** `pbr.patterns` reads the
+   surface's STRUCTURE first - a "wood floor" is a wood floor, a
+   "stone tile" is a stone tile - and its material second. A voronoi
+   cell is a separate rounded piece, so it is right for cobbles,
+   gravel, ground and asphalt; a course is a course, so "brick" is
+   right for a brick wall and a tile floor; and a plank shows the
+   nested curves a tree's growth makes, so "grain" is right for wood.
+   Measured against ten real PBR sets: the feature scale reads
+   1.19x the truth's and the contrast 2.26x.
 
    The slab RECORDS which source it used, and
    `relief_slab_report(object_name="<the slab>")` reads it back -

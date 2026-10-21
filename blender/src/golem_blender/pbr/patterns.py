@@ -27,14 +27,20 @@ from __future__ import annotations
 
 # The structure words, and the pattern each calls for. Read first: a
 # "wood floor" is a wood floor, and a "stone tile" is a stone tile.
+#
+# The order is the specificity: a GRAIN is a structure, and a course
+# of tiles is a structure, but a surface that is both - "wood, floor,
+# tiles" - is a wooden floor, and a word that names a material's
+# STRUCTURE (a grain) is more specific than one that names a layout
+# (tiles).
 _STRUCTURE_PATTERNS = (
+    ("grain", "grain"),
+    ("plank", "grain"),
+    ("timber", "grain"),
+    ("wood", "grain"),
     ("brick", "brick"),
     ("tiles", "brick"),
     ("tile", "brick"),
-    ("grain", "grain"),
-    ("plank", "grain"),
-    ("wood", "grain"),
-    ("timber", "grain"),
 )
 
 # The material words, and the pattern each calls for. Everything that
