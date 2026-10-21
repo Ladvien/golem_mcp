@@ -156,18 +156,24 @@ FIBRE_PERSISTENCE = 0.5
 # The truth's wood has its lines 3, 5, 6, 9, 14 and 17 pixels apart
 # in a 1024 row, so about a hundred and forty of them.
 FIBRE_ORIENTATION = 0.0
-FIBRE_FREQUENCY = 128.0
+FIBRE_FREQUENCY = 64.0
 # The resolution the FIBRE is computed at. The fibre is fine detail
 # and its strokes are soft, so it does not need the output's
 # resolution - and a Gabor is a direct trigonometric sum over the
 # lattice's bins, so the resolution is the whole cost: measured, it
 # took 11.8 seconds at 1024 across.
 FIBRE_RESOLUTION = 512
+# How far the FIBRE's lines wander, in lattice cells.
+#
+# A Gabor's carrier is a regular set of stripes, and the truth's
+# fibre is not: its lines come 3, 5, 6, 9, 14 and 17 pixels apart,
+# and they bend where the board was cut across the log's rings.
+FIBRE_WARP = 0.004
 # The METAL's grain orientation and carrier. A brushed sheet's
 # streaks run along the sheet, so the carrier is across it - the
 # same way as the wood's.
 METAL_ORIENTATION = 0.0
-METAL_FREQUENCY = 192.0
+METAL_FREQUENCY = 96.0
 # How wide the fibre's line is, as a fraction of the noise's own
 # range around the crossing.
 #
@@ -271,7 +277,12 @@ STONE_JITTER = 1.0
 #
 # So the stones' lattice is this many times finer than the feature
 # count.
-STONE_LATTICE_FACTOR = 2
+#
+# Measured on the truth's own ground: there are 169 joints along a
+# 1024 row, so about a hundred and seventy pebbles across, where the
+# feature count is 20.48 - so the pebbles are eight times finer than
+# the envelope.
+STONE_LATTICE_FACTOR = 8
 # How far the STONES are warped, in cell units.
 #
 # The warp is what keeps the fine octaves from locking the feature
@@ -284,6 +295,41 @@ STONE_LATTICE_FACTOR = 2
 # A regular fine lattice locks the autocorrelation, and the measure
 # reads it instead: measured, the scale read 7.19x the truth's.
 STONE_WARP_AMOUNT = 0.6
+# How far the PEBBLES' lattice is jittered, in fine cells.
+#
+# The truth's ground has about a hundred and seventy pebbles across
+# and its autocorrelation reads twenty - so the pebbles are irregular
+# enough that the measure finds the envelope and not them. A regular
+# fine lattice does the opposite: the autocorrelation locks onto the
+# pebbles' own spacing, and the scale read 4.17x the truth's.
+STONE_PEBBLE_JITTER = 0.35
+# How many octaves the PEBBLES' field has.
+#
+# The pebbles' SIZES have to vary, and that is what the octaves do:
+# each one adds a finer set of cells, so the field has big stones and
+# small ones in it rather than one size. The truth's ground is a
+# gravel - stones of many sizes - and the autocorrelation reads its
+# envelope at twenty features.
+STONE_PEBBLE_OCTAVES = 3
+# How much of the PEBBLES' own colour shows, against the envelope's.
+#
+# The truth's ground is a gravel: the stones are all much the same
+# tone and the ENVELOPE's variation is what a viewer sees. So the
+# pebbles' colour is a small offset on the envelope's.
+STONE_PEBBLE_COLOUR = 0.12
+# How much of the image the PEBBLES' colour varies over.
+#
+# The truth's ground has about a hundred and seventy pebbles across
+# and its autocorrelation reads twenty - so the pebbles' own colour
+# variation cannot be what the measure reads, and the ENVELOPE's is.
+# The pebbles' colour is therefore a slow variation over many
+# pebbles, and the envelope's is the coarse one.
+#
+# So the pebbles' colour is taken from the COARSE lattice's cells,
+# and the joints are the fine lattice's gaps. Measured, a cell at
+# the fine lattice put the scale at 4.17x the truth's, because the
+# measure then read the pebbles' colour and not the envelope's.
+STONE_PEBBLE_CELL_FROM = "coarse"
 # A METAL's SCRATCHES: how long a streak is, how wide, at what angle,
 # and how the sheet is divided into cells.
 #
@@ -373,6 +419,25 @@ def stone_lattice(cells: int, resolution: int) -> int:
     return max(2, size)
 
 
+def _nearest(values, rows, columns):
+    """A field sampled at fractional positions, by NEAREST neighbour.
+
+    The nearest neighbour is what a DISCRETE field needs: a cell's
+    index is an integer, and interpolating it makes it a continuous
+    value - and a continuous cell index gives the colour hash a smooth
+    gradient, which the feature measure then reads as the structure.
+
+    Measured, an interpolated cell put the ground's scale at 10.00x
+    the truth's.
+    """
+    import numpy
+
+    height, width = values.shape
+    row = numpy.clip(numpy.round(rows).astype(numpy.int64), 0, height - 1)
+    column = numpy.clip(numpy.round(columns).astype(numpy.int64), 0, width - 1)
+    return values[row, column]
+
+
 def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     """A field of FRACTAL stones: big ones made of small ones.
 
@@ -398,8 +463,9 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     """
     import numpy
 
-    from golem_blender.pbr import noise_worley_fbm
+    from golem_blender.pbr import noise_perlin, noise_worley_fbm
     from golem_blender.pbr.noise_worley_fbm import _bilinear
+    from golem_blender.pbr.procedural import _cell_hash
 
     samples = (numpy.arange(resolution) + 0.5) / resolution
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
@@ -465,6 +531,75 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     coarse_side = max(4, min(resolution, 512))
     axis = (numpy.arange(coarse_side) + 0.5) / coarse_side
     grid_x, grid_y = numpy.meshgrid(axis, axis, indexing="xy")
+    # The JOINT is the PEBBLES' gaps, and the pebbles are the fine
+    # lattice's cells - so the joint's distance comes from the fine
+    # lattice.
+    #
+    # And the COLOUR comes from the coarse lattice, because the
+    # truth's pebbles are all much the same tone and the ENVELOPE's
+    # variation is what a viewer sees. Measured on the truth's own
+    # ground: there are 169 joints along a 1024 row, so about a
+    # hundred and seventy pebbles across, where the feature count is
+    # 20.48 - so the joints are eight times finer than the envelope.
+    #
+    # Measured, a cell at the fine lattice put the scale at 2.40x the
+    # truth's, because the autocorrelation then read the pebbles'
+    # colour instead of the envelope's.
+    fine_cells = cells * STONE_LATTICE_FACTOR
+    # The pebbles' lattice is JITTERED, so the pebbles are not a
+    # regular grid.
+    #
+    # The truth's ground has about a hundred and seventy pebbles
+    # across and its autocorrelation reads twenty - so the pebbles
+    # are irregular enough that the measure finds the envelope and
+    # not them. A regular fine lattice does the opposite: the
+    # autocorrelation locks onto the pebbles' own spacing, and the
+    # scale read 4.17x the truth's.
+    #
+    # The jitter is applied to the sample positions, and the feature
+    # points' own jitter is what makes the cells irregular - so the
+    # lattice is a Worley with its points at their cells' centres
+    # moved, which is irregular without being a different pattern.
+    jitter_field = noise_perlin.perlin_2d(
+        grid_x * fine_cells,
+        grid_y * fine_cells,
+        period=fine_cells,
+        seed=11,
+    )
+    # The jitter is PER-STONE, not a smooth field.
+    #
+    # A smooth jitter moves the whole lattice, so the cells stay
+    # evenly spaced and the autocorrelation finds their spacing: our
+    # ground's pebbles were 6.5 pixels apart, exactly, and the
+    # measure read that.
+    #
+    # So the jitter is the fine lattice's own cell hash - a different
+    # offset for every cell - and the cells are irregularly spaced.
+    fine_plain = noise_worley_fbm.worley_fbm_2d(
+        grid_x * fine_cells,
+        grid_y * fine_cells,
+        period=fine_cells,
+        octaves=STONE_PEBBLE_OCTAVES,
+        persistence=STONE_PERSISTENCE,
+        lacunarity=STONE_LACUNARITY,
+        jitter=STONE_JITTER,
+        seed=0,
+        distance=True,
+    )
+    jitter_field = _cell_hash(
+        fine_plain["cell"].astype(numpy.int32), fine_cells, fine_cells
+    ).astype(numpy.float64)
+    fine = noise_worley_fbm.worley_fbm_2d(
+        (grid_x + jitter_field * STONE_PEBBLE_JITTER) * fine_cells,
+        (grid_y + jitter_field * STONE_PEBBLE_JITTER * 0.7) * fine_cells,
+        period=fine_cells,
+        octaves=STONE_PEBBLE_OCTAVES,
+        persistence=STONE_PERSISTENCE,
+        lacunarity=STONE_LACUNARITY,
+        jitter=STONE_JITTER,
+        seed=0,
+        distance=True,
+    )
     coarse = noise_worley_fbm.worley_fbm_2d(
         grid_x * cells,
         grid_y * cells,
@@ -476,16 +611,50 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
         seed=0,
         distance=True,
     )
-    # The joint's distance is the BASE octave's, so the joint is the
-    # gap between the big shapes.
+    # The CELL is the COARSE lattice's, and not the pebbles'.
     #
-    # The finest octave's joint was tried and it is the stones'
-    # PEBBLE gaps - which are eight times finer, and the map's seam
-    # is then a fraction of a pixel: measured, the scale read 34.70x
-    # the truth's and the seam 3.87x.
+    # The cell is what gives a stone its own colour, and the colour's
+    # variation is what the feature measure reads. The truth's ground
+    # has about a hundred and seventy pebbles across and its
+    # autocorrelation reads twenty - so the pebbles' own colour
+    # cannot be what the measure reads, and the ENVELOPE's is.
+    #
+    # So the pebbles' colour is the COARSE lattice's cell, and the
+    # pebbles' own gaps are the joint. Measured, a cell at the fine
+    # lattice put the scale at 4.17x the truth's.
+    #
+    # And the pebbles' own variation is added to the coarse cell's as
+    # a SMOOTH field, so a pebble is a slightly different tone
+    # within its region and not a different colour. The truth's
+    # ground is a gravel: the stones are all much the same tone and
+    # the ENVELOPE's variation is what a viewer sees.
     rows = numpy.linspace(0.0, coarse_side - 1.0, resolution)
     columns = numpy.linspace(0.0, coarse_side - 1.0, resolution)
     grid_row, grid_column = numpy.meshgrid(rows, columns, indexing="ij")
+    coarse_cell = _nearest(coarse["cell"], grid_row, grid_column)
+    # The cell is DISCRETE - it is an index, and the hash reads it -
+    # and an INTERPOLATED cell is a continuous value, so the hash
+    # gives a smooth gradient and the feature measure reads that
+    # gradient as the structure.
+    #
+    # Measured, an interpolated cell put the scale at 10.00x the
+    # truth's and a blended one at 5.00x. So the cell is the coarse
+    # lattice's own index, taken NEAREST - and the pebbles' own tone
+    # comes from the MOTTLE, the surface texture, and not from the
+    # cell.
+    field["cell"] = coarse_cell.astype(numpy.int32)
+    # The JOINT is the COARSE lattice's, and the pebbles' gaps are
+    # not joints.
+    #
+    # The joint is what the feature measure reads, and the truth's
+    # ground reads twenty features where it has about a hundred and
+    # seventy pebbles. So the joint is the ENVELOPE's - the gap
+    # between the big shapes - and the pebbles are the fine
+    # lattice's own colour within it.
+    #
+    # Measured, a joint at the fine lattice put the scale at 4.17x
+    # the truth's and then at 10.00x, because a hundred and seventy
+    # regular gaps are a strong single frequency.
     field["distance"] = _bilinear(coarse["distance"], grid_row, grid_column)
     # The CELL is the BASE octave's.
     #
@@ -991,8 +1160,28 @@ def grain_field(
         fibre_side = max(4, min(resolution, FIBRE_RESOLUTION))
         fibre_axis = (numpy.arange(fibre_side) + 0.5) / fibre_side
         fibre_x, fibre_y = numpy.meshgrid(fibre_axis, fibre_axis, indexing="ij")
+        # The fibre is WARPED, so the lines wander.
+        #
+        # A Gabor's carrier is a REGULAR set of stripes, and the
+        # truth's fibre is not: its lines come 3, 5, 6, 9, 14 and 17
+        # pixels apart, and they bend where the board was cut across
+        # the log's rings. So the sample's position is displaced by a
+        # low-frequency Perlin before the Gabor is evaluated, and the
+        # stripes bend with it.
+        #
+        # The warp's frequencies are integers over the domain, so the
+        # field is still periodic and the map still tiles.
+        from golem_blender.pbr import noise_perlin
+
+        warp_lattice = max(2, round(cells / 2))
+        warp_field = noise_perlin.perlin_2d(
+            fibre_x * warp_lattice,
+            fibre_y * warp_lattice,
+            period=warp_lattice,
+            seed=7,
+        )
         coarse_fibre = noise_gabor.gabor_2d(
-            fibre_x * lattice,
+            (fibre_x + warp_field * FIBRE_WARP) * lattice,
             fibre_y * lattice,
             period=lattice,
             orientation=FIBRE_ORIENTATION,
