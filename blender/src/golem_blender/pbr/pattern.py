@@ -182,6 +182,14 @@ FIBRE_PERSISTENCE = 0.5
 # in a 1024 row, so about a hundred and forty of them.
 FIBRE_ORIENTATION = 0.0
 FIBRE_FREQUENCY = 64.0
+# The FIBRE's lattice, which is the carrier's own grid.
+#
+# The line count follows the FREQUENCY and not the lattice - measured:
+# a frequency of 32 gave 31 lines and 64 gave 62, at every lattice
+# from 128 to 512. The truth's wood has its lines 3, 5, 6, 9, 14 and
+# 17 pixels apart in a 1024 row, so about a hundred and forty of
+# them.
+FIBRE_LATTICE = 256
 # The resolution the FIBRE is computed at. The fibre is fine detail
 # and its strokes are soft, so it does not need the output's
 # resolution - and a Gabor is a direct trigonometric sum over the
@@ -1153,7 +1161,7 @@ def grain_field(
         # The orientation is the direction the field varies FASTEST,
         # so the strokes run across it - and the fibre runs along the
         # plank, so the carrier is across the plank.
-        lattice = _fibre_lattice(resolution)
+        lattice = FIBRE_LATTICE
         # The fibre is computed on a COARSE grid and brought up. A
         # Gabor is a direct trigonometric sum over the lattice's bins,
         # and it is the whole cost: measured, it took 11.8 seconds at
@@ -1362,7 +1370,7 @@ def metal_field(
         # strokes, and a Gabor is what makes them.
         from golem_blender.pbr import noise_gabor
 
-        lattice = _fibre_lattice(resolution)
+        lattice = FIBRE_LATTICE
         grain_field = noise_gabor.gabor_2d(
             sample_x * lattice,
             sample_y * lattice,
