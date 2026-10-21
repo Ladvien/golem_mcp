@@ -219,8 +219,8 @@ def joint_response(
 
 __all__ = (
     "DEFAULT_CELL_FRACTION",
-    "MINIMUM_CELL_FRACTION",
     "DEFAULT_WARP_OCTAVES",
+    "MINIMUM_CELL_FRACTION",
     "cell_and_edge",
     "joint_response",
     "warp",

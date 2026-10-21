@@ -70,6 +70,16 @@ DEFAULT_STONE_LIGHT_RGB = (0.70, 0.68, 0.64)
 # street, and ambientcg's brick has 11.25 across its tile, so five
 # to eleven is the range a cobblestone occupies.
 DEFAULT_PROCEDURAL_SCALE = 5.0
+# The largest the pattern is COMPUTED at, in pixels a side. The image
+# is upscaled to the requested size afterwards, and the structure is
+# what matters - a stone is tens of pixels across whatever the
+# resolution.
+#
+# It is a cap because the cell count drives the resolution: at 128
+# cells the grid would be 6144 across, and the benchmark stopped at
+# the third material. Measured, the pattern takes 1.2 s to 1.5 s at
+# the cap.
+MAXIMUM_PATTERN_RESOLUTION = 1024
 # The mortar's colour, and how wide it is.
 DEFAULT_MORTAR_RGB = (0.38, 0.36, 0.33)
 DEFAULT_MORTAR_WIDTH = 0.30
@@ -287,11 +297,19 @@ def write_procedural_base_color(
     # nearest-point search is O(samples x points), which a 2048 x
     # 2048 image would make slow.
     cells = max(2, round(scale_cells))
-    resolution = min(width_px, height_px, max(64, cells * 48))
-
-    cell, edge = _pattern_field(
-        kind, resolution, cells, randomness, wander, wander_frequency
+    # The pattern is computed at a resolution where a cell is a few
+    # dozen pixels across - the structure is what matters, and the
+    # search is O(samples x points).
+    #
+    # It is CAPPED, because the cell count drives the resolution and
+    # the cell count is the pattern's scale: at 128 cells the grid
+    # would be 6144 across, and the benchmark stopped at the third
+    # material. A cell needs about 24 pixels to read as a stone, and
+    # the image is upscaled to the requested size afterwards.
+    resolution = min(
+        width_px, height_px, max(64, min(cells * 24, MAXIMUM_PATTERN_RESOLUTION))
     )
+
     if kind == "voronoi":
         # The shared pattern: a REGULAR lattice with a wrapping search
         # and a domain warp. The regular lattice is what makes the
@@ -299,6 +317,10 @@ def write_procedural_base_color(
         # jitter has to be the same at both ends - and the warp is
         # what makes the cells look like stones rather than a grid.
         cell, edge = pattern.cell_and_edge(resolution, cells)
+    else:
+        cell, edge = _pattern_field(
+            kind, resolution, cells, randomness, wander, wander_frequency
+        )
 
     # The joint's width, as a fraction of the distance to the edge.
     if kind == "voronoi":
