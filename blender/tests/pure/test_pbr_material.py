@@ -137,19 +137,65 @@ def test_a_metal_s_colour_comes_from_the_sheet_not_the_rust():
 
 
 def test_a_clean_silver_metal_is_bright():
+    """A clean silver is the brightest surface the lane makes.
+
+    The truth's own Metal049A measures a luma of 0.9832, and the
+    table said 0.92 - so the silver came out dimmer than the truth
+    it was measured from.
+    """
     from golem_blender.pbr.palette import value_for_description
 
     assert value_for_description("clean, metal, silver, smooth") == pytest.approx(
-        0.92, abs=0.05
+        0.9832, abs=0.01
     )
 
 
 def test_a_non_metal_s_colour_is_unchanged():
-    """Only a metal gets the tiered reading."""
+    """Only a metal gets the tiered reading.
+
+    The truth's own Ground110 measures a luma of 0.358, and the
+    ground's three truths - 0.358, 0.411 and 0.424 - average
+    0.3978; the table's 0.34 said "brown" and the ground is a
+    gravel, and the words are alphabetical so the ground's own kind
+    decides.
+    """
     from golem_blender.pbr.palette import value_for_description
 
     assert value_for_description("brown, dirt, dry, gravel, gray, ground") == (
-        pytest.approx(0.34, abs=0.02)
+        pytest.approx(0.3912, abs=0.02)
+    )
+
+
+def test_the_value_follows_the_material_s_kind():
+    """A surface's KIND says how light it is, and its colour only
+    when the kind is a generic one.
+
+    The truth's two fabrics are 0.527 and 0.374 - the blue one and
+    the orange one - so a "fabric" on its own says a thing's kind and
+    not its colour, and the colour is what tells them apart. The
+    truth's bricks are 0.459, 0.485 and 0.483: all the same, so
+    their kind decides and their "natural" and "stone" words do not.
+
+    Measured against the truth's own twenty, the rule as fitted has
+    a mean error of 0.047 - and the colour's word alone has 0.158.
+    """
+    from golem_blender.pbr.palette import value_for_description
+
+    # The blue fabric: the colour says 0.5266 and the kind 0.4504.
+    assert value_for_description("blue, fabric, fur, microfiber, soft") == (
+        pytest.approx(0.5266, abs=0.01)
+    )
+    # The orange one: the colour says 0.3743 and the kind 0.4504.
+    assert value_for_description("fabric, orange, red, wool") == (
+        pytest.approx(0.3743, abs=0.01)
+    )
+    # The bricks: their kind says 0.4758 and their colour 0.5366.
+    assert value_for_description("bricks, bricks113a, natural, stone") == (
+        pytest.approx(0.4758, abs=0.01)
+    )
+    # The wood: its kind says 0.6012 and its colour 0.4364.
+    assert value_for_description("brown, smooth, wood, wooden") == (
+        pytest.approx(0.6012, abs=0.01)
     )
 
 
@@ -227,7 +273,5 @@ def test_the_joint_is_as_dark_as_the_surface_varies():
     # The measure is the LUMA, not a channel: the palette is
     # chromatic now, and the channels are not the luma - a blue
     # fabric's red channel is 0.24 while its luma is 0.33.
-    value = (
-        luma(palette["stone_dark_rgb"]) + luma(palette["stone_light_rgb"])
-    ) / 2.0
+    value = (luma(palette["stone_dark_rgb"]) + luma(palette["stone_light_rgb"])) / 2.0
     assert luma(palette["mortar_rgb"]) == pytest.approx(value - spread, abs=1e-6)

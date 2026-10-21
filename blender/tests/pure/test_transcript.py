@@ -80,7 +80,11 @@ def test_schema_two_stores_the_tool_event_under_data(tmp_path):
     data null; the Markdown does not repeat the machine copy."""
     import json
 
-    from golem_blender.agent.tool_event import TOOL_EVENT_KIND, ToolEvent, encode_tool_event
+    from golem_blender.agent.tool_event import (
+        TOOL_EVENT_KIND,
+        ToolEvent,
+        encode_tool_event,
+    )
     from golem_blender.agent.transcript import TRANSCRIPT_SCHEMA_VERSION
 
     assert TRANSCRIPT_SCHEMA_VERSION == 2

@@ -312,7 +312,9 @@ def test_a_rate_limited_call_is_retried_then_succeeds(monkeypatch):
     import urllib.error
 
     waits = []
-    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr(
+        "golem_blender.agent.loop.time.sleep", lambda s: waits.append(s)
+    )
     attempts = {"n": 0}
 
     def flaky(self, path, payload, timeout_seconds):
@@ -349,7 +351,9 @@ def test_a_permanent_error_is_not_retried(monkeypatch):
     import urllib.error
 
     waits = []
-    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr(
+        "golem_blender.agent.loop.time.sleep", lambda s: waits.append(s)
+    )
     calls = {"n": 0}
 
     def refuses(self, path, payload, timeout_seconds):
@@ -377,7 +381,9 @@ def test_a_window_that_never_lifts_fails_loudly(monkeypatch):
     import urllib.error
 
     waits = []
-    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr(
+        "golem_blender.agent.loop.time.sleep", lambda s: waits.append(s)
+    )
     calls = {"n": 0}
 
     def always_limited(self, path, payload, timeout_seconds):
@@ -412,10 +418,15 @@ def test_an_exhausted_credit_lane_is_not_retried(monkeypatch):
     adding credits changes it — so it is raised at once with its body."""
     import urllib.error
 
-    from golem_blender.agent.loop import EXHAUSTED_CREDITS_SIGNATURE, exhausted_credits_error
+    from golem_blender.agent.loop import (
+        EXHAUSTED_CREDITS_SIGNATURE,
+        exhausted_credits_error,
+    )
 
     waits = []
-    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr(
+        "golem_blender.agent.loop.time.sleep", lambda s: waits.append(s)
+    )
     calls = {"n": 0}
     body = b'{"error":"usage credits auto reload monthly max reached, increase your monthly max"}'
 
@@ -455,7 +466,9 @@ def test_a_socket_timeout_on_open_is_retried_then_succeeds(monkeypatch):
     retry caught HTTPError alone. The roll finished 16/20; the set was
     void. A stalled connection is "not now" exactly as a 503 is."""
     waits = []
-    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr(
+        "golem_blender.agent.loop.time.sleep", lambda s: waits.append(s)
+    )
     attempts = {"n": 0}
 
     def stalls_twice(self, path, payload, timeout_seconds):
@@ -489,7 +502,9 @@ def test_a_connection_that_never_answers_fails_loudly(monkeypatch):
     import urllib.error
 
     waits = []
-    monkeypatch.setattr("golem_blender.agent.loop.time.sleep", lambda s: waits.append(s))
+    monkeypatch.setattr(
+        "golem_blender.agent.loop.time.sleep", lambda s: waits.append(s)
+    )
     calls = {"n": 0}
 
     def refused(self, path, payload, timeout_seconds):

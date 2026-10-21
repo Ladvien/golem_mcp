@@ -40,7 +40,9 @@ def pack(tmp_path):
     directory = tmp_path / "pack"
     (directory / "sub").mkdir(parents=True)
     # glTF (1..3, 0..0.2, -4..-2) is Blender (1..3, 2..4, 0..0.2).
-    _write_glb(directory, _box_glb((1, 0, -4), (3, 0.2, -2), materials=("Stone",)), "slab.glb")
+    _write_glb(
+        directory, _box_glb((1, 0, -4), (3, 0.2, -2), materials=("Stone",)), "slab.glb"
+    )
     _write_glb(directory, _box_glb((0, 0, 0), (2, 3, 0.3)), "wall.glb")
     _write_glb(directory / "sub", _box_glb((0, 0, 0), (2, 2, 2)), "cube.glb")
     (directory / "model.fbx").write_bytes(b"Kaydara FBX Binary")
@@ -100,7 +102,10 @@ def test_the_report_names_the_grid_the_pieces_snap_to(pack, tmp_path):
     assert report.footprint_histogram == ((2.0, 5), (0.3, 1))
     assert report.height_histogram == ((0.2, 1), (2.0, 1), (3.0, 1))
     assert report.grid_candidates == (2.0, 0.3)
-    assert json.loads(json.dumps(dataclasses.asdict(report)))["grid_candidates"] == [2.0, 0.3]
+    assert json.loads(json.dumps(dataclasses.asdict(report)))["grid_candidates"] == [
+        2.0,
+        0.3,
+    ]
 
 
 def test_a_second_registration_is_refused_and_changes_nothing(pack, tmp_path):
@@ -127,7 +132,9 @@ def test_a_folder_without_a_glb_is_refused_and_writes_no_kit(tmp_path):
     assert not (tmp_path / "kit" / "kit.yaml").exists()
 
 
-def test_a_glb_the_parser_rejects_is_skipped_with_its_error_and_the_rest_register(pack, tmp_path):
+def test_a_glb_the_parser_rejects_is_skipped_with_its_error_and_the_rest_register(
+    pack, tmp_path
+):
     _write_glb(pack, b"this is not a glb file at all", "broken.glb")
 
     report = packs.register_pack(pack, tmp_path / "kit", "Dungeon Bits", "CC0")

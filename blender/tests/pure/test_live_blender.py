@@ -63,7 +63,9 @@ def server(tmp_path):
     """A GolemBlenderFastMCP with the upstream tools the test calls, logging under tmp."""
     from blmcp.tools_helpers import golem_blender_bridge
 
-    instance = golem_blender_bridge.GolemBlenderFastMCP("live-blender-test", instructions="x")
+    instance = golem_blender_bridge.GolemBlenderFastMCP(
+        "live-blender-test", instructions="x"
+    )
     instance._golem_blender = golem_blender_bridge.GolemBlenderSession(
         log_directory=tmp_path / "logs", output_root=tmp_path / "outputs"
     )

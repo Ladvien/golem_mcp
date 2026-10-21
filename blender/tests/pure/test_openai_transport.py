@@ -330,7 +330,9 @@ def test_the_bmb_key_file_feeds_bmb_models_only(monkeypatch):
     llama-swap and vice versa)."""
     fake_bmb_key = "c" * 64
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
-    monkeypatch.setattr("golem_blender.agent.loop._read_bmb_api_key", lambda: fake_bmb_key)
+    monkeypatch.setattr(
+        "golem_blender.agent.loop._read_bmb_api_key", lambda: fake_bmb_key
+    )
 
     bmb_config = ModelConfig.from_environment(model="qwen3.8-27b", api_key="")
     assert bmb_config.api_key == fake_bmb_key

@@ -90,7 +90,11 @@ def _resolve_relative_import(
     dir_parts = parts[:-1]
     # Map src/golem_blender -> golem_blender so relative imports resolve to
     # ``golem_blender.*`` rather than ``src.golem_blender.*``.
-    if len(dir_parts) >= 2 and dir_parts[0] == "src" and dir_parts[1] == "golem_blender":
+    if (
+        len(dir_parts) >= 2
+        and dir_parts[0] == "src"
+        and dir_parts[1] == "golem_blender"
+    ):
         dir_parts = ["golem_blender"] + list(dir_parts[2:])
     # level=1 means current package (dir_parts), level=2 means parent, etc.
     if level > len(dir_parts):
@@ -317,7 +321,11 @@ def test_the_harness_imports_first_in_a_fresh_interpreter():
     # src tree explicitly so the probe does not depend on an editable install.
     environment = {**os.environ, "PYTHONPATH": str(_SRC_ROOT)}
     completed = subprocess.run(
-        [sys.executable, "-c", "import golem_blender.harness; import golem_blender.agent.tools"],
+        [
+            sys.executable,
+            "-c",
+            "import golem_blender.harness; import golem_blender.agent.tools",
+        ],
         capture_output=True,
         text=True,
         check=False,

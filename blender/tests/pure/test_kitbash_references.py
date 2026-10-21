@@ -81,8 +81,13 @@ def test_openverse_fixture_maps_to_items():
     assert first.source == "openverse"
     assert first.title == "One Old Wooden Barrel"
     assert first.creator == "dejankrsmanovic"
-    assert first.landing_url == "https://www.flickr.com/photos/155403590@N07/43182338615"
-    assert first.image_url == "https://live.staticflickr.com/1793/43182338615_1e1ea779a9_b.jpg"
+    assert (
+        first.landing_url == "https://www.flickr.com/photos/155403590@N07/43182338615"
+    )
+    assert (
+        first.image_url
+        == "https://live.staticflickr.com/1793/43182338615_1e1ea779a9_b.jpg"
+    )
     assert first.thumbnail_url.startswith("https://api.openverse.org/v1/images/")
     assert (first.width_px, first.height_px) == (1024, 683)
     assert first.attribution.startswith('"One Old Wooden Barrel" by dejankrsmanovic')
@@ -99,7 +104,10 @@ def test_wikimedia_fixture_maps_to_items_in_search_rank_with_markup_stripped():
     assert [item.license for item in items] == ["by-sa", "cc0", "by"]
     assert items[0].creator == "Frank Schulenburg"
     assert items[0].license_url == "https://creativecommons.org/licenses/by-sa/4.0"
-    assert items[0].attribution == "Rutherford Hill Wine Cave-1369 by Frank Schulenburg, CC BY-SA 4.0"
+    assert (
+        items[0].attribution
+        == "Rutherford Hill Wine Cave-1369 by Frank Schulenburg, CC BY-SA 4.0"
+    )
     assert items[0].landing_url.startswith("https://commons.wikimedia.org/wiki/File:")
     assert items[0].image_url.startswith("https://upload.wikimedia.org/")
     assert items[0].thumbnail_url.startswith("https://thumb.wikimedia.org/")
@@ -112,7 +120,10 @@ def test_pexels_fixture_maps_to_items_under_the_pexels_license():
     assert {item.license for item in items} == {"pexels"}
     assert items[0].license_url == "https://www.pexels.com/license/"
     assert items[0].attribution == "Photo by Ada Example on Pexels"
-    assert items[0].image_url == "https://images.pexels.com/photos/4443214/pexels-photo-4443214.jpeg"
+    assert (
+        items[0].image_url
+        == "https://images.pexels.com/photos/4443214/pexels-photo-4443214.jpeg"
+    )
     assert "tinysrgb" in items[0].thumbnail_url
     assert items[1].title == ""
     assert (items[1].width_px, items[1].height_px) == (1800, 2700)
@@ -121,7 +132,10 @@ def test_pexels_fixture_maps_to_items_under_the_pexels_license():
 def test_brave_fixture_maps_to_items_with_unknown_license_and_skips_results_without_an_image():
     items = references.normalize_brave(json.loads(_fixture("brave")))
 
-    assert [item.title for item in items] == ["Old wooden barrel for sale", "Whisky cask diagram"]
+    assert [item.title for item in items] == [
+        "Old wooden barrel for sale",
+        "Whisky cask diagram",
+    ]
     assert {item.license for item in items} == {"unknown"}
     assert items[0].image_url == "https://shop.example.com/img/old-oak.jpg"
     assert items[0].landing_url == "https://shop.example.com/barrels/old-oak"
@@ -167,11 +181,16 @@ def test_search_interleaves_the_sources_and_numbers_from_one(keyed):
     result = references.search_references("wooden barrel", count=12, fetch=network)
 
     assert [item.source for item in result.items] == (
-        ["openverse", "wikimedia", "pexels", "brave"] * 2 + ["openverse", "wikimedia", "pexels"]
+        ["openverse", "wikimedia", "pexels", "brave"] * 2
+        + ["openverse", "wikimedia", "pexels"]
     )
     assert result.skipped_sources == {}
-    assert [path.name for path in result.thumbnail_paths] == [f"{n}.jpg" for n in range(1, 12)]
-    cached = json.loads((paths.SEARCH_CACHE_ROOT / result.search_id / "results.json").read_text())
+    assert [path.name for path in result.thumbnail_paths] == [
+        f"{n}.jpg" for n in range(1, 12)
+    ]
+    cached = json.loads(
+        (paths.SEARCH_CACHE_ROOT / result.search_id / "results.json").read_text()
+    )
     assert [entry["n"] for entry in cached["items"]] == list(range(1, 12))
     assert cached["items"][3]["source"] == "brave"
     assert cached["query"] == "wooden barrel"
@@ -186,7 +205,10 @@ def test_search_asks_each_source_for_its_share_and_sends_the_keys(keyed):
     api_calls = {
         url.split("/")[2]: (url, headers)
         for url, headers in network.requests
-        if "/v1/images/?" in url or "w/api.php" in url or "v1/search" in url or "images/search" in url
+        if "/v1/images/?" in url
+        or "w/api.php" in url
+        or "v1/search" in url
+        or "images/search" in url
     }
     # 12 wanted, doubled, split four ways.
     assert "page_size=6" in api_calls["api.openverse.org"][0]
@@ -203,7 +225,9 @@ def test_reuse_filter_drops_what_cannot_become_a_mesh(keyed):
 
     licenses = {item.license for item in result.items}
     assert licenses <= references.REUSABLE_LICENSES
-    assert "brave" not in {item.source for item in result.items}  # its licenses are unknown
+    assert "brave" not in {
+        item.source for item in result.items
+    }  # its licenses are unknown
     openverse = [item.license for item in result.items if item.source == "openverse"]
     assert openverse == ["by", "by-sa"]  # by-nc-nd is gone
 
@@ -238,14 +262,20 @@ def test_a_failing_source_is_skipped_not_raised(keyed):
 
 def test_a_source_that_answers_with_something_else_is_skipped(keyed):
     def fetch(url, headers):
-        return b"<html>captcha</html>" if "openverse" in url else FakeNetwork()(url, headers)
+        return (
+            b"<html>captcha</html>"
+            if "openverse" in url
+            else FakeNetwork()(url, headers)
+        )
 
     result = references.search_references("wooden barrel", count=6, fetch=fetch)
 
     assert result.skipped_sources["openverse"].startswith("JSONDecodeError")
 
 
-def test_an_item_whose_thumbnail_does_not_decode_is_dropped_and_numbering_stays_contiguous(keyed):
+def test_an_item_whose_thumbnail_does_not_decode_is_dropped_and_numbering_stays_contiguous(
+    keyed,
+):
     openverse = references.normalize_openverse(json.loads(_fixture("openverse")))
     network = FakeNetwork(bad_thumbnails=(openverse[0].thumbnail_url,))
 
@@ -253,7 +283,10 @@ def test_an_item_whose_thumbnail_does_not_decode_is_dropped_and_numbering_stays_
         "wooden barrel", sources=("openverse",), count=3, fetch=network
     )
 
-    assert [item.title for item in result.items] == [openverse[1].title, openverse[2].title]
+    assert [item.title for item in result.items] == [
+        openverse[1].title,
+        openverse[2].title,
+    ]
     assert len(result.items) == 2
     assert [path.name for path in result.thumbnail_paths] == ["1.jpg", "2.jpg"]
 
@@ -283,14 +316,18 @@ def _thumbnail_files(tmp_path, count):
 
 
 def test_seven_thumbnails_make_a_six_column_two_row_sheet(tmp_path):
-    sheet = Image.open(io.BytesIO(references.contact_sheet(_thumbnail_files(tmp_path, 7))))
+    sheet = Image.open(
+        io.BytesIO(references.contact_sheet(_thumbnail_files(tmp_path, 7)))
+    )
 
     assert sheet.format == "JPEG"
     assert sheet.size == (6 * 256, 2 * 256)
 
 
 def test_each_tile_carries_its_own_number_in_a_white_box(tmp_path):
-    sheet = Image.open(io.BytesIO(references.contact_sheet(_thumbnail_files(tmp_path, 7)))).convert("RGB")
+    sheet = Image.open(
+        io.BytesIO(references.contact_sheet(_thumbnail_files(tmp_path, 7)))
+    ).convert("RGB")
     box_width, box_height = references.LABEL_BOX_PX
 
     def label(tile_index):
@@ -324,14 +361,20 @@ def codex(tmp_path, monkeypatch):
 
 
 def _searched(keyed, network=None):
-    return references.search_references("wooden barrel", count=6, fetch=network or FakeNetwork())
+    return references.search_references(
+        "wooden barrel", count=6, fetch=network or FakeNetwork()
+    )
 
 
 def test_saving_writes_the_png_and_a_log_whose_hash_matches_the_file(keyed, codex):
     search = _searched(keyed)
 
     saved = references.save_references(
-        search.search_id, [1, 2], "barrel_kit", fetch=FakeNetwork(), reference_root=codex
+        search.search_id,
+        [1, 2],
+        "barrel_kit",
+        fetch=FakeNetwork(),
+        reference_root=codex,
     )
 
     assert len(saved) == 2
@@ -340,9 +383,14 @@ def test_saving_writes_the_png_and_a_log_whose_hash_matches_the_file(keyed, code
         assert image_path.parent == codex / "barrel_kit"
         assert image_path.suffix == ".png"
         assert hashlib.sha256(image_path.read_bytes()).hexdigest() == entry.sha256
-        assert entry.big_path == f"/mnt/fake_codex/game_assets/references/barrel_kit/{image_path.name}"
+        assert (
+            entry.big_path
+            == f"/mnt/fake_codex/game_assets/references/barrel_kit/{image_path.name}"
+        )
         assert (entry.width_px, entry.height_px) == IMAGE_SIZE_PX
-        assert entry.too_small_for_shape is True  # 300 px is under the 512 px shape threshold
+        assert (
+            entry.too_small_for_shape is True
+        )  # 300 px is under the 512 px shape threshold
     assert saved[0].id.startswith("openverse_") and saved[1].id.startswith("wikimedia_")
     log = yaml.safe_load((codex / "barrel_kit" / "references.yaml").read_text())
     assert [entry["id"] for entry in log] == [entry.id for entry in saved]
@@ -364,7 +412,9 @@ def test_saving_the_same_number_twice_adds_no_file_and_no_log_entry(keyed, codex
     )
 
     assert len(list((codex / "barrel_kit").glob("*.png"))) == 1
-    assert len(yaml.safe_load((codex / "barrel_kit" / "references.yaml").read_text())) == 1
+    assert (
+        len(yaml.safe_load((codex / "barrel_kit" / "references.yaml").read_text())) == 1
+    )
     assert again == [first]
 
 
@@ -402,7 +452,11 @@ def test_a_large_picture_is_not_flagged_too_small(keyed, codex):
     search = _searched(keyed)
 
     saved = references.save_references(
-        search.search_id, [1], "barrel_kit", fetch=FakeNetwork(image=_png((1024, 600))), reference_root=codex
+        search.search_id,
+        [1],
+        "barrel_kit",
+        fetch=FakeNetwork(image=_png((1024, 600))),
+        reference_root=codex,
     )[0]
 
     assert saved.too_small_for_shape is False
@@ -413,11 +467,17 @@ def test_save_refuses_what_it_cannot_do(keyed, codex, tmp_path):
     network = FakeNetwork()
 
     with pytest.raises(ValueError, match=r"1\.\.6"):
-        references.save_references(search.search_id, [7], "barrel_kit", fetch=network, reference_root=codex)
+        references.save_references(
+            search.search_id, [7], "barrel_kit", fetch=network, reference_root=codex
+        )
     with pytest.raises(ValueError, match="kit_slug"):
-        references.save_references(search.search_id, [1], "Barrel Kit", fetch=network, reference_root=codex)
+        references.save_references(
+            search.search_id, [1], "Barrel Kit", fetch=network, reference_root=codex
+        )
     with pytest.raises(ValueError, match="search_id"):
-        references.save_references("../elsewhere", [1], "barrel_kit", fetch=network, reference_root=codex)
+        references.save_references(
+            "../elsewhere", [1], "barrel_kit", fetch=network, reference_root=codex
+        )
     with pytest.raises(FileNotFoundError, match="codex_fs is not mounted"):
         references.save_references(
             search.search_id,
@@ -432,7 +492,9 @@ def test_save_refuses_what_it_cannot_do(keyed, codex, tmp_path):
 # --- paths -----------------------------------------------------------------------------
 
 
-def test_big_path_swaps_the_mount_prefix_and_refuses_files_outside_it(tmp_path, monkeypatch):
+def test_big_path_swaps_the_mount_prefix_and_refuses_files_outside_it(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(paths, "CODEX_ROOT_MAC", tmp_path / "mnt")
     monkeypatch.setattr(paths, "CODEX_ROOT_ON_BIG", "/mnt/codex_fs/")
 
