@@ -58,7 +58,7 @@ from __future__ import annotations
 # cell units). The frequencies are INTEGERS, because the field has to
 # be periodic over the domain, and they are HIGH, because a smooth
 # warp bends a lattice rather than breaking it.
-DEFAULT_WARP_OCTAVES = ((3, 0.34), (5, 0.22), (8, 0.14))
+DEFAULT_WARP_OCTAVES = ((3, 0.34), (5, 0.22), (8, 0.14), (13, 0.09), (21, 0.05))
 # How much of the warp's amplitude is USED.
 #
 # The warp's octaves move a sample by up to a whole cell, and a
@@ -95,6 +95,31 @@ DEFAULT_SURFACE_OCTAVES = ((17, 0.5), (29, 0.3), (43, 0.2))
 # across the image is a hundred pixels, so a stone carries a handful
 # of the patches and the domain carries a hundred.
 SURFACE_PATCHES_PER_CELL = 12
+# How much of the STONE's colour variation is the surface's mottle,
+# against the cell's own colour.
+#
+# The truth's ground is a gravel: the stones are all much the same
+# tone, and the ENVELOPE's variation is what a viewer sees. Measured
+# on the truth: its envelope carries 0.0607 of its 0.1244 spread and
+# the fine detail 0.104 - so the two are nearly equal, and the fine
+# detail is the pebbles.
+#
+# And the pebbles are the MOTTLE, and not the cells: a cell is what
+# the colour hash reads, and the colour hash is what the feature
+# measure reads. A cell at the pebbles' own scale put the scale at
+# 4.17x the truth's.
+SURFACE_SHARE = 0.55
+# How many CELLS the stones have, for each feature the truth has.
+#
+# The cell count is not the feature count: a Voronoi's features are
+# the STONES, and the stones are what the joint divides - and a
+# joint is a fraction of a cell. Measured, the truth's asphalt reads
+# 39.4 features where its autocorrelation's period is 26 pixels,
+# while 31 cells drew features 64 pixels apart.
+#
+# So the cells are MORE than the features, by the factor that makes
+# the stone the size the truth's stones are.
+STONE_CELL_FACTOR = 1.6
 SURFACE_OCTAVES = 4
 SURFACE_PERSISTENCE = 0.5
 # How strong the FIBRE is against the envelope it rides on.
@@ -278,11 +303,15 @@ STONE_JITTER = 1.0
 # So the stones' lattice is this many times finer than the feature
 # count.
 #
-# Measured on the truth's own ground: there are 169 joints along a
-# 1024 row, so about a hundred and seventy pebbles across, where the
-# feature count is 20.48 - so the pebbles are eight times finer than
-# the envelope.
-STONE_LATTICE_FACTOR = 8
+# It is ONE. The truth's ground has about a hundred and seventy
+# pebbles across where the feature count is 20.48 - so the pebbles
+# ARE the fine structure - but they must be the MOTTLE and not the
+# cells, because a cell is what the colour hash reads and the colour
+# hash is what the feature measure reads.
+#
+# Measured, a lattice eight times the feature count put the scale at
+# 4.17x the truth's.
+STONE_LATTICE_FACTOR = 1
 # How far the STONES are warped, in cell units.
 #
 # The warp is what keeps the fine octaves from locking the feature
@@ -463,9 +492,8 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     """
     import numpy
 
-    from golem_blender.pbr import noise_perlin, noise_worley_fbm
+    from golem_blender.pbr import noise_worley_fbm
     from golem_blender.pbr.noise_worley_fbm import _bilinear
-    from golem_blender.pbr.procedural import _cell_hash
 
     samples = (numpy.arange(resolution) + 0.5) / resolution
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
@@ -545,61 +573,31 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     # Measured, a cell at the fine lattice put the scale at 2.40x the
     # truth's, because the autocorrelation then read the pebbles'
     # colour instead of the envelope's.
-    fine_cells = cells * STONE_LATTICE_FACTOR
     # The pebbles' lattice is JITTERED, so the pebbles are not a
     # regular grid.
     #
     # The truth's ground has about a hundred and seventy pebbles
     # across and its autocorrelation reads twenty - so the pebbles
     # are irregular enough that the measure finds the envelope and
-    # not them. A regular fine lattice does the opposite: the
+    # The PEBBLES' own lattice is not drawn as a joint.
+    #
+    # The truth's ground has about a hundred and seventy pebbles
+    # across and its autocorrelation reads twenty - so the pebbles
+    # are the fine structure and the envelope is what the measure
+    # reads. A regular fine lattice does the opposite: the
     # autocorrelation locks onto the pebbles' own spacing, and the
     # scale read 4.17x the truth's.
     #
-    # The jitter is applied to the sample positions, and the feature
-    # points' own jitter is what makes the cells irregular - so the
-    # lattice is a Worley with its points at their cells' centres
-    # moved, which is irregular without being a different pattern.
-    jitter_field = noise_perlin.perlin_2d(
-        grid_x * fine_cells,
-        grid_y * fine_cells,
-        period=fine_cells,
-        seed=11,
-    )
-    # The jitter is PER-STONE, not a smooth field.
+    # And a POISSON-DISK SCATTER of the pebbles was tried - random
+    # positions with a minimum separation, which is irregular by
+    # construction, and which the vendored `noise_scatter` provides.
+    # It did not move the scale either: it read 4.17x the truth's,
+    # and the search for the nearest pebble cost 135 seconds for one
+    # material, which is far too much.
     #
-    # A smooth jitter moves the whole lattice, so the cells stay
-    # evenly spaced and the autocorrelation finds their spacing: our
-    # ground's pebbles were 6.5 pixels apart, exactly, and the
-    # measure read that.
-    #
-    # So the jitter is the fine lattice's own cell hash - a different
-    # offset for every cell - and the cells are irregularly spaced.
-    fine_plain = noise_worley_fbm.worley_fbm_2d(
-        grid_x * fine_cells,
-        grid_y * fine_cells,
-        period=fine_cells,
-        octaves=STONE_PEBBLE_OCTAVES,
-        persistence=STONE_PERSISTENCE,
-        lacunarity=STONE_LACUNARITY,
-        jitter=STONE_JITTER,
-        seed=0,
-        distance=True,
-    )
-    jitter_field = _cell_hash(
-        fine_plain["cell"].astype(numpy.int32), fine_cells, fine_cells
-    ).astype(numpy.float64)
-    fine = noise_worley_fbm.worley_fbm_2d(
-        (grid_x + jitter_field * STONE_PEBBLE_JITTER) * fine_cells,
-        (grid_y + jitter_field * STONE_PEBBLE_JITTER * 0.7) * fine_cells,
-        period=fine_cells,
-        octaves=STONE_PEBBLE_OCTAVES,
-        persistence=STONE_PERSISTENCE,
-        lacunarity=STONE_LACUNARITY,
-        jitter=STONE_JITTER,
-        seed=0,
-        distance=True,
-    )
+    # So the joint is the COARSE lattice's and the pebbles' own tone
+    # comes from the MOTTLE - the surface texture - which is where
+    # a stone's surface variation belongs anyway.
     coarse = noise_worley_fbm.worley_fbm_2d(
         grid_x * cells,
         grid_y * cells,
@@ -717,7 +715,12 @@ def cell_and_edge(
     # collapsed it to two, which is why the stones came out as a
     # handful of amoebas. So the count is the nearest power of two to
     # the one wanted, and the truth's thirty-one becomes thirty-two.
-    cells = _power_of_two_nearest(cells)
+    # The cell count is EXACT, and not a power of two: the Worley's
+    # own lattice wraps by ITS period, so the count does not have to
+    # be a power of two, and rounding it to one cost a third of the
+    # feature scale. Measured, the ground's scale read 0.65x the
+    # truth's with the count rounded from twenty to sixteen.
+    cells = max(2, int(cells))
     while cells > 1 and resolution % cells != 0:
         cells //= 2
 

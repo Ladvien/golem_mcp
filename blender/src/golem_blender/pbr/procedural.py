@@ -267,6 +267,7 @@ def write_procedural_base_color(
     import numpy
 
     from golem_blender.pbr import pattern
+    from golem_blender.pbr.pattern import SURFACE_SHARE
 
     if kind not in PROCEDURAL_COLOUR_KINDS:
         raise ValueError(
@@ -312,9 +313,7 @@ def write_procedural_base_color(
         # joint's width needs, because it is an exact distance to the
         # cell's border - so a joint drawn from it is the same width
         # in pixels whatever the cell's size.
-        stones = pattern.fractal_stones(
-            resolution, pattern.stone_lattice(cells, resolution)
-        )
+        stones = pattern.fractal_stones(resolution, cells)
         cell = stones["cell"]
         edge = stones["distance"]
         grid = (cells, cells)
@@ -443,7 +442,7 @@ def write_procedural_base_color(
     surface_amplitude = float(surface.max() - surface.min())
     if surface_amplitude > 0.0:
         surface = surface / surface_amplitude * 2.0 - 1.0
-    wear = surface * min(variation, 1.0) * ramp_spread
+    wear = surface * min(variation, 1.0) * ramp_spread * SURFACE_SHARE
     colour = stone + wear[:, :, numpy.newaxis]
 
     # The joint replaces the stone where the joint is.
