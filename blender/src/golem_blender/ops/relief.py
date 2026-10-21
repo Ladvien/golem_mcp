@@ -129,6 +129,15 @@ JOINT_BLUR_CELLS = 3
 # That is the thing an AI-generated texture can never be, and it is
 # why a procedural surface tiles exactly rather than approximately.
 PROCEDURAL_SOURCE_KINDS = ("voronoi", "brick", "wave", "noise")
+# The joint's width, as a fraction of the distance to the nearest edge.
+#
+# It is the difference between a LINE and a GROOVE, and the render
+# showed the difference: at 0.15 the groove was 1.18 cells wide and
+# 5.16% of the surface, the normal map had almost nothing to tilt, and
+# the cobbles read as flat outlined cells. At 0.30 the groove is 2.34
+# cells wide and 19.31% of the surface, which is a gap of sand and
+# grit between stones.
+PROCEDURAL_JOINT_WIDTH = 0.30
 # The pattern's scale, in cells across the slab. It is the SAME
 # number the base colour's pattern uses, because they are the same
 # pattern and must be the same scale: one definition, not two.
@@ -255,45 +264,34 @@ def _joint_response(albedo_path: Path, cell_count: int) -> tuple:
 
 
 def _procedural_height_field(kind: str, cell_count: int, scale_cells: float) -> tuple:
-    """A height field from Blender's own nodes, with no image to read.
+    """A height field from the pattern, with no image to read.
 
     The image-sourced height field reads a texture's pixels and finds
-    the mortar between its stones. The PROCEDURAL one asks Blender
-    for the same shape directly: a Voronoi pattern's cell edges ARE
-    the joints, a brick texture's mortar IS the network, and a wave's
-    troughs are the grooves.
+    the mortar between its stones. The PROCEDURAL one computes the
+    same shape: a Voronoi pattern's cell edges ARE the joints.
 
-    What comes back is the SAME height field the image path produces -
-    1 on the stone tops, 0 in the joints - so the slab build, the
-    bake and every measurement downstream do not change.
+    It comes from `pbr.pattern`, which is the SAME arithmetic the
+    procedural base colour is built from - so the relief's joints and
+    the colour's mortar are the same network by construction, and the
+    baked maps land on the colour's own mortar lines.
+
+    It was built in Blender's shader graph first, and that cost a
+    round: the graph's nodes put four separate defects between the
+    intent and the image - a ramp whose position was read against a
+    field that does not run 0 to 1, a blend whose factor was a colour
+    where a scalar was wanted, and a readback that inherited the
+    previous call's datablock - and each was found only by measuring
+    the result. The pattern is arithmetic; it is computed now.
 
     THE FIELD IS PERIODIC, and it is what the bakes inherit. Measured:
     the Voronoi field's seam is 0.0083x the interior's largest steps,
     against the 0.1604x an albedo-derived field manages - nineteen
-    times better - because the pattern is evaluated on Blender's
-    wrapped lattice while a texture is sampled from a PNG without
-    wrapping, so its last row is the texture's last row and its
-    first is the texture's first.
-
-    The WRAP node is not what makes it so, and the code does not
-    claim it is: removing the node entirely left the seam at
-    0.0083x, because Blender's texture nodes already evaluate on a
-    wrapped domain. The wrap is there so the domain is explicit
-    rather than a property of the node, and the scale is what
-    decides how many cells there are per fold.
-
-    How the pattern is READ does matter, and it is a render rather
-    than a bake: a bake's island-edge handling mixes an edge texel
-    with its opposite edge, which is a seam of the BAKE rather than
-    of the pattern - the same pattern read back from a bake measured
-    9.28x the interior's largest steps, and read back from a render
-    measured 0.03x. It is read through an EMISSION-only material
-    under the Standard view transform, so what comes back is the
-    pattern's raw value and not a lit surface.
+    times better - because the pattern is computed on a periodic
+    lattice while a texture is sampled from a PNG without wrapping.
 
     Returns the height field and the peak of the joint response.
     """
-    import numpy
+    from golem_blender.pbr import pattern
 
     if kind not in PROCEDURAL_SOURCE_KINDS:
         raise ValueError(
@@ -301,127 +299,22 @@ def _procedural_height_field(kind: str, cell_count: int, scale_cells: float) -> 
             f"{PROCEDURAL_SOURCE_KINDS}, or an empty string for the albedo."
         )
 
-    import bpy
-
-    resolution = cell_count
-    material = bpy.data.materials.new("golem_relief_source")
-    material.use_nodes = True
-    tree = material.node_tree
-    for node in list(tree.nodes):
-        tree.nodes.remove(node)
-
-    output = tree.nodes.new("ShaderNodeOutputMaterial")
-    emission = tree.nodes.new("ShaderNodeEmission")
-
-    # The pattern's domain: the UVs scaled up to the pattern's cell
-    # count and wrapped modulo one, so the pattern is read on a
-    # TORUS and repeats exactly.
-    coordinate = tree.nodes.new("ShaderNodeTexCoord")
-    scaling = tree.nodes.new("ShaderNodeVectorMath")
-    scaling.operation = "SCALE"
-    scaling.inputs["Scale"].default_value = (
-        scale_cells if scale_cells > 0.0 else DEFAULT_PROCEDURAL_SCALE
+    # The field is computed ON THE SLAB'S GRID, so the slab's
+    # vertices read it directly - one height per grid cell. The
+    # nearest-point search is O(samples x points), so the grid is
+    # bounded, and the relief's detail is the grid's resolution
+    # anyway.
+    #
+    # The PATTERN's cell count is a different thing: it is how many
+    # stones the pattern has, and it is the pattern's own scale. The
+    # grid is how finely the slab resolves it.
+    cells = max(2, round(scale_cells))
+    grid = max(2, min(512, cell_count))
+    return pattern.joint_response(
+        grid,
+        cells,
+        joint_width=PROCEDURAL_JOINT_WIDTH,
     )
-    tree.links.new(coordinate.outputs["UV"], scaling.inputs[0])
-    wrapping = tree.nodes.new("ShaderNodeVectorMath")
-    wrapping.operation = "WRAP"
-    wrapping.inputs[1].default_value = (1.0, 1.0, 1.0)
-    wrapping.inputs[2].default_value = (0.0, 0.0, 0.0)
-    tree.links.new(scaling.outputs["Vector"], wrapping.inputs[0])
-    domain = wrapping.outputs["Vector"]
-
-    if kind == "voronoi":
-        texture = tree.nodes.new("ShaderNodeTexVoronoi")
-        texture.feature = "DISTANCE_TO_EDGE"
-        texture.inputs["Scale"].default_value = 1.0
-        tree.links.new(domain, texture.inputs["Vector"])
-        tree.links.new(texture.outputs["Distance"], emission.inputs["Color"])
-    elif kind == "brick":
-        texture = tree.nodes.new("ShaderNodeTexBrick")
-        tree.links.new(domain, texture.inputs["Vector"])
-        tree.links.new(texture.outputs["Fac"], emission.inputs["Color"])
-    elif kind == "wave":
-        texture = tree.nodes.new("ShaderNodeTexWave")
-        tree.links.new(domain, texture.inputs["Vector"])
-        tree.links.new(texture.outputs["Fac"], emission.inputs["Color"])
-    else:
-        texture = tree.nodes.new("ShaderNodeTexNoise")
-        tree.links.new(domain, texture.inputs["Vector"])
-        tree.links.new(texture.outputs["Fac"], emission.inputs["Color"])
-
-    # An EMISSION-only material, so a render shows the pattern's raw
-    # value and not a lit surface.
-    tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
-
-    bpy.ops.mesh.primitive_plane_add(size=2.0)
-    plane = bpy.context.active_object
-    plane.name = "golem_relief_source_plane"
-    camera = None
-    try:
-        plane.data.materials.append(material)
-        bpy.context.view_layer.update()
-
-        scene = bpy.context.scene
-        previous_engine = scene.render.engine
-        previous_x = scene.render.resolution_x
-        previous_y = scene.render.resolution_y
-        previous_filepath = scene.render.filepath
-        previous_format = scene.render.image_settings.file_format
-        previous_transform = scene.view_settings.view_transform
-        previous_camera = scene.camera
-        try:
-            scene.render.engine = "BLENDER_EEVEE"
-            scene.render.resolution_x = resolution
-            scene.render.resolution_y = resolution
-            scene.render.image_settings.file_format = "PNG"
-            scene.view_settings.view_transform = "Standard"
-            bpy.ops.object.camera_add(location=(0.0, 0.0, 5.0))
-            camera = bpy.context.active_object
-            camera.rotation_euler = (0.0, 0.0, 0.0)
-            scene.camera = camera
-            scene.render.filepath = "/tmp/golem_relief_source.png"
-            bpy.ops.render.render(write_still=True)
-            rendered = bpy.data.images.load("/tmp/golem_relief_source.png")
-            try:
-                pixels = numpy.empty(len(rendered.pixels), dtype=numpy.float32)
-                rendered.pixels.foreach_get(pixels)
-                values = pixels.reshape((resolution, resolution, 4))[:, :, 0]
-            finally:
-                bpy.data.images.remove(rendered)
-        finally:
-            scene.render.engine = previous_engine
-            scene.render.resolution_x = previous_x
-            scene.render.resolution_y = previous_y
-            scene.render.filepath = previous_filepath
-            scene.render.image_settings.file_format = previous_format
-            scene.view_settings.view_transform = previous_transform
-            scene.camera = previous_camera
-    finally:
-        if camera is not None:
-            bpy.data.objects.remove(camera, do_unlink=True)
-        bpy.data.objects.remove(plane, do_unlink=True)
-        bpy.data.materials.remove(material)
-
-    # The node's output is the SURFACE height: bright is high. The
-    # joints are where it is LOW, so the field is the inverse.
-    height = values.copy()
-    low = float(height.min())
-    high = float(height.max())
-    if high > low:
-        height = (height - low) / (high - low)
-    else:
-        height = numpy.zeros_like(height)
-
-    # The joint response, the same measure the image path uses: the
-    # difference between the field and a blurred copy of it, which
-    # isolates the thin network between the stones.
-    blurred = _box_blur(height, JOINT_BLUR_CELLS)
-    joint = numpy.clip(blurred - height, 0.0, None)
-    peak = float(joint.max())
-    if peak > 0.0:
-        joint = joint / peak
-    dip = numpy.clip(joint * JOINT_DIP_GAIN, 0.0, 1.0)
-    return 1.0 - dip, peak
 
 
 def _build_relief_slab(

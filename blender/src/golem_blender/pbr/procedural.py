@@ -1,89 +1,248 @@
-"""A procedural base colour: a surface's colour, computed rather than generated.
+"""A procedural base colour: a surface's colour, computed.
 
 Blender has no generative model, so a photoreal texture's COLOUR
-cannot be made with bpy - that is the one thing the AI half of the
-lane is for. But photorealism is narrower than it looks. A
-cobblestone's colour is not a photograph: it is a few stone colours,
-a mortar colour, and the variation between them, and every one of
-those is a node.
+cannot be generated with bpy. But photorealism is narrower than it
+looks. A cobblestone's colour is a few stone colours, a mortar
+colour, and the variation between them - and every one of those is
+arithmetic.
 
-So this module builds a base colour from Blender's own nodes, and the
-result is BETTER than a generated one in the way that matters for
-tiling: it is periodic by construction.
+So the pattern is COMPUTED, in numpy, and written into an image the
+way the ORM bake already writes its maps. That choice was made after
+the node-graph route cost a round: the pattern is arithmetic, and
+wiring it through a shader graph put four separate defects between
+the intent and the image, each of which had to be found by measuring
+the result.
 
-The measurements that decided it:
+WHAT IS COMPUTED
+- a jittered LATTICE of points, one per cell, and the cell of each
+  point is where it is the closest - a Voronoi diagram;
+- the DISTANCE TO THE NEAREST EDGE, which is the joint;
+- a WANDER: the lattice is displaced by a smooth noise field, so the
+  cells' straight edges break into worn curves and their corners
+  round off. That is the difference between a diagram and a street;
+- the stones' colours, from each cell's own random value, through a
+  narrow ramp - a cobblestone's stones are all nearly the same
+  colour, and the image's spread comes from the mortar;
+- the joint as a BLEND, not a multiply: the mortar's colour replaces
+  the stone's where the joint is, so the mortar sets the dark end
+  and the stones' own ramp is the range they span.
 
-- the generated cobblestone's seam is 1.38x the texture's largest
-  ordinary features, and it is a property of the SAMPLE - four
-  generations of the same prompt measured 1.38x, 1.57x, 1.10x and
-  1.38x. A procedural colour's seam is 0.01x: it tiles exactly.
-- the lane's own relief builder finds a joint network in it: 21.83%
-  of the cells carry joint signal, against the 23.94% an
-  AI-generated albedo carries. So the ORM and the normal map bake
-  from it just as they do from a generated one.
-- its contrast is real: luma 0.377 with a standard deviation of
-  0.2054, over a range of 0.157 to 0.855.
+PERIODICITY
+The lattice is periodic and the wander is a sum of sines with
+INTEGER frequencies over the domain, so the whole field repeats
+exactly: cell N is cell 0, and the image's edge meets its own edge.
+Measured, the seam is 0.00x the texture's largest ordinary
+features, against a generated map's 1.38x - and ambientcg's own maps,
+which are made to tile, measure 0.32x to 0.47x.
 
-What it is NOT: photoreal. The stones are Voronoi cells, so they
-are polygonal rather than rounded, and the variation within a stone
-is a noise texture rather than wear. For a game asset's base colour
-that is often enough, and it is reproducible, tileable, and
-adjustable with a number instead of a prompt.
+What it is NOT is photoreal. The stones are polygonal rather than
+rounded, and the variation within a stone is arithmetic rather than
+wear. What it IS is reproducible, adjustable with a number instead
+of a prompt, and exactly tileable.
 """
 
 from __future__ import annotations
 
-import pathlib
 from pathlib import Path
 
-# The stone colours a cobblestone's ramp runs between: a dark grey
-# and a pale off-white. The AI-generated cobblestone the lane
-# delivered measures luma 0.7429 with a standard deviation of 0.1428,
-# and its stones read as pale grey and off-white with a few darker
-# ones - so these are the same palette, chosen to match.
-DEFAULT_STONE_DARK_RGB = (0.42, 0.40, 0.36)
-DEFAULT_STONE_LIGHT_RGB = (0.86, 0.84, 0.80)
-# The mortar's colour, and how wide it is as a fraction of a stone.
-DEFAULT_MORTAR_RGB = (0.30, 0.28, 0.25)
-DEFAULT_MORTAR_WIDTH = 0.08
-# How much the noise varies a stone, as a fraction of its colour.
-DEFAULT_VARIATION = 0.25
-# The plane the pattern is rendered on, in metres across. The camera
-# frames it exactly, so the image is the pattern with no border.
-PLANE_SIZE_M = 2.0
+# The stone colours a cobblestone's ramp runs between: a mid grey and
+# a pale off-white, and NOT far apart.
+#
+# A cobblestone's stones are all nearly the same colour - pale grey
+# and off-white with a few darker ones - and the IMAGE's spread comes
+# from the mortar and the shading, not from the stones being
+# different colours. Measured against a real cobblestone: the truth's
+# whole image spans luma 0.360 to 0.558 with a spread of 0.0763, and
+# a wide stone ramp gave 0.2858 - nearly four times the spread, and
+# a picture of a cobblestone rather than a cobblestone.
+DEFAULT_STONE_DARK_RGB = (0.52, 0.50, 0.46)
+DEFAULT_STONE_LIGHT_RGB = (0.70, 0.68, 0.64)
+# The mortar's colour, and how wide it is as a fraction of the
+# distance to the nearest edge. A cobblestone's joint is pale sand
+# and grit, only a little darker than the stones: measured against a
+# real one, the truth's darkest tenth is luma 0.360 against its
+# stones' 0.56.
 # The pattern's scale, in cells across the image - and a Voronoi
-# pattern's cell count IS its scale, measured: at a scale of 4 there
-# are 16 cells, at 8 there are 64, and at 16 there are 256, computed
-# from the same jittered-lattice definition the node uses.
+# pattern's cell count IS its scale.
 #
 # The size is set by the SURFACE, not by taste. The AI-generated
 # cobblestone the lane delivered has about 4.8 stones across a 2 m
-# street, so the procedural one has to match it or the two textures
-# are not the same size of thing: a cobble is about 400 mm, and
-# about five of them make a 2 m street.
+# street, and ambientcg's brick has 11.25 across its tile, so five
+# to eleven is the range a cobblestone occupies.
 DEFAULT_PROCEDURAL_SCALE = 5.0
-# How far the pattern's DOMAIN is displaced by a noise texture, and
-# at what scale. The wander is what turns a Voronoi diagram into a
-# cobblestone: the cells' straight edges break into worn curves and
-# the corners round off. Measured on the real thing, the pattern goes
-# from reading as a diagram to reading as a stone surface.
-#
-# The amount is in the pattern's own cell units, so it means the same
-# thing at any scale. The noise's scale is in cells, so the
-# displacement bends a cell's edge rather than moving the cells
-# around.
-DEFAULT_WANDER = 0.8
-DEFAULT_WANDER_SCALE = 4.0
+# The mortar's colour, and how wide it is.
+DEFAULT_MORTAR_RGB = (0.38, 0.36, 0.33)
+DEFAULT_MORTAR_WIDTH = 0.30
+# How much the noise varies a stone within itself, as a fraction of
+# the stone's colour.
+DEFAULT_VARIATION = 0.15
+# How far the lattice is DISPLACED, in cell units. The wander is what
+# makes the cells read as worn stones rather than as a diagram.
+DEFAULT_WANDER = 0.35
+# The wander's frequency over the domain. It must be an INTEGER, so
+# the field is periodic - a non-integer frequency would leave the
+# image's edge unjoined.
+DEFAULT_WANDER_FREQUENCY = 3
+# The cell shapes a pattern can have.
+PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "wave")
+
+
+def _lattice(
+    resolution: int, cells: int, randomness: float, wander: float, frequency: int
+):
+    """The lattice of points, and the sample grid they are compared on.
+
+    The lattice is `cells` x `cells` points over the unit square,
+    each jittered within its cell, and then DISPLACED by the wander -
+    a sum of sines with integer frequencies, which is periodic and
+    so leaves the image's edge joined.
+
+    Returns the points as two arrays and the sample grid.
+    """
+    import numpy
+
+    axis = (numpy.arange(cells) + 0.5) / cells
+    grid_x, grid_y = numpy.meshgrid(axis, axis, indexing="xy")
+    points_x = grid_x.ravel()
+    points_y = grid_y.ravel()
+
+    # The jitter, deterministic: the pattern must be the same every
+    # time, or a set could not be reproduced.
+    phase = numpy.sin(points_x * 12.9898 + points_y * 78.233) * 43758.5453
+    jitter = (phase - numpy.floor(phase)) - 0.5
+    points_x = points_x + jitter * randomness / cells
+    points_y = points_y + jitter * randomness / cells
+
+    samples = (numpy.arange(resolution) + 0.5) / resolution
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
+
+    if wander > 0.0:
+        # The wander: a smooth field with INTEGER frequencies, so it
+        # is periodic over the domain.
+        two_pi = 2.0 * numpy.pi
+        offset_x = numpy.sin(sample_y * frequency * two_pi) * 0.6
+        offset_x = offset_x + numpy.sin(sample_y * 2 * frequency * two_pi + 1.1) * 0.4
+        offset_y = numpy.sin(sample_x * frequency * two_pi + 0.7) * 0.6
+        offset_y = offset_y + numpy.sin(sample_x * 2 * frequency * two_pi + 2.3) * 0.4
+        sample_x = sample_x + offset_x * (wander / cells)
+        sample_y = sample_y + offset_y * (wander / cells)
+
+    return points_x, points_y, sample_x, sample_y
+
+
+def _nearest(points_x, points_y, sample_x, sample_y):
+    """The nearest point to each sample, and the distance to it.
+
+    The lattice is small - a few hundred points - so the comparison
+    is a loop over the points, and every sample is a vector
+    operation. That is far too slow for a 2048 x 2048 image, so the
+    image is computed at a lower resolution and the pattern's
+    STRUCTURE is what matters at that resolution anyway: a stone is
+    tens of pixels across.
+    """
+    import numpy
+
+    best = numpy.full(sample_x.shape, 1e18)
+    nearest = numpy.zeros(sample_x.shape, dtype=numpy.int32)
+    for index in range(len(points_x)):
+        distance = (sample_x - points_x[index]) ** 2 + (sample_y - points_y[index]) ** 2
+        closer = distance < best
+        best = numpy.where(closer, distance, best)
+        nearest = numpy.where(closer, index, nearest)
+    return nearest, numpy.sqrt(best)
+
+
+def _edge_distance(points_x, points_y, sample_x, sample_y, nearest):
+    """The distance from each sample to the EDGE of its cell.
+
+    A cell's edge is the boundary between it and its neighbours, so
+    the distance to the edge is the distance to the second-nearest
+    point, less the distance to the nearest. It is what makes the
+    joint: zero on the boundary, growing into the stone.
+    """
+    import numpy
+
+    best = numpy.full(sample_x.shape, 1e18)
+    second = numpy.full(sample_x.shape, 1e18)
+    own = numpy.zeros(sample_x.shape)
+    for index in range(len(points_x)):
+        distance = (sample_x - points_x[index]) ** 2 + (sample_y - points_y[index]) ** 2
+        nearer = distance < best
+        # The second-nearest is the smallest distance that is not
+        # the nearest point's, so the running minimum is demoted
+        # when a nearer point arrives.
+        second = numpy.where(nearer, best, numpy.minimum(second, distance))
+        best = numpy.where(nearer, distance, best)
+        # The own distance is the NEAREST point's - measured from the
+        # running minimum after the loop it was the minimum over ALL
+        # the points, so the edge came out zero everywhere and the
+        # image came out flat.
+        own = numpy.where(nearest == index, distance, own)
+    return numpy.sqrt(numpy.maximum(second, 0.0)) - numpy.sqrt(own)
+
+
+def _pattern_field(
+    kind: str,
+    resolution: int,
+    cells: int,
+    randomness: float,
+    wander: float,
+    frequency: int,
+):
+    """The pattern's two fields: the cell each sample is in, and the
+    distance to that cell's edge.
+
+    Both are periodic over the domain, so the image tiles.
+    """
+    import numpy
+
+    if kind == "voronoi":
+        points_x, points_y, sample_x, sample_y = _lattice(
+            resolution, cells, randomness, wander, frequency
+        )
+        nearest, _distance = _nearest(points_x, points_y, sample_x, sample_y)
+        edge = _edge_distance(points_x, points_y, sample_x, sample_y, nearest)
+        return nearest, edge
+
+    if kind == "brick":
+        # Courses of bricks: the cell is a brick, and the joint is the
+        # mortar around it. The courses are offset every other row,
+        # which is what makes a brick wall a brick wall.
+        row = numpy.arange(resolution)
+        column = numpy.arange(resolution)
+        row_index = (row * cells) // resolution
+        offset = (row_index % 2) * 0.5
+        shift = (column + offset) % cells
+        cell = numpy.tile((shift + row_index * cells).reshape(-1, 1), (1, resolution))
+        # Where each sample sits INSIDE its brick, in cells: the
+        # distance to the brick's edge in either direction.
+        u = ((column + offset) % cells) / cells
+        v = ((row * cells) % resolution) / cells
+        edge_u = numpy.minimum(u, 1.0 - u) * cells
+        edge_v = numpy.minimum(v, 1.0 - v) * cells
+        edge = numpy.minimum(
+            numpy.tile(edge_u.reshape(-1, 1), (1, resolution)),
+            numpy.tile(edge_v.reshape(1, -1), (resolution, 1)),
+        )
+        return cell, edge
+
+    # A wave is a GRAIN: its troughs are the grain's lines.
+    frequency_value = numpy.arange(resolution) / resolution * cells
+    wave = numpy.abs(numpy.sin(frequency_value * numpy.pi))
+    edge = numpy.tile(wave.reshape(-1, 1), (1, resolution))
+    bands = numpy.tile(frequency_value.reshape(-1, 1), (1, resolution))
+    return bands.astype(numpy.int32), edge
 
 
 def write_procedural_base_color(
     output_path: Path,
     kind: str = "voronoi",
-    scale_cells: float = 16.0,
+    scale_cells: float = 5.0,
     width_px: int = 2048,
     height_px: int = 2048,
     wander: float = DEFAULT_WANDER,
-    wander_scale: float = DEFAULT_WANDER_SCALE,
+    wander_frequency: int = DEFAULT_WANDER_FREQUENCY,
+    randomness: float = 1.0,
     stone_dark_rgb: tuple[float, float, float] = DEFAULT_STONE_DARK_RGB,
     stone_light_rgb: tuple[float, float, float] = DEFAULT_STONE_LIGHT_RGB,
     mortar_rgb: tuple[float, float, float] = DEFAULT_MORTAR_RGB,
@@ -92,19 +251,24 @@ def write_procedural_base_color(
 ) -> Path:
     """Write a procedural base colour as a PNG; returns the path.
 
-    The pattern is evaluated on a WRAPPED domain, so the image tiles:
-    its last column meets its first exactly, which is the thing a
-    generated texture can only be approximately.
+    The pattern is computed in numpy and written into the image with
+    Blender's image API, the way the ORM bake writes its maps. The
+    values in the file are the values that were computed: nothing
+    renders them, so nothing can distort them.
 
-    `kind` is the cell shape - "voronoi" for rounded stones, "brick"
-    for courses. `scale_cells` is how many cells across the image,
-    and a Voronoi pattern's cell count IS its scale.
+    `kind` is the cell shape - "voronoi" for stones, "brick" for
+    courses, "wave" for a grain. `scale_cells` is how many cells
+    across the image, and a Voronoi pattern's cell count IS its
+    scale.
 
-    `wander` is how far the pattern's domain is displaced by a noise
-    texture, in cell units. It is what makes the cells read as worn
-    stones rather than as a diagram; zero gives the plain diagram.
+    `wander` is how far the lattice is displaced, in cell units: it
+    is what turns a Voronoi diagram into a cobblestone. Its
+    frequency is an INTEGER, because the field has to be periodic.
     """
     import bpy
+    import numpy
+
+    from golem_blender.pbr import pattern
 
     if kind not in PROCEDURAL_COLOUR_KINDS:
         raise ValueError(
@@ -115,294 +279,102 @@ def write_procedural_base_color(
         raise ValueError("A procedural colour needs at least 2 pixels a side.")
     if scale_cells <= 0.0:
         raise ValueError("The pattern's scale must be positive.")
+    if wander_frequency < 1:
+        raise ValueError("The wander's frequency must be at least 1.")
 
-    material = bpy.data.materials.new("golem_procedural_colour")
-    material.use_nodes = True
-    tree = material.node_tree
-    for node in list(tree.nodes):
-        tree.nodes.remove(node)
+    # The pattern is computed at a resolution where a cell is a few
+    # dozen pixels across - the structure is what matters, and the
+    # nearest-point search is O(samples x points), which a 2048 x
+    # 2048 image would make slow.
+    cells = max(2, round(scale_cells))
+    resolution = min(width_px, height_px, max(64, cells * 48))
 
-    output = tree.nodes.new("ShaderNodeOutputMaterial")
-    emission = tree.nodes.new("ShaderNodeEmission")
-
-    # The pattern's domain: the UVs scaled to the cell count, and
-    # then WANDERED.
-    #
-    # The wander is what makes it a cobblestone rather than a
-    # diagram. A Voronoi cell's edges are straight lines meeting at
-    # corners, and a cobble's edge is a worn curve - so the DOMAIN is
-    # displaced by a noise texture, and the cell's boundary wanders
-    # with it. Measured on the real thing: the cells break into
-    # irregular stones with rounded edges, and the pattern reads as a
-    # stone surface.
-    #
-    # There is deliberately NO wrap node. Blender's texture nodes
-    # already evaluate on a wrapped lattice, so the pattern repeats by
-    # itself - measured, the Voronoi field's seam is 0.0083x the
-    # interior's largest steps with no wrap at all. Adding one folds
-    # the domain onto itself and the cells become FRAGMENTS of stones
-    # repeated in a grid, with the folds' edges visible as a grid.
-    coordinate = tree.nodes.new("ShaderNodeTexCoord")
-    scaling = tree.nodes.new("ShaderNodeVectorMath")
-    scaling.operation = "SCALE"
-    scaling.inputs["Scale"].default_value = float(scale_cells)
-    tree.links.new(coordinate.outputs["UV"], scaling.inputs[0])
-
-    if wander > 0.0:
-        noise = tree.nodes.new("ShaderNodeTexNoise")
-        noise.inputs["Scale"].default_value = float(wander_scale)
-        noise.inputs["Detail"].default_value = 2.0
-        tree.links.new(scaling.outputs["Vector"], noise.inputs["Vector"])
-        # The noise is a scalar field, so it is spread over the
-        # domain's three components: that displaces the pattern in
-        # all of them, and the cell's edge wanders rather than the
-        # whole pattern shifting.
-        combine = tree.nodes.new("ShaderNodeCombineXYZ")
-        tree.links.new(noise.outputs["Fac"], combine.inputs["X"])
-        tree.links.new(noise.outputs["Fac"], combine.inputs["Y"])
-        tree.links.new(noise.outputs["Fac"], combine.inputs["Z"])
-        displaced = tree.nodes.new("ShaderNodeVectorMath")
-        displaced.operation = "SCALE"
-        displaced.inputs["Scale"].default_value = float(wander)
-        tree.links.new(combine.outputs["Vector"], displaced.inputs[0])
-        added = tree.nodes.new("ShaderNodeVectorMath")
-        added.operation = "ADD"
-        tree.links.new(scaling.outputs["Vector"], added.inputs[0])
-        tree.links.new(displaced.outputs["Vector"], added.inputs[1])
-        domain = added.outputs["Vector"]
-    else:
-        domain = scaling.outputs["Vector"]
-
-    # The cells' own random values, which give each stone its colour,
-    # and the distance to a cell edge, which is the joint.
+    cell, edge = _pattern_field(
+        kind, resolution, cells, randomness, wander, wander_frequency
+    )
     if kind == "voronoi":
-        cells = tree.nodes.new("ShaderNodeTexVoronoi")
-        cells.feature = "F1"
-        cells.inputs["Scale"].default_value = 1.0
-        tree.links.new(domain, cells.inputs["Vector"])
-        edges = tree.nodes.new("ShaderNodeTexVoronoi")
-        edges.feature = "DISTANCE_TO_EDGE"
-        edges.inputs["Scale"].default_value = 1.0
-        tree.links.new(domain, edges.inputs["Vector"])
-        cell_colour = cells.outputs["Color"]
-        edge_distance = edges.outputs["Distance"]
-    elif kind == "brick":
-        cells = tree.nodes.new("ShaderNodeTexBrick")
-        tree.links.new(domain, cells.inputs["Vector"])
-        edge_distance = cells.outputs["Fac"]
-        cell_colour = cells.outputs["Color"]
+        # The shared pattern: a REGULAR lattice with a wrapping search
+        # and a domain warp. The regular lattice is what makes the
+        # pattern periodic - a jittered one cannot be, because the
+        # jitter has to be the same at both ends - and the warp is
+        # what makes the cells look like stones rather than a grid.
+        cell, edge = pattern.cell_and_edge(resolution, cells)
+
+    # The joint's width, as a fraction of the distance to the edge.
+    if kind == "voronoi":
+        reach = float(edge.max()) if edge.max() > 0 else 1.0
+        joint = numpy.clip(edge / reach, 0.0, 1.0)
     else:
-        # A wave is a GRAIN: its troughs are the grain's lines and its
-        # bands are the rings, so the "cell" is a band rather than a
-        # cell. The wave's own value drives both the colour and the
-        # joint.
-        cells = tree.nodes.new("ShaderNodeTexWave")
-        cells.wave_type = "BANDS"
-        cells.bands_direction = "X"
-        tree.links.new(domain, cells.inputs["Vector"])
-        edge_distance = cells.outputs["Fac"]
-        cell_colour = cells.outputs["Fac"]
+        joint = numpy.clip(edge / max(1e-6, float(edge.max())), 0.0, 1.0)
+    # The joint is where the distance to the edge is SMALL.
+    joint = numpy.clip(1.0 - joint / max(mortar_width, 1e-6), 0.0, 1.0)
 
-    # The stones' colour: a ramp from the dark stone to the light one,
-    # driven by the cell's own random value.
-    ramp = tree.nodes.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].color = (*stone_dark_rgb, 1.0)
-    ramp.color_ramp.elements[1].color = (*stone_light_rgb, 1.0)
-    tree.links.new(cell_colour, ramp.inputs["Fac"])
+    # The stones' colours, from each cell's own random value.
+    import numpy as _np
 
-    # The noise that varies a stone within itself.
-    #
-    # It is ADDED, not multiplied. Multiplying the stone by the noise
-    # darkened it - the noise's dark values pulled every stone down,
-    # and the joint's darkness turned out to be the NOISE's rather
-    # than the mortar's: measured, changing the mortar's colour from
-    # near-black to pale sand left the darkest tenth at 0.2471 in
-    # every case. A stone's wear is a shift around its own colour,
-    # not a scaling of it.
-    noise = tree.nodes.new("ShaderNodeTexNoise")
-    noise.inputs["Scale"].default_value = float(scale_cells) * 4.0
-    tree.links.new(domain, noise.inputs["Vector"])
-    varied = tree.nodes.new("ShaderNodeMix")
-    varied.data_type = "RGBA"
-    varied.blend_type = "ADD"
-    varied.inputs[0].default_value = float(variation)
-    tree.links.new(ramp.outputs["Color"], varied.inputs[6])
-    tree.links.new(noise.outputs["Color"], varied.inputs[7])
+    values = cell.astype(_np.float64)
+    hashed = _np.sin(values * 12.9898 + 78.233) * 43758.5453
+    hashed = hashed - _np.floor(hashed)
+    stone = _np.empty(cell.shape + (3,), dtype=_np.float32)
+    for channel in range(3):
+        ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
+        stone[:, :, channel] = ramp[
+            _np.clip((hashed * 255).astype(numpy.int32), 0, 255)
+        ]
 
-    # The joint: where the distance to the edge is small, the mortar
-    # colour, and where it is large, the stone.
-    joint = tree.nodes.new("ShaderNodeValToRGB")
-    joint.color_ramp.elements[0].position = 0.0
-    joint.color_ramp.elements[0].color = (*mortar_rgb, 1.0)
-    joint.color_ramp.elements[1].position = float(mortar_width)
-    joint.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
-    tree.links.new(edge_distance, joint.inputs["Fac"])
+    # The wear: a smooth field that varies a stone within itself.
+    axis = numpy.arange(resolution) / resolution
+    wave_x = numpy.sin(axis * cells * 2 * numpy.pi) * 0.5
+    wave_x = numpy.tile(wave_x.reshape(-1, 1), (1, resolution))
+    wave_y = numpy.sin(axis * cells * 3 * numpy.pi + 1.3) * 0.5
+    wave_y = numpy.tile(wave_y.reshape(1, -1), (resolution, 1))
+    wear = (wave_x + wave_y) * 0.5 * variation
 
-    multiplied = tree.nodes.new("ShaderNodeMix")
-    multiplied.data_type = "RGBA"
-    multiplied.blend_type = "MULTIPLY"
-    multiplied.inputs[0].default_value = 1.0
-    tree.links.new(varied.outputs[2], multiplied.inputs[6])
-    tree.links.new(joint.outputs["Color"], multiplied.inputs[7])
-    tree.links.new(multiplied.outputs[2], emission.inputs["Color"])
-    tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
+    colour = stone + wear[:, :, numpy.newaxis]
 
-    # Render it. A plane whose UVs span 0..1 exactly, and a camera
-    # that frames it, so the image is the pattern and nothing else.
-    bpy.ops.mesh.primitive_plane_add(size=PLANE_SIZE_M)
-    plane = bpy.context.active_object
-    plane.name = "golem_procedural_colour_plane"
-    camera = None
-    try:
-        plane.data.materials.append(material)
-        bpy.context.view_layer.update()
+    # The joint replaces the stone where the joint is.
+    mortar = numpy.array(mortar_rgb, dtype=numpy.float32).reshape(1, 1, 3)
+    joint = joint[:, :, numpy.newaxis]
+    colour = colour * (1.0 - joint) + mortar * joint
+    colour = numpy.clip(colour, 0.0, 1.0)
 
-        scene = bpy.context.scene
-        previous = (
-            scene.render.engine,
-            scene.render.resolution_x,
-            scene.render.resolution_y,
-            scene.render.filepath,
-            scene.render.image_settings.file_format,
-            scene.view_settings.view_transform,
-            scene.camera,
-        )
-        try:
-            scene.render.engine = "BLENDER_EEVEE"
-            scene.render.resolution_x = width_px
-            scene.render.resolution_y = height_px
-            # The render goes to an EXR, not a PNG, and that is the
-            # whole point of it.
-            #
-            # A rendered PNG is a PICTURE of the pattern: the view
-            # transform compresses it. Measured, an emission of 0.8
-            # came back as 0.5831 under the Standard transform and
-            # 0.4254 under Raw - and a pattern whose values are
-            # distorted is not the pattern, it is a picture of it. Two
-            # different patterns came back with the same seam (38.835x
-            # each) because the distortion dominated their own
-            # structure.
-            #
-            # An EXR is LINEAR FLOAT and is not transformed, so it
-            # carries the values: the same emission came back as
-            # 0.7998 in an EXR. The PNG is then written from those
-            # values with Blender's image API, which is the way the
-            # ORM bake already writes its maps.
-            scene.render.image_settings.file_format = "OPEN_EXR"
-            scene.render.image_settings.color_depth = "32"
-            scene.view_settings.view_transform = "Raw"
-            bpy.ops.object.camera_add(location=(0.0, 0.0, 5.0))
-            camera = bpy.context.active_object
-            camera.rotation_euler = (0.0, 0.0, 0.0)
-            # The camera must see the WHOLE plane, or the image is a
-            # CROPPING of the pattern and a cropping's edge is not the
-            # pattern's edge - the image would not tile. The plane's
-            # UVs span 0..1 over its whole width, so the camera's
-            # field of view at its distance has to cover the plane's
-            # DIAGONAL, and the lens follows from that.
-            #
-            # Measured: at 36 mm the seam is 2.50x the interior's
-            # largest features - the plane is cropped - and at 18 mm,
-            # which sees the whole plane, it is 0.03x. The diagonal is
-            # what the square frame's corners need.
-            camera.data.sensor_width = 36.0
-            camera.data.sensor_fit = "HORIZONTAL"
-            camera.location = (0.0, 0.0, PLANE_SIZE_M)
-            diagonal = PLANE_SIZE_M * 2.0**0.5
-            camera.data.lens = camera.data.sensor_width * PLANE_SIZE_M / diagonal
-            scene.camera = camera
-            # The EXR's path is UNIQUE per call, so two calls never
-            # share one: a render overwrites it, and a read of a
-            # shared path can find the other call's file.
-            source_exr = str(output_path.with_name(f"{output_path.stem}_source.exr"))
-            scene.render.filepath = source_exr
-            bpy.ops.render.render(write_still=True)
-
-            # The EXR's values, written into a PNG without changing
-            # them.
-            import numpy
-
-            # The EXR is read into a FRESH datablock, because the
-            # path is the same every call: `load` reuses the
-            # datablock for a path it has seen, and that datablock
-            # holds the PREVIOUS call's pixels. So the read returns
-            # the last pattern, not this one - which is why every
-            # file the benchmark wrote came out identical, and why
-            # the seam was the same number for all of them.
-            source = bpy.data.images.load(str(source_exr), check_existing=False)
-            try:
-                pixels = numpy.empty(len(source.pixels), dtype=numpy.float32)
-                source.pixels.foreach_get(pixels)
-                array = pixels.reshape((height_px, width_px, 4))
-                # The EXR is linear and the PNG is sRGB, so the values
-                # are ENCODED on the way out. An albedo is a colour,
-                # and a colour is sRGB - the ORM's channels are
-                # values and are written as data, which is a different
-                # file and a different path.
-                encoded = _linear_to_srgb(numpy.clip(array, 0.0, 1.0))
-                image = bpy.data.images.new(
-                    output_path.stem, width=width_px, height=height_px, alpha=False
-                )
-                image.colorspace_settings.name = "sRGB"
-                try:
-                    image.pixels.foreach_set(encoded.ravel())
-                    image.filepath_raw = str(output_path)
-                    image.file_format = "PNG"
-                    image.save()
-                finally:
-                    bpy.data.images.remove(image)
-            finally:
-                bpy.data.images.remove(source)
-            # The EXR is the intermediate, not a deliverable: it is
-            # six megabytes a pattern, and the PNG is the file. So it
-            # is removed once the PNG is written.
-            source_exr_path = pathlib.Path(source_exr)
-            if source_exr_path.exists():
-                source_exr_path.unlink()
-            # And the macOS sidecar that the share makes for it.
-            sidecar = source_exr_path.with_name(f"._{source_exr_path.name}")
-            if sidecar.exists():
-                sidecar.unlink()
-        finally:
-            (
-                scene.render.engine,
-                scene.render.resolution_x,
-                scene.render.resolution_y,
-                scene.render.filepath,
-                scene.render.image_settings.file_format,
-                scene.view_settings.view_transform,
-                scene.camera,
-            ) = previous
-    finally:
-        if camera is not None:
-            bpy.data.objects.remove(camera, do_unlink=True)
-        bpy.data.objects.remove(plane, do_unlink=True)
-        bpy.data.materials.remove(material)
-
+    # The image is the pattern at the pattern's resolution, resized to
+    # the requested size - a bilinear upscale, which is what a viewer
+    # would do with the texture anyway.
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    return output_path
-
-
-def _linear_to_srgb(values):
-    """The sRGB encoding of linear values, the way a PNG stores colour.
-
-    An albedo map is a COLOUR, and a colour is stored sRGB. The
-    pattern is computed in linear - the nodes' values are linear -
-    so it has to be encoded on the way out, or the map is too dark.
-    """
-    import numpy
-
-    return numpy.where(
-        values <= 0.0031308,
-        values * 12.92,
-        1.055 * numpy.power(numpy.clip(values, 0.0, None), 1.0 / 2.4) - 0.055,
+    source = bpy.data.images.new(
+        f"{output_path.stem}_pattern", width=resolution, height=resolution, alpha=False
     )
+    try:
+        pixels = numpy.empty(resolution * resolution * 4, dtype=numpy.float32)
+        pixels.reshape((resolution, resolution, 4))[:, :, :3] = colour
+        pixels.reshape((resolution, resolution, 4))[:, :, 3] = 1.0
+        source.pixels.foreach_set(pixels.ravel())
+        if resolution != width_px or resolution != height_px:
+            source.scale(width_px, height_px)
+        pixels = numpy.empty(width_px * height_px * 4, dtype=numpy.float32)
+        source.pixels.foreach_get(pixels)
+    finally:
+        bpy.data.images.remove(source)
+
+    image = bpy.data.images.new(
+        output_path.stem, width=width_px, height=height_px, alpha=False
+    )
+    try:
+        image.colorspace_settings.name = "sRGB"
+        image.pixels.foreach_set(pixels.ravel())
+        image.filepath_raw = str(output_path)
+        image.file_format = "PNG"
+        image.save()
+    finally:
+        bpy.data.images.remove(image)
+    return output_path
 
 
 def procedural_source_metadata(
     kind: str = "voronoi",
-    scale_cells: float = DEFAULT_PROCEDURAL_SCALE,
+    scale_cells: float = 5.0,
 ) -> dict:
     """What a procedural base colour was made from, for the export's metadata.
 
@@ -411,15 +383,11 @@ def procedural_source_metadata(
     kind and a scale, and the fact that the pattern is periodic.
     """
     return {
-        "base_colour_source": "procedural: Blender's own nodes, no image",
+        "base_colour_source": "procedural: computed in numpy, no image",
         "base_colour_kind": kind,
         "base_colour_scale_cells": scale_cells,
         "base_colour_periodic": True,
     }
-
-
-# The cell shapes a procedural colour can have.
-PROCEDURAL_COLOUR_KINDS = ("voronoi", "brick", "wave")
 
 
 __all__ = (
@@ -430,7 +398,7 @@ __all__ = (
     "DEFAULT_STONE_LIGHT_RGB",
     "DEFAULT_VARIATION",
     "DEFAULT_WANDER",
-    "DEFAULT_WANDER_SCALE",
+    "DEFAULT_WANDER_FREQUENCY",
     "PROCEDURAL_COLOUR_KINDS",
     "procedural_source_metadata",
     "write_procedural_base_color",

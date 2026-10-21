@@ -707,14 +707,32 @@ class _bake_target:
 
 
 def _run_bake(mesh_object, bake_type: str, normal_space: str = "TANGENT") -> None:
-    """Run the bake operator with the settings this module measured."""
+    """Run the bake operator with the settings this module measured.
+
+    The operator's poll needs a context in which the object is active
+    and selected, and the context a caller provides is not always
+    that one - measured: run from the open Blender's add-on, the bake
+    failed its poll with "context is incorrect". So the context is
+    OVERRIDDEN here, with the object made active and selected first.
+    """
     import bpy
 
-    if bake_type == "NORMAL":
-        bpy.ops.object.bake(
-            type="NORMAL",
-            margin=BAKE_MARGIN_PX,
-            normal_space=normal_space,
-        )
-    else:
-        bpy.ops.object.bake(type="AO", margin=BAKE_MARGIN_PX)
+    bpy.ops.object.select_all(action="DESELECT")
+    mesh_object.select_set(True)
+    bpy.context.view_layer.objects.active = mesh_object
+    bpy.context.view_layer.update()
+
+    with bpy.context.temp_override(
+        object=mesh_object,
+        active_object=mesh_object,
+        selected_objects=[mesh_object],
+        selected_editable_objects=[mesh_object],
+    ):
+        if bake_type == "NORMAL":
+            bpy.ops.object.bake(
+                type="NORMAL",
+                margin=BAKE_MARGIN_PX,
+                normal_space=normal_space,
+            )
+        else:
+            bpy.ops.object.bake(type="AO", margin=BAKE_MARGIN_PX)
