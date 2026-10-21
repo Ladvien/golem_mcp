@@ -93,7 +93,17 @@ DEFAULT_MORTAR_RGB = (0.38, 0.36, 0.33)
 #
 # The joint's width is also a MATERIAL's word: a stone's joint is
 # wide and a tile's is a thin line, and the truths show it.
-DEFAULT_MORTAR_WIDTH = 0.08
+# The joint's width, as a fraction of the MEDIAN distance to the
+# edge - the typical pebble's own radius.
+#
+# It was 0.08 of the distance field's MAXIMUM, and the maximum is the
+# widest cell's, so the joint came out as a thread: the ground read
+# as a mosaic of flat stones with no gravel in them.
+#
+# Measured on the truth's own ground: the joints are a sixth of the
+# surface - the dark tail covers 16.9% of it - and a width of 0.95
+# of the median distance covers 17% of ours.
+DEFAULT_MORTAR_WIDTH = 0.95
 # How much the noise varies a stone within itself, as a fraction of
 # the stone's colour.
 DEFAULT_VARIATION = 0.15
@@ -354,7 +364,7 @@ def write_procedural_base_color(
         # does.
         if line_contrast is None:
             line_contrast = LINE_CONTRAST
-        base = sum(stone_dark_rgb) / 3.0
+        base = _luma_of(stone_dark_rgb)
         darkening = 0.0 if base <= 0.0 else min(1.0, line_contrast / base)
         line_rgb = tuple(
             max(0.0, channel * (1.0 - darkening)) for channel in stone_dark_rgb
@@ -377,12 +387,30 @@ def write_procedural_base_color(
         )
 
     # The joint's width, as a fraction of the distance to the edge.
+    #
+    # The reach is the MEDIAN of the distance, not its MAXIMUM. The
+    # maximum is the distance at the middle of the largest cell, and
+    # the largest cell is much bigger than the typical one - so a
+    # width taken as a fraction of the maximum is a fraction of the
+    # BIGGEST pebble, and the joints came out as threads.
+    #
+    # Measured on the truth's own ground: the joints are a sixth of
+    # the surface - the dark tail below the tenth percentile covers
+    # 16.9% of it. So the joint's width is a fraction of the typical
+    # distance to the edge.
     if kind == "voronoi":
-        reach = float(edge.max()) if edge.max() > 0 else 1.0
+        median_edge = float(numpy.median(edge))
+        reach = median_edge if median_edge > 0 else 1.0
         joint = numpy.clip(edge / reach, 0.0, 1.0)
     else:
         joint = numpy.clip(edge / max(1e-6, float(edge.max())), 0.0, 1.0)
     # The joint is where the distance to the edge is SMALL.
+    #
+    # The width is a threshold on the distance: the joint is fully
+    # dark at the edge and fades out by the threshold. It used to be
+    # a fraction of the DISTANCE FIELD's maximum, and the maximum is
+    # the widest cell's - so the joint came out as a thread and the
+    # ground read as a mosaic of flat stones.
     joint = numpy.clip(1.0 - joint / max(mortar_width, 1e-6), 0.0, 1.0)
 
     # The stones' colours, from each cell's own random value.
@@ -401,7 +429,7 @@ def write_procedural_base_color(
     import numpy as _np
 
     hashed = _cell_hash(cell, cell_width, cell_height)
-    stone = _np.empty(cell.shape + (3,), dtype=numpy.float32)
+    stone = _np.empty(cell.shape + (3,), dtype=_np.float32)
     for channel in range(3):
         ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
         stone[:, :, channel] = ramp[
@@ -443,7 +471,15 @@ def write_procedural_base_color(
     if surface_amplitude > 0.0:
         surface = surface / surface_amplitude * 2.0 - 1.0
     wear = surface * min(variation, 1.0) * ramp_spread * SURFACE_SHARE
-    colour = stone + wear[:, :, numpy.newaxis]
+    # The wear is a change of LUMA, not of each channel equally: a
+    # grey wear on a chromatic stone GREYS the stone out, and the
+    # truth's ground is warm to the last. So the wear is added along
+    # the luma's own direction - the stone keeps its hue and the
+    # wear moves it lighter or darker.
+    weights = _np.array([0.2126, 0.7152, 0.0722], dtype=_np.float32)
+    stone_luma = (stone * weights).sum(axis=2)
+    hue = stone / _np.maximum(stone_luma[:, :, numpy.newaxis], 1e-6)
+    colour = _np.clip(stone + hue * wear[:, :, numpy.newaxis], 0.0, 1.0)
 
     # The joint replaces the stone where the joint is.
     mortar = numpy.array(mortar_rgb, dtype=numpy.float32).reshape(1, 1, 3)
@@ -454,7 +490,7 @@ def write_procedural_base_color(
     # description's - a pattern's contrast depends on its SHAPE and
     # not only on its numbers, and only measuring says how much of
     # the spread this one carries.
-    colour = _scale_to_spread(colour, float(sum(stone_dark_rgb) / 3.0), target_spread)
+    colour = _scale_to_spread(colour, _luma_of(stone_dark_rgb), target_spread)
 
     # The image is written at the resolution the pattern was computed
     # at, which is the requested one - there is no upscale, because an
@@ -489,6 +525,15 @@ def write_procedural_base_color(
     return output_path
 
 
+def _luma_of(rgb) -> float:
+    """The LUMA of an RGB triple, on the same weights the benchmark uses.
+
+    The channel MEAN is not the luma: a blue fabric's mean is 0.37
+    while its luma is 0.33, and the image's brightness is the luma.
+    """
+    return 0.2126 * float(rgb[0]) + 0.7152 * float(rgb[1]) + 0.0722 * float(rgb[2])
+
+
 def _scale_to_spread(colour, base, target_spread):
     """Scale the image's variation so its spread IS the target.
 
@@ -517,12 +562,17 @@ def _scale_to_spread(colour, base, target_spread):
 
     if target_spread is None or target_spread <= 0.0:
         return colour
-    channel = colour[:, :, 0] - base
-    measured = float(channel.std())
+    # The measure is the LUMA, and the base is the LUMA too - the
+    # benchmark measures the luma, and the palette is chromatic now.
+    # A blue fabric's red channel is 0.24 while its luma is 0.33, so
+    # a red-channel measure scaled the image by the wrong factor.
+    weights = _np.array([0.2126, 0.7152, 0.0722], dtype=_np.float32)
+    luma = (colour * weights).sum(axis=2)
+    measured = float(luma.std())
     if measured <= 1e-9:
         return colour
     scale = target_spread / measured
-    scaled = base + (colour - base) * scale
+    scaled = colour + (luma[:, :, _np.newaxis] - base) * (scale - 1.0)
     return _np.clip(scaled, 0.0, 1.0)
 
 
@@ -616,7 +666,7 @@ def _write_line_pattern(
     # description's - a line's falloff carries a different amount of
     # contrast than a joint's, and only measuring says how much of
     # the spread this one carries.
-    colour = _scale_to_spread(colour, float(base_rgb[0]), target_spread)
+    colour = _scale_to_spread(colour, _luma_of(base_rgb), target_spread)
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

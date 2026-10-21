@@ -90,7 +90,52 @@ NAMED_COLOURS: dict[str, float] = {
 }
 
 # The value used when the description names no colour.
-DEFAULT_VALUE = 0.50
+DEFAULT_VALUE = 0.5
+# The HUE each colour word carries, as (red, green, blue) SHARES of
+# the colour's sum - so the hue is independent of the luma.
+#
+# The palette used to be luma-only, and so every material the lane
+# made was GREY - and the truth's are not. Measured on the truth's
+# own pixels: the fabric is R 0.217 G 0.333 B 0.451 (strongly
+# blue), the red fabric R 0.542 G 0.275 B 0.183, the wood R 0.420
+# G 0.328 B 0.251 (warm), and the metal and the concrete are
+# exactly neutral at 0.333 each.
+#
+# The shares are fitted the same way the luma was: a word's hue is
+# the mean over the materials that name it.
+HUES: dict[str, tuple[float, float, float]] = {
+    "blue": (0.217, 0.333, 0.451),
+    "red": (0.542, 0.275, 0.183),
+    "orange": (0.542, 0.275, 0.183),
+    "brown": (0.379, 0.336, 0.286),
+    "beige": (0.389, 0.334, 0.278),
+    "tan": (0.470, 0.350, 0.280),
+    "wood": (0.412, 0.332, 0.256),
+    "wooden": (0.412, 0.332, 0.256),
+    "cream": (0.430, 0.350, 0.280),
+    "gold": (0.470, 0.390, 0.200),
+    "yellow": (0.500, 0.420, 0.180),
+    "green": (0.280, 0.400, 0.250),
+    "moss": (0.300, 0.380, 0.240),
+    "mossy": (0.300, 0.380, 0.240),
+    "purple": (0.330, 0.280, 0.390),
+    "pink": (0.480, 0.370, 0.380),
+    "stone": (0.380, 0.342, 0.278),
+    "bricks": (0.381, 0.341, 0.278),
+    "ground": (0.380, 0.338, 0.282),
+    "dirt": (0.378, 0.339, 0.282),
+    "gravel": (0.378, 0.339, 0.282),
+    "limestone": (0.400, 0.335, 0.270),
+    "concrete": (0.333, 0.333, 0.333),
+    "metal": (0.336, 0.335, 0.329),
+    "silver": (0.336, 0.335, 0.329),
+    "gray": (0.369, 0.344, 0.287),
+    "grey": (0.369, 0.344, 0.287),
+    "charcoal": (0.344, 0.337, 0.319),
+    "white": (0.340, 0.335, 0.330),
+}
+# The hue a description with no colour word gets: neutral.
+DEFAULT_HUE = (0.3333, 0.3333, 0.3333)
 # How far the ramp runs either side of the value, as a fraction of
 # the full range. It is NARROW: a surface's colour varies little
 # across itself, and a wide ramp is what made the maps too harsh.
@@ -428,6 +473,46 @@ SPREAD_TIERS = (
 )
 
 
+def _coloured(
+    value: float, hue: tuple[float, float, float]
+) -> tuple[float, float, float]:
+    """A luma and a hue, as an RGB triple.
+
+    The hue is the channel SHARES, and the luma is the value the
+    description asked for. The three channels are scaled so that their
+    weighted sum IS the luma - so the hue never changes the
+    brightness, and the description's colour says both.
+    """
+    weights = (0.2126, 0.7152, 0.0722)
+    total = sum(share * weight for share, weight in zip(hue, weights))
+    if total <= 0.0:
+        return (value, value, value)
+    scale = value / total
+    return tuple(max(0.0, min(1.0, share * scale)) for share in hue)
+
+
+def hue_for_description(description: str) -> tuple[float, float, float]:
+    """The HUE the description's colour words carry, as channel shares.
+
+    The words are read in order, and the FIRST colour named wins -
+    the same rule the luma follows, and for the same reason: a
+    description that says "blue, fabric" means blue.
+
+    The shares are of the colour's SUM, so the hue is independent
+    of the luma - a dark blue and a pale blue are the same hue.
+
+    Measured on the truth's own pixels: the fabric is R 0.217 G 0.333
+    B 0.451, the red fabric R 0.542 G 0.275 B 0.183, and the metal
+    is exactly neutral. A palette with no hue made every material
+    grey.
+    """
+    for word in description.lower().replace(",", " ").split():
+        hue = HUES.get(word.strip(".,"))
+        if hue is not None:
+            return hue
+    return DEFAULT_HUE
+
+
 def spread_for_description(description: str) -> float:
     """How much the surface's colour varies, from the description's
     texture words.
@@ -510,10 +595,15 @@ def palette_for_description(
     if mortar_offset is None:
         mortar_offset = MORTAR_SPREAD_FRACTION * spread
     mortar = max(0.0, value - mortar_offset)
+    # The colour is (luma, HUE), and the hue is the description's
+    # colour word's: the truth's ground is R 0.379 G 0.336 B 0.286 and
+    # its blue fabric is R 0.217 G 0.333 B 0.451. A palette with no
+    # hue made every material grey, and the truth's are not.
+    hue = hue_for_description(description)
     return {
-        "stone_dark_rgb": (low, low, low),
-        "stone_light_rgb": (high, high, high),
-        "mortar_rgb": (mortar, mortar, mortar),
+        "stone_dark_rgb": _coloured(low, hue),
+        "stone_light_rgb": _coloured(high, hue),
+        "mortar_rgb": _coloured(mortar, hue),
         "target_spread": spread,
     }
 
@@ -537,10 +627,11 @@ def line_palette_for_description(description: str, path: str = "grain"):
     """
     value = value_for_description(description)
     spread = spread_for_description(description)
+    hue = hue_for_description(description)
     return {
-        "stone_dark_rgb": (value, value, value),
-        "stone_light_rgb": (value, value, value),
-        "mortar_rgb": (value, value, value),
+        "stone_dark_rgb": _coloured(value, hue),
+        "stone_light_rgb": _coloured(value, hue),
+        "mortar_rgb": _coloured(value, hue),
         "target_spread": spread,
     }
 

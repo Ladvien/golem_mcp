@@ -214,11 +214,20 @@ def test_the_joint_is_as_dark_as_the_surface_varies():
         spread_for_description,
     )
 
+    def luma(rgb: tuple[float, float, float]) -> float:
+        return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+
     palette = palette_for_description("blue, fabric, fur, microfiber, soft")
     spread = spread_for_description("blue, fabric, fur, microfiber, soft")
     # The mortar is the value less the SPREAD, so the joint is as
     # dark as the surface varies and no darker. The ramp's own dark
     # end is further out, because the ramp is widened to compensate
     # for the uniform draw.
-    value = (palette["stone_dark_rgb"][0] + palette["stone_light_rgb"][0]) / 2.0
-    assert palette["mortar_rgb"][0] == pytest.approx(value - spread, abs=1e-6)
+    #
+    # The measure is the LUMA, not a channel: the palette is
+    # chromatic now, and the channels are not the luma - a blue
+    # fabric's red channel is 0.24 while its luma is 0.33.
+    value = (
+        luma(palette["stone_dark_rgb"]) + luma(palette["stone_light_rgb"])
+    ) / 2.0
+    assert luma(palette["mortar_rgb"]) == pytest.approx(value - spread, abs=1e-6)

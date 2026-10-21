@@ -120,6 +120,21 @@ SURFACE_SHARE = 0.55
 # So the cells are MORE than the features, by the factor that makes
 # the stone the size the truth's stones are.
 STONE_CELL_FACTOR = 1.6
+# How many PEBBLES each feature is worth.
+#
+# The truth's ground measures 20.48 features across and has about
+# 232 pebble gaps along a row - so the pebbles are about eleven times
+# finer than the features. The cell is the pebbles' and the joint is
+# the envelope's.
+# The PEBBLES' count, as a multiple of the feature count. The truth's
+# own row carries eighty-one pebble-gaps where the feature measure
+# reads twenty features across - so the pebbles are four times finer
+# than the envelope, and a ground is a gravel, not a mosaic.
+STONE_PEBBLE_COUNT_FACTOR = 4
+# How many lattice pixels a pebble gets, at the lattice's own
+# resolution. The pebbles ARE the joints, and a joint two pixels wide
+# is a blur - so each pebble gets enough pixels for its gap to read.
+STONE_PEBBLE_PIXELS = 3
 SURFACE_OCTAVES = 4
 SURFACE_PERSISTENCE = 0.5
 # How strong the FIBRE is against the envelope it rides on.
@@ -502,6 +517,7 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
 
     from golem_blender.pbr import noise_worley_fbm
     from golem_blender.pbr.noise_worley_fbm import _bilinear
+    from golem_blender.pbr.procedural import _cell_hash
 
     samples = (numpy.arange(resolution) + 0.5) / resolution
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
@@ -564,7 +580,16 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     # BROAD feature - it is the gap between the stones - so it does
     # not need the full resolution, and a coarse grid and a bilinear
     # bring it up is enough.
-    coarse_side = max(4, min(resolution, 512))
+    # The lattice's own resolution, and it must be fine enough for
+    # the SMALLEST cell the field draws: the pebbles' lattice has
+    # eleven times the cell count, so at five hundred and twelve a
+    # pebble was two and a third pixels across - and the pebbles are
+    # the joints, and a joint two pixels wide is a blur.
+    #
+    # So the lattice is as fine as the pebbles ask for: the pebbles'
+    # own count, times a handful of pixels each.
+    pebble_side = cells * STONE_PEBBLE_COUNT_FACTOR
+    coarse_side = max(4, min(resolution, max(512, pebble_side * STONE_PEBBLE_PIXELS)))
     axis = (numpy.arange(coarse_side) + 0.5) / coarse_side
     grid_x, grid_y = numpy.meshgrid(axis, axis, indexing="xy")
     # The JOINT is the PEBBLES' gaps, and the pebbles are the fine
@@ -606,6 +631,43 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     # So the joint is the COARSE lattice's and the pebbles' own tone
     # comes from the MOTTLE - the surface texture - which is where
     # a stone's surface variation belongs anyway.
+    # The PEBBLES' own count, which is several times the feature
+    # count: the truth's ground has about a hundred and seventy
+    # pebbles across where its autocorrelation says twenty.
+    fine_cells = cells * STONE_PEBBLE_COUNT_FACTOR
+    # The PEBBLES' own lattice, which is several times finer than the
+    # feature count.
+    #
+    # And the pebbles' points are JITTERED PER CELL, so the pebbles
+    # are irregularly spaced. A regular lattice is a strong single
+    # frequency, and the autocorrelation finds the pebbles' own
+    # spacing instead of the surface's envelope - measured, the scale
+    # read 7.14x the truth's with a regular fine lattice.
+    fine_plain = noise_worley_fbm.worley_fbm_2d(
+        grid_x * fine_cells,
+        grid_y * fine_cells,
+        period=fine_cells,
+        octaves=1,
+        persistence=STONE_PERSISTENCE,
+        lacunarity=STONE_LACUNARITY,
+        jitter=STONE_JITTER,
+        seed=0,
+        distance=True,
+    )
+    jitter_field = _cell_hash(
+        fine_plain["cell"].astype(numpy.int32), fine_cells, fine_cells
+    ).astype(numpy.float64)
+    fine = noise_worley_fbm.worley_fbm_2d(
+        (grid_x + jitter_field * STONE_PEBBLE_JITTER) * fine_cells,
+        (grid_y + jitter_field * STONE_PEBBLE_JITTER * 0.7) * fine_cells,
+        period=fine_cells,
+        octaves=1,
+        persistence=STONE_PERSISTENCE,
+        lacunarity=STONE_LACUNARITY,
+        jitter=STONE_JITTER,
+        seed=0,
+        distance=True,
+    )
     coarse = noise_worley_fbm.worley_fbm_2d(
         grid_x * cells,
         grid_y * cells,
@@ -648,6 +710,10 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     # lattice's own index, taken NEAREST - and the pebbles' own tone
     # comes from the MOTTLE, the surface texture, and not from the
     # cell.
+    # The cell is DISCRETE - it is an index, and the hash reads it -
+    # and it is taken NEAREST, so an INTERPOLATED cell cannot smooth
+    # the hash into a gradient and give the feature measure a
+    # structure to lock onto.
     field["cell"] = coarse_cell.astype(numpy.int32)
     # The JOINT is the COARSE lattice's, and the pebbles' gaps are
     # not joints.
@@ -661,7 +727,15 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     # Measured, a joint at the fine lattice put the scale at 4.17x
     # the truth's and then at 10.00x, because a hundred and seventy
     # regular gaps are a strong single frequency.
-    field["distance"] = _bilinear(coarse["distance"], grid_row, grid_column)
+    # The JOINT is the PEBBLES' gaps, and the cell is the envelope's
+    # tone.
+    #
+    # The truth's ground is a gravel: the stones are all much the same
+    # tone, and the ENVELOPE's variation is what a viewer sees. So
+    # the cell is the coarse lattice's - it is what the colour hash
+    # reads, and the colour hash is what the feature measure reads -
+    # and the joints are the pebbles' own gaps.
+    field["distance"] = _bilinear(fine["distance"], grid_row, grid_column)
     # The CELL is the BASE octave's.
     #
     # The cell is what gives a stone its own colour, and the colour's
