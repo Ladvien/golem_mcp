@@ -276,7 +276,7 @@ def worley_fbm_2d(
     # The full field's side, which is the sample's own - the samples
     # may be flat, and the coarse octave is brought back up to the
     # full field's shape.
-    side = int(round(np.sqrt(x.size)))
+    side = round(np.sqrt(x.size))
     full_shape = x.shape
     for octave in range(count):
         scale = ratio**octave

@@ -140,6 +140,34 @@ ENVELOPE_WEIGHT = 1.0
 FIBRE_STRETCH = 0.08
 FIBRE_OCTAVES = 3
 FIBRE_PERSISTENCE = 0.5
+# The FIBRE's orientation and carrier, for the Gabor that draws it.
+#
+# The orientation is the direction the field varies FASTEST, and the
+# strokes run ACROSS it. A plank's fibre runs along the board, so
+# the carrier is along the board and the strokes are across it -
+# which is the convention measured on the vendored Gabor itself: the
+# field's standard deviation along the requested carrier is 0.884
+# and across it 0.064.
+#
+# The frequency is the carrier's cycles per lattice cell, and the
+# line count follows it: measured, a frequency of 8 gave 9 lines
+# across, 16 gave 17 and 32 gave 31 - so the count is the frequency.
+#
+# The truth's wood has its lines 3, 5, 6, 9, 14 and 17 pixels apart
+# in a 1024 row, so about a hundred and forty of them.
+FIBRE_ORIENTATION = 0.0
+FIBRE_FREQUENCY = 128.0
+# The resolution the FIBRE is computed at. The fibre is fine detail
+# and its strokes are soft, so it does not need the output's
+# resolution - and a Gabor is a direct trigonometric sum over the
+# lattice's bins, so the resolution is the whole cost: measured, it
+# took 11.8 seconds at 1024 across.
+FIBRE_RESOLUTION = 512
+# The METAL's grain orientation and carrier. A brushed sheet's
+# streaks run along the sheet, so the carrier is across it - the
+# same way as the wood's.
+METAL_ORIENTATION = 0.0
+METAL_FREQUENCY = 192.0
 # How wide the fibre's line is, as a fraction of the noise's own
 # range around the crossing.
 #
@@ -370,7 +398,8 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
     """
     import numpy
 
-    from golem_blender.pbr import noise_worley, noise_worley_fbm
+    from golem_blender.pbr import noise_worley_fbm
+    from golem_blender.pbr.noise_worley_fbm import _bilinear
 
     samples = (numpy.arange(resolution) + 0.5) / resolution
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
@@ -421,28 +450,54 @@ def fractal_stones(resolution: int, cells: int, octaves=STONE_OCTAVES):
         seed=0,
         distance=False,
     )
-    # The JOINT's distance is computed here, from the base octave's
-    # own F1 and F2, and not taken from the FBM-Worley's "distance".
+    # The JOINT's distance is the EXACT BISECTOR distance, computed
+    # on a COARSE grid and brought up.
     #
-    # That key is an EXACT bisector distance, and it is a 5x5 sweep
-    # over the nearest point's neighbours: measured, it costs 28
-    # seconds of a 42-second material at 2048 across. And it is
-    # computed from the UNWARPED samples, so it does not line up with
-    # the stones the warp moved.
+    # F2 - F1 is zero on the border but is not a distance - its growth
+    # depends on the two points' spacing - and using it put the
+    # stones' scale at 16.43x the truth's. So the bisector it is.
     #
-    # So the joint's distance is F2 - F1, scaled by the factor that
-    # turns it into a distance. F2 - F1 is zero on the border and
-    # grows away from it, and for a regular lattice it grows at
-    # exactly HALF the rate of a true distance - so the factor is
-    # two, and the joint is the same width whatever the cell's size.
-    base = noise_worley.worley_2d(
-        warped_x,
-        warped_y,
+    # The bisector is a 5x5 sweep and it is expensive: measured, one
+    # octave at 2048 across took 28 seconds. But the joint is a
+    # BROAD feature - it is the gap between the stones - so it does
+    # not need the full resolution, and a coarse grid and a bilinear
+    # bring it up is enough.
+    coarse_side = max(4, min(resolution, 512))
+    axis = (numpy.arange(coarse_side) + 0.5) / coarse_side
+    grid_x, grid_y = numpy.meshgrid(axis, axis, indexing="xy")
+    coarse = noise_worley_fbm.worley_fbm_2d(
+        grid_x * cells,
+        grid_y * cells,
         period=cells,
+        octaves=1,
+        persistence=STONE_PERSISTENCE,
+        lacunarity=STONE_LACUNARITY,
         jitter=STONE_JITTER,
         seed=0,
+        distance=True,
     )
-    field["distance"] = (base["F2"] - base["F1"]) * 2.0
+    # The joint's distance is the BASE octave's, so the joint is the
+    # gap between the big shapes.
+    #
+    # The finest octave's joint was tried and it is the stones'
+    # PEBBLE gaps - which are eight times finer, and the map's seam
+    # is then a fraction of a pixel: measured, the scale read 34.70x
+    # the truth's and the seam 3.87x.
+    rows = numpy.linspace(0.0, coarse_side - 1.0, resolution)
+    columns = numpy.linspace(0.0, coarse_side - 1.0, resolution)
+    grid_row, grid_column = numpy.meshgrid(rows, columns, indexing="ij")
+    field["distance"] = _bilinear(coarse["distance"], grid_row, grid_column)
+    # The CELL is the BASE octave's.
+    #
+    # The cell is what gives a stone its own colour, and the colour's
+    # variation is what the feature measure reads. The finest
+    # octave's cells were tried and the colour's variation is then
+    # eight times finer: measured, the scale read 34.64x the truth's
+    # and the seam 2.78x.
+    #
+    # So the pebbles are the base octave's cells, and the FBM's
+    # finer octaves add the DETAIL inside them - the mottle, not
+    # the structure.
     return field
 
 
@@ -905,33 +960,51 @@ def grain_field(
     # fibre's own scale and STRETCHED along the plank - so it reads
     # as lines running the length of the board rather than as blobs.
     if lines_per_cell > 1:
-        from golem_blender.pbr import noise
+        from golem_blender.pbr import noise_gabor
+        from golem_blender.pbr.noise_worley_fbm import _bilinear
 
-        # The lattice is the fibre's own scale, and it is set by
-        # the LINE SPACING rather than by the cell count: the truth's
-        # wood has its lines 7.4 pixels apart in a 1024 row, and a
-        # value noise's ridge crosses the middle of its range twice
-        # per lattice cell - so the lattice is seventy across for the
-        # truth's spacing.
+        # The fibre is a GABOR noise, not a value noise.
         #
-        # Measured, a lattice of 128 with three octaves put the lines
-        # 2.3 pixels apart, where the truth's are 7.4.
+        # A Gabor is a noise filtered by an ORIENTED Gaussian, so it
+        # produces strokes - and a plank's fibre is a set of strokes
+        # running the length of the board. Measured on the truth's own
+        # wood: its lines come 3, 5, 6, 9, 14 and 17 pixels apart and
+        # they run along the board.
         #
-        # The noise is a VALUE NOISE and not a Perlin. A Perlin's
-        # zero crossings are its own ridges, which read as streaks
-        # running the WRONG way - measured, the wood's scale read
-        # 67.70x the truth's - and a value noise's threshold crossing
-        # is a line of the direction asked for.
+        # A value noise's ridge was the alternative, and it failed: it
+        # is REGULAR, so the autocorrelation locks onto it and the
+        # feature measure reads the fibre and not the envelope.
+        # Measured, the wood's scale read 148x the truth's and the
+        # metal's 356x. A Gabor's strokes are irregular, so the
+        # envelope holds the scale.
+        #
+        # The orientation is the direction the field varies FASTEST,
+        # so the strokes run across it - and the fibre runs along the
+        # plank, so the carrier is across the plank.
         lattice = _fibre_lattice(resolution)
-        fibre_field = noise.fbm_2d_value(
-            sample_x * lattice * FIBRE_STRETCH,
-            sample_y * lattice,
-            size=lattice,
-            octaves=FIBRE_OCTAVES,
-            persistence=FIBRE_PERSISTENCE,
+        # The fibre is computed on a COARSE grid and brought up. A
+        # Gabor is a direct trigonometric sum over the lattice's bins,
+        # and it is the whole cost: measured, it took 11.8 seconds at
+        # 1024 across and would take a minute at 2048. The fibre is
+        # FINE DETAIL - the strokes are soft - so a coarse grid and a
+        # bilinear bring it up.
+        fibre_side = max(4, min(resolution, FIBRE_RESOLUTION))
+        fibre_axis = (numpy.arange(fibre_side) + 0.5) / fibre_side
+        fibre_x, fibre_y = numpy.meshgrid(fibre_axis, fibre_axis, indexing="ij")
+        coarse_fibre = noise_gabor.gabor_2d(
+            fibre_x * lattice,
+            fibre_y * lattice,
+            period=lattice,
+            orientation=FIBRE_ORIENTATION,
+            frequency=FIBRE_FREQUENCY,
             seed=0,
-            folds=FIBRE_FOLDS,
         )
+        fibre_rows = numpy.linspace(0.0, fibre_side - 1.0, resolution)
+        fibre_columns = numpy.linspace(0.0, fibre_side - 1.0, resolution)
+        fibre_row, fibre_column = numpy.meshgrid(
+            fibre_rows, fibre_columns, indexing="ij"
+        )
+        fibre_field = _bilinear(coarse_fibre, fibre_row, fibre_column)
         # The fibre's own line: a PERLIN field's ZERO CROSSINGS.
         #
         # A Perlin is a gradient noise, and its sign changes on a
@@ -946,18 +1019,19 @@ def grain_field(
         # maximum: one pixel's slope can be ten times its
         # neighbours', and dividing by it leaves every other pixel at
         # zero - so the whole map came out flat grey.
-        # The fibre's own line: the distance to the noise's ridge,
-        # which is where the noise crosses the middle of its range.
+        # The fibre's own line: the Gabor's STROKES, which are the
+        # ridges of its field.
         #
-        # The band is a fraction of the noise's own SPREAD - its
-        # range from its minimum to its maximum - and not of its
-        # half-range: a band of 0.22 measured from the middle of a
-        # field that only spans 0.0 to 0.5 catches a thin sliver, and
-        # the map came out as speckle rather than as fibre.
+        # A Gabor's strokes are where its value is extreme along the
+        # carrier - so the line is the field's own magnitude, taken
+        # about the middle of its range: the stroke is the band
+        # around the crossing, and it is a thin line because the
+        # crossing is sharp.
         spread = max(1e-6, float(fibre_field.max() - fibre_field.min()))
+        centre = fibre_field.min() + 0.5 * spread
         band = max(1e-6, FIBRE_BAND * spread)
         fibre_dark = numpy.clip(
-            1.0 - numpy.abs(fibre_field - 0.5 * spread - fibre_field.min()) / band,
+            1.0 - numpy.abs(fibre_field - centre) / band,
             0.0,
             1.0,
         )
@@ -1083,18 +1157,36 @@ def metal_field(
         # measure read the grain and the scale came out 9.74x the
         # truth's. A stretched value noise does not lock, and it
         # reads as the brushed streaks a sheet actually shows.
-        # The sheet's fine structure is SCRATCHES, not a noise's
-        # threshold crossing. A brushed or rolled sheet is a set of
-        # STREAKS - each one a short line at its own angle, with its
-        # own length - and material-maker's `scratches` node is the
-        # design.
+        # The sheet's fine structure is a GABOR's strokes, for the
+        # same reason the wood's fibre is: a brushed or rolled sheet
+        # is a set of STREAKS, and a Gabor is what makes them.
         #
         # The truth's polished silver crosses its midpoint 122 times
         # where its envelope is nine features, so a sheet's fine
         # structure is a field of streaks and not a set of parallel
         # bands.
-        streaks = scratch_streaks(resolution, cells, seed=1)
-        fibre_dark = streaks
+        # The sheet's grain is a GABOR, for the same reason the
+        # wood's fibre is: a brushed sheet's streaks are ORIENTED
+        # strokes, and a Gabor is what makes them.
+        from golem_blender.pbr import noise_gabor
+
+        lattice = _fibre_lattice(resolution)
+        grain_field = noise_gabor.gabor_2d(
+            sample_x * lattice,
+            sample_y * lattice,
+            period=lattice,
+            orientation=METAL_ORIENTATION,
+            frequency=METAL_FREQUENCY,
+            seed=1,
+        )
+        spread = max(1e-6, float(grain_field.max() - grain_field.min()))
+        centre = grain_field.min() + 0.5 * spread
+        band = max(1e-6, FIBRE_BAND * spread)
+        fibre_dark = numpy.clip(
+            1.0 - numpy.abs(grain_field - centre) / band,
+            0.0,
+            1.0,
+        )
 
         # The grain's own field, for the writer to draw on its own -
         # the same two-scale structure the wood has, so the sheet's

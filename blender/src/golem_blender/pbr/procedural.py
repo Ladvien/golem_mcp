@@ -587,15 +587,28 @@ def _write_line_pattern(
         return line * line * (3.0 - 2.0 * line)
 
     # The envelope: a broad gradient, at a third of the spread.
-    envelope_line = line_of(edge, ENVELOPE_LINE_WIDTH)
+    envelope_line = line_of(edge, ENVELOPE_LINE_WIDTH) * ENVELOPE_STRENGTH
     # The fibre: fine lines, at the rest of the spread.
     fibre_line = line_of(fibre, FIBRE_LINE_WIDTH) * fibre_strength
 
     base = _np.array(base_rgb, dtype=_np.float32).reshape(1, 1, 3)
     lines = _np.array(line_rgb, dtype=_np.float32).reshape(1, 1, 3)
-    darkness = _np.clip(
-        envelope_line * ENVELOPE_STRENGTH + fibre_line * fibre_strength, 0.0, 1.0
-    )
+    # The two are COMBINED as a blend, and the base colour stays
+    # reachable.
+    #
+    # A sum of two darknesses can exceed one, and the clip then takes
+    # the base colour away entirely: the corrugated steel's mean came
+    # out at 0.000 against a base of 0.430. And the fibre's strength
+    # was applied twice - once to the fibre and once to the sum.
+    #
+    # So the fibre's darkness is ADDED to the envelope's and the sum
+    # is scaled back so it cannot exceed one. The base is reachable
+    # wherever the sum is small, which is what keeps the map's
+    # brightness the description's.
+    darkness = envelope_line + fibre_line
+    peak = max(1e-6, float(darkness.max()))
+    if peak > 1.0:
+        darkness = darkness / peak
     colour = (
         base * (1.0 - darkness[:, :, _np.newaxis]) + lines * darkness[:, :, _np.newaxis]
     )
