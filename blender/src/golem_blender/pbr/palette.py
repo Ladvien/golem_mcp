@@ -773,6 +773,27 @@ def brick_aspect_for_description(description: str) -> float:
     return BRICK_ASPECT
 
 
+def metal_direction_for_description(description: str) -> bool:
+    """Whether a metal sheet's BANDS run as rows, and not as columns.
+
+    A PRESSED sheet's ribs are horizontal - a corrugated or a ribbed
+    sheet - and the truth's own corrugated steel is a pressed sheet of
+    straight parallel ribs.
+
+    And the direction decides what the feature measure reads. The
+    measure reads along a ROW, so a sheet whose bands are COLUMNS
+    has the bands' own spacing read - and the truth's corrugated
+    steel measures 5.89 features across at a period of 174 pixels,
+    while its ribs are sixteen pixels apart. The measure found the
+    sheet's slow variation along the row, and not the ribs.
+
+    So a pressed sheet's bands are rows: the row's own variation is
+    the slow one, and the ribs are across the row.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    return bool(words & {"corrugated", "ribbed", "ridged", "striped", "pipe"})
+
+
 def pebble_factor_for_description(description: str) -> float:
     """How many PEBBLES a cell holds, for a surface of loose pieces.
 
@@ -850,6 +871,7 @@ def palette_for_description(
         "target_spread": spread,
         "pebble_factor": pebble_factor_for_description(description),
         "brick_aspect": brick_aspect_for_description(description),
+        "metal_horizontal": metal_direction_for_description(description),
     }
 
 
@@ -878,6 +900,7 @@ def line_palette_for_description(description: str, path: str = "grain"):
         "stone_light_rgb": _coloured(value, hue),
         "mortar_rgb": _coloured(value, hue),
         "target_spread": spread,
+        "metal_horizontal": metal_direction_for_description(description),
     }
 
 

@@ -262,6 +262,7 @@ def write_procedural_base_color(
     fibre_strength: float = FIBRE_STRENGTH,
     pebble_factor: float = 1.0,
     brick_aspect: float | None = None,
+    metal_horizontal: bool = False,
 ) -> Path:
     # `pebble_factor` is how many PEBBLES a cell holds: a loose
     # ground's four, and a solid surface's one.
@@ -347,7 +348,10 @@ def write_procedural_base_color(
         )
     else:
         cell, edge, grid, fibre = pattern.metal_field(
-            resolution, cells, lines_per_cell=lines_per_cell
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
+            horizontal=metal_horizontal,
         )
     cell_width, cell_height = grid
 

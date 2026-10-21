@@ -199,6 +199,27 @@ def test_the_value_follows_the_material_s_kind():
     )
 
 
+def test_a_pressed_sheet_s_ribs_run_as_rows():
+    """A PRESSED sheet's ribs are horizontal, and a sheet that is not
+    pressed keeps its bands as columns.
+
+    The direction decides what the feature measure reads. The measure
+    reads along a ROW, and the truth's corrugated steel measures 5.89
+    features across at a period of 174 pixels while its ribs are
+    sixteen pixels apart - the measure found the sheet's slow
+    variation and not the ribs, because the ribs are horizontal.
+
+    A sheet that is NOT pressed - a rolled or a brushed one - has no
+    ribs at all: its bands are its own direction, and they stay.
+    """
+    from golem_blender.pbr.palette import metal_direction_for_description
+
+    pressed = "corrugated, dark, gray, industrial, metal, pipe, ribbed, ridged, rough, steel, striped, urban, worn"
+    assert metal_direction_for_description(pressed) is True
+    rolled = "aged, black, brown, dark, fine, glossy, industrial, metal, oxidized, polished, rust, rusty, smooth, steel"
+    assert metal_direction_for_description(rolled) is False
+
+
 def test_a_description_s_word_order_does_not_decide_the_spread():
     """A description's words are alphabetical, so the first one says
     nothing about how much the surface varies.

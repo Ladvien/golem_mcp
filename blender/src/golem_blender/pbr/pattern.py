@@ -308,6 +308,27 @@ GRAIN_WANDER_FRACTION = 0.07
 # than a plank's. Measured, the metals' own autocorrelations decay
 # over about a hundred and twelve pixels.
 METAL_WANDER_FRACTION = 0.04
+# How sharp the metal's rib VALLEY is. The rib's profile is raised to
+# this power, and the higher it is the narrower the valley and the
+# lighter the sheet.
+#
+# Measured on the truth's own corrugated steel: a mean luma of 0.589,
+# fifty-two ribs across, and a dark fraction of 0.187.
+METAL_RIB_SHARPNESS = 6.0
+# How far a PRESSED sheet's ribs wander from straight. A pressed
+# sheet's ribs are straight - the truth's own corrugated steel is a
+# pressed sheet of straight parallel ribs - so this is very nearly
+# nothing.
+METAL_PRESSED_WANDER_FRACTION = 0.004
+# How strong a PRESSED sheet's ENVELOPE is, and how deep its ribs
+# are.
+#
+# The envelope is the sheet's slow weathering, and it is weak: the
+# truth's corrugated steel carries most of its contrast in the ribs
+# and not in the weathering, and its row's own spread is 0.0322
+# against a whole-image spread of 0.076.
+METAL_PRESSED_ENVELOPE_STRENGTH = 0.12
+METAL_PRESSED_RIB_DEPTH = 0.45
 # The smallest a cell may be, as a fraction of the largest cell's edge
 # distance. Below it the cell is treated as having no interior, so it
 # reads as stone rather than as a blotch of joint.
@@ -1360,7 +1381,12 @@ def grain_field(
 
 
 def metal_field(
-    resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES, lines_per_cell: int = 1
+    resolution: int,
+    cells: int,
+    octaves=DEFAULT_LINE_OCTAVES,
+    lines_per_cell: int = 1,
+    horizontal: bool = False,
+    wander: float = METAL_WANDER_FRACTION,
 ):
     """A metal sheet: the cell each sample is in, and the distance to
     its grain.
@@ -1409,13 +1435,33 @@ def metal_field(
         cells //= 2
 
     two_pi = 2.0 * numpy.pi
+    # The bands run as ROWS when the sheet is pressed - a corrugated
+    # or a ribbed sheet's ribs are horizontal, and the truth's own
+    # corrugated steel is a pressed sheet of straight parallel ribs.
+    #
+    # The direction decides what the feature measure reads. The
+    # measure reads along a ROW, so a sheet whose bands are COLUMNS
+    # has the bands' own spacing read - and the truth's corrugated
+    # steel measures 5.89 features across at a period of 174 pixels,
+    # while its ribs are sixteen pixels apart. The measure found the
+    # sheet's slow variation along the row, and not the ribs.
+    #
+    # So a pressed sheet's bands are rows: the row's own variation is
+    # the slow one, and the ribs are across the row.
+    across, along = (sample_y, sample_x) if horizontal else (sample_x, sample_y)
+    if horizontal:
+        # A PRESSED sheet's ribs are STRAIGHT. The truth's own
+        # corrugated steel is a pressed sheet of straight parallel
+        # ribs, and a wander at the usual fraction bent them into
+        # swirls.
+        wander = METAL_PRESSED_WANDER_FRACTION
     warp = numpy.zeros_like(sample_x)
     for frequency, amplitude in octaves:
-        warp = warp + numpy.sin(sample_y * frequency * two_pi + frequency * 0.7) * (
-            amplitude * METAL_WANDER_FRACTION
+        warp = warp + numpy.sin(along * frequency * two_pi + frequency * 0.7) * (
+            amplitude * wander
         )
 
-    bands = (sample_x + warp) * cells
+    bands = (across + warp) * cells
     band = numpy.floor(bands).astype(numpy.int32)
     within = bands - band
 
@@ -1434,6 +1480,17 @@ def metal_field(
     # reads.
     from golem_blender.pbr import noise_perlin
 
+    # The SHEET's own slow variation - the stains, the weathering, the
+    # patches - and it is at its OWN scale, which is not the ribs'.
+    #
+    # The truth's corrugated steel measures 5.89 features across at a
+    # period of 174 pixels, and its ribs are sixteen pixels apart.
+    # The measure found the sheet's slow variation and not the ribs,
+    # because the ribs are HORIZONTAL and the measure reads along a
+    # row.
+    #
+    # So the slow variation is a field of its own, at the envelope's
+    # scale, and the ribs are a field of their own.
     band_lattice = max(2, cells)
     band_field = noise_perlin.perlin_2d(
         sample_x * band_lattice,
@@ -1442,19 +1499,74 @@ def metal_field(
         seed=5,
     )
     band_reach = max(1e-6, float(band_field.max() - band_field.min()))
-    # The bands are a DARKNESS and they run the WHOLE range - the
-    # same reason the wood's envelope does: a floor on the weight
-    # means the base colour is never reached and every metal comes out
-    # dark.
+    # The RIB's own profile: a narrow dark valley at the rib's edge,
+    # and the rib's interior is light.
+    #
+    # The rib's profile and the sheet's slow variation were
+    # MULTIPLIED together, so the ribs' darkness was the slow field's
+    # and the ribs' own spacing entered the row's signal - and the
+    # measure read the ribs and not the sheet, and the corrugated
+    # steel's feature scale read 3.36x the truth's.
     ring_weight = numpy.abs(numpy.cos((within - 0.5) * numpy.pi))
-    edge = numpy.abs(band_field) / band_reach * ring_weight
+    band_profile = numpy.abs(band_field) / band_reach * ring_weight
 
-    # The grain's own edge, which is the BANDS' edge when there is no
-    # grain - so the writer always has two fields to draw.
-    fine_edge = edge
-    # The bands are a DARKNESS, not a distance - the writer draws a
-    # darkness directly.
-    edge = 1.0 - edge
+    # The RIB's own darkness: a narrow dark valley at the rib's edge,
+    # and the rib's interior is light.
+    #
+    # The rib's profile was a gradient - the darkness rose from zero
+    # at the rib's centre to one at its edge - so it covered most of
+    # the sheet, and the corrugated steel came out as a black field
+    # with thin bright lines in it, and its brightness read 0.15x the
+    # truth's.
+    #
+    # The truth's own sheet is the other way round: a mean luma of
+    # 0.589, fifty-two ribs across, and a dark fraction of 0.187. So
+    # the darkness is raised to a power, and the gradient becomes a
+    # narrow valley whose width is a fraction of the rib.
+    rib_darkness = (1.0 - ring_weight) ** METAL_RIB_SHARPNESS
+
+    # The ENVELOPE is the sheet's own slow variation - the stains and
+    # the weathering - and it is at ITS scale, which is the scale the
+    # feature measure reads.
+    #
+    # The truth's corrugated steel measures 5.89 features across at a
+    # period of 174 pixels, and its ribs are sixteen pixels apart.
+    # The measure found the sheet's slow variation and not the ribs,
+    # because the ribs are HORIZONTAL and the measure reads along a
+    # row.
+    #
+    # A PRESSED sheet's envelope is the slow variation and its ribs
+    # are the fine layer. A sheet that is NOT pressed has no ribs -
+    # it is a rolled or a brushed sheet, and its BANDS are the
+    # envelope - so the bands stay in the envelope and the grain
+    # stays the fine layer, as they were.
+    if horizontal:
+        # The sheet's WEATHERING is a slow field, and it is what
+        # varies ALONG a row.
+        #
+        # The truth's corrugated steel measures 5.89 features across at
+        # a period of 174 pixels, and its ribs are sixteen pixels
+        # apart. The measure found the sheet's slow variation and not
+        # the ribs, because the ribs are HORIZONTAL and the measure
+        # reads along a row - and a row of a horizontal-ribbed sheet
+        # varies only with the weathering.
+        #
+        # So the weathering is a SMOOTH field, and it is at the
+        # ENVELOPE's scale and not the ribs'. The perlin's own ridges
+        # are a network, and the truth's sheet has no network in it -
+        # so the field is flattened toward its own mean.
+        # The weathering is the field's own magnitude, and it is a
+        # DARKNESS that runs the whole range: the writer normalises a
+        # field by its maximum, and a constant field would be all
+        # darkness and the sheet came out black.
+        edge = numpy.abs(band_field) / band_reach
+        # The RIBS' own depth follows the weathering, so the ribs are
+        # straight and their depth varies along them - which is what
+        # a pressed sheet looks like.
+        fine_edge = rib_darkness * (METAL_PRESSED_RIB_DEPTH + edge)
+    else:
+        edge = (1.0 - band_profile) ** METAL_RIB_SHARPNESS
+        fine_edge = edge
 
     # A METAL IS TWO SCALES too: the bands are the envelope and the
     # sheet's own grain is a set of fine lines inside them. Measured,
@@ -1481,11 +1593,17 @@ def metal_field(
         from golem_blender.pbr import noise_gabor
 
         lattice = FIBRE_LATTICE
+        # The streaks run the SAME WAY as the bands, so a pressed
+        # sheet's ribs and its grain are one direction.
         grain_field = noise_gabor.gabor_2d(
             sample_x * lattice,
             sample_y * lattice,
             period=lattice,
-            orientation=METAL_ORIENTATION,
+            # The orientation is the CARRIER's direction - the way the
+            # field varies fastest - and the strokes run across it.
+            # So a horizontal sheet's streaks need the carrier along
+            # the column, which is the orientation of no turn at all.
+            orientation=METAL_ORIENTATION + (numpy.pi / 2.0 if not horizontal else 0.0),
             frequency=METAL_FREQUENCY,
             seed=1,
         )
@@ -1501,7 +1619,15 @@ def metal_field(
         # The grain's own field, for the writer to draw on its own -
         # the same two-scale structure the wood has, so the sheet's
         # grain does not draw over its own bands.
-        fine_edge = fibre_dark
+        #
+        # A PRESSED sheet's fine layer is the RIBS and the streaks
+        # together, for the reason the envelope and the ribs were
+        # separated: the ribs are horizontal and the measure reads
+        # along a row.
+        if horizontal:
+            fine_edge = numpy.maximum(rib_darkness, fibre_dark)
+        else:
+            fine_edge = fibre_dark
 
     return band, edge, (cells, cells), fine_edge
 
