@@ -17,13 +17,19 @@ Over twenty materials, against the truth's:
 
 | | the lane's | the truth's |
 |---|---|---|
-| the brightness | 0.84x | 1.00x |
-| the contrast | 1.71x | 1.00x |
-| the feature scale | 1.33x | 1.00x |
-| the seam | 1.04x | 0.60x |
+| the brightness | 0.95x | 1.00x |
+| the contrast | 1.04x | 1.00x |
+| the feature scale | 0.88x | 1.00x |
+| the seam | 0.35x | 0.60x |
 
 The reference sets' own seams run from 0.32x to 2.35x, so the lane is
 inside the range real PBR sets occupy.
+
+The colour is the truth's own too. A palette with no hue made every
+material grey, and the truth's are not: the fabric is R 0.217 G
+0.333 B 0.451, the wood R 0.420 G 0.328 B 0.251 and the ground R
+0.379 G 0.336 B 0.286, and only the metal and the concrete are
+neutral.
 
 ## The order the scripts run in
 

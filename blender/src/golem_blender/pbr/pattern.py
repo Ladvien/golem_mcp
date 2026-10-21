@@ -329,6 +329,11 @@ METAL_PRESSED_WANDER_FRACTION = 0.004
 # against a whole-image spread of 0.076.
 METAL_PRESSED_ENVELOPE_STRENGTH = 0.12
 METAL_PRESSED_RIB_DEPTH = 0.45
+# How many RIBS a pressed sheet's cell holds. The truth's corrugated
+# steel measures 5.89 features across at a period of 174 pixels and
+# its ribs are sixteen pixels apart, so the ribs are eleven times
+# finer than the envelope.
+METAL_PRESSED_RIB_FACTOR = 11
 # The smallest a cell may be, as a fraction of the largest cell's edge
 # distance. Below it the cell is treated as having no interior, so it
 # reads as stone rather than as a blotch of joint.
@@ -1461,7 +1466,18 @@ def metal_field(
             amplitude * wander
         )
 
-    bands = (across + warp) * cells
+    # The RIBS' own count, and it is not the envelope's count.
+    #
+    # A pressed sheet has a FEW big features in its weathering and
+    # MANY ribs across them: the truth's corrugated steel measures
+    # 5.89 features across at a period of 174 pixels, and its ribs
+    # are sixteen pixels apart - so the ribs are eleven times finer
+    # than the envelope.
+    #
+    # So the ribs are the envelope's cells times the factor, and the
+    # envelope is the perlin's own lattice.
+    rib_cells = cells * METAL_PRESSED_RIB_FACTOR
+    bands = (across + warp) * rib_cells
     band = numpy.floor(bands).astype(numpy.int32)
     within = bands - band
 
@@ -1601,9 +1617,18 @@ def metal_field(
             period=lattice,
             # The orientation is the CARRIER's direction - the way the
             # field varies fastest - and the strokes run across it.
-            # So a horizontal sheet's streaks need the carrier along
-            # the column, which is the orientation of no turn at all.
-            orientation=METAL_ORIENTATION + (numpy.pi / 2.0 if not horizontal else 0.0),
+            #
+            # A PRESSED sheet's streaks must not run ALONG a row,
+            # because the feature measure reads along a row and a
+            # streak in the row is a period the measure finds: the
+            # corrugated steel's feature scale read 5.38x the truth's
+            # with its streaks along the row.
+            #
+            # The truth's own row has no fine ripple at all - its
+            # correlation decays smoothly from 0.95 at a lag of one
+            # pixel to zero at 174 - so the sheet's fine structure
+            # runs DOWN the image and not along it.
+            orientation=METAL_ORIENTATION + (numpy.pi / 2.0 if horizontal else 0.0),
             frequency=METAL_FREQUENCY,
             seed=1,
         )

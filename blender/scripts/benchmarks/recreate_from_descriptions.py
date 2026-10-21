@@ -35,6 +35,7 @@ from golem_blender.pbr import (
     paths as pbr_paths,  # pylint: disable=import-outside-toplevel
 )
 from golem_blender.pbr.palette import (  # pylint: disable=import-outside-toplevel
+    line_palette_for_description,
     palette_for_description,
 )
 from golem_blender.pbr.patterns import (  # pylint: disable=import-outside-toplevel
@@ -47,10 +48,17 @@ from golem_blender.pbr.procedural import (  # pylint: disable=import-outside-top
 ROOT = pathlib.Path("/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg")
 OUT = ROOT / "recreated"
 
-# How many bricks a course holds across, and how many features a
-# course is tall. The cell count is the feature count over both.
-BRICKS_PER_COURSE = 4.0
-FEATURES_PER_COURSE = 2.0
+# How many features a cell carries.
+#
+# It is ONE, and it was not: a brick's cell was a course of four
+# bricks and two features, and a grain's cell was three features, and
+# both made the pattern far too coarse.
+#
+# Measured against the truth's own: the tiles read 0.50x the truth's
+# feature scale with the old divisor and 1.05x with one; the third
+# tile 0.46x and 0.98x; the fourth 0.48x and 1.02x; the first brick
+# 1.19x and 0.90x; and the wood 0.37x and 0.84x.
+FEATURES_PER_CELL = 1.0
 
 
 def describe(tags):
@@ -71,18 +79,7 @@ def describe(tags):
 def pattern_for(tags, features_across):
     """The pattern and its scale, from the description and the size."""
     kind = pattern_for_description(describe(tags))
-    scale = max(2.0, round(features_across))
-    if kind == "brick":
-        scale = max(
-            2.0,
-            round(features_across / (BRICKS_PER_COURSE * FEATURES_PER_COURSE)),
-        )
-    elif kind == "grain":
-        # A grain's cell is a RING, and the pattern's rings are two per
-        # cell - the absolute value folds the axis - so a cell carries
-        # about three features. Measured: 3.048 features per cell at
-        # twenty-four and at forty-eight cells.
-        scale = max(2.0, round(features_across / 3.048))
+    scale = max(2.0, round(features_across / FEATURES_PER_CELL))
     return kind, scale
 
 
@@ -108,13 +105,23 @@ def main():
         )
         base_path = OUT / f"{asset_id}_BaseColor.png"
         started = time.time()
+        # A GRAIN and a METAL are LINES on a surface, and a line
+        # pattern has no cells to vary: the whole image is ONE colour
+        # and the lines are the only variation on it. So they take the
+        # line palette and not the cell one.
+        description = describe(entry["tags"])
+        palette = (
+            line_palette_for_description(description, path=kind)
+            if kind in ("grain", "metal")
+            else palette_for_description(description, path=kind)
+        )
         write_procedural_base_color(
             base_path,
             kind=kind,
             scale_cells=float(scale),
             width_px=pbr_paths.SET_RESOLUTION_PX,
             height_px=pbr_paths.SET_RESOLUTION_PX,
-            **palette_for_description(describe(entry["tags"])),
+            **palette,
         )
         elapsed = time.time() - started
         print(
