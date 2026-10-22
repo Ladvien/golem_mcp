@@ -1125,6 +1125,36 @@ CURVATURE_STRENGTHS: dict[str, float] = {
 }
 
 
+# How much a surface's SCRATCHES carry, and it is the word that says
+# there are any.
+#
+# Material Maker's `scratches2` - a set of layers of wavy lines,
+# each layer with its own angle and its own per-cell randomness, and
+# the layers maximised together so the scratches overlap the way real
+# abrasions do.
+#
+# The truth's own "scratched" material measures a spread of 0.0207
+# and its "eroded" one 0.1254, and a sheet with no word saying it
+# is scratched has none.
+SCRATCH_STRENGTHS: dict[str, float] = {
+    "scratched": 0.6,
+    "eroded": 0.5,
+    "worn": 0.35,
+    "abraded": 0.5,
+    "scuffed": 0.4,
+    "scratch": 0.6,
+}
+
+
+def scratch_strength_for_description(description: str) -> float:
+    """How much the surface's SCRATCHES carry, from its words."""
+    words = set(description.lower().replace(",", " ").split())
+    for word, strength in SCRATCH_STRENGTHS.items():
+        if word in words:
+            return strength
+    return 0.0
+
+
 def curvature_strength_for_description(description: str) -> float:
     """How much the surface's CURVATURE carries, from its words.
 
@@ -1597,6 +1627,8 @@ def palette_for_description(
         "paint_rgb": _paint_colour(description),
         # And how much the surface's CURVATURE carries.
         "curvature_strength": curvature_strength_for_description(description),
+        # And how much the surface's SCRATCHES carry.
+        "scratch_strength": scratch_strength_for_description(description),
         # And how much a STONE's hue varies from the surface's own.
         "hue_variation": hue_variation_for_description(description),
         "target_spread": spread,

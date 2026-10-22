@@ -274,6 +274,18 @@ METAL_GRAIN_LATTICE = 4
 # count. A Perlin's value oscillates faster than its lattice, and the
 # measure reads the value.
 METAL_DEFAULT_ENVELOPE_FACTOR = 1.0
+# The SCRATCHES' own shape: how big a cell they are, how wide a
+# scratch is, how many layers, how much they wave, and how much their
+# angle varies.
+#
+# Material Maker's `scratches2` defaults are a length of 0.25, a
+# width of 0.5, four layers, a waviness of 0.5 and an angle of zero.
+METAL_SCRATCH_SIZE = 0.25
+METAL_SCRATCH_WIDTH = 0.5
+METAL_SCRATCH_LAYERS = 4
+METAL_SCRATCH_WAVINESS = 0.5
+METAL_SCRATCH_ANGLE = 0.0
+METAL_SCRATCH_RANDOMNESS = 0.5
 METAL_GRAIN_STRETCH = 0.25
 METAL_FREQUENCY = 96.0
 # How wide the fibre's line is, as a fraction of the noise's own
@@ -3114,6 +3126,7 @@ def metal_field(
     wander: float = METAL_WANDER_FRACTION,
     banded: bool = True,
     envelope_factor: float = METAL_DEFAULT_ENVELOPE_FACTOR,
+    scratch_strength: float = 0.0,
 ):
     """A metal sheet: the cell each sample is in, and the distance to
     its grain.
@@ -3426,6 +3439,31 @@ def metal_field(
             fine_edge = numpy.maximum(rib_darkness, fibre_dark)
         else:
             fine_edge = fibre_dark
+
+    if scratch_strength > 0.0:
+        # The sheet's SCRATCHES, and they are an ABRASION.
+        #
+        # Material Maker's `scratches2`: a set of layers of wavy
+        # lines, each layer with its own angle and its own per-cell
+        # randomness, and the layers are maximised together so the
+        # scratches overlap the way real abrasions do.
+        #
+        # The cells WRAP, and the scratch map's seam read 0.31 against
+        # the truth's 0.00 before the wrap and 0.008 after it.
+        from golem_blender.pbr import curvature as curvature_module
+
+        scratches = curvature_module.scratches(
+            resolution,
+            size=METAL_SCRATCH_SIZE,
+            width=METAL_SCRATCH_WIDTH,
+            layers=METAL_SCRATCH_LAYERS,
+            waviness=METAL_SCRATCH_WAVINESS,
+            angle=METAL_SCRATCH_ANGLE,
+            randomness=METAL_SCRATCH_RANDOMNESS,
+        )
+        # And the scratches go INTO the fibre, so the writer draws
+        # them with the rest of the sheet's fine structure.
+        fine_edge = numpy.clip(fine_edge + scratches * scratch_strength, 0.0, 1.0)
 
     return band, edge, (cells, cells), fine_edge
 
