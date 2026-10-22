@@ -525,9 +525,14 @@ def write_procedural_base_color(
         # joint's width needs, because it is an exact distance to the
         # cell's border - so a joint drawn from it is the same width
         # in pixels whatever the cell's size.
+        # The STONES' cell count is the surface's own feature count.
+        #
+        # The feature count is the whole surface's - the stones AND
+        # the joints - and the fractal's finer octaves are what make
+        # the features finer than the cells.
         stones = pattern.fractal_stones(
             resolution,
-            cells,
+            max(2, round(cells * pattern.STONE_CELL_FACTOR)),
             pebble_factor=pebble_factor,
             curvature_strength=curvature_strength,
         )

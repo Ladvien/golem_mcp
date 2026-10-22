@@ -119,9 +119,17 @@ SURFACE_SHARE = 0.55
 # 39.4 features where its autocorrelation's period is 26 pixels,
 # while 31 cells drew features 64 pixels apart.
 #
-# So the cells are MORE than the features, by the factor that makes
-# the stone the size the truth's stones are.
-STONE_CELL_FACTOR = 1.6
+# So the cells are the features and not a multiple of them.
+#
+# The factor was 1.6 and it was never used, and the cell count is the
+# feature count itself: the truth's own Asphalt033 measures
+# thirty-one features across and the lane's cells are thirty-one, and
+# the rendered feature count is 27.7 against the truth's 31.
+#
+# And at a factor of a quarter the asphalt's rendered count fell to
+# 7.6 - a fifth of the truth's - so the cells are the count and the
+# fractal's own octaves are what make the features finer.
+STONE_CELL_FACTOR = 1.0
 # How many PEBBLES each feature is worth.
 #
 # The truth's ground measures 20.48 features across and has about
