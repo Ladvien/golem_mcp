@@ -97,6 +97,14 @@ DEFAULT_SURFACE_OCTAVES = ((17, 0.5), (29, 0.3), (43, 0.2))
 # across the image is a hundred pixels, so a stone carries a handful
 # of the patches and the domain carries a hundred.
 SURFACE_PATCHES_PER_CELL = 12
+# And a FLAT sheet's TOOTH's own lattice, as a multiple of the
+# sheet's feature count.
+#
+# The truth's own Plaster001 puts 2.8 per cent of its power above a
+# sixty-fourth of the image - a very fine speckle - and ours put
+# nothing there at all, because the sheet's fine texture was
+# computed and thrown away.
+FLAT_TOOTH_LATTICE_FACTOR = 32
 # How much of the STONE's colour variation is the surface's mottle,
 # against the cell's own colour.
 #
@@ -466,18 +474,18 @@ ROOF_ASPECT = 1.0
 # are a fine network.
 MARBLE_WARP = 0.25
 MARBLE_WARP_STEP = 0.1
-MARBLE_VEIN_WIDTH = 0.14
+MARBLE_VEIN_WIDTH = 0.06
 # How much FINER the BED is than the vein's own spacing, and the
 # contour has to wander over many of the bed's own features to be a
 # line and not a blob.
 #
 # The vein's own period is the LATTICE's cell - the surface's own
 # feature scale - and the bed is the finer field it is cut from.
-MARBLE_BED_FINENESS = 2
+MARBLE_BED_FINENESS = 1
 # How far the warp may carry the veins, as a fraction of the vein's
 # own period - and it is BOUNDED, because the slope is not.
 MARBLE_WARP_LIMIT_CELLS = 0.4
-MARBLE_VEIN_BANDS = 1.0
+MARBLE_VEIN_BANDS = 0.5
 # A HERRINGBONE floor's own aspect, and a board is as wide as it is
 # long.
 HERRINGBONE_ASPECT = 1.0
@@ -2203,7 +2211,29 @@ def flat_field(
     # So the fine variation is the sheet's own mottle - a Perlin at a
     # fine lattice - and not a sum of sines. A Perlin has no
     # preferred direction, so the tooth does not read as a weave.
-    fine = surface_texture(resolution, max(cells * 2, 8))
+    #
+    # And the Perlin was wrong too: a Perlin's value is ZERO at
+    # every lattice point, and a field that is zero at a regular
+    # lattice shows it - so the tooth came out as a MAZE, a regular
+    # grid of worm-like cells, where the truth's own plaster is a
+    # random speckle.
+    #
+    # So the tooth is a VALUE noise, and Material Maker's own: the
+    # value noise's corners are RANDOM, so the field shows no
+    # lattice at all, and its fade is the QUINTIC - so the field is
+    # smooth in its second derivative too and the tooth reads as
+    # grain and not as a grid.
+    fine_lattice = _power_of_two_nearest(max(8, cells * FLAT_TOOTH_LATTICE_FACTOR))
+    while fine_lattice > 1 and resolution % fine_lattice != 0:
+        fine_lattice //= 2
+    while fine_lattice > 1 and fine_lattice * 4 > resolution:
+        fine_lattice //= 2
+    fine = noise.value_noise_2d(
+        sample_x * fine_lattice,
+        sample_y * fine_lattice,
+        size=fine_lattice,
+        seed=11,
+    )
     reach = max(1e-6, float(fine.max() - fine.min()))
     fine = (fine - float(fine.min())) / reach
 
@@ -2685,6 +2715,7 @@ def woven_field(
     cells: int,
     octaves=DEFAULT_LINE_OCTAVES,
     lines_per_cell: int = 1,
+    checkered: bool = False,
 ):
     """A WOVEN cloth: a CROSSHATCH of two fine directional fields.
 
@@ -2785,6 +2816,34 @@ def woven_field(
     across = numpy.abs(across - 0.5) * 2.0
     down = numpy.abs(down - 0.5) * 2.0
     edge = numpy.clip(across * 0.5 + down * 0.5, 0.0, 1.0)
+    if checkered:
+        # A CHECKERED cloth is a CHEQUER of squares and not a
+        # crosshatch of threads, and the two are different things.
+        #
+        # The truth's own Fabric083 is a "checkered, clean, cloth,
+        # fabric, gray, patterned, smooth, textile, woven" and its
+        # correlation is +0.870 at a lag of one, +0.051 at four and
+        # MINUS 0.136 at eight - it goes NEGATIVE, and a crosshatch
+        # of threads never does: ours read +0.040 at eight where the
+        # truth reads -0.136.
+        #
+        # And the chequer WRAPS: the squares are counted modulo the
+        # lattice, so the last square meets the first and the map's
+        # seam stays small. It did not, and Fabric080's seam read
+        # 522.79 against the truth's 0.97.
+        #
+        # The count is CYCLIC and not a plain floor: the samples run
+        # from zero to just short of one, so the last pixel is in
+        # cell L-1 and the first is in cell zero - and a plain floor
+        # gives them opposite parities, so the chequer's last column
+        # was the first column's opposite and the seam read 0.65.
+        #
+        # With the index taken modulo the lattice the last column
+        # and the first are the SAME square, and the seam is zero.
+        index_x = numpy.mod(numpy.floor(sample_x * lattice + 0.5), lattice)
+        index_y = numpy.mod(numpy.floor(sample_y * lattice + 0.5), lattice)
+        squares = numpy.mod(index_x + index_y, 2.0)
+        edge = numpy.clip(edge * 0.35 + squares * 0.65, 0.0, 1.0)
     return (
         numpy.zeros((resolution, resolution), dtype=numpy.int32),
         edge,

@@ -206,6 +206,14 @@ JOINT_SOLID_FRACTION = 0.12
 # How much the noise varies a stone within itself, as a fraction of
 # the stone's colour.
 DEFAULT_VARIATION = 0.15
+# And how much of a FLAT sheet's variation is its TOOTH and not its
+# slow envelope.
+#
+# A plaster is a smooth sheet with a fine grain on it, and the grain
+# is most of what a viewer sees. The truth's own Plaster001 is a
+# speckled surface and ours was a smooth wash of broad blobs, because
+# the sheet's fine texture was computed and thrown away.
+FLAT_TOOTH_SHARE = 1.0
 # How far the lattice is DISPLACED, in cell units. The wander is what
 # makes the cells read as worn stones rather than as a diagram.
 DEFAULT_WANDER = 0.35
@@ -478,6 +486,7 @@ def write_procedural_base_color(
     metal_envelope_factor: float = 1.0,
     stone_tone_fraction: float = 1.0,
     graph: dict | None = None,
+    checkered: bool = False,
 ) -> Path:
     # `pebble_factor` is how many PEBBLES a cell holds: a loose
     # ground's four, and a solid surface's one.
@@ -638,6 +647,7 @@ def write_procedural_base_color(
             resolution,
             cells,
             lines_per_cell=lines_per_cell,
+            checkered=checkered,
         )
     elif kind == "marble":
         # A MARBLE is a fine network of VEINS, and the veins are a
@@ -775,6 +785,21 @@ def write_procedural_base_color(
         # truth's with it.
         reach = max(1e-6, float(edge.max() - edge.min()))
         variation = (edge - float(edge.min())) / reach - 0.5
+        # And the sheet's TOOTH is in the variation too, and not only
+        # the slow envelope.
+        #
+        # The fine texture was computed and thrown away, so a plaster
+        # came out as a smooth wash of broad blobs - and the truth's
+        # own plaster is a fine speckled surface, and the truth's
+        # Concrete034 is a grain of aggregate.
+        #
+        # So the sheet's variation is its slow envelope AND its tooth,
+        # and the tooth carries its own share - the truth's own
+        # plaster's spread is mostly tooth.
+        if fibre is not None:
+            tooth_reach = max(1e-6, float(fibre.max() - fibre.min()))
+            tooth = (fibre - float(fibre.min())) / tooth_reach - 0.5
+            variation = variation + FLAT_TOOTH_SHARE * tooth
         # The sheet's variation is the SPREAD the description asks
         # for, and it is not capped: the truth's own plaster carries a
         # spread of 0.0218 and ours read 0.20x that.
@@ -890,7 +915,16 @@ def write_procedural_base_color(
             #
             # So the roles are swapped: the veins are the fine lines
             # and the base is the broad field.
-            edge, fibre = fibre, _np.ones_like(fibre) * 0.5
+            #
+            # And the swap was BACKWARDS: the veins went into the
+            # envelope's slot and a flat half into the fibre's, so
+            # the veins were drawn as a broad gradient and came out
+            # as fat white worms, where the truth's own Marble012's
+            # veins are six pixels across.
+            #
+            # So the veins go into the FIBRE's slot, and the base is
+            # the envelope's flat field.
+            edge, fibre = _np.ones_like(fibre) * 0.5, fibre
         return _write_line_pattern(
             output_path,
             edge=edge,

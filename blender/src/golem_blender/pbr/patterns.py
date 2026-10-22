@@ -185,6 +185,32 @@ _MATERIAL_PATTERNS = (
     # along a row of a thousand and twenty-four, a matrix twelve
     # pixels wide between them, and the stones' sizes varying by
     # eight times.
+    #
+    # And a PAVING is NOT a loose ground. The truth's own
+    # PavingStones151 is an "arch, arches, beige, cobblestone,
+    # european, gray, grid, mosaic, old, ..." and it measures
+    # seventy-three features across with a spread of 0.1117 - a TIGHT
+    # SET of set stones, laid in a pattern, and not a heap.
+    #
+    # So "grid" and "mosaic" decide, and they are read before the
+    # loose grounds: a thing that is laid in a grid is a grid
+    # whatever it is made of.
+    ("grid", "voronoi"),
+    ("mosaic", "voronoi"),
+    # A SAND is a SMOOTH surface and not a field of grains.
+    #
+    # The truth's own Ground093C is an "accumulation, beach, beige,
+    # coastal, desert, dune, earthy, eroded, ..." and it measures
+    # 7.6 features across with a spread of 0.0148 - a BEACH, and a
+    # beach is smooth.
+    #
+    # So a sand is the FLAT sheet, and the sand's own words come
+    # before the loose grounds' - a "dune" is a smooth drift and not
+    # a heap of gravel, and a beach that says "gravel" says it of
+    # the stones at its edge.
+    ("sand", "flat"),
+    ("dune", "flat"),
+    ("beach", "flat"),
     ("cobble", "scattered"),
     ("cobblestone", "scattered"),
     ("gravel", "scattered"),
@@ -196,7 +222,6 @@ _MATERIAL_PATTERNS = (
     ("scattered", "scattered"),
     ("stone", "voronoi"),
     ("rock", "voronoi"),
-    ("sand", "voronoi"),
     ("asphalt", "voronoi"),
     ("concrete", "voronoi"),
     # A FABRIC is a WEAVE and not a Voronoi.
@@ -214,11 +239,7 @@ _MATERIAL_PATTERNS = (
     ("fabric", "woven"),
     ("wool", "woven"),
     ("fur", "carpet"),
-    # A MOSAIC is a BRICK: the truth's own mosaic tiles are square
-    # and their grout is a joint, and the marble's own is a network of
-    # veins.
-    ("mosaic", "brick"),
-    ("paving", "scattered"),
+    ("paving", "voronoi"),
     ("metal", "voronoi"),
 )
 
@@ -323,8 +344,26 @@ def is_pebbled(description: str) -> bool:
     return any(word in words for word in _PEBBLED_WORDS)
 
 
+def is_checkered(description: str) -> bool:
+    """Whether a woven cloth is a CHEQUER of squares and not threads.
+
+    A CHECKERED fabric is a grid of alternating squares, and the two
+    are different things: a crosshatch of threads has a correlation
+    that never goes negative, and a chequer's does.
+
+    Measured on the truth's own Fabric083 - a "checkered, clean,
+    cloth, fabric, gray, patterned, smooth, textile, woven" - the
+    correlation is +0.870 at a lag of one, +0.051 at four and MINUS
+    0.136 at eight. Ours read +0.040 at eight, where the truth
+    reads -0.136.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    return bool(words & {"checkered", "chequered", "checkerboard", "gingham"})
+
+
 __all__ = (
     "DEFAULT_PATTERN",
+    "is_checkered",
     "is_pebbled",
     "pattern_for_description",
 )

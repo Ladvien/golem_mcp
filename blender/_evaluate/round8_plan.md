@@ -1,119 +1,141 @@
-# Round 8: the popular set, the marbles, and a node graph
+# Round 8 and 9: the popular list, the node graph, and the sheet
 
-The lane recreates real ambientCG PBR sets from a DESCRIPTION. Measured
-against the truth's own 154 materials across three sets.
+## The popular list is its own benchmark now
 
-## Where the lane stands (measured, ambientcg_popular, 47 materials)
+`ambientcg_top` — the site's own popular list, the materials with the
+most downloads, sixty of them.
 
-| metric | before this round | after |
+The site's `sort=popular` on the API sorts by RELEASE DATE, not by
+downloads, so the list is built in
+`scripts/benchmarks/fetch_ambientcg_popular_list.py`: the API is
+asked for a wide page and the results are sorted by `downloadCount`.
+
+The top of the real list:
+
+    Road007            493749 downloads
+    Marble012           483234
+    Concrete034         476576
+    Plaster001          476269
+    Ground037           468280
+    Wood051             429612
+    Grass001            400836
+    WoodFloor051        344504
+
+The other sets pick their materials by KIND — eight of each — so that
+no kind can be fitted to. That is the right shape for fitting the
+palette's tables and the wrong shape for asking how good the lane is
+on what people actually download.
+
+## What the sheet showed that the score did not
+
+The score says how close a recreation is. The sheet says whether it
+*looks* like the material, and the sheet found four things the score
+had hidden:
+
+| the material | the score said | the sheet showed |
 |---|---|---|
-| the brightness | 1.206x | 1.14x |
-| the contrast | 1.298x | 1.21x |
-| the scale | 0.921x | 1.04x |
+| PavingStones151 | the scale 0.83x | a heap of loose stones where the truth is a tight grid of set stones — and the words say "grid, mosaic" |
+| Ground093C | the brightness 0.64x | orange noise where the truth is a smooth beach — and the words say "beach, dune, sand" |
+| Metal055A | the contrast 1.29x | hard vertical worms where the truth is a soft mottle |
+| Fabric083 | the contrast 1.24x | a big chequerboard where the truth is a fine crackle weave |
 
-The mean brightness on `ambientcg` is 0.99x and on `ambientcg_wide` 1.07x.
+Each was a ROUTING or a SCALE fault, and each was found by looking.
 
-## The bugs, in order of how much they cost
+## The faults, and what fixed them
 
-### 1. The marble's PERIOD was quantised to a power of two
-The truth's Marble012 measures fourteen features across and its
-Marble016 twenty-two; both quantised to sixteen, so the two marbles
-came out with the SAME veins. The period is the cells themselves now.
+### 1. A PAVING is not a loose ground
+"cobblestone" routed to SCATTERED — a heap of loose stones — and the
+truth's PavingStones151 is a tight set of set stones, seventy-three
+features across. So "grid" and "mosaic" decide, and they are read
+before the loose grounds.
 
-### 2. The marble's WARP was unbounded
-The warp displaces along the field's SLOPE, and the slope is
-unbounded - where the bed was steep the displacement ran to many
-cells and the contours folded into a fine mess (146 features where
-the truth has 14). The displacement is clipped to a quarter of a
-cell now.
+### 2. A SAND is a smooth sheet
+"beach, dune, sand" routed to SCATTERED, and the truth's Ground093C
+measures 7.6 features across with a spread of 0.0148 — a beach is
+smooth. So "sand", "dune" and "beach" are the FLAT sheet, and they
+come before the loose grounds.
 
-### 3. A COATED metal wore the metal's colour, not the coat's
-The truth's Metal027/029 are "black, covered, metal, painted, powder,
-steel" at 0.180 and 0.128; the steel's word said 0.4686. But the
-SHEET's word must beat the TONE's for a RUSTED plate (Metal063 is
-0.429, and "black" would have said 0.06). The COAT is what tells
-them apart.
+### 3. A METAL's grain was at the wrong scale
+The metal's grain noise was sampled on a lattice of FOUR — a grain
+cell was 512 pixels across at 2048, so the "grain" was a handful of
+enormous smooth lenses. The truth's own metals are ISOTROPIC: Metal055A
+correlates +0.836 across and +0.842 down. So the lattice is sixteen
+and the stretch is a half, and the correlation error fell from 0.1734
+to 0.1454.
 
-### 4. A metal's colour came from the GENERAL table
-The truth's Metal062C is "damaged, dirty, metal, platinum" at 0.733;
-the general "platinum" is 0.1435. The metals have their own table now.
+### 4. A CHECKERED cloth is a chequer and not a crosshatch
+The truth's Fabric083's correlation goes NEGATIVE at a lag of eight
+(-0.136) and a crosshatch of threads never does. So a "checkered"
+cloth is a chequer of squares over the threads, and the chequer
+wraps — it did not, and Fabric080's seam read 522.79.
 
-### 5. "plastic" and "leather" have no pattern of their own
-"black, plastic, shiny, smooth" fell through to VORONOI - a field of
-cobbles - where the truth's Plastic006 is a smooth moulded surface
-(sd 0.0145) with fine vertical scratches. Same for the leathers.
+### 5. A black is THREE blacks
+The truth's own fifteen blacks split three ways and the word "black"
+cannot tell them apart:
 
-## What Material Maker gives us that we do not have
+- a REFLECTIVE black catches the light and is the lightest — the
+  truth's own Metal046B is 0.2463 and its Marble016 0.2436;
+- a SMOOTH dielectric has nowhere to catch it and is the darkest —
+  the truth's own Plastic006 is 0.0303 and its Leather026 0.0976;
+- a TEXTURED dielectric is in between — the truth's own Plastic012A
+  is 0.1700.
+
+The value's mean error over a hundred and twenty-five of the truth's
+own fell from 0.0645 to 0.0608.
+
+### 6. A LEATHER's finish is its character
+The truth's own six leathers' spreads run from 0.0032 to 0.0630 and
+the material's own word said 0.0238 — a mean of nothing in
+particular. The finish says which: clean 0.0032, smooth 0.0115,
+suede 0.0160, orange 0.0198, bare 0.0279, stitched 0.0630. All six
+read exactly now.
+
+## Material Maker, and what it gave
 
 Material Maker (MIT, RodZill4) is 426 node files and a 328-entry
-library. Read at /tmp/material-maker.
+library. It is not bpy-drivable and it does not need to be — it is
+the closest thing to a well-organised catalogue of procedural PBR node
+designs, and every one is clean-room-implementable in NumPy.
 
-### Its MARBLE template is the blueprint for the vein
-`Workflow/Materials/Marble` builds the vein as a **gradient along the
-warped X** - a LEVEL SET of the warped field, which is exactly the
-construction the lane converged on by measurement. Its `graph_2` is a
-`perlin` -> `transform` with `translate_x`/`translate_y` as the WARP
-AMOUNT, and the vein is `colorize` over a `Simple Gradient` on
-`$uv.x`.
+Its own **Marble template** is the blueprint for the vein: the vein is
+a gradient along the warped X — a LEVEL SET of the warped field, which
+is the construction the lane converged on by measurement.
 
-So the vein is: warp the UV by a perlin's gradient, then take the
-level set of the warped coordinate. Our version warps the *field*
-instead of the *coordinate* - which is the same thing, but ours
-measures the veins' own period, and the truth's confirms the level
-set is right.
+Its **blend node** carries fourteen modes and the lane had nine. The
+five it lacked are lighten, darken, difference, additive and addsub —
+and addsub is the one that draws a dark vein on a pale stone and a
+pale vein on a dark one.
 
-### Its noise is VALUE noise with a quintic fade
-`value_noise_2d` uses `t = f*f*f*(f*(f*6-15)+10)` - the QUINTIC
-smoothstep, not the cubic. A quintic fade has zero second derivative
-at the lattice points, so the noise is C2 continuous and the field's
-CONTOURS are smooth curves. Our perlin is gradient-based; a quintic
-value noise's contours are what a marble's veins want.
+Its **colorize node** is a RAMP and not a darkening: it says where
+the stone goes from one tone to another and how fast, and a linear
+darkening cannot. The marble's ramp has its veins at 0.09 and 0.34
+and its stone between them.
 
-### Its blend node is a full Photoshop-mode set
-`blend.mmg` carries normal, dissolve, multiply, screen, overlay,
-hard-light, soft-light, burn, dodge and more, each with an opacity
-and a `blend_type` enum. That is the COMPOSITION layer the lane has
-no equivalent of.
+Its **splatter** and **scratches2** are primitives the lane had no
+equivalent of, and both are in the node graph now.
 
-### Its `splatter`, `scratches2`, `crystal`, `beehive` are primitives
-we do not have at all.
+## The node graph
 
-## The plan
+`src/golem_blender/pbr/nodegraph.py` — a description is not one
+pattern but a STACK. A marble is flat stone with a network of veins
+over it; a leather is a fine grain with a stain on it; a metal is a
+sheet, brushed, with scratches.
 
-### A. The node graph - compositing different textures
-A description is not one pattern but a STACK: a base, a warp, an
-overlay, a set of scratches. The lane picks ONE pattern and paints
-it. Material Maker composes.
+The graph is a list of nodes, each a named FIELD producer, each
+node's inputs naming other nodes, and it renders to one field. The
+node types are `field`, `blend`, `warp`, `splatter`, `scratches`,
+`colorize` and `math`.
 
-The node graph is a list of nodes, each with a type, parameters, and
-a connection list, and it renders to an image. A named node type
-resolves to a function that returns a field.
+And every field is NORMALISED before it enters a graph — ONE is the
+feature and ZERO is the ground — because the lane's own patterns do
+not agree: a Voronoi's field is the distance to the joint and a
+marble's is the vein's coverage, and blending them raw mixes
+meanings.
 
-The graph is described in a small declarative form, so an agent can
-write one:
-
-    {"nodes": [
-        {"type": "voronoi", "name": "base", "params": {...}},
-        {"type": "warp", "name": "warp", "params": {"amount": 0.1},
-         "inputs": {"strength": "base"}},
-        {"type": "blend", "name": "mix", "params": {"mode": "multiply"},
-         "inputs": {"a": "base", "b": "warp", "amount": 0.3}}
-    ]}
-
-The first version composites in the FIELD domain (a mask), not the
-image domain - a blend of two fields is a blend of two fields, and
-the image is written once at the end.
-
-### B. The primitives Material Maker has that we do not
-- `splatter` - droplets at Poisson-scattered points
-- `scratches` - lines with waviness and randomness
-- `crystal` / `beehive` - cellular structure
-- the blend modes
-
-### C. The remaining pattern routing
-- "plastic" -> a smooth moulded surface
-- "leather" -> a fine even grain, and the CLEAN one nearly flat
+It is exposed through `generate_procedural_base_color`'s
+`graph_json`, so an agent can author one.
 
 ## The loop
+
 Every change is measured against the truth's own, and every change is
 LOOKED AT. A number without a picture is not a result.

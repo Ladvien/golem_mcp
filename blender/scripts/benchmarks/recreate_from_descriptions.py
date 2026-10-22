@@ -40,6 +40,7 @@ from golem_blender.pbr.palette import (  # pylint: disable=import-outside-toplev
     palette_for_description,
 )
 from golem_blender.pbr.patterns import (  # pylint: disable=import-outside-toplevel
+    is_checkered,
     pattern_for_description,
 )
 from golem_blender.pbr.procedural import (  # pylint: disable=import-outside-toplevel
@@ -136,6 +137,7 @@ def main():
             fibre_scale=float(fibre_scale),
             width_px=pbr_paths.SET_RESOLUTION_PX,
             height_px=pbr_paths.SET_RESOLUTION_PX,
+            checkered=is_checkered(description),
             **palette,
         )
         elapsed = time.time() - started
