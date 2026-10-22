@@ -132,7 +132,7 @@ SCATTER_MATRIX_WIDTH = 2.0
 # it. Measured, the ground's period read fourteen pixels against the
 # truth's fifty-three when the drift was on the stone's own tone,
 # and the drift's own share is what moved it.
-SCATTER_DRIFT_SHARE = 0.55
+SCATTER_DRIFT_SHARE = 0.40
 # How much a STONE's hue varies from the surface's own.
 #
 # The DEFAULT is in the palette - `hue_variation_for_description` -
@@ -1052,6 +1052,11 @@ def write_procedural_base_color(
         # stones, and it moves the luma and not the hue - so a worn
         # patch of ground is a paler patch and not a patch of a
         # different colour.
+        #
+        # And the drift's SHARE is two fifths and not more: the
+        # truth's own ground carries about a third of its spread in
+        # the envelope and two thirds in the fine, and the drift was
+        # carrying a half and a half."
         drift = (slow - 0.5) * ramp_spread * SCATTER_DRIFT_SHARE
         weights = _np.array([0.2126, 0.7152, 0.0722], dtype=_np.float32)
         image_luma = (colour * weights).sum(axis=2)

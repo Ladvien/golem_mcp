@@ -963,18 +963,43 @@ def _paint_colour(description: str) -> tuple[float, float, float]:
     truth's own line measures.
     """
     words = set(description.lower().replace(",", " ").split())
+    # The paint's WEAR, and it is the road's own age.
+    #
+    # Measured on the truth's own: Road007's white line measures a
+    # luma of 0.683 and Road012A's measures 0.301 - a road's paint
+    # is as worn as the road is old.
+    #
+    # And the words say it: Road007 is a "smooth, street, urban" one
+    # and Road012A a "rough, worn, old" one.
+    wear = 1.0
+    if words & {
+        "worn",
+        "old",
+        "aged",
+        "weathered",
+        "faded",
+        "rough",
+        "cracked",
+        "damaged",
+    }:
+        wear = 0.45
     if "yellow" in words:
         # The truth's own Road008A's yellow line measures R 0.548
-        # G 0.431 B 0.082 - a deep yellow and not a pale one.
+        # G 0.431 B 0.082 - a deep yellow and not a pale one - and
+        # the road is an "old, worn" one and the paint is not.
+        #
+        # A yellow line keeps its colour where a white one goes grey
+        # with the road, so the wear is the WHITE paint's and not the
+        # yellow's.
         return (0.548, 0.431, 0.082)
     if "white" in words:
         # The truth's own Road007's white line measures R 0.682
         # G 0.685 B 0.664 - a GREY white, because a painted line on
         # a road is a worn one.
-        return (0.682, 0.685, 0.664)
+        return (0.682 * wear, 0.685 * wear, 0.664 * wear)
     # A road with no colour word: the paint is white, and a white
     # line on a road is a worn one.
-    return (0.682, 0.685, 0.664)
+    return (0.682 * wear, 0.685 * wear, 0.664 * wear)
 
 
 def _coloured(

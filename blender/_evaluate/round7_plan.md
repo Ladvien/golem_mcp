@@ -3,7 +3,8 @@
 The score says how close a recreation is. The sheet says whether it
 *is* the material. Both were run against the twenty hand-picked
 ambientcg sets; the wide sample is in `coverage_audit.md` and it is
-the honest baseline.
+the honest baseline, and `description_limits.md` records what the
+WORDS can and cannot say.
 
 ## The twenty-set score, before and after
 
@@ -74,14 +75,35 @@ pixel after the last.
 And the fBm scaled its samples twice, so a caller that asked for
 sixteen cells got two hundred and fifty-six.
 
+### 6. A COUNT THAT IS A POWER OF TWO LOSES THE TRUTH
+
+A pattern's cell count must divide the resolution, and the
+resolution is a power of two - so every divisor of it is a power of
+two, and a pattern's count rounds DOWN to the wrong number.
+
+Measured: a roof's 5.6 courses became four, a parquet's ten blocks
+became two, and the shingles came out 256 pixels wide where the
+truth's are 185.
+
+So the count is the truth's own and the map WRAPS on it - and the
+PITCH is what divides the resolution.
+
+### 7. TWO SCALES, NOT ONE
+
+A leather is a coarse envelope and a fine grain on it, and the fine
+carries most of the spread. A wallpaper's design is the same. And a
+grain's fibre runs ALONG the board while its rings are coarse DOWN
+it - the truth's own Wood096 measures sixty-eight features across
+and eight down.
+
 ## The kinds the lane had no pattern for
 
 | the kind | what it is | what the truth's measures |
 |---|---|---|
 | `parquet` | long staggered blocks, each with its own tone and grain | a row-to-column change ratio of 0.24 - the most horizontal surface in the sample |
 | `carpet` | a fine isotropic fuzz with a slight direction | a period of nine pixels in a thousand and twenty-four, a ratio of 1.20, a spread of 0.0301 |
-| `leather` | a fine even pebbled hide | the loose ground's primitive at a much finer scale |
-| `wallpaper` | a flat sheet with a faint printed design | a spread of 0.0032 - a design is a whisper |
+| `leather` | a coarse envelope and a fine crackle on it | the envelope at six to thirty-five across, the crackle at a hundred and fourteen to five hundred and twelve |
+| `wallpaper` | a coarse envelope and a fine fleck on it | five and a half features across and a spread of 0.0072 - a design is a whisper |
 | `markings` | painted geometry over a surface | three markings across a road, nine to fourteen pixels wide, the dash half the pitch |
 | `woven` | a crosshatch of two thread fields | Fabric030: four hundred and twelve features across and forty-four down |
 | `roof` | courses of overlapping shingles | a course every 177 pixels, a shingle every 185 |
@@ -94,7 +116,7 @@ by `scripts/benchmarks/fit_palette.py`, and the tables are MERGED and
 not replaced - a word the truth set does not measure keeps the value
 the word's own sense gives it.
 
-And three rules the fitting exposed:
+And four rules the fitting exposed:
 
 - a colour's value is fitted where the colour is the **only** word
   about it: "blue" names three materials in the wide set and their
@@ -105,6 +127,9 @@ And three rules the fitting exposed:
 - the **most specific material** decides, and a generic one lets the
   colour: a carpet is a carpet and not a fabric, and a wood's
   brightness is its colour's and not its kind's.
+- a metal's own word is the **specific** one, and it says how much
+  the sheet varies: "gold" names one material and its spread is
+  0.0064 - the truth's own Metal048A to within a thousandth.
 
 ## The Material Maker ports
 
@@ -122,10 +147,10 @@ And three rules the fitting exposed:
 ## The next round
 
 1. The wide eighty-seven-set run, and what it says.
-2. The two-scale structure: the truth's ground has a fine scale (the
-   stones) and a coarse one (the drift), and the drift is what the
-   feature measure reads.
-3. The per-stone hue: the truth's stones vary by 1.5% in their red
+2. The two-scale structure in the GROUND: the truth's gravel has a
+   fine scale (the stones) and a coarse one (the drift), and the
+   drift is what the feature measure reads.
+3. The road markings' paint: the truth's wear is a measurement and
+   the lane's is a guess.
+4. The per-stone hue: the truth's stones vary by 1.5% in their red
    and blue shares, and ours are all one tan.
-4. The leather's own scale: the six leathers range from five
-   features across to five hundred and twelve.
