@@ -163,6 +163,21 @@ def albedo_statistics(path: Path) -> dict:
         correlation = correlation / correlation[0]
     below = numpy.where(correlation < 0.0)[0]
     period = int(below[0]) if len(below) else width
+    # The count DOWN as well as across, and a surface's two counts are
+    # not the same.
+    #
+    # A wood's fibre is fine ACROSS the board and its rings are
+    # coarse DOWN it: the truth's own Wood096 measures sixty-eight
+    # features across and eight down, and a lane that took the across
+    # count for the rings built the rings four times too fine.
+    columns = luma - luma.mean(axis=0, keepdims=True)
+    down_correlation = numpy.zeros(height)
+    for column in columns[:: max(1, width // 64)]:
+        down_correlation += numpy.correlate(column, column, mode="full")[height - 1 :]
+    if down_correlation[0]:
+        down_correlation = down_correlation / down_correlation[0]
+    down_below = numpy.where(down_correlation < 0.0)[0]
+    down_period = int(down_below[0]) if len(down_below) else height
     return {
         "luma_mean": float(luma.mean()),
         "luma_std": float(luma.std()),
@@ -173,6 +188,7 @@ def albedo_statistics(path: Path) -> dict:
         "blue_mean": float(array[:, :, 2].mean()),
         "feature_period_px": period,
         "features_across": width / period if period else 0.0,
+        "features_down": height / down_period if down_period else 0.0,
     }
 
 

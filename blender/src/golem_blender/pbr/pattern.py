@@ -241,6 +241,13 @@ FIBRE_WARP = 0.004
 # against the truth's 0.52. At a lattice of sixteen it reads
 # twenty-eight and the correlation stops decaying.
 FIBRE_LATTICE = 4
+# How many FIBRE lines a wood's ring carries, and it is the ratio of
+# the surface's across-count to its down-count.
+#
+# Measured on the truth's own Wood096: sixty-eight features across
+# and eight down - so the fibre is eight and a half times finer than
+# the rings.
+FIBRE_CELLS_PER_RING = 8.0
 FIBRE_STRETCH = 0.25
 FIBRE_OCTAVES = 4
 FIBRE_FOLDS = 1
@@ -1416,7 +1423,11 @@ def _domain_samples(resolution: int):
 
 
 def grain_field(
-    resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES, lines_per_cell: int = 1
+    resolution: int,
+    cells: int,
+    octaves=DEFAULT_LINE_OCTAVES,
+    lines_per_cell: int = 1,
+    fibre_cells: int | None = None,
 ):
     """A wood grain: the cell each sample is in, and the distance to
     its grain line.
@@ -1677,11 +1688,29 @@ def grain_field(
         # So the stretch is the LATTICE's own period along y, and it
         # is a whole number of cells, and the noise's y period is
         # that number.
-        lattice_y = max(1, round(FIBRE_LATTICE * FIBRE_STRETCH))
+        # The fibre's own lattice, and it is the SURFACE's own
+        # across-count.
+        #
+        # It was a fixed four, and a wood's fibre is fine: the
+        # truth's own Wood096 measures sixty-eight features across
+        # and eight down - so the fibre is the across count and the
+        # rings are the down count, and a fixed four made the fibre
+        # sixteen times too coarse.
+        lattice = max(
+            4,
+            int(round(fibre_cells))
+            if fibre_cells is not None
+            else round(cells * FIBRE_CELLS_PER_RING),
+        )
+        while lattice > 1 and resolution % lattice != 0:
+            lattice //= 2
+        while lattice > 1 and lattice * 4 > resolution:
+            lattice //= 2
+        lattice_y = max(1, round(lattice * FIBRE_STRETCH))
         coarse_fibre = noise.fbm_2d_value(
-            (fibre_x + warp_field * FIBRE_WARP) * FIBRE_LATTICE,
-            fibre_y * FIBRE_LATTICE,
-            size=FIBRE_LATTICE,
+            (fibre_x + warp_field * FIBRE_WARP) * lattice,
+            fibre_y * lattice,
+            size=lattice,
             octaves=FIBRE_OCTAVES,
             seed=0,
             folds=FIBRE_FOLDS,

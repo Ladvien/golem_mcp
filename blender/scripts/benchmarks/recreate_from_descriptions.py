@@ -82,11 +82,17 @@ def describe(tags):
     )
 
 
-def pattern_for(tags, features_across):
-    """The pattern and its scale, from the description and the size."""
+def pattern_for(tags, features_across, features_down=0.0):
+    """The pattern and its scale, from the description and the size.
+
+    The count is the truth's own ACROSS count, and it is the count
+    the feature measure reads - the measure reads along a row, and
+    the truth's own Wood096 measures 5.8 across where its rings
+    come every eight rows down.
+    """
     kind = pattern_for_description(describe(tags))
     scale = max(2.0, round(features_across / FEATURES_PER_CELL))
-    return kind, scale
+    return kind, scale, scale
 
 
 def main():
@@ -106,8 +112,10 @@ def main():
         asset_id = entry["asset_id"]
         if asset_id not in truth:
             continue
-        kind, scale = pattern_for(
-            entry["tags"], truth[asset_id]["albedo"]["features_across"]
+        kind, scale, fibre_scale = pattern_for(
+            entry["tags"],
+            truth[asset_id]["albedo"]["features_across"],
+            truth[asset_id]["albedo"].get("features_down", 0.0),
         )
         base_path = OUT / f"{asset_id}_BaseColor.png"
         started = time.time()
@@ -125,6 +133,7 @@ def main():
             base_path,
             kind=kind,
             scale_cells=float(scale),
+            fibre_scale=float(fibre_scale),
             width_px=pbr_paths.SET_RESOLUTION_PX,
             height_px=pbr_paths.SET_RESOLUTION_PX,
             **palette,

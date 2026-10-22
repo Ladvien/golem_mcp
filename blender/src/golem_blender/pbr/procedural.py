@@ -337,6 +337,7 @@ def write_procedural_base_color(
     output_path: Path,
     kind: str = "voronoi",
     scale_cells: float = 5.0,
+    fibre_scale: float | None = None,
     width_px: int = 2048,
     height_px: int = 2048,
     stone_dark_rgb: tuple[float, float, float] = DEFAULT_STONE_DARK_RGB,
@@ -519,8 +520,18 @@ def write_procedural_base_color(
             lines_per_cell=lines_per_cell,
         )
     elif kind == "grain":
+        # A GRAIN's RINGS are the down count and its FIBRE is the
+        # across count, and the two are different numbers.
+        #
+        # Measured on the truth's own Wood096: sixty-eight features
+        # across and eight down. The rings were built at the across
+        # count, so they were eight times too fine and the wood's
+        # feature scale read 2.79x the truth's.
         cell, edge, grid, fibre = pattern.grain_field(
-            resolution, cells, lines_per_cell=lines_per_cell
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
+            fibre_cells=max(2, round(cells * pattern.FIBRE_CELLS_PER_RING)),
         )
     elif kind == "metal":
         cell, edge, grid, fibre = pattern.metal_field(
