@@ -693,6 +693,12 @@ METAL_COLOUR_TIERS = (
         "bronze",
         "copper",
         "gold",
+        "platinum",
+        "titanium",
+        "zinc",
+        "lead",
+        "nickel",
+        "pewter",
     ),
     # The TONE: the weather-worn colour of the whole sheet.
     (
@@ -713,6 +719,66 @@ METAL_COLOUR_TIERS = (
         "pink",
     ),
 )
+
+# A metal that is COATED carries a LAYER, and the layer's colour is
+# the one a person sees - the metal underneath is hidden.
+#
+# This is the exception to the rule above, and the truth's own says
+# so: the "aged, black, brown, dark, fine, glossy, industrial, metal,
+# oxidized, polished, rust, rusty, smooth, steel" plate measures a
+# luma of 0.429 - a mid grey-blue - and "black" would have said
+# 0.06, because the black is the RUST and the sheet is under it.
+#
+# But a "black, covered, metal, painted, powder, steel" plate
+# measures 0.180 and 0.128, and there the black is the PAINT and the
+# steel is under IT. The words that say so are "painted", "covered"
+# and "powder" - a coat that HIDES the metal.
+#
+# So a coated metal takes its TONE word and an uncoated one its
+# SHEET word, and the truth's own "steel" alone runs from 0.128 to
+# 0.508 over five metals - the word says little on its own.
+METAL_COATING_WORDS = frozenset(
+    {
+        "painted",
+        "paint",
+        "covered",
+        "powder",
+        "coated",
+        "enamel",
+        "lacquer",
+        "galvanized",
+    }
+)
+
+# A METAL's own colour, fitted on the truth's own metals and not on
+# the general table.
+#
+# The general table says what a colour word means on a CONCRETE or a
+# ROCK, and a metal is a different thing: the truth's own Metal062C
+# is a "damaged, dirty, metal, platinum" at a luma of 0.733, and the
+# general table's "platinum" is 0.1435 - a fifth of the truth's.
+# And the truth's Metal032 is a "grey, metal, smooth" at 0.527 where
+# the general "grey" is 0.7228.
+#
+# So the metals get their own table, and it is fitted on the truth's
+# own seventeen:
+#
+#     "steel" 0.4390  n=3  0.429, 0.508, 0.380
+#     "iron"  0.7108  n=5  0.745, 0.726, 0.556, 0.749, 0.777
+#     "silver" 0.9836, "gold" 0.8916, "platinum" 0.7327
+#     "black" 0.2463, "grey" 0.5268
+#
+# The COATED metals are not in it: their colour is the coat's and
+# their words name the coat.
+METAL_COLOURS: dict[str, float] = {
+    "black": 0.2463,
+    "gold": 0.8916,
+    "grey": 0.5268,
+    "iron": 0.7108,
+    "platinum": 0.7327,
+    "silver": 0.9836,
+    "steel": 0.4390,
+}
 
 
 def _words_of(description: str) -> set[str]:
@@ -1230,10 +1296,33 @@ def value_for_description(description: str) -> float:
     comes first, and the weathering words are the patches on it.
     """
     if is_metal(description):
+        words = _words_of(description)
+        if words & METAL_COATING_WORDS:
+            # A COATED metal wears the coat, so the TONE comes first.
+            #
+            # And the coat's colour is a PAINT's colour, and a paint
+            # is a flat SURFACE and not a metal: the coat is read by
+            # the general surface rule, the EXTREMES first.
+            #
+            # The truth's own Metal027 and Metal029 are "black,
+            # covered, metal, painted, powder, steel" at lumas of
+            # 0.180 and 0.128. The general "black" of 0.06 is a
+            # black surface, and the extreme "black" of 0.211 is
+            # fitted on the truth's own eighteen black materials -
+            # and 0.211 is nearer both of them.
+            extreme = [
+                EXTREME_VALUES[word] for word in EXTREME_LIGHT_WORDS if word in words
+            ]
+            if extreme:
+                return min(extreme)
+            tone = METAL_COLOUR_TIERS[1]
+            for word in tone:
+                if word in words:
+                    return NAMED_COLOURS.get(word, METAL_COLOURS[word])
         for tier in METAL_COLOUR_TIERS:
             for word in tier:
-                if word in _words_of(description):
-                    return NAMED_COLOURS[word]
+                if word in words:
+                    return METAL_COLOURS.get(word, NAMED_COLOURS.get(word))
     # The EXTREME words are DIRECT statements about how light the
     # thing is, and they come before the material's word.
     #

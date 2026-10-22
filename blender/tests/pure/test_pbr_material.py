@@ -127,9 +127,10 @@ def test_a_metal_s_colour_comes_from_the_sheet_not_the_rust():
     Measured, the steel plate reads a luma of 0.429 - a mid grey-blue
     - and the words "black" and "brown" would have said 0.06.
 
-    The steel's own value is the mean over the materials that name
-    it - the aged plate at 0.429 and the corrugated one at 0.508 - so
-    it is 0.4686 and not the single plate's own.
+    The steel's own value is the mean over the UNCOATED materials
+    that name it - the aged plate at 0.429, the corrugated one at
+    0.508 and the scratched one at 0.380 - so it is 0.4390 and not
+    the single plate's own.
     """
     from golem_blender.pbr.palette import value_for_description
 
@@ -137,7 +138,47 @@ def test_a_metal_s_colour_comes_from_the_sheet_not_the_rust():
         "aged, black, brown, dark, fine, glossy, industrial, metal, "
         "oxidized, polished, rust, rusty, smooth, steel"
     )
-    assert value_for_description(description) == pytest.approx(0.4686, abs=0.02)
+    assert value_for_description(description) == pytest.approx(0.4390, abs=0.02)
+
+
+def test_a_coated_metal_wears_the_coat_not_the_metal():
+    """A metal under a coat of paint is the PAINT's colour.
+
+    The truth's own Metal027 and Metal029 are "black, covered, metal,
+    painted, powder, steel" and measure lumas of 0.180 and 0.128 -
+    while the uncoated "black" metal Metal046B measures 0.246 and the
+    uncoated steel measures 0.4390.
+
+    So a coated metal reads its TONE, and the coat is read as a flat
+    painted SURFACE - by the extreme words - and not as a metal.
+    """
+    from golem_blender.pbr.palette import value_for_description
+
+    coated = "black, covered, metal, painted, powder, steel"
+    assert value_for_description(coated) == pytest.approx(0.211, abs=0.01)
+    # And the UNCOATED black metal is a different thing entirely.
+    assert value_for_description("black, dark, dirty, metal") == pytest.approx(
+        0.2463, abs=0.01
+    )
+
+
+def test_a_metals_own_colour_table_beats_the_general_one():
+    """A metal's colour is fitted on metals, not on the general words.
+
+    The truth's own Metal062C is a "damaged, dirty, metal, platinum"
+    at a luma of 0.733, and the general table's "platinum" is 0.1435
+    - a fifth of the truth's.
+    """
+    from golem_blender.pbr.palette import value_for_description
+
+    assert value_for_description("damaged, dirty, metal, platinum") == pytest.approx(
+        0.7327, abs=0.01
+    )
+    # And the truth's own Metal032 is a "grey, metal, smooth" at 0.527
+    # where the general "grey" is 0.7228.
+    assert value_for_description("grey, metal, smooth") == pytest.approx(
+        0.5268, abs=0.01
+    )
 
 
 def test_a_clean_silver_metal_is_bright():
