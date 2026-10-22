@@ -10,12 +10,13 @@ give, and look at every picture.
 
 | | start | end |
 |---|---|---|
-| **the twenty hand-picked sets** - brightness / contrast / scale | 0.95x / 1.03x / 1.57x | 0.97x / 1.02x / 0.96x |
-| **twenty sets - seam** | **3.87x** | **0.50x** (truth 0.60x) |
-| **the eighty-seven wide sets** - brightness / contrast / scale | 1.07x / 1.60x / 1.23x | 1.07x / 1.16x / 1.05x |
-| **eighty-seven sets - seam** | **2.39x** | **0.31x** (truth 0.54x) |
+| **the twenty hand-picked sets** - brightness / contrast / scale | 0.95x / 1.03x / 1.57x | 0.97x / 1.02x / 0.88x |
+| **twenty sets - seam** | **3.87x** | **0.40x** (truth 0.60x) |
+| **the eighty-seven wide sets** - brightness / contrast / scale | 1.07x / 1.60x / 1.23x | 1.07x / 1.16x / 0.96x |
+| **eighty-seven sets - seam** | **2.39x** | **0.34x** (truth 0.54x) |
 | **the value's word-fit** (87 materials) | 0.0790 | **0.0594** |
 | **the spread's word-fit** (87 materials) | 0.0151 | **0.0115** |
+| **the hue's word-fit** (87 materials) | 0.0747 | **0.0529** |
 
 The wide set's numbers are *worse* than the twenty's - correctly,
 because the twenty were hand-picked. The seventeen materials the
