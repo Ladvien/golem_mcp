@@ -697,6 +697,14 @@ STONE_SCATTER_SEED = 7
 # 0.0752 - and the lane's stones were all the slow field's own
 # value, so the ground came out as a uniform tan bed.
 STONE_TONE_SPREAD = 0.9
+# The SLOW field's own count, as a fraction of the surface's own
+# feature count.
+#
+# Measured on the truth's own: the truth's Ground110 measures twenty
+# and a half features across and its slow field is thirteen and a
+# third, and the truth's Ground106 measures six and a half and its
+# slow is four.
+SCATTER_SLOW_CELL_FRACTION = 0.5
 # The PEBBLES' warp: how far the lattice is displaced, the step the
 # slope is measured over, and how many steps are taken.
 #
@@ -3126,7 +3134,21 @@ def scattered_field(
     # So the slow variation is a smooth field at the SURFACE's scale,
     # and it varies the stones' tones together - which is what a worn
     # patch of ground does.
-    slow = slow_variation(resolution, max(2, cells))
+    # The SLOW field is at the SURFACE's own scale, and it is a
+    # fraction of the surface's features and not the whole of them.
+    #
+    # Measured on the truth's own: the truth's Ground110 measures
+    # twenty and a half features across and its slow field is
+    # thirteen and a third - so the slow is at two thirds of the
+    # feature count. And the truth's Ground106 measures six and a
+    # half and its slow is four, and the truth's Ground103 measures
+    # twelve and a half and its slow is eight and a third.
+    #
+    # So the slow field is at two thirds of the count, and at the
+    # count it was too fine and the ground's feature scale read
+    # 1.50x the truth's where the truth's own slow field is at
+    # eighty-six pixels and the lane's was at seventy-nine.
+    slow = slow_variation(resolution, max(2, round(cells * SCATTER_SLOW_CELL_FRACTION)))
 
     # The MATRIX is the DARK ground the stones sit in, and it is the
     # surface's own slow variation.

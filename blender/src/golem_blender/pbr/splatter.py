@@ -116,8 +116,8 @@ def splatter_field(
     for index in range(count):
         row = index // lattice
         column = index % lattice
-        centre_x = generator.random()
-        centre_y = generator.random()
+        centre_x = (column + jitter * generator.random()) * cell_width
+        centre_y = (row + jitter * generator.random()) * cell_width
         # The splat's own size, and its own angle.
         #
         # The sizes are HEAVY-TAILED and not uniform: a loose ground
