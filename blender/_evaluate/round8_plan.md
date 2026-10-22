@@ -125,6 +125,39 @@ is that the single-pattern path already extracts the description's
 information, so a graph adds the ability to COMPOSE and not the
 ability to fit.
 
+## The wood's fibre, and the three faults that hid each other
+
+The sheet showed the truth's Wood049 as a field of fine grain lines
+and ours as a few smooth blobs, and the score had not noticed — the
+features were within 20 per cent. Three faults, each hiding the next:
+
+1. **The fibre's LATTICE was the rings' count.** The rings' count is
+   the surface's own feature count, so a wood's fine grain came out a
+   hundred pixels apart. The truth's own wood has its lines seven and
+   a half pixels apart in a 1024 row, and a value noise's ridge
+   crosses the middle of its range twice per lattice cell — so the
+   lattice is 140 across the image, whatever the surface's own count.
+2. **The fibre was computed at 512 and bilinearly upsampled.** A
+   four-times upsample blurs a three-and-a-half-pixel line into a
+   ramp, and the grain came out as a smooth gradient over twenty
+   pixels.
+3. **The line was the ridge's SLOPE**, which is two lines, one on each
+   side of the crest — and the crest itself is where they meet, so the
+   grain came out as a field of DOTS. The line is the ridge's own
+   high values: a fold's crest is a LINE, a continuous stroke.
+
+And a fourth, in the writer: **the darkness was shifted by half its
+mean and then doubled**, and the doubling assumes a range of one —
+but the darkness's range is the two layers' own sum and it runs to
+0.9. So the shift left the lower half of the structure below zero
+and the clip DROPPED IT, and the wood came out with no grain in it
+at all. The darkness is scaled to its own range first and then
+centred on the middle of that range.
+
+**A general lesson: a normalisation that assumes a range clips the
+structure it was meant to carry.** The `×2` after a shift is only
+valid for a [0,1] field.
+
 ## The ORM
 
 Blender 5.2 has **no metallic bake pass** — the pass enum is
