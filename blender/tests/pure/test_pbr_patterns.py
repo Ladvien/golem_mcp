@@ -41,7 +41,12 @@ from golem_blender.pbr.patterns import DEFAULT_PATTERN, pattern_for_description
         # pixels wide between them, and the stones' sizes varying by
         # eight times.
         ("brown, dirt, dry, gravel, ground, rocky, scattered", "scattered"),
-        ("fabric, orange, red, wool", "voronoi"),
+        # A FABRIC is a WEAVE and not a Voronoi: the truth's own
+        # Fabric085 is a "fabric, orange, red, wool" and it is a
+        # TWILL - threads crossing - and its neighbours Fabric061 and
+        # Fabric066 are a mesh and a herringbone. A Voronoi is a set of
+        # cells with joints between them.
+        ("fabric, orange, red, wool", "woven"),
         # Nothing that says: pieces, which is the commonest surface.
         ("something entirely unfamiliar", DEFAULT_PATTERN),
     ),

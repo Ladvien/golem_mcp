@@ -171,9 +171,21 @@ _MATERIAL_PATTERNS = (
     ("sand", "voronoi"),
     ("asphalt", "voronoi"),
     ("concrete", "voronoi"),
-    ("fabric", "voronoi"),
-    ("wool", "voronoi"),
-    ("fur", "voronoi"),
+    # A FABRIC is a WEAVE and not a Voronoi.
+    #
+    # The truth's own Fabric085 is a "fabric, orange, red, wool" at
+    # a hundred and thirteen features across, and it is a TWILL - a
+    # diagonal weave - and its neighbours Fabric061 and Fabric066 are
+    # a mesh and a herringbone. A Voronoi is a set of cells with
+    # joints between them, and a weave is threads crossing: the
+    # fabric's feature scale read 0.78x the truth's and the round's
+    # own words are that a fabric is a weave.
+    #
+    # And a WOOL is a weave too, and a FUR is a pile - and a pile is
+    # a carpet's kind.
+    ("fabric", "woven"),
+    ("wool", "woven"),
+    ("fur", "carpet"),
     ("metal", "voronoi"),
 )
 

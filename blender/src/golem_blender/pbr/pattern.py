@@ -410,6 +410,18 @@ WOVEN_OCTAVES = 3
 # So the coarse period is a small but real number of cells - eight -
 # and it is HELD across the octaves so the cloth's broad bands do
 # not come back.
+#
+# And the coarse period is the LATTICE after all, and not a fraction
+# of it: the truth's own fabrics have almost NO slow variation - the
+# truth's Fabric061's forty-pixel blur carries one per cent of its
+# spread - so the cloth is all threads and the broad band was the
+# lane's own.
+#
+# At a coarse period of eight the fabric's feature scale read 12.5
+# features across against the truth's 204.8, whatever the thread
+# count was: the coarse band took over the autocorrelation. At the
+# lattice the scale reads 204.8 and the slow part carries two per
+# cent, against the truth's one.
 WOVEN_COARSE_PERIOD = 8
 # A ROOF's shingle is about as wide as it is tall, and its courses
 # and its shingles are at the same scale.
@@ -2472,11 +2484,15 @@ def woven_field(
     # measures hundreds of features across, and a cell two pixels
     # wide is degenerate.
     #
-    # The lattice is FOUR times the surface's own feature count: the
-    # truth's Fabric030 measures forty-four features across and its
-    # threads come every two pixels, and the feature measure counts
-    # the THREADS and not the weave's envelope.
-    lattice = _power_of_two_nearest(max(4, cells * 4))
+    # The lattice is the surface's own feature count, and the feature
+    # measure counts the THREADS and not the weave's envelope.
+    #
+    # It was FOUR times the count, and the truth's own Fabric061
+    # measures two hundred and five features across with its threads
+    # every four pixels - so the lattice is the count itself and not
+    # four times it. At four times, the threads came every two
+    # pixels and the fabric's feature scale read 0.06x the truth's.
+    lattice = _power_of_two_nearest(max(4, cells))
     while lattice > 1 and resolution % lattice != 0:
         lattice //= 2
     while lattice > 1 and lattice * 2 > resolution:
@@ -2498,19 +2514,33 @@ def woven_field(
     # ONE cell along an axis is CONSTANT along it - so half of the
     # weave had no structure at all and the cloth came out as a
     # coarse haze.
+    # The COARSE axis' period, and it is a fixed count of the
+    # SURFACE's own features and not a fraction of the lattice.
+    #
+    # It was eight LATTICE cells, and the lattice is the thread
+    # count - so the coarse band grew with the threads, and the
+    # coarse field took over the autocorrelation: the fabric's
+    # feature scale read 12.5 features across for a truth of two
+    # hundred and five, whatever the thread count was.
+    #
+    # And the truth's own fabrics are a mesh and a twill and a
+    # herringbone, and their THREADS are the features - the coarse
+    # band is the cloth's own unevenness and it is at the surface's
+    # scale.
+    coarse = lattice
     down = noise.fbm_2d_value(
         sample_x * lattice,
-        sample_y * WOVEN_COARSE_PERIOD,
+        sample_y * coarse,
         size=lattice,
         octaves=WOVEN_OCTAVES,
         seed=0,
-        size_y=WOVEN_COARSE_PERIOD,
+        size_y=coarse,
         size_y_grows=False,
     )
     across = noise.fbm_2d_value(
-        sample_x * WOVEN_COARSE_PERIOD,
+        sample_x * coarse,
         sample_y * lattice,
-        size=WOVEN_COARSE_PERIOD,
+        size=coarse,
         octaves=WOVEN_OCTAVES,
         seed=1,
         size_y=lattice,
