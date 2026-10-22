@@ -938,8 +938,7 @@ def write_procedural_base_color(
             #
             # So the veins go into the FIBRE's slot, and the base is
             # the envelope's flat field.
-            flat_base = _np.ones_like(fibre) * 0.5
-            edge, fibre = flat_base, fibre
+            edge = _np.ones_like(fibre) * 0.5
         return _write_line_pattern(
             output_path,
             edge=edge,

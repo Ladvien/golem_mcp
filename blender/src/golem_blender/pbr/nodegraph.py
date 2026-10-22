@@ -382,9 +382,16 @@ def _render_node(
 
     if kind == "field":
         # A named PATTERN, and the pattern's own field is the base.
+        #
+        # And the pattern is asked the same questions the
+        # single-pattern path asks it - a metal's sheet is ROLLED or
+        # it is not, and the words say. The graph's metal was always
+        # banded and the single path's was not, and the graph's field
+        # carried three times the variation.
         pattern_name = params.get("pattern", "voronoi")
         cells = int(params.get("cells", 8))
-        field = _pattern_field(pattern_name, cells, resolution)
+        description = params.get("description", "")
+        field = _pattern_field(pattern_name, cells, resolution, description)
         strength = float(params.get("strength", 1.0))
         return numpy.clip(field * strength, 0.0, 1.0)
 
@@ -500,7 +507,12 @@ def _math(
     raise NodeGraphError(f"Unknown math operation {operation!r}.")
 
 
-def _pattern_field(pattern_name: str, cells: int, resolution: int) -> numpy.ndarray:
+def _pattern_field(
+    pattern_name: str,
+    cells: int,
+    resolution: int,
+    description: str = "",
+) -> numpy.ndarray:
     """The field of one of the lane's patterns.
 
     Every pattern's field is NORMALISED to the same meaning before it
@@ -550,10 +562,25 @@ def _pattern_field(pattern_name: str, cells: int, resolution: int) -> numpy.ndar
         _cell, _edge, _grid, fibre = pattern.leather_field(resolution, cells)
         return _normalise(numpy.asarray(fibre, dtype=numpy.float32))
     if pattern_name == "metal":
-        _cell, _edge, _grid, fibre = pattern.metal_field(resolution, cells)
+        from golem_blender.pbr.palette import metal_is_banded
+
+        _cell, _edge, _grid, fibre = pattern.metal_field(
+            resolution,
+            cells,
+            banded=metal_is_banded(description) if description else False,
+        )
         return _normalise(numpy.asarray(fibre, dtype=numpy.float32))
     if pattern_name == "flat":
-        return numpy.zeros((resolution, resolution), dtype=numpy.float32)
+        # And the flat sheet is a CONSTANT ONE and not a constant
+        # zero.
+        #
+        # A field of zeros is "nothing", and a graph that MULTIPLIES
+        # by it gets nothing: the composited ground came out with a
+        # contrast of 0.00 against the truth's own.
+        #
+        # So the flat sheet is the GROUND - the thing the other
+        # layers sit on - and it is one.
+        return numpy.ones((resolution, resolution), dtype=numpy.float32)
     raise NodeGraphError(f"Unknown pattern {pattern_name!r}.")
 
 

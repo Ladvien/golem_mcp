@@ -2474,11 +2474,18 @@ CURVATURE_STRENGTHS: dict[str, float] = {
 # is scratched has none.
 SCRATCH_STRENGTHS: dict[str, float] = {
     "scratched": 0.6,
+    "scratches": 0.6,
     "eroded": 0.5,
     "worn": 0.35,
     "abraded": 0.5,
     "scuffed": 0.4,
     "scratch": 0.6,
+    # And the truth's own metals say "bumpy" and "brushed" and
+    # "scratches", and the words were not in the table - so a
+    # scratched sheet's scratches were not drawn at all.
+    "bumpy": 0.45,
+    "brushed": 0.4,
+    "bump": 0.45,
 }
 
 
