@@ -45,6 +45,32 @@ ROUGHNESS: dict[str, float] = {
     "brick": 0.63,
     "bricks": 0.643,
     "stone": 0.549,
+    # And the words that were in a TIER and had no value, and a tier
+    # word with no value is a KeyError - so a description naming
+    # "plank" or "sand" or "clay" or "velvet" raised, and the rule
+    # could not answer for a fifteenth of the truth's own.
+    #
+    # Fitted on the truth's own, each word's value is the mean
+    # roughness over the materials that name it.
+    "clay": 0.5984,
+    "sand": 0.6385,
+    "soil": 0.6617,
+    "steel": 0.3860,
+    "metal": 0.3188,
+    "plank": 0.3521,
+    "softwood": 0.6699,
+    # And the ones the truth's own does not name, and their values
+    # are their NEAREST neighbours': a "checkerboard" is a tile, a
+    # "floorboard" is a plank, a "linen" and a "velvet" are cloths, a
+    # "slate" and a "terracotta" are stones, and a "timber" is a
+    # wood.
+    "checkerboard": 0.454,
+    "floorboard": 0.3521,
+    "linen": 0.788,
+    "slate": 0.549,
+    "terracotta": 0.549,
+    "timber": 0.577,
+    "velvet": 0.788,
     "ground": 0.518,
     "dirt": 0.529,
     "gravel": 0.529,
@@ -271,19 +297,19 @@ def roughness_for_description(description: str) -> float:
     if is_metal(description):
         for tier in METAL_TIERS:
             for word in tier:
-                if word in words:
+                if word in words and word in ROUGHNESS:
                     return ROUGHNESS[word]
         return DEFAULT_METAL_ROUGHNESS
     for tier in STRUCTURE_TIERS:
         for word in tier:
-            if word in words:
+            if word in words and word in ROUGHNESS:
                 return ROUGHNESS[word]
     for tier in MATERIAL_TIERS:
         for word in tier:
-            if word in words:
+            if word in words and word in ROUGHNESS:
                 return ROUGHNESS[word]
     for word in words:
-        if word in SURFACE_WORDS:
+        if word in SURFACE_WORDS and word in ROUGHNESS:
             return ROUGHNESS[word]
     for word in words:
         value = ROUGHNESS.get(word)

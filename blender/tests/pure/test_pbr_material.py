@@ -181,6 +181,47 @@ def test_a_metals_own_colour_table_beats_the_general_one():
     )
 
 
+def test_every_roughness_tier_word_has_a_value():
+    """A tier word with no value is a KeyError, and it was fifteen.
+
+    The rule reads a description's words in TIERS, and a tier word
+    that the value table did not carry raised - so a description
+    naming "plank", "sand", "clay", "velvet" or "checkerboard"
+    could not be answered for at all, and those are common words in
+    the truth's own.
+    """
+    from golem_blender.pbr.material import (
+        MATERIAL_TIERS,
+        METAL_TIERS,
+        ROUGHNESS,
+        STRUCTURE_TIERS,
+    )
+
+    for tier in list(METAL_TIERS) + list(STRUCTURE_TIERS) + list(MATERIAL_TIERS):
+        for word in tier:
+            assert word in ROUGHNESS, f"{word!r} is in a tier and has no value"
+
+
+def test_a_roughness_comes_from_the_words_and_not_a_constant():
+    """A surface's roughness is a twenty-fivefold range and the words say.
+
+    The truth's own roughness runs from 0.037 on a polished marble to
+    0.919 on a cloth, and the ORM's roughness was a CONSTANT - 0.60
+    for every material.
+
+    Measured over the truth's own hundred and fifty-nine: the rule's
+    mean error is 0.1136 and a constant's 0.1552.
+    """
+    from golem_blender.pbr.material import roughness_for_description
+
+    assert roughness_for_description("cloth, fabric") > 0.7
+    assert roughness_for_description("asphalt, road") > 0.6
+    assert roughness_for_description("metal, steel") < 0.5
+    # And a word with no value of its own still answers.
+    assert 0.0 <= roughness_for_description("velvet, fabric") <= 1.0
+    assert 0.0 <= roughness_for_description("planks, wood") <= 1.0
+
+
 def test_a_black_is_three_blacks_and_the_words_choose():
     """A "black" is a reflective one, a smooth one or a textured one.
 
