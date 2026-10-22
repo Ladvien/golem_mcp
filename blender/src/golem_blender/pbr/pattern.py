@@ -2494,7 +2494,22 @@ def wallpaper_field(
     cell = (row.astype(numpy.int32) * lattice + column.astype(numpy.int32)).astype(
         numpy.int32
     )
-    edge = numpy.clip(1.0 - parity, 0.0, 1.0)
+    # The design's own EDGE, and it is SOFT: a printed design is a
+    # whisper and not a step.
+    #
+    # Measured on the truth's own printed plastisol: its spread is
+    # 0.0032 and its wallpaper's 0.0072 - so the design carries a
+    # twentieth of what a sheet's own variation would.
+    #
+    # The edge is the distance to the nearest cell's border, and the
+    # motif is the parity BLURRED over the cell - so the square's
+    # edge is a gradient.
+    within_x = sample_x * lattice - column
+    within_y = sample_y * lattice - row
+    distance = numpy.minimum(
+        numpy.minimum(within_x, 1.0 - within_x), numpy.minimum(within_y, 1.0 - within_y)
+    )
+    edge = numpy.clip(distance * lattice, 0.0, 1.0)
     return cell, edge, (lattice, lattice), parity
 
 

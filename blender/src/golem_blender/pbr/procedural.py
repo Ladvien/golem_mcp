@@ -156,6 +156,19 @@ PARQUET_FIBRE_STRENGTH = 0.5
 # truth's own Fabric030 is a fine twill whose threads are barely
 # there.
 WOVEN_THREAD_DEPTH = 0.22
+# How deep a WALLPAPER's design is printed, as a fraction of the
+# sheet's own colour.
+#
+# Measured on the truth's own printed plastisol: its spread is 0.0032
+# and its wallpaper's 0.0072 - so the design carries a twentieth of
+# what the sheet's own variation would.
+WALLPAPER_DESIGN_DEPTH = 0.05
+# A WALLPAPER's DESIGN's own spread.
+#
+# Measured on the truth's own printed plastisol: its design measures
+# 0.0032 and its wallpaper 0.0072 - so a design carries a twentieth
+# of what the description's own spread says.
+WALLPAPER_DESIGN_SPREAD = 0.0072
 # How much of the surface's spread a CARPET's pile carries.
 #
 # The truth's own carpet measures a spread of 0.0301 and its pile IS
@@ -534,7 +547,7 @@ def write_procedural_base_color(
         )
     cell_width, cell_height = grid
 
-    if kind == "flat":
+    if kind in ("flat", "wallpaper"):
         # A FLAT sheet is a SOFT variation about its base, and not a
         # set of lines.
         #
@@ -562,6 +575,17 @@ def write_procedural_base_color(
         colour = base + variation[:, :, _np.newaxis] * (
             base * max(1e-6, float(target_spread)) * 4.0
         )
+        if kind == "wallpaper":
+            # A WALLPAPER's DESIGN is on the sheet, and it is a
+            # whisper: the truth's own printed plastisol measures a
+            # spread of 0.0032 and its wallpaper 0.0072.
+            #
+            # The design was drawn as a chequer of black and white
+            # squares and the contrast read 24.51x the truth's.
+            motif = fibre if fibre is not None else numpy.zeros_like(edge)
+            reach = max(1e-6, float(motif.max() - motif.min()))
+            motif = (motif - float(motif.min())) / reach
+            colour = base * (1.0 - WALLPAPER_DESIGN_DEPTH * motif)[:, :, _np.newaxis]
         colour = _np.clip(colour, 0.0, 1.0)
         # The sheet's CONTRAST is the description's spread, and it is
         # measured and scaled like every other pattern's: a sheet's
@@ -571,7 +595,20 @@ def write_procedural_base_color(
         # The sheet skipped the scale entirely, so the truth's own
         # plaster read 0.77x the truth's contrast and the truth's
         # concrete 0.77x as well.
-        colour = _scale_to_spread(colour, target_spread)
+        if kind == "wallpaper":
+            # A WALLPAPER's contrast is its DESIGN's and not the
+            # description's.
+            #
+            # The description's spread is the SHEET's own - the
+            # printed plastisol's words carry a spread of 0.0546 from
+            # the word "printed" - and the design carries a twentieth
+            # of that: the truth's own design measures 0.0032.
+            #
+            # So the design is scaled to its own spread and the
+            # sheet's texture keeps the description's.
+            colour = _scale_to_spread(colour, WALLPAPER_DESIGN_SPREAD)
+        else:
+            colour = _scale_to_spread(colour, target_spread)
         # And the sheet's MEAN is the description's own value, for
         # the same reason the cell patterns' is: the sheet's own
         # variation is centred and the base is the palette's, and the

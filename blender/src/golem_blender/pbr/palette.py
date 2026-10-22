@@ -576,12 +576,20 @@ def _material_word(description: str) -> str | None:
     """
     words = _words_of(description)
     # The TIERS are read first: the most specific material decides.
+    #
+    # And a tier word with no fitted VALUE is not a material the
+    # palette knows - so a "wallpaper, woodchip" found "wallpaper" in
+    # the tier and the lookup raised a KeyError on it.
+    #
+    # So the tier is only read for the words the table carries, and
+    # the tiers and the table stay in step.
     for tier in MATERIAL_TIERS:
         for word in tier:
-            if word in words:
+            if word in words and word in MATERIAL_VALUES:
                 return word
     for word in sorted(words & SPECIFIC_MATERIALS):
-        return word
+        if word in MATERIAL_VALUES:
+            return word
     for word in sorted(words & MATERIAL_VALUES.keys()):
         return word
     return None
