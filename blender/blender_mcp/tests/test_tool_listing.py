@@ -319,6 +319,77 @@ EXPECTED_TOOLS = [
         },
     },
     {
+        "name": "generate_layered_texture_set",
+        "description": "Write a base material with others laid over it as one PBR set.\n"
+        "\n"
+        "Writes T_<Name>_BaseColor.png, T_<Name>_ORM.png (AO, roughness,\n"
+        "metallic) and T_<Name>_Normal.png, and returns the base colour.\n"
+        "Every material - the base and each layer - is made from its own\n"
+        "description through the procedural lane, so each chooses its own\n"
+        "pattern, colours, roughness and metal. The set tiles.\n"
+        "\n"
+        'Use it when a surface is a STACK: "a red brick wall with moss in\n'
+        'its joints", "a grey steel sheet with rust in its dents and\n'
+        'patches", "a concrete floor with dust on it". A single material\n'
+        "is generate_procedural_base_color.\n"
+        "\n"
+        "`layers_json` is a JSON list, bottom to top. Each layer:\n"
+        "\n"
+        '    {"description": "dark green moss", "amount": 1.0,\n'
+        '     "thickness": 0.15,\n'
+        '     "mask": {"height": {"level": 0.4, "below": true,\n'
+        '                         "softness": 0.3},\n'
+        '              "noise": {"cells": 6, "coverage": 0.5,\n'
+        '                        "softness": 0.3, "seed": 3},\n'
+        '              "combine": "multiply"}}\n'
+        "\n"
+        '"description" is required. Optional: "kind" overrides the\n'
+        'layer\'s pattern, "scale_cells" its own scale, "amount" (0..1)\n'
+        'how opaque it is, "thickness" how much it raises the surface.\n'
+        "\n"
+        "The mask needs at least one source:\n"
+        '- "height": where the surface built so far is LOW (below=true:\n'
+        "  moss and dirt in joints) or HIGH (below=false: dust and wear\n"
+        "  on tops). level is 0..1 of the surface's height range.\n"
+        '- "noise": soft patches covering `coverage` of the surface,\n'
+        "  `cells` across.\n"
+        '- "cavity": where the surface is lower than its neighbourhood\n'
+        "  (rust in dents and scratches, grime in pits).\n"
+        '"combine" joins the sources: "multiply" (where ALL say yes - moss\n'
+        'in the joints, but only in patches) or "max" (where ANY says yes\n'
+        "- rust in the dents and in patches).\n"
+        "\n"
+        'Name the colour in a layer\'s description: "orange brown rust",\n'
+        '"dark green moss", "pale grey dust". A layer of rust on its own\n'
+        'is an orange crust; a "rusty steel" base is the steel.\n',
+        "inputSchema": {
+            "properties": {
+                "texture_name": {"title": "Texture Name", "type": "string"},
+                "base_description": {"title": "Base Description", "type": "string"},
+                "layers_json": {"title": "Layers Json", "type": "string"},
+                "base_kind": {"default": "", "title": "Base Kind", "type": "string"},
+                "scale_cells": {
+                    "default": 16.0,
+                    "title": "Scale Cells",
+                    "type": "number",
+                },
+                "resolution_px": {
+                    "default": 2048,
+                    "title": "Resolution Px",
+                    "type": "integer",
+                },
+                "texture_dir": {
+                    "default": "",
+                    "title": "Texture Dir",
+                    "type": "string",
+                },
+            },
+            "required": ["texture_name", "base_description", "layers_json"],
+            "title": "generate_layered_texture_setArguments",
+            "type": "object",
+        },
+    },
+    {
         "name": "generate_texture_base",
         "description": "Generate a base-colour texture on the golem server and write it into the texture set; returns the image and its paths.\n"
         "\n"
@@ -858,6 +929,7 @@ def _update_expected_tools() -> None:
     Re-generates the ``EXPECTED_TOOLS`` block from a live server query.
     """
     import json
+    import re
     import subprocess
 
     filepath = os.path.abspath(__file__)
@@ -866,10 +938,13 @@ def _update_expected_tools() -> None:
     begin = source.index("# BEGIN: EXPECTED_TOOLS\n") + len("# BEGIN: EXPECTED_TOOLS\n")
     end = source.index("# END: EXPECTED_TOOLS\n")
     formatted = json.dumps(_list_tools(), indent=4)
-    formatted = (
-        formatted.replace(": true", ": True")
-        .replace(": false", ": False")
-        .replace(": null", ": None")
+    # JSON's literals become Python's - but only OUTSIDE a string: a
+    # docstring that shows a JSON example ("below": true) must keep it.
+    python_literals = {"true": "True", "false": "False", "null": "None"}
+    formatted = re.sub(
+        r'("(?:\\.|[^"\\])*")|\b(true|false|null)\b',
+        lambda match: match.group(1) or python_literals[match.group(2)],
+        formatted,
     )
     formatted = formatted.replace("\\n", '\\n"\n"')
     # Also handles the `\n"` case (no trailing empty string).

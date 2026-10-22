@@ -236,9 +236,11 @@ METAL_WORDS = (
     "chrome",
     "silver",
     "gold",
-    "rust",
-    "rusty",
-    "oxidized",
+    # RUST is not a metal: it is iron oxide, a dull brown crust. "rust",
+    # "rusty" and "oxidized" describe a metal's WEATHERING, and a rusty
+    # steel is a metal because it says "steel". As metal words they made
+    # a rust layer a grey metal sheet. No truth material in the four
+    # sets is a metal by a rust word alone, so nothing measured moves.
     "galvanized",
     "corrugated",
 )
@@ -258,6 +260,9 @@ METAL_TIERS = (
     # The GENERIC sense: clean and smooth, with no stronger word.
     ("clean", "smooth", "fine", "satin"),
 )
+# The words that name RUST: a metal's weathering when a metal is named,
+# and the crust itself when none is.
+RUST_WORDS = frozenset(("rust", "rusty"))
 # The roughness a metal gets when its description names no tier.
 DEFAULT_METAL_ROUGHNESS = 0.35
 
@@ -300,6 +305,11 @@ def roughness_for_description(description: str) -> float:
                 if word in words and word in ROUGHNESS:
                     return ROUGHNESS[word]
         return DEFAULT_METAL_ROUGHNESS
+    # RUST with no metal named is the crust itself, and a crust is rough:
+    # the table's "rust" is the fitted sheen of a rusted STEEL (0.35),
+    # and a rust layer took it and was as glossy as the steel beneath.
+    if RUST_WORDS & set(words):
+        return ROUGHNESS["rough"]
     for tier in STRUCTURE_TIERS:
         for word in tier:
             if word in words and word in ROUGHNESS:

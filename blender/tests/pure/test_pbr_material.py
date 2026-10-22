@@ -141,6 +141,32 @@ def test_a_metal_s_colour_comes_from_the_sheet_not_the_rust():
     assert value_for_description(description) == pytest.approx(0.4390, abs=0.02)
 
 
+def test_rust_is_a_metal_s_weathering_and_not_a_metal_of_its_own():
+    """A rusty steel is a grey metal; rust on its own is an orange-brown crust.
+
+    "rust" was a METAL word and its hue was fitted on one grey rusted
+    steel plate, so a rust layer laid over a steel sheet came out a
+    grey metal - invisible over the steel it was meant to stain.
+    """
+    from golem_blender.pbr.palette import hue_for_description
+
+    rusty_steel = (
+        "aged, black, brown, dark, fine, glossy, industrial, metal, "
+        "oxidized, polished, rust, rusty, smooth, steel"
+    )
+    assert is_metal(rusty_steel)
+    red, green, blue = hue_for_description(rusty_steel)
+    assert red - blue < 0.03
+
+    rust = "rust, rusty, rough"
+    assert not is_metal(rust)
+    assert orm_for_description(rust)["metallic"] == 0.0
+    assert orm_for_description(rust)["roughness"] > 0.7
+    red, green, blue = hue_for_description(rust)
+    assert red > green > blue
+    assert red - blue > 0.25
+
+
 def test_a_coated_metal_wears_the_coat_not_the_metal():
     """A metal under a coat of paint is the PAINT's colour.
 

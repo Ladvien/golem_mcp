@@ -490,6 +490,17 @@ HUES: dict[str, tuple[float, float, float]] = {
     "windy": (0.3804, 0.3442, 0.2755),
     "woodchip": (0.3348, 0.3363, 0.3289),
 }
+
+# RUST's own colour. "rust" and "rusty" are fitted on one truth - a grey
+# rusted steel plate, Metal063, counted once in each of three sets - so
+# the table says a neutral grey, which is the STEEL's colour and not the
+# rust's. Rust is iron oxide, an orange-brown crust. hue_for_description
+# reads a rust word as the material's WEATHERING when a metal is named
+# (the steel decides) and as the MATERIAL when none is (this decides).
+RUST_HUES: dict[str, tuple[float, float, float]] = {
+    "rust": (0.55, 0.29, 0.16),
+    "rusty": (0.55, 0.29, 0.16),
+}
 # The hue a description with no colour word gets: neutral.
 DEFAULT_HUE = (0.3333, 0.3333, 0.3333)
 # How many PEBBLES a cell holds, for a surface of loose pieces.
@@ -3222,6 +3233,13 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     grey.
     """
     words = description.lower().replace(",", " ").split()
+    # A RUST word is a metal's weathering when a metal is named, and the
+    # metal says the hue; with no metal named the rust IS the material.
+    rust = [word.strip(".,") for word in words if word.strip(".,") in RUST_HUES]
+    if rust:
+        if not is_metal(description):
+            return RUST_HUES[rust[0]]
+        words = [word for word in words if word.strip(".,") not in RUST_HUES]
     # The MATERIAL's word says the hue, and the colour word is the
     # fallback - the same order the value is read in, and for the
     # same reason: a material's hue is tighter than a colour word's.

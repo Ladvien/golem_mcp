@@ -17,7 +17,7 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 
 ## The steps, in order
 
-0. **Choose how the base colour is made.** There are two routes, and
+0. **Choose how the base colour is made.** There are three routes, and
    the choice is not obvious from the result.
 
    - `generate_procedural_base_color(texture_name="<Name>",
@@ -35,6 +35,17 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    - `generate_texture_base(prompt="...")` generates it with FLUX on
      the golem server. That is the photoreal route, and the only one
      that is.
+   - `generate_layered_texture_set(texture_name="<Name>",
+     base_description="...", layers_json="[...]")` writes a STACK as
+     the whole set - BaseColor, ORM and Normal - when the surface is
+     one material with others on it: moss in a wall's joints, rust in
+     a steel sheet's dents, dust on a floor's boards. Every layer is a
+     material made from its own description, laid where its mask says
+     (low in the surface, in its cavities, in patches). On a jointed
+     base (bricks, paving, parquet, a roof) "low" is the JOINTS, from
+     the pattern's own geometry; a mask level of 0.15 keeps a layer in
+     them, 0.4 lets it creep onto the pieces' edges. The set needs no
+     bake: its ORM and normal come from the composite's own height.
 
    Measured: the procedural map TILES and the generated one does not.
    The procedural map's seam is 0.025x the texture's largest ordinary
@@ -330,6 +341,7 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 | `save_reference_images` | Files the picked references with their licences. |
 | `generate_texture_base` | The AI half: the base-colour map. No Blender needed. |
 | `generate_procedural_base_color` | The procedural half: the base colour from Blender's nodes. Tiles exactly. |
+| `generate_layered_texture_set` | A base material with others laid over it under masks, written as the whole set. Tiles exactly. |
 | `preview_texture` | The EEVEE render that lets you SEE the texture. Needs the open Blender. |
 | `add_relief_slab` | Builds the mesh the maps are baked from, with its relief from the albedo or from a procedural pattern. |
 | `relief_slab_report` | Says which source a slab's relief came from. |

@@ -470,6 +470,15 @@ def _pattern_resolution(limit: int, target: int, cells: int) -> int:
     return min(limit, max(cells, 1))
 
 
+# The kinds whose field is a JOINT: its value is zero in the joints and
+# rises across each piece. Measured on each kind's own field: the brick's
+# and the Voronoi's are distances to the joint, the herringbone's and the
+# roof's are joint masks (3% and 6% of the surface at zero), and the
+# parquet's is a soft joint profile. A scattered ground, a rock, a grain
+# and a flat sheet have no joints in theirs.
+JOINT_HEIGHT_KINDS = ("voronoi", "brick", "parquet", "herringbone", "roof")
+
+
 def write_procedural_base_color(
     output_path: Path,
     kind: str = "voronoi",
@@ -505,6 +514,7 @@ def write_procedural_base_color(
     graph: dict | None = None,
     checkered: bool = False,
     courses: int | None = None,
+    joint_height_out: dict | None = None,
 ) -> Path:
     # `pebble_factor` is how many PEBBLES a cell holds: a loose
     # ground's four, and a solid surface's one.
@@ -523,6 +533,14 @@ def write_procedural_base_color(
     `wander` is how far the lattice is displaced, in cell units: it
     is what turns a Voronoi diagram into a cobblestone. Its
     frequency is an INTEGER, because the field has to be periodic.
+
+    `joint_height_out`, when given a dict, receives the pattern's own
+    JOINT HEIGHT under "height" for the kinds whose field is a joint
+    (JOINT_HEIGHT_KINDS): zero in the joints, one at the faces' middle,
+    on the same grid as the written image. A layer laid in the joints
+    needs THIS and not the colour: a weathered wall's darker bricks are
+    darker than its mortar, and a height read from the colour put moss
+    on whole bricks.
     """
     import numpy
 
@@ -796,6 +814,10 @@ def write_procedural_base_color(
             lines_per_cell=lines_per_cell,
         )
     cell_width, cell_height = grid
+    if joint_height_out is not None and kind in JOINT_HEIGHT_KINDS:
+        joint = numpy.asarray(edge, dtype=numpy.float64)
+        low, high = float(joint.min()), float(joint.max())
+        joint_height_out["height"] = (joint - low) / max(1e-9, high - low)
 
     if kind in ("flat", "wallpaper", "rock", "moss", "grass"):
         # A FLAT sheet is a SOFT variation about its base, and not a

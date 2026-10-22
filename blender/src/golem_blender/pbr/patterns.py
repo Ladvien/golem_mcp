@@ -253,6 +253,15 @@ _MATERIAL_PATTERNS = (
     ("fur", "carpet"),
     ("paving", "voronoi"),
     ("metal", "voronoi"),
+    # RUST on its own is a mottled crust, not a set of stones; it is
+    # read LAST, so a rusty steel is still the steel's own pattern.
+    ("rust", "flat"),
+    ("rusty", "flat"),
+    # And DUST and GRIME are films, read last for the same reason: as a
+    # layer over a floor, "pale grey dust" was a set of grey stones.
+    ("dust", "flat"),
+    ("dusty", "flat"),
+    ("grime", "flat"),
 )
 
 # What a surface that matches nothing is assumed to be.
