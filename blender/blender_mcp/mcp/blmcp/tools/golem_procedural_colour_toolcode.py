@@ -45,6 +45,7 @@ class Params(NamedTuple):
     repository_src: str
     venv_site_packages: str
     source_fingerprint: str
+    graph_json: str = ""
 
 
 class Result(NamedTuple):
@@ -73,8 +74,28 @@ def _purge_if_stale(repository_src: str, source_fingerprint: str) -> None:
     importlib.invalidate_caches()
 
 
+def _graph_of(graph_json: str) -> dict | None:
+    """The NODE GRAPH, from its JSON, and None when there is none.
+
+    A graph is a stack of fields and it is how a texture is
+    COMPOSED rather than chosen - a marble is flat stone with a
+    network of veins over it, and a leather is a fine grain with a
+    stain on it.
+    """
+    if not graph_json or not graph_json.strip():
+        return None
+    import json  # pylint: disable=import-outside-toplevel
+
+    try:
+        graph = json.loads(graph_json)
+    except ValueError as error:
+        raise ValueError(f"The node graph is not valid JSON: {error}") from error
+    if not isinstance(graph, dict):
+        raise TypeError("A node graph must be a JSON object.")
+    return graph
+
+
 def main(params: Params) -> Result:
-    import bpy  # pylint: disable=import-error,no-name-outside-toplevel
 
     for path in (params.venv_site_packages, params.repository_src):
         if path and path not in sys.path:
@@ -97,8 +118,9 @@ def main(params: Params) -> Result:
             scale_cells=params.scale_cells,
             width_px=params.width_px,
             height_px=params.height_px,
+            graph=_graph_of(params.graph_json),
         )
-    except (OSError, ValueError) as error:
+    except (OSError, TypeError, ValueError) as error:
         return Result(status="error", message=str(error))
 
     return Result(status="ok", output_path=str(written))

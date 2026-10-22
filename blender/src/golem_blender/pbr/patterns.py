@@ -85,6 +85,24 @@ _FLAT_PATTERNS = (
     # truth's.
     ("concrete", "flat"),
     ("cement", "flat"),
+    # A PLASTIC is a MOULDED surface, and a moulded surface is
+    # smooth.
+    #
+    # The truth's own plastics are the flattest materials in the
+    # sample: Plastic010 measures a spread of 0.0021 and
+    # Plastic013A 0.0071, and their correlations never cross zero -
+    # they are featureless.
+    #
+    # So a plastic was a VORONOI - a field of cobbles - where the
+    # truth has a smooth sheet, and Plastic006's brightness read
+    # 7.02x the truth's.
+    ("plastic", "flat"),
+    ("abs", "flat"),
+    ("acrylic", "flat"),
+    ("vinyl", "flat"),
+    ("pvc", "flat"),
+    ("melamine", "flat"),
+    ("laminate", "flat"),
 )
 
 # The material words, and the pattern each calls for. Everything that

@@ -22,7 +22,9 @@ from golem_blender.agent.tools import TOOL_SCHEMAS
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # The tools golem_blender serves beside the upstream ones.
-_GOLEM_BLENDER_TOOL_NAMES = frozenset(schema["function"]["name"] for schema in TOOL_SCHEMAS)
+_GOLEM_BLENDER_TOOL_NAMES = frozenset(
+    schema["function"]["name"] for schema in TOOL_SCHEMAS
+)
 
 # Complete expected tool listing.
 # When a tool is added, changed, or removed this must be updated.
@@ -375,15 +377,15 @@ EXPECTED_TOOLS = [
                     "title": "Image Strength",
                     "type": "number",
                 },
-                "make_tileable": {
-                    "default": True,
-                    "title": "Make Tileable",
-                    "type": "boolean",
-                },
                 "texture_dir": {
                     "default": "",
                     "title": "Texture Dir",
                     "type": "string",
+                },
+                "make_tileable": {
+                    "default": True,
+                    "title": "Make Tileable",
+                    "type": "boolean",
                 },
             },
             "required": ["prompt"],
@@ -429,7 +431,7 @@ EXPECTED_TOOLS = [
         "\n"
         "The export directory is written as a CLEAN SET: a file a\n"
         "previous export put there and this one does not include is\n"
-        "removed, and the result says what was removed under \"removed\".\n"
+        'removed, and the result says what was removed under "removed".\n'
         "A file no export claims is left alone.\n",
         "inputSchema": {
             "properties": {
@@ -479,15 +481,40 @@ EXPECTED_TOOLS = [
         "map's seam is a property of the SAMPLE, so four generations\n"
         "of one prompt measured 1.38x, 1.57x, 1.10x and 1.38x.\n"
         "\n"
-        "`kind` is the cell shape: \"voronoi\" for rounded stones,\n"
-        "\"brick\" for courses. `scale_cells` is how many cells across\n"
-        "the image.\n",
+        '`kind` is the cell shape: "voronoi" for rounded stones,\n'
+        '"brick" for courses. `scale_cells` is how many cells across\n'
+        "the image.\n"
+        "\n"
+        "`graph_json` COMPOSES the texture instead of choosing one\n"
+        "pattern, and it is how a description that is really a STACK\n"
+        "gets built: a marble is flat stone with a network of veins\n"
+        "over it, and a leather is a fine grain with a stain on it.\n"
+        "\n"
+        'A graph is JSON with a "nodes" list. Each node has a "name",\n'
+        'a "type", optional "params" and optional "inputs" - and the\n'
+        "inputs name other nodes:\n"
+        "\n"
+        '    {"nodes": [\n'
+        '      {"name": "veins", "type": "field",\n'
+        '       "params": {"pattern": "marble", "cells": 14}},\n'
+        '      {"name": "base", "type": "field",\n'
+        '       "params": {"pattern": "flat", "cells": 8}},\n'
+        '      {"name": "mix", "type": "blend",\n'
+        '       "params": {"mode": "normal", "amount": 0.55},\n'
+        '       "inputs": {"a": "veins", "b": "base"}}\n'
+        "    ]}\n"
+        "\n"
+        'The node types are "field" (a named pattern), "blend",\n'
+        '"warp", "splatter", "scratches" and "math". The blend modes\n'
+        'are "normal", "multiply", "screen", "overlay", "hard_light",\n'
+        '"soft_light", "burn", "dodge" and "dissolve".\n'
+        "\n"
+        "Every field is normalised before it enters a graph, so ONE is\n"
+        "the feature and ZERO is the ground - and the blend modes mean\n"
+        "what they say.\n",
         "inputSchema": {
             "properties": {
-                "texture_name": {
-                    "title": "Texture Name",
-                    "type": "string",
-                },
+                "texture_name": {"title": "Texture Name", "type": "string"},
                 "kind": {"default": "voronoi", "title": "Kind", "type": "string"},
                 "scale_cells": {
                     "default": 16.0,
@@ -501,6 +528,7 @@ EXPECTED_TOOLS = [
                     "title": "Texture Dir",
                     "type": "string",
                 },
+                "graph_json": {"default": "", "title": "Graph Json", "type": "string"},
             },
             "required": ["texture_name"],
             "title": "generate_procedural_base_colorArguments",

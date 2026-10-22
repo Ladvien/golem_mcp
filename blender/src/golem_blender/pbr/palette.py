@@ -1539,6 +1539,58 @@ METAL_SPREAD_TIERS = (
     ),
     ("clean", "smooth", "fine", "satin", "polished", "mirror", "chrome"),
 )
+
+# A LEATHER's FINISH, and its spread, and the tables are fitted on
+# the truth's own six leathers.
+#
+# The truth's own six leathers' spreads run from 0.0032 to 0.0630 - a
+# twentyfold range - and the material's own word says 0.0238, which
+# is a mean of nothing in particular.
+#
+# But the FINISH says which one:
+#
+#     "brown, clean, dark, leather"                  0.0032
+#     "black, dark, leather, smooth"                 0.0115
+#     "bright, fine, leather, light, rough, suede"   0.0160
+#     "brown, fine, leather, orange, smooth"         0.0198
+#     "brown, dark, leather"                         0.0279
+#     "black, brown, dark, leather, stitched"        0.0630
+#
+# So the finish decides, and the material's own word decides only
+# when no finish is named - the same rule the metal's has.
+LEATHER_SPREADS: dict[str, float] = {
+    "stitched": 0.0630,
+    "seam": 0.0630,
+    "quilted": 0.0630,
+    "suede": 0.0160,
+    "rough": 0.0160,
+    "orange": 0.0198,
+    "brown": 0.0279,
+    "smooth": 0.0115,
+    "clean": 0.0032,
+    "fine": 0.0160,
+    "leather": 0.0238,
+    "hide": 0.0238,
+}
+
+# The tiers, and the ORDER matters: the specific finishes first.
+LEATHER_SPREAD_TIERS = (
+    ("stitched", "seam", "quilted"),
+    ("suede", "rough", "coarse", "scuffed"),
+    # "clean" is a STRONG finish and it beats the colour: the
+    # truth's own "brown, clean, dark, leather" measures 0.0032.
+    ("clean",),
+    # The COLOUR, and it beats a weak finish: the truth's own
+    # "brown, fine, leather, orange, smooth" measures 0.0198, and
+    # its "smooth" would have said 0.0115.
+    #
+    # And the colours have their OWN values and not one value
+    # between them: the truth's bare "brown, dark, leather" measures
+    # 0.0279 and its orange one 0.0198.
+    ("orange", "brown", "tan", "red"),
+    ("smooth", "polished", "shiny"),
+    ("fine",),
+)
 # How many materials each SPREAD word names, and a word that names
 # FEW is a specific one.
 #
@@ -1562,8 +1614,6 @@ SPREAD_SPECIFICITY: dict[str, int] = {
     "parquet": 4,
     "wallpaper": 1,
     "woodchip": 1,
-    "roof": 3,
-    "roofing": 3,
     "shingle": 3,
     "herringbone": 1,
     "basketweave": 1,
@@ -2830,6 +2880,27 @@ def spread_for_description(description: str) -> float:
                 key=lambda word: (METAL_SPECIFICITY.get(word, 99), tier.index(word))
             )
             own = METAL_SPREADS.get(metal_words[0])
+            if own is not None:
+                return own
+    if "leather" in words or "hide" in words:
+        # A LEATHER's FINISH is its character, the same way a metal's
+        # is.
+        #
+        # The truth's own six leathers' spreads run from 0.0032 to
+        # 0.0630 - a twentyfold range - and the material's own word
+        # says 0.0238, a mean of nothing in particular.
+        #
+        # But the FINISH says which: the clean leather is 0.0032, the
+        # smooth ones 0.0115 and 0.0198, the suede 0.0160, the
+        # stitched 0.0630, and the bare one 0.0279.
+        #
+        # So the finish decides first, and the material's own word
+        # decides when no finish is named.
+        for tier in LEATHER_SPREAD_TIERS:
+            finish_words = [word for word in tier if word in words]
+            if not finish_words:
+                continue
+            own = LEATHER_SPREADS.get(finish_words[0])
             if own is not None:
                 return own
     if named:

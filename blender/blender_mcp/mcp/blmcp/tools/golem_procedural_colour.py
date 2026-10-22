@@ -75,6 +75,7 @@ def register(mcp: FastMCP) -> None:
         width_px: int = 2048,
         height_px: int = 2048,
         texture_dir: str = "",
+        graph_json: str = "",
     ) -> list:
         """Write a PROCEDURAL base colour into the texture set; returns the image and its paths.
 
@@ -98,6 +99,34 @@ def register(mcp: FastMCP) -> None:
         `kind` is the cell shape: "voronoi" for rounded stones,
         "brick" for courses. `scale_cells` is how many cells across
         the image.
+
+        `graph_json` COMPOSES the texture instead of choosing one
+        pattern, and it is how a description that is really a STACK
+        gets built: a marble is flat stone with a network of veins
+        over it, and a leather is a fine grain with a stain on it.
+
+        A graph is JSON with a "nodes" list. Each node has a "name",
+        a "type", optional "params" and optional "inputs" - and the
+        inputs name other nodes:
+
+            {"nodes": [
+              {"name": "veins", "type": "field",
+               "params": {"pattern": "marble", "cells": 14}},
+              {"name": "base", "type": "field",
+               "params": {"pattern": "flat", "cells": 8}},
+              {"name": "mix", "type": "blend",
+               "params": {"mode": "normal", "amount": 0.55},
+               "inputs": {"a": "veins", "b": "base"}}
+            ]}
+
+        The node types are "field" (a named pattern), "blend",
+        "warp", "splatter", "scratches" and "math". The blend modes
+        are "normal", "multiply", "screen", "overlay", "hard_light",
+        "soft_light", "burn", "dodge" and "dissolve".
+
+        Every field is normalised before it enters a graph, so ONE is
+        the feature and ZERO is the ground - and the blend modes mean
+        what they say.
         """
         require_live_blender()
 
@@ -113,6 +142,7 @@ def register(mcp: FastMCP) -> None:
             repository_src=str(REPOSITORY_SRC),
             venv_site_packages=VENV_SITE_PACKAGES,
             source_fingerprint=source_fingerprint(),
+            graph_json=graph_json,
         )
         code = toolcode_format_call(_TOOL_CALL, params)
         response = send_code(code, strict_json=True)
@@ -134,6 +164,7 @@ def register(mcp: FastMCP) -> None:
             "texture_name": texture_name,
             "mac_path": str(written),
             "kind": kind,
+            "composed": bool(graph_json),
             "scale_cells": scale_cells,
             "width_px": width_px,
             "height_px": height_px,

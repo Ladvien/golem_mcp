@@ -230,6 +230,7 @@ PROCEDURAL_COLOUR_KINDS = (
     "woven",
     "roof",
     "herringbone",
+    "graph",
 )
 # How wide a LINE is, as a fraction of the distance to the nearest
 # line. A grain's rings and a metal's grain are soft, and the truth's
@@ -476,6 +477,7 @@ def write_procedural_base_color(
     metal_banded: bool = True,
     metal_envelope_factor: float = 1.0,
     stone_tone_fraction: float = 1.0,
+    graph: dict | None = None,
 ) -> Path:
     # `pebble_factor` is how many PEBBLES a cell holds: a loose
     # ground's four, and a solid surface's one.
@@ -535,7 +537,27 @@ def write_procedural_base_color(
     cell_height = cells
     curvature_field = None
     brick_face = None
-    if kind == "scattered":
+    if kind == "graph":
+        # A GRAPH is a STACK of fields, composed rather than chosen.
+        #
+        # The lane's own answer to a description used to be ONE
+        # pattern, and a description is not one pattern: a marble is
+        # flat stone with a network of veins over it, and a leather
+        # is a fine grain with a stain on it.
+        #
+        # So the graph renders to one field, and the field is the
+        # image's own structure - the same structure the cell
+        # patterns carry, so the same colouring follows it.
+        from golem_blender.pbr import nodegraph
+
+        composed = nodegraph.render_graph(graph or {}, resolution)
+        cell, edge, grid, fibre = (
+            numpy.zeros((resolution, resolution), dtype=numpy.int32),
+            composed,
+            (cells, cells),
+            composed,
+        )
+    elif kind == "scattered":
         # A loose ground is SCATTERED stones, not a Voronoi.
         #
         # A Voronoi's cells tile the plane, and a heap of loose stones
@@ -801,6 +823,34 @@ def write_procedural_base_color(
             colour = _shift_to_value(colour, target_value)
         return _write_image(output_path, resolution, width_px, height_px, colour)
 
+    if kind == "graph":
+        # A GRAPH's field is a MASK - ONE is the feature and ZERO is
+        # the ground - and the mask is the image's whole structure.
+        #
+        # So the image is the palette's base, darkened where the mask
+        # is DARK, and the darkening is scaled to the description's
+        # spread and the whole to the description's value - the same
+        # two measurements every other pattern gets.
+        import numpy as _np
+
+        base = _np.array(stone_dark_rgb, dtype=numpy.float32).reshape(1, 1, 3)
+        mask = _np.clip(_np.asarray(fibre, dtype=numpy.float32), 0.0, 1.0)
+        # The mask's own reach, so the darkening is a fraction of the
+        # base and not an absolute - a dark surface's lines are
+        # darker by less than a pale one's, which is what the truth
+        # does.
+        luma = _luma_of(stone_dark_rgb)
+        if line_contrast is None:
+            line_contrast = LINE_CONTRAST
+        darkening = 0.0 if luma <= 0.0 else min(1.0, line_contrast / luma)
+        colour = base * (1.0 - darkening * (1.0 - mask)[:, :, _np.newaxis])
+        if target_spread is not None:
+            colour = _scale_to_spread(colour, target_spread)
+        if target_value is not None:
+            colour = _shift_to_value(colour, target_value)
+        colour = _np.clip(colour, 0.0, 1.0)
+        return _write_image(output_path, resolution, width_px, height_px, colour)
+
     if kind in ("grain", "metal", "marble"):
         # A GRAIN and a METAL are LINES on a surface, not stones in a
         # joint. A cobblestone's treatment - a random colour per
@@ -1036,7 +1086,6 @@ def write_procedural_base_color(
             period=hue_lattice,
             seed=13,
         )
-        hue_reach = max(1e-6, float(hue_field.max() - hue_field.min()))
         # And only SOME of the cells carry the moss: the truth's own
         # Rock064 is a grey rock with green moss in parts of it, and
         # the moss is a MINORITY - a cell with a full hue swing on
