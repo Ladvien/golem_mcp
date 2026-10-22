@@ -132,7 +132,14 @@ SCATTER_MATRIX_WIDTH = 2.0
 # it. Measured, the ground's period read fourteen pixels against the
 # truth's fifty-three when the drift was on the stone's own tone,
 # and the drift's own share is what moved it.
-SCATTER_DRIFT_SHARE = 0.40
+#
+# And the share is a tenth and not more. The truth's own ground
+# carries 0.0206 of its spread in the coarse - the forty-pixel blur -
+# and the lane's carried 0.0385 at two fifths, so the ground came
+# out with dark blotches on it where the truth's is an even gravel.
+# At a tenth the coarse carries 0.0291, and the truth's own Ground108
+# reads 0.0318 against its 0.0282.
+SCATTER_DRIFT_SHARE = 0.12
 # How much a STONE's hue varies from the surface's own.
 #
 # The DEFAULT is in the palette - `hue_variation_for_description` -
