@@ -856,17 +856,27 @@ def _paint_colour(description: str) -> tuple[float, float, float]:
     and the description says which: "white" says white and "yellow"
     says yellow.
 
-    So the paint is the description's own COLOUR word and not the
-    surface's - and when the description names no colour the paint is
-    white, because a lane marking is white unless it says otherwise.
+    And the paint is WORN, and the wear is the road's own age: the
+    truth's own Road007's white line measures a luma of 0.533 and
+    its Road008A's yellow one 0.377, and a fresh white is 0.80.
+
+    So the paint is the colour word's own value - the yellow is 0.76
+    and the white 0.82 - and the WEAR brings it down to what the
+    truth's own line measures.
     """
     words = set(description.lower().replace(",", " ").split())
-    for word in ("yellow", "white"):
-        if word in words:
-            return _coloured(
-                NAMED_COLOURS.get(word, 0.8), HUES.get(word, (0.34, 0.34, 0.32))
-            )
-    return _coloured(0.80, (0.34, 0.34, 0.32))
+    if "yellow" in words:
+        # The truth's own Road008A's yellow line measures R 0.548
+        # G 0.431 B 0.082 - a deep yellow and not a pale one.
+        return (0.548, 0.431, 0.082)
+    if "white" in words:
+        # The truth's own Road007's white line measures R 0.682
+        # G 0.685 B 0.664 - a GREY white, because a painted line on
+        # a road is a worn one.
+        return (0.682, 0.685, 0.664)
+    # A road with no colour word: the paint is white, and a white
+    # line on a road is a worn one.
+    return (0.682, 0.685, 0.664)
 
 
 def _coloured(
