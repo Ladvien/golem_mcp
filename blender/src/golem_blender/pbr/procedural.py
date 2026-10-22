@@ -585,12 +585,29 @@ def write_procedural_base_color(
         # A scatter has no cells to hash - the stones are placed, not
         # tiled - so the tone is the mottle and the joint is the
         # scatter's own field.
+        #
+        # And the mottle is the WHOLE RAMP: the stone is the ramp's
+        # LIGHT end and the matrix is its DARK end, and not both of
+        # them at the middle.
+        #
+        # Measured on the truth's own ground: the bright stones read
+        # a luma of 0.547 and the dark matrix 0.242, against a
+        # palette ramp of 0.262 to 0.520 - so the stones sit at 1.10
+        # of the ramp and the matrix at -0.08 of it. The ramp IS the
+        # stone-to-matrix contrast.
+        #
+        # The stones were drawn about the ramp's MIDDLE, so the
+        # contrast between a stone and the matrix beside it was a
+        # quarter of the ramp and not all of it, and the ground came
+        # out as pale stones in a pale matrix. Measured, the stones
+        # read 0.722 against a truth's 0.547 and the matrix 0.397
+        # against a truth's 0.242.
         for channel in range(3):
             ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
             stone[:, :, channel] = ramp[
                 _np.clip((fibre * 255).astype(numpy.int32), 0, 255)
             ]
-    if pebble_factor > 1.5:
+    if pebble_factor > 1.5 and kind != "scattered":
         # A STONE's own tone is a SMALL part of the surface's
         # variation, and the MATRIX is the rest.
         #
@@ -666,13 +683,42 @@ def write_procedural_base_color(
     # The joint replaces the stone where the joint is.
     mortar = numpy.array(mortar_rgb, dtype=numpy.float32).reshape(1, 1, 3)
     joint = joint[:, :, numpy.newaxis]
-    colour = colour * (1.0 - joint) + mortar * joint
+    if kind == "scattered":
+        # A SCATTER's joint is the MATRIX, and the matrix is the
+        # surface's own slow variation and not a flat colour.
+        #
+        # A flat mortar filled every gap between the stones with one
+        # colour, and the ground read as pale stones on a pale sheet.
+        # The truth's matrix is DARK and it VARIES: a worn patch of
+        # ground is a patch of paler matrix.
+        #
+        # So the matrix is the ramp's DARK end, moved by the scatter's
+        # own slow field - and the scatter's field is the `fibre`
+        # the stones' own tone came from.
+        # The matrix's tone is the ramp's DARK end, and it is the
+        # scatter's own SLOW variation within that dark end - so a
+        # worn patch of ground is a patch of paler matrix.
+        #
+        # The scatter's `edge` is the stone's own SHAPE field: one
+        # inside a stone and zero in the matrix. The slow variation
+        # is the matrix's own, and it is the same field the stones'
+        # tone rides on.
+        matrix_tone = _np.clip(1.0 - fibre, 0.0, 1.0)
+        matrix_colour = numpy.empty_like(stone)
+        for channel in range(3):
+            ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
+            matrix_colour[:, :, channel] = ramp[
+                _np.clip((matrix_tone * 255).astype(_np.int32), 0, 255)
+            ]
+        colour = colour * (1.0 - joint) + matrix_colour * joint
+    else:
+        colour = colour * (1.0 - joint) + mortar * joint
     colour = numpy.clip(colour, 0.0, 1.0)
     # The image's variation is scaled so its spread IS the
     # description's - a pattern's contrast depends on its SHAPE and
     # not only on its numbers, and only measuring says how much of
     # the spread this one carries.
-    colour = _scale_to_spread(colour, _luma_of(stone_dark_rgb), target_spread)
+    colour = _scale_to_spread(colour, target_spread)
 
     # The image is written at the resolution the pattern was computed
     # at, which is the requested one - there is no upscale, because an
@@ -735,7 +781,7 @@ def _luma_of(rgb) -> float:
     return 0.2126 * float(rgb[0]) + 0.7152 * float(rgb[1]) + 0.0722 * float(rgb[2])
 
 
-def _scale_to_spread(colour, base, target_spread):
+def _scale_to_spread(colour, target_spread):
     """Scale the image's variation so its spread IS the target.
 
     A pattern's contrast depends on its SHAPE and not only on its
@@ -758,6 +804,28 @@ def _scale_to_spread(colour, base, target_spread):
 
     That makes the contrast the description's spread, whatever the
     pattern's shape.
+
+    The variation is scaled about the image's OWN MEAN and not about
+    the palette's base colour, and that is the whole point of the
+    correction: scaling about a point that is not the mean MOVES the
+    mean, and the image's brightness is then not the description's.
+
+    It scaled about the palette's DARK end - the ramp's low value -
+    and the ramp's low value is below the image's own mean whenever
+    the pattern does not fill its ramp. So the correction that made
+    the contrast right also made the surface BRIGHTER, by exactly
+    the amount the pattern sat above the ramp's floor.
+
+    Measured: the scattered ground's own luma was 0.344 with a
+    spread of 0.087, and the target spread was 0.129 - so the
+    correction was a factor of 1.49, and scaling about a base of
+    0.168 lifted the mean from 0.344 to 0.430. The ground's
+    brightness then read 1.44x the truth's.
+
+    So the variation is scaled about the image's own mean, and the
+    mean is left where it was: the brightness is the description's
+    own and the contrast is the description's own, and the two are
+    independent.
     """
     import numpy as _np
 
@@ -773,7 +841,11 @@ def _scale_to_spread(colour, base, target_spread):
     if measured <= 1e-9:
         return colour
     scale = target_spread / measured
-    scaled = colour + (luma[:, :, _np.newaxis] - base) * (scale - 1.0)
+    # The image's own MEAN, and not the palette's base: the scaling
+    # moves the variation about a point, and a point that is not the
+    # mean drags the mean with it.
+    centre = float(luma.mean())
+    scaled = colour + (luma[:, :, _np.newaxis] - centre) * (scale - 1.0)
     return _np.clip(scaled, 0.0, 1.0)
 
 
@@ -901,7 +973,7 @@ def _write_line_pattern(
     # description's - a line's falloff carries a different amount of
     # contrast than a joint's, and only measuring says how much of
     # the spread this one carries.
-    colour = _scale_to_spread(colour, _luma_of(base_rgb), target_spread)
+    colour = _scale_to_spread(colour, target_spread)
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
