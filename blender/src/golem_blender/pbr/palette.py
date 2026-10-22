@@ -2124,6 +2124,21 @@ def pebble_factor_for_description(description: str) -> float:
     return 1.0
 
 
+def _is_rock(description: str) -> bool:
+    """Whether the description names a ROCK and not a surface.
+
+    A rock's joint is a CRACK - a shadow, and the ramp's own floor -
+    and a cobble's joint is a filled one: pale sand between the
+    stones.
+
+    Measured on the truth's own: the truth's Rock064's cracks read a
+    luma of 0.336 where its ramp's dark end is 0.324, and the truth's
+    own Asphalt033's reads 0.302 where its value is 0.321.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    return bool(words & {"rock", "cliff", "boulder", "stone", "canyon"})
+
+
 def palette_for_description(
     description: str,
     spread: float | None = None,
@@ -2170,6 +2185,21 @@ def palette_for_description(
     if mortar_offset is None:
         mortar_offset = MORTAR_SPREAD_FRACTION * spread
     mortar = max(0.0, value - mortar_offset)
+    # A ROCK's joint is a CRACK and not a filled one, and a crack is
+    # a SHADOW: it is the ramp's own DARK end and not a third of the
+    # spread below the value.
+    #
+    # Measured on the truth's own: the truth's Rock064's cracks read
+    # a luma of 0.336 where the surface's value is 0.420 and its
+    # ramp's dark end is 0.324 - so the crack is the ramp's floor.
+    # And the truth's own Bricks113A's mortar reads 0.427 where its
+    # value is 0.460 - so a BRICK's grout is a filled joint just below
+    # the surface, and it is not a crack.
+    #
+    # At a joint just below the value the rock came out as a mosaic
+    # of flat cells with PALE edges - the opposite of a crack.
+    if path == "voronoi" and _is_rock(description):
+        mortar = low
     # The colour is (luma, HUE), and the hue is the description's
     # colour word's: the truth's ground is R 0.379 G 0.336 B 0.286 and
     # its blue fabric is R 0.217 G 0.333 B 0.451. A palette with no
