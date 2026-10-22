@@ -5,9 +5,10 @@ twenty materials is a fit against twenty materials. So the benchmark
 now runs against a **wide** sample: eighty-seven real ambientcg sets
 over twenty kinds, and the seventeen that the popular list never
 reaches - the leather, the roofing tiles, the wallpaper, the
-carpets, the parquets and the planks - are fetched directly.
+carpets, the parquets and the planks - are fetched directly by
+`scripts/benchmarks/fetch_ambientcg_kinds.py`.
 
-The question this records is not the score. It is the **coverage**:
+The question this record is not the score. It is the **coverage**:
 for each real material, which pattern the lane picks, and whether
 that pattern is the material's actual kind.
 
@@ -36,6 +37,20 @@ that pattern is the material's actual kind.
   row-to-column change ratios are 1.04, 1.00, 1.13 and 1.00, and
   ours came out at 0.52 and 4.39.
 - a **wallpaper**'s design was a chequer and it is a fleck.
+- a **rock** was a smooth blob field and it has FACETS - and the
+  facets are the surface's curvature, which is Material Maker's
+  `smooth_curvature2` and the map that gives a hand-painted edge
+  treatment its rim.
+
+## The words have to be WHOLE words
+
+"corrugated" contains "rug", and "rug" is a carpet - so the truth's
+own corrugated steel came out as a carpet until the match was
+changed to whole words.
+
+And a kind a word names OUTRIGHT is read before the structures: a
+"parquet" is a parquet and not a plank, and a "corrugated steel" is
+a pressed metal sheet and not a road with markings on it.
 
 ## What the words can and cannot say
 
@@ -60,6 +75,7 @@ In the order the wide set says they are worth having:
    is the wallpaper's structure on a fabric's palette. The truth's
    own Fabric081C is a white printed plastisol with a spread of
    0.0032.
-3. **a thatched or a mossy surface** - an organic mat, which is the
-   scatter's primitive with a much finer grain and a lot more
-   colour variation.
+3. **a two-colour surface** - a rock with grey stone and yellow
+   moss on it, or a tile with a different glaze in the middle. One
+   hue for the whole surface cannot say it, and the truth's own
+   Rock051 is a grey with yellow veins in it.
