@@ -42,6 +42,11 @@ BLEND_MODES = (
     "soft_light",
     "burn",
     "dodge",
+    "lighten",
+    "darken",
+    "difference",
+    "additive",
+    "addsub",
     "dissolve",
 )
 
@@ -127,6 +132,34 @@ def _blend_dissolve(a: numpy.ndarray, b: numpy.ndarray, amount: float) -> numpy.
     return numpy.where(pick < amount, a, b)
 
 
+def _blend_lighten(a: numpy.ndarray, b: numpy.ndarray, amount: float) -> numpy.ndarray:
+    return amount * numpy.maximum(a, b) + (1.0 - amount) * b
+
+
+def _blend_darken(a: numpy.ndarray, b: numpy.ndarray, amount: float) -> numpy.ndarray:
+    return amount * numpy.minimum(a, b) + (1.0 - amount) * b
+
+
+def _blend_difference(
+    a: numpy.ndarray, b: numpy.ndarray, amount: float
+) -> numpy.ndarray:
+    return amount * numpy.abs(a - b) + (1.0 - amount) * b
+
+
+def _blend_additive(a: numpy.ndarray, b: numpy.ndarray, amount: float) -> numpy.ndarray:
+    return amount * numpy.clip(a + b, 0.0, 1.0) + (1.0 - amount) * b
+
+
+def _blend_addsub(a: numpy.ndarray, b: numpy.ndarray, amount: float) -> numpy.ndarray:
+    """A blend that ADDS the top and SUBTRACTS the bottom.
+
+    It is the mode that draws a dark vein on a pale stone and a pale
+    vein on a dark one, and it is the one a material's tone ramp
+    needs.
+    """
+    return amount * numpy.clip(a + (1.0 - b), 0.0, 1.0) + (1.0 - amount) * b
+
+
 _BLEND_FUNCTIONS = {
     "normal": _blend_normal,
     "multiply": _blend_multiply,
@@ -136,6 +169,11 @@ _BLEND_FUNCTIONS = {
     "soft_light": _blend_soft_light,
     "burn": _blend_burn,
     "dodge": _blend_dodge,
+    "lighten": _blend_lighten,
+    "darken": _blend_darken,
+    "difference": _blend_difference,
+    "additive": _blend_additive,
+    "addsub": _blend_addsub,
     "dissolve": _blend_dissolve,
 }
 
@@ -405,6 +443,19 @@ def _render_node(
             1.0,
         )
 
+    if kind == "colorize":
+        source = field_of(inputs["source"])
+        stops = params.get("stops") or []
+        return numpy.clip(
+            colorize_field(
+                source,
+                stops,
+                interpolation=int(params.get("interpolation", 1)),
+            ),
+            0.0,
+            1.0,
+        )
+
     if kind == "math":
         a = field_of(inputs["a"])
         operation = params.get("op", "add")
@@ -485,6 +536,39 @@ def _pattern_field(pattern_name: str, cells: int, resolution: int) -> numpy.ndar
     raise NodeGraphError(f"Unknown pattern {pattern_name!r}.")
 
 
+def colorize_field(
+    field: numpy.ndarray,
+    stops: list,
+    interpolation: int = 1,
+) -> numpy.ndarray:
+    """A material's TONE, shaped by a ramp - Material Maker's `colorize`.
+
+    The lane darkens a surface by a linear amount, and a ramp says
+    something a linear darkening cannot: where the STONE goes from
+    one tone to another, and how fast.
+
+    Material Maker's own Marble and Wood templates both use it, and
+    the marble's ramp has its veins at 0.09 and 0.34 and its stone
+    between them - so the vein is a narrow band in a ramp and not a
+    darkening of the whole stone.
+
+    `stops` is a list of (position, value) pairs, the position in
+    ZERO to ONE and the value in ZERO to ONE.
+    """
+    if not stops:
+        raise NodeGraphError("A colour ramp needs at least one stop.")
+    ordered = sorted(stops, key=lambda stop: float(stop[0]))
+    positions = numpy.array([float(stop[0]) for stop in ordered], dtype=numpy.float32)
+    values = numpy.array([float(stop[1]) for stop in ordered], dtype=numpy.float32)
+    source = numpy.clip(numpy.asarray(field, dtype=numpy.float32), 0.0, 1.0)
+    if interpolation == 2:
+        # CONSTANT, and each stop holds until the next one.
+        indices = numpy.searchsorted(positions, source, side="right") - 1
+        indices = numpy.clip(indices, 0, len(values) - 1)
+        return values[indices]
+    return numpy.interp(source, positions, values).astype(numpy.float32)
+
+
 def _normalise(field: numpy.ndarray) -> numpy.ndarray:
     """Scale a field so its full range is ZERO to ONE."""
     low = float(field.min())
@@ -499,6 +583,7 @@ __all__ = (
     "NodeGraphError",
     "apply_warp",
     "blend_fields",
+    "colorize_field",
     "render_graph",
     "scratches_field",
     "splatter_field",
