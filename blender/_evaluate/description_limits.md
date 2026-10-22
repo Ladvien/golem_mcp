@@ -124,6 +124,27 @@ and their correlation with the feature count is only 0.57 - so the
 lane's is a constant 142, which is the middle of the truth's range
 and the best a single number can do.
 
+### A brick's face is sand, and the sand is per-pixel
+
+The truth's own Bricks113A has a face that is GRIT: its correlation
+falls steadily from +0.391 at a one-pixel lag to +0.086 at a
+thirty-two, with no dominant scale and no direction.
+
+The lane's face was a DOMAIN-WARPED field, and a warp has a
+DIRECTION - so every brick carried the same diagonal herringbone and
+the wall came out as a field of chevrons.
+
+A per-pixel random field was tried for the sand and it changed
+nothing: the face's correlation at a one-pixel lag stayed at 0.223
+whatever the field. So the sand is not what the measure reads, and
+the Perlin's own fine octave is.
+
+And the face's grain rides the course's own offset, and the offset
+must be REDUCED into the course count: the index at the last course
+is not the index at the first, and the wrap joined two courses with
+different grain - the brick's horizontal seam read 1.875x, as big
+as the biggest feature.
+
 ### The value cannot be refitted honestly
 
 The palette's material values are a fit against the truth's own

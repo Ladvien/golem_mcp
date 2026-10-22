@@ -74,6 +74,18 @@ are the honest summary: brightness 1.000, contrast 1.003, scale
   has a standard deviation of 0.0336 over sixteen-pixel blocks and
   the lane's had 0.0019, because the hue variation was applied only
   to the scattered path's stones.
+- **A ROCK's joint is a CRACK and a brick's grout is a filled one** -
+  the truth's own Rock064's cracks read a luma of 0.336 where its
+  ramp's dark end is 0.324, and the truth's own Bricks113A's mortar
+  reads 0.427 where its value is 0.460.
+- **A GROUND has TWO scales** - the truth's own ground's slow field
+  decorrelates at seventy-seven pixels and its stones at sixteen, and
+  the lane's stones came in clumps of thirty-six. The stones are
+  bigger and fewer, and each carries its OWN tone: the truth's
+  seventeen biggest stones run from 0.431 to 0.710.
+- **A BRICK's face is SAND and not a swirl** - the face was a
+  DOMAIN-WARPED field, and a warp has a direction, so every brick
+  carried the same diagonal herringbone.
 
 ## The rules the eighty-seven taught
 

@@ -1593,10 +1593,21 @@ def brick_field(resolution: int, cells: int, aspect: float = BRICK_ASPECT):
         .reshape(1, -1),
         (resolution, 1),
     )
+    # The course's own index is REDUCED into the course count, so
+    # the last course and the first are the same course.
+    #
+    # The face's grain rides the course's own offset, and the offset
+    # was the course's index - and the index at the last course is
+    # not the index at the first, so the wrap joined two courses
+    # with different grain: the brick's horizontal seam read 1.875x,
+    # as big as the biggest feature.
     course_of = numpy.tile(
-        numpy.floor((pixel_axis + 0.5) * courses / resolution - 0.5)
-        .astype(numpy.int32)
-        .reshape(-1, 1),
+        numpy.mod(
+            numpy.floor((pixel_axis + 0.5) * courses / resolution - 0.5).astype(
+                numpy.int32
+            ),
+            courses,
+        ).reshape(-1, 1),
         (1, resolution),
     )
 
