@@ -43,6 +43,7 @@ _STRUCTURE_PATTERNS = (
     ("metal", "metal"),
     ("steel", "metal"),
     ("brick", "brick"),
+    ("bricks", "brick"),
     ("tiles", "brick"),
     ("tile", "brick"),
 )
@@ -100,6 +101,27 @@ _FLAT_PATTERNS = (
 # A WALLPAPER is a flat sheet with a PRINTED design on it, and the
 # design is a set of flat blocks of colour - a chequer, a stripe, a
 # motif. It is the FLAT sheet with the TILE's structure on it.
+# The kinds a word names OUTRIGHT, and they are read before the
+# structures.
+#
+# A "parquet" is a parquet and not a plank, and a "corrugated steel"
+# is a pressed metal sheet and not a road with markings on it.
+_SPECIFIC_KINDS = (
+    ("parquet", "parquet"),
+    ("carpet", "carpet"),
+    ("leather", "leather"),
+    ("wallpaper", "wallpaper"),
+    ("herringbone", "herringbone"),
+    ("basketweave", "herringbone"),
+    ("roofing", "roof"),
+    ("shingle", "roof"),
+    ("woven", "woven"),
+    ("weave", "woven"),
+    ("textile", "woven"),
+    ("cloth", "woven"),
+    ("markings", "markings"),
+)
+
 _COURSE_PATTERNS = (
     ("parquet", "parquet"),
     ("planks", "parquet"),
@@ -125,7 +147,6 @@ _COURSE_PATTERNS = (
     ("markings", "markings"),
     ("lane", "markings"),
     ("dashed", "markings"),
-    ("striped", "markings"),
 )
 
 _MATERIAL_PATTERNS = (
@@ -168,7 +189,11 @@ def pattern_for_description(description: str) -> str:
     is the order the decision is made in: the structure first, then
     the material.
     """
-    words = description.lower()
+    # The words are WHOLE words.
+    #
+    # They were a substring test, and "corrugated" contains "rug" -
+    # so the truth's own corrugated steel came out as a CARPET.
+    words = set(description.lower().replace(",", " ").split())
     # The SPECIFIC kinds are read first: a "parquet floor" is a
     # parquet and not a plank, and a "carpet" is a carpet and not a
     # fabric.
@@ -178,10 +203,28 @@ def pattern_for_description(description: str) -> str:
     # laid in blocks, came out as a plain grain, and the truth's own
     # parquet measures a row-to-column change ratio of 0.24 while a
     # grain is nowhere near that.
-    for word, pattern in _COURSE_PATTERNS:
+    # The SPECIFIC kinds are read first, and the structures after.
+    #
+    # The course kinds were read first, and they took the word
+    # "striped" - so the truth's own corrugated steel, which is a
+    # pressed metal sheet, came out as a road with markings on it.
+    #
+    # And the structures were read first, and they took the word
+    # "plank" - so a parquet floor, which is a wood floor laid in
+    # blocks, came out as a plain grain, and the truth's own parquet
+    # measures a row-to-column change ratio of 0.24 while a grain is
+    # nowhere near that.
+    #
+    # So the two are read in two passes: the course kinds' SPECIFIC
+    # words - the ones that name a kind outright - and then the
+    # structures, and then the course kinds' general words.
+    for word, pattern in _SPECIFIC_KINDS:
         if word in words:
             return pattern
     for word, pattern in _STRUCTURE_PATTERNS:
+        if word in words:
+            return pattern
+    for word, pattern in _COURSE_PATTERNS:
         if word in words:
             return pattern
     for word, pattern in _FLAT_PATTERNS:
