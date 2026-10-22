@@ -319,6 +319,9 @@ LINE_CONTRAST = 0.030
 # Below it the surface is a GLAZED one - a tile - and its cells take
 # their tone from the stain and not from a hash.
 BRICK_FACE_GRAIN_CUTOFF = 0.25
+# How much of its ramp a glazed TILE's tone uses: the truth's tiles
+# are near-uniform and their spread is the grout's.
+TILE_TONE_FRACTION = 0.05
 
 # How much of the DRIFT is CONTINUOUS across a tile, and not the
 # tile's own flat tone.
@@ -491,6 +494,7 @@ def write_procedural_base_color(
     brick_face_strength: float = 0.0,
     drift_strength: float = 0.0,
     brick_aspect: float | None = None,
+    brick_staggered: bool = True,
     metal_horizontal: bool = False,
     metal_banded: bool = True,
     metal_envelope_factor: float = 1.0,
@@ -626,10 +630,15 @@ def write_procedural_base_color(
         # A BRICK's face is a WORKED surface, and the field returns
         # it: the truth's own Bricks113A measures a spread of 0.0716
         # on the face alone - nearly the whole map's.
+        # A TILE floor is an aligned grid, and its count is half the
+        # measure's features - a brick wall is staggered courses.
         cell, edge, grid, brick_face = pattern.brick_field(
             resolution,
-            cells,
+            cells
+            if brick_staggered
+            else max(1, round(cells / pattern.TILE_FEATURES_PER_TILE)),
             aspect=brick_aspect if brick_aspect is not None else pattern.BRICK_ASPECT,
+            staggered=brick_staggered,
         )
     elif kind == "parquet":
         # A PARQUET is the brick's courses with a wood's palette and
@@ -1246,9 +1255,16 @@ def write_procedural_base_color(
         # field is the stain that runs over it.
         drift = pattern.slow_variation(resolution, pattern.BRICK_FACE_DRIFT_CELLS)
         drift_at_cell = _cell_mean(drift, cell, cell_width, cell_height)
+        # And a glazed tile's tone is a SMALL part of its ramp: the
+        # truth's own Tiles107 is near-uniform white tiles with a
+        # hairline grout, so its spread is the grout's. The tone ran
+        # the whole ramp, the spread correction then pressed the grout
+        # flat, and the floor came out as blotches of 2x2 tiles with
+        # the grout barely there.
         for channel in range(3):
             ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
             tone = drift_at_cell + (drift - drift_at_cell) * BRICK_FACE_DRIFT_CONTINUITY
+            tone = 0.5 + (tone - 0.5) * TILE_TONE_FRACTION
             stone[:, :, channel] = ramp[
                 _np.clip((tone * 255).astype(numpy.int32), 0, 255)
             ]

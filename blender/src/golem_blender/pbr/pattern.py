@@ -1414,7 +1414,21 @@ def cell_and_edge(
     return nearest, edge, (cells, cells)
 
 
-def brick_field(resolution: int, cells: int, aspect: float = BRICK_ASPECT):
+# How many of the feature measure's features a TILE carries.
+#
+# The measure's count is not the tile count: counted on the truth's own
+# grout lines, Tiles107 carries 7 tiles across at 26 features, Tiles040
+# 7 at 10, Tiles139 and Tiles141 5 at 10 - two features a tile at the
+# median.
+TILE_FEATURES_PER_TILE = 2.0
+
+
+def brick_field(
+    resolution: int,
+    cells: int,
+    aspect: float = BRICK_ASPECT,
+    staggered: bool = True,
+):
     """Courses of bricks: the cell each sample is in, and the distance to
     its mortar.
 
@@ -1529,7 +1543,9 @@ def brick_field(resolution: int, cells: int, aspect: float = BRICK_ASPECT):
     # count, so it comes back to where it started at the wrap - and
     # the courses are centred, so the index can be NEGATIVE, which
     # Python's modulo handles and a plain parity would not.
-    offset = ((course_index % courses) % 2) * 0.5
+    # A TILE's courses are not offset: a tile floor is an aligned grid,
+    # and the half-brick offset is what makes a wall a wall.
+    offset = ((course_index % courses) % 2) * (0.5 if staggered else 0.0)
 
     # The sample's position within its brick, along the brick's own
     # width, with the course's offset applied.

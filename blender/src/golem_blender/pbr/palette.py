@@ -908,6 +908,45 @@ METAL_COAT_DARKENING = 0.73
 
 # The metals that are a COLOUR and not a grey, in the order they win:
 # a gold sheet is gold whatever else it is called.
+# The words that name a COLOUR and nothing else - not a material, not
+# a lightness. The hue tables carry a hue for nearly every word, and a
+# rule that asks "which colours does this name" has to ask this list.
+HUE_COLOUR_WORDS = frozenset(
+    {
+        "white",
+        "black",
+        "grey",
+        "gray",
+        "beige",
+        "blue",
+        "brown",
+        "cream",
+        "green",
+        "orange",
+        "pink",
+        "purple",
+        "red",
+        "tan",
+        "yellow",
+        "gold",
+        "silver",
+        "copper",
+        "bronze",
+        "brass",
+        "charcoal",
+        "slate",
+        "terracotta",
+        "rust",
+        "rusty",
+        "lime",
+        "cobalt",
+        "ivory",
+        "olive",
+        "navy",
+        "teal",
+    }
+)
+
 COLOURED_METAL_WORDS = ("gold", "copper", "bronze", "brass")
 
 METAL_COLOURS: dict[str, float] = {
@@ -3198,6 +3237,17 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
         coloured = [word for word in COLOURED_METAL_WORDS if word in words_set]
         if coloured and HUES.get(coloured[0]) is not None:
             return HUES[coloured[0]]
+    # And a thing whose only COLOUR word is "white" is white.
+    #
+    # The descriptions are alphabetical, so the first word with a hue
+    # was usually a material's - "brick" before "white" - and the
+    # truth's own Bricks060, a "brick, bricks, bright, light, wall,
+    # white" at a neutral 0.341, 0.332, 0.326, came out a saturated
+    # peach. Measured over the four sets' 159 materials: eleven change,
+    # the mean hue error falls from 0.0654 to 0.0647, and the worst of
+    # the white-only materials from 0.118 to 0.037.
+    if words_set & HUE_COLOUR_WORDS == {"white"}:
+        return HUES["white"]
     if colours and named:
         colour_counts = min(MATERIAL_WORD_COUNTS.get(word, 99) for word in colours)
         material_counts = min(MATERIAL_WORD_COUNTS.get(word, 99) for word in named)
@@ -3230,6 +3280,13 @@ def _spread_of(word: str) -> float:
     KeyError: the lookup went straight to the table.
     """
     return SPREADS.get(word, DEFAULT_SPREAD)
+
+
+# The words that say how LIGHT a surface is, and not how much it
+# varies.
+SPREAD_LIGHTNESS_WORDS = frozenset(
+    {"bright", "light", "dark", "white", "black", "pale"}
+)
 
 
 def spread_for_description(description: str) -> float:
@@ -3282,6 +3339,24 @@ def spread_for_description(description: str) -> float:
         for word in words
         if word in SPREAD_SPREAD_WORD_COUNTS and word not in SPREAD_PATTERN_WORDS
     ]
+    # And a LIGHTNESS word steps aside when a MATERIAL word is named.
+    #
+    # "bright", "light", "white" say how LIGHT a surface is and not how
+    # much it varies, and the specificity rule let them win: "bright"
+    # names one fitted material - a polished marble at 0.0174 - and so
+    # the truth's own Bricks060, a "brick, bricks, bright, light, wall,
+    # white" whose spread is 0.0639, was drawn at 0.0174 and came out a
+    # flat field with no bricks in it.
+    #
+    # Measured on the 72 materials OUTSIDE the wide set the tables are
+    # fitted on - a true holdout - the mean spread error falls from
+    # 0.4085 to 0.4060, and over all 159 from 0.2977 to 0.2946. Two
+    # stricter rules were measured and are NOT taken: dropping the
+    # lightness words outright (holdout 0.4323 - a marble that names no
+    # material loses its only signal) and refusing a word fitted on one
+    # material (holdout 0.5384 - those words carry real signal).
+    if any(word in SPREAD_MATERIAL_WORDS for word in named):
+        named = [word for word in named if word not in SPREAD_LIGHTNESS_WORDS]
     # A METAL's own spread is fitted WITHIN the metals, and the
     # general table cannot say it.
     #
@@ -3435,6 +3510,17 @@ def brick_aspect_for_description(description: str) -> float:
     if words & {"tile", "tiles"}:
         return 1.0
     return BRICK_ASPECT
+
+
+def brick_staggered_for_description(description: str) -> bool:
+    """Whether the courses are offset by half a brick.
+
+    A brick wall's courses are; a TILE floor's are not - the truth's
+    own tiles are an aligned grid with a hairline grout, and the brick
+    path laid them as a staggered wall.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    return not (words & {"tile", "tiles", "tiled"} and not words & {"brick", "bricks"})
 
 
 def metal_envelope_factor_for_description(description: str) -> float:
@@ -3667,6 +3753,7 @@ def palette_for_description(
         "target_value": value,
         "pebble_factor": pebble_factor_for_description(description),
         "brick_aspect": brick_aspect_for_description(description),
+        "brick_staggered": brick_staggered_for_description(description),
         "metal_horizontal": metal_direction_for_description(description),
         "metal_banded": metal_is_banded(description),
         "metal_envelope_factor": metal_envelope_factor_for_description(description),
