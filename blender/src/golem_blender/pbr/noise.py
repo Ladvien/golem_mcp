@@ -136,6 +136,7 @@ def fbm_2d_value(
     seed: int = 0,
     folds: int = 0,
     size_y: int | None = None,
+    size_y_grows: bool = True,
 ):
     """The fBm of the value noise, in 0..1.
 
@@ -158,6 +159,11 @@ def fbm_2d_value(
     x sample is in units of the x lattice and the y sample in units
     of the y lattice, so a field with a period of one cell in x and
     sixty-four in y is a set of vertical stripes.
+
+    `size_y_grows` says whether the y period grows with the octave.
+    It does by default, and a RECTANGULAR lattice that grows becomes
+    square again at the third octave - and a weave needs it held,
+    or the cloth's broad bands come back.
     """
     import numpy
 
@@ -183,7 +189,17 @@ def fbm_2d_value(
         # map's seam read seventy-five times the truth's - the wood's
         # seam read 75.41x and the second wood's 25.24x.
         lattice = size * (lacunarity**octave)
-        lattice_y = lattice if size_y is None else size_y * (lacunarity**octave)
+        # The y lattice grows with the octave UNLESS the y period is
+        # held: a RECTANGULAR lattice is rectangular at every octave,
+        # and a y period that grows with the octave becomes square
+        # again at the third one.
+        #
+        # And a weave needs it held: the coarse axis must stay coarse
+        # or the cloth's broad bands come back.
+        if size_y is None:
+            lattice_y = lattice
+        else:
+            lattice_y = size_y * (lacunarity**octave if size_y_grows else 1)
         # The octave's own SCALE, and it is the SAME on both axes: a
         # finer octave samples both coordinates further along, and
         # both wrap at a correspondingly larger period.

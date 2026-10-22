@@ -145,6 +145,17 @@ SCATTER_DRIFT_SHARE = 0.55
 # fibre and 0.49 in the envelope. So the block's grain is the same
 # share.
 PARQUET_FIBRE_STRENGTH = 0.5
+# How deep a WOVEN cloth's threads are, as a fraction of the cloth's
+# own colour.
+#
+# The truth's own fabrics carry a spread of 0.08 to 0.13, and a
+# thread is a hard edge - so the threads are most of the surface's
+# variation.
+#
+# It was 0.55 and the cloth came out as a bold plaid, and the
+# truth's own Fabric030 is a fine twill whose threads are barely
+# there.
+WOVEN_THREAD_DEPTH = 0.22
 # How much of the surface's spread a CARPET's pile carries.
 #
 # The truth's own carpet measures a spread of 0.0301 and its pile IS
@@ -181,6 +192,7 @@ PROCEDURAL_COLOUR_KINDS = (
     "leather",
     "wallpaper",
     "markings",
+    "woven",
 )
 # How wide a LINE is, as a fraction of the distance to the nearest
 # line. A grain's rings and a metal's grain are soft, and the truth's
@@ -436,6 +448,16 @@ def write_procedural_base_color(
             resolution,
             cells,
             aspect=brick_aspect if brick_aspect is not None else pattern.PARQUET_ASPECT,
+        )
+    elif kind == "woven":
+        # A WOVEN cloth is a CROSSHATCH, and the lane's answer for a
+        # fabric was a VORONOI - whose cells are large flat pieces
+        # with hard borders - so a fabric came out as a field of
+        # pebbles.
+        cell, edge, grid, fibre = pattern.woven_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
         )
     elif kind == "markings":
         # A ROAD MARKING is painted GEOMETRY on a surface, and the
@@ -958,6 +980,23 @@ def write_procedural_base_color(
         image_luma = (colour * weights).sum(axis=2)
         image_hue = colour / _np.maximum(image_luma[:, :, _np.newaxis], 1e-6)
         colour = _np.clip(colour + image_hue * drift[:, :, _np.newaxis], 0.0, 1.0)
+    elif kind == "woven":
+        # A WOVEN cloth is a CROSSHATCH of two thread fields, and it
+        # is drawn as a WEAR and not as a joint.
+        #
+        # The joint's falloff softens a hard edge, and a thread is a
+        # hard edge - so the weave came out as a haze where the truth
+        # has a crosshatch.
+        #
+        # And the cloth's own base is the palette's colour, and not
+        # a cell's hash: a weave has no cells to hash.
+        base = numpy.array(stone_dark_rgb, dtype=numpy.float32).reshape(1, 1, 3)
+        threads = numpy.clip(fibre, 0.0, 1.0) if fibre is not None else None
+        if threads is None:
+            threads = numpy.zeros_like(edge)
+        reach = max(1e-6, float(threads.max()))
+        threads = threads / reach
+        colour = base * (1.0 - WOVEN_THREAD_DEPTH * threads)[:, :, numpy.newaxis]
     elif kind == "markings":
         # A ROAD MARKING is painted GEOMETRY, and it is drawn OVER
         # the road - in the paint's own colour, which is not the

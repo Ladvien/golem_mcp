@@ -354,6 +354,27 @@ MARKINGS_PLACES = 3
 MARKINGS_WIDTH = 0.05
 MARKINGS_DASHES = 1.0
 MARKINGS_SEED = 21
+# A WOVEN cloth's own octaves, and its threads are ridged: a thread
+# is a ridge and not a smooth wave.
+WOVEN_OCTAVES = 3
+# The COARSE axis' period, in cells, and it is SMALL.
+#
+# The coarse axis is the one the threads do NOT run along, and it
+# carries a SLOW variation: a cloth's threads lie in a direction and
+# the cloth's own unevenness is at a much larger scale.
+#
+# It was TWO cells, and a two-cell period over a thousand and
+# twenty-four pixels is a band five hundred pixels wide - so the
+# cloth came out as a plaid of broad bands and not a twill.
+#
+# And it was ONE cell, and a one-cell period makes the field
+# CONSTANT along that axis - so half the weave had no structure at
+# all.
+#
+# So the coarse period is a small but real number of cells - eight -
+# and it is HELD across the octaves so the cloth's broad bands do
+# not come back.
+WOVEN_COARSE_PERIOD = 8
 # A CARPET's pile, as a multiple of the surface's own feature count.
 #
 # The truth's own carpet is almost flat - a spread of 0.029 over
@@ -1911,6 +1932,101 @@ def parquet_field(
     grain = _bilinear(coarse, grid_row, grid_column)
     fibre = numpy.abs(grain - 0.5) * 2.0
     return cell, edge, (across, courses), fibre
+
+
+def woven_field(
+    resolution: int,
+    cells: int,
+    octaves=DEFAULT_LINE_OCTAVES,
+    lines_per_cell: int = 1,
+):
+    """A WOVEN cloth: a CROSSHATCH of two fine directional fields.
+
+    A fabric is not a field of cells. It is a weave: threads running
+    one way and threads running the other, and the eye reads the
+    crossing.
+
+    Measured on the truth's own: Fabric030 measures four hundred and
+    twelve features across and forty-four down, with a row-to-column
+    change ratio of 1.39 - so the threads run ACROSS the surface and
+    the weave is fine in one direction and coarse in the other. And
+    Fabric061 and Fabric066 measure a few hundred in both
+    directions, with a spread of 0.13.
+
+    The lane's answer for a fabric was a VORONOI, and a Voronoi's
+    cells are large flat pieces with hard borders - so a fabric came
+    out as a field of pebbles.
+
+    So the weave is two fields: one that varies fast across and
+    slowly down, and one that varies fast down and slowly across,
+    and the sum is the cloth.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
+
+    # The weave's own scale, and it is FINE: the truth's own fabric
+    # measures hundreds of features across, and a cell two pixels
+    # wide is degenerate.
+    #
+    # The lattice is FOUR times the surface's own feature count: the
+    # truth's Fabric030 measures forty-four features across and its
+    # threads come every two pixels, and the feature measure counts
+    # the THREADS and not the weave's envelope.
+    lattice = _power_of_two_nearest(max(4, cells * 4))
+    while lattice > 1 and resolution % lattice != 0:
+        lattice //= 2
+    while lattice > 1 and lattice * 2 > resolution:
+        lattice //= 2
+
+    # The two THREADS, and each is a field that is fine in one
+    # direction and coarse in the other.
+    #
+    # The lattice's x period is MANY and its y period is ONE for the
+    # first, and the other way round for the second - so the threads
+    # run across and down respectively.
+    # A thread that runs DOWN the image is a ridge at a fixed x, and
+    # a ridge comes from the field oscillating in x - so the field
+    # that makes the DOWN threads has MANY cells across and ONE
+    # along, and the field that makes the ACROSS threads is the other
+    # way round.
+    #
+    # The two were the other way round, and a field with a period of
+    # ONE cell along an axis is CONSTANT along it - so half of the
+    # weave had no structure at all and the cloth came out as a
+    # coarse haze.
+    down = noise.fbm_2d_value(
+        sample_x * lattice,
+        sample_y * WOVEN_COARSE_PERIOD,
+        size=lattice,
+        octaves=WOVEN_OCTAVES,
+        seed=0,
+        size_y=WOVEN_COARSE_PERIOD,
+        size_y_grows=False,
+    )
+    across = noise.fbm_2d_value(
+        sample_x * WOVEN_COARSE_PERIOD,
+        sample_y * lattice,
+        size=WOVEN_COARSE_PERIOD,
+        octaves=WOVEN_OCTAVES,
+        seed=1,
+        size_y=lattice,
+        size_y_grows=False,
+    )
+    # The weave is the two of them TOGETHER, and they are ridged: a
+    # thread is a ridge and not a smooth wave.
+    across = numpy.abs(across - 0.5) * 2.0
+    down = numpy.abs(down - 0.5) * 2.0
+    edge = numpy.clip(across * 0.5 + down * 0.5, 0.0, 1.0)
+    return (
+        numpy.zeros((resolution, resolution), dtype=numpy.int32),
+        edge,
+        (lattice, lattice),
+        edge,
+    )
 
 
 def markings_field(
