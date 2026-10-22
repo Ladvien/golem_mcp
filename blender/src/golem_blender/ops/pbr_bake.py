@@ -102,6 +102,7 @@ def bake_orm_map(
     ao_distance_m: float = DEFAULT_AO_DISTANCE_M,
     roughness: float = DEFAULT_ROUGHNESS,
     metallic: float = DEFAULT_METALLIC,
+    description: str = "",
 ) -> str:
     """Bake an ambient-occlusion map and pack it with roughness and metallic into an ORM file.
 
@@ -110,6 +111,22 @@ def bake_orm_map(
     is how far the occlusion reaches; it is applied to the world's
     ambient-occlusion setting for the bake and restored afterwards.
     Writes the file at `output_path` and returns its path.
+
+    `description` says what the surface IS, and the roughness and the
+    metallic come from it - and that is the whole point of the two
+    constants.
+
+    Blender 5.2 has NO METALLIC BAKE PASS: the pass enum is
+    COMBINED, AO, SHADOW, POSITION, NORMAL, UV, ROUGHNESS, EMIT,
+    ENVIRONMENT, DIFFUSE, GLOSSY, TRANSMISSION, and there is no
+    metallic in it. So a metal's metallic channel cannot be baked -
+    it has to be COMPUTED, and the description is what says whether
+    the surface is one.
+
+    And the roughness is not a constant either: the truth's own
+    roughness runs from 0.034 on a polished marble to 0.919 on a
+    cloth, a twenty-fivefold range, and a constant 0.60 is wrong for
+    almost every material.
     """
     import bpy
     import numpy
@@ -118,6 +135,13 @@ def bake_orm_map(
 
     mesh_object = object_by_name(object_name, "MESH")
     _require_uv_layer(mesh_object)
+
+    if description:
+        from golem_blender.pbr.material import orm_for_description
+
+        described = orm_for_description(description)
+        roughness = described["roughness"]
+        metallic = described["metallic"]
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -230,11 +254,17 @@ def assign_pbr_constants(
     name: str,
     roughness: float = DEFAULT_ROUGHNESS,
     metallic: float = DEFAULT_METALLIC,
+    description: str = "",
 ) -> str:
     """Write flat roughness and metallic into the material's Principled BSDF; returns the material name.
 
     The constant-channel case: the G and B of the ORM have a defined
     source even when no ORM image exists. Idempotent by material name.
+
+    `description` says what the surface IS, and the two constants come
+    from it - and a metal's metallic is not a constant at all: Blender
+    5.2 has no metallic bake pass, so the channel has to be computed,
+    and the description is what says whether the surface is one.
     """
     import bpy
 
@@ -242,6 +272,13 @@ def assign_pbr_constants(
     from golem_blender.ops.material_nodes import _ensure_principled
 
     mesh_object = object_by_name(object_name, "MESH")
+
+    if description:
+        from golem_blender.pbr.material import orm_for_description
+
+        described = orm_for_description(description)
+        roughness = described["roughness"]
+        metallic = described["metallic"]
 
     material = bpy.data.materials.get(name)
     if material is None:
