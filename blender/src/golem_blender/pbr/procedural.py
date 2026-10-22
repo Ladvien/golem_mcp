@@ -288,6 +288,45 @@ DEFAULT_LINES_PER_CELL = 8
 LINE_CONTRAST = 0.030
 
 
+# The BRICK's own FACE is a GRAIN, and above this share it is one.
+#
+# Below it the surface is a GLAZED one - a tile - and its cells take
+# their tone from the stain and not from a hash.
+BRICK_FACE_GRAIN_CUTOFF = 0.25
+
+# How much of the DRIFT is CONTINUOUS across a tile, and not the
+# tile's own flat tone.
+#
+# A stain crosses the joints and does not step at them: the truth's
+# own Tiles141 carries a drift of 0.0349 and a period of a hundred
+# and ninety-two pixels, so five features cross a wall of tiles, and
+# a per-tile flat tone would step at every joint.
+BRICK_FACE_DRIFT_CONTINUITY = 0.7
+
+
+def _cell_mean(field, cell, width: int, height: int):
+    """The field's own MEAN over each cell.
+
+    A cell is a set of pixels, and the field's mean over that set is
+    the cell's own value. The cell at the pattern's edge and the cell
+    at its start are the SAME cell - the index is reduced into the
+    pattern's grid - so the two are the same value and the wrap
+    shows no step.
+
+    The sums are accumulated by the cell's reduced index, so it is
+    one pass over the image and not one per cell.
+    """
+    import numpy as _np
+
+    count = max(1, width) * max(1, height)
+    reduced = _np.mod(cell, count)
+    flat = reduced.reshape(-1)
+    sums = _np.bincount(flat, weights=field.reshape(-1), minlength=count)
+    counts = _np.bincount(flat, minlength=count)
+    means = sums / _np.maximum(counts, 1)
+    return means[flat].reshape(field.shape)
+
+
 def _cell_hash(cell, width: int, height: int):
     """A colour's random value, from the cell's position in the pattern.
 
@@ -370,6 +409,8 @@ def write_procedural_base_color(
     pebble_factor: float = 1.0,
     curvature_strength: float = 0.0,
     scratch_strength: float = 0.0,
+    brick_face_strength: float = 0.0,
+    drift_strength: float = 0.0,
     brick_aspect: float | None = None,
     metal_horizontal: bool = False,
     metal_banded: bool = True,
@@ -433,6 +474,7 @@ def write_procedural_base_color(
     cell_width = cells
     cell_height = cells
     curvature_field = None
+    brick_face = None
     if kind == "scattered":
         # A loose ground is SCATTERED stones, not a Voronoi.
         #
@@ -474,7 +516,10 @@ def write_procedural_base_color(
         curvature_field = stones.get("curvature")
         grid = (cells, cells)
     elif kind == "brick":
-        cell, edge, grid = pattern.brick_field(
+        # A BRICK's face is a WORKED surface, and the field returns
+        # it: the truth's own Bricks113A measures a spread of 0.0716
+        # on the face alone - nearly the whole map's.
+        cell, edge, grid, brick_face = pattern.brick_field(
             resolution,
             cells,
             aspect=brick_aspect if brick_aspect is not None else pattern.BRICK_ASPECT,
@@ -831,6 +876,37 @@ def write_procedural_base_color(
         stone[:, :, channel] = ramp[
             _np.clip((hashed * 255).astype(numpy.int32), 0, 255)
         ]
+    if kind == "brick" and brick_face_strength <= BRICK_FACE_GRAIN_CUTOFF:
+        # A TILE is a GLAZED surface, and its cells do not each have
+        # their own random tone - they are all one firing, and what
+        # varies across them is the STAIN.
+        #
+        # The truth's own Tiles141 measures a per-block tone spread of
+        # 0.0336, so its tiles DO differ - and a hundred-and-twenty-
+        # eight-pixel blur of it still carries 0.0349, a fifth of the
+        # map's variance. So the difference between one tile and the
+        # next is a SLOW field crossing the wall and not a hash per
+        # cell: the lane's hash gave every tile its own tone and the
+        # wall came out as a sharp chequerboard where the truth's is
+        # a soft stain.
+        #
+        # So the cell's tone is the DRIFT, and the drift is the
+        # surface's own slow field - and it is the drift's MEAN over
+        # the cell, so a tile is one tone across its whole face and
+        # the stain crosses the wall.
+        #
+        # And the drift is added CONTINUOUSLY on top of that, so the
+        # stain crosses the joints and does not step at them: the
+        # cell's own mean is the tile's tone and the drift's own
+        # field is the stain that runs over it.
+        drift = pattern.slow_variation(resolution, pattern.BRICK_FACE_DRIFT_CELLS)
+        drift_at_cell = _cell_mean(drift, cell, cell_width, cell_height)
+        for channel in range(3):
+            ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
+            tone = drift_at_cell + (drift - drift_at_cell) * BRICK_FACE_DRIFT_CONTINUITY
+            stone[:, :, channel] = ramp[
+                _np.clip((tone * 255).astype(numpy.int32), 0, 255)
+            ]
     if kind == "scattered":
         # The STONES' own tone is the matrix's mottle, and the matrix
         # between them is dark.
@@ -1004,7 +1080,32 @@ def write_procedural_base_color(
         if surface_amplitude > 0.0:
             surface = surface / surface_amplitude * 2.0 - 1.0
         wear = surface * min(variation, 1.0) * ramp_spread * SURFACE_SHARE
-    if curvature_field is not None:
+    if brick_face is not None:
+        # A BRICK's FACE is its own surface, and it is the bulk of
+        # the map's variation: the truth's own Bricks113A measures a
+        # spread of 0.0716 on the face alone.
+        #
+        # The generic mottle was the wear, and a mottle is a fine
+        # noise and not a worked stone - so the brick came out as a
+        # flat colour in a frame.
+        surface = numpy.clip(brick_face, 0.0, 1.0)
+        surface = surface / max(1e-6, float(surface.max())) * 2.0 - 1.0
+        wear = surface * brick_face_strength * ramp_spread
+        # And the surface's SLOW DRIFT, which a TILE carries and a
+        # BRICK does not: a tile is a large flat surface and it
+        # stains.
+        if drift_strength > 0.0:
+            # The DRIFT is at the SURFACE's own scale, and it is a
+            # slow field: the truth's own Tiles141's drift has a
+            # period of a hundred and ninety-two pixels, so five
+            # features across a thousand and twenty-four.
+            #
+            # And it carries a quarter of the map's VARIANCE - the
+            # truth's is 0.22 - so it is a major part of the surface
+            # and not a tint on it.
+            drift = pattern.slow_variation(resolution, pattern.BRICK_FACE_DRIFT_CELLS)
+            wear = wear + (drift - 0.5) * drift_strength * ramp_spread
+    elif curvature_field is not None:
         # A ROCK's FACETS, and they are the CURVATURE.
         #
         # The curvature is the map that gives a hand-painted edge

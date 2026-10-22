@@ -322,6 +322,23 @@ DEFAULT_CELL_FRACTION = 1.0
 # thirds as wide as it is tall. The three-to-one default put 48
 # bricks across where the truth shows 6.
 BRICK_ASPECT = 1.34
+# A BRICK's own FACE: the lattice of its grain, how far the warp
+# displaces it, the grain's own frequency, and the finer tooth.
+#
+# The truth's own Bricks113A measures a spread of 0.0716 on the face
+# alone - nearly the whole map's - and its blur profile decays from
+# 0.068 at a two-pixel blur to 0.0087 at a hundred-and-twenty-eight.
+# So the face has structure at EVERY scale, and a flat face has none.
+BRICK_FACE_LATTICE = 8
+BRICK_FACE_WARP = 0.06
+BRICK_FACE_WARP_STEP = 0.1
+BRICK_FACE_FREQUENCY = 3.0
+BRICK_FACE_TOOTH = 4
+# The face's own DRIFT, and the drift's own cells: the truth's own
+# Tiles141's drift has a period of a hundred and ninety-two pixels,
+# so five features across a thousand and twenty-four.
+BRICK_FACE_DRIFT = 0.35
+BRICK_FACE_DRIFT_CELLS = 5
 # A PARQUET's block is much wider than it is tall: a parquet floor is
 # laid in long boards.
 #
@@ -1456,7 +1473,119 @@ def brick_field(resolution: int, cells: int, aspect: float = BRICK_ASPECT):
     across_image = numpy.tile(horizontal.reshape(1, -1), (resolution, 1))
     shifted = numpy.floor(across_image + offset_down).astype(numpy.int32)
     cell = course_down * row_width + (shifted % row_width)
-    return cell.astype(numpy.int32), edge, (row_width, courses)
+    # The brick's own FACE, and it is a WORKED surface.
+    #
+    # A brick is a piece of stone that was cut and worked, and its
+    # face carries the grain of the stone and the marks of the
+    # working - a swirl, a scrape, a direction of its own.
+    #
+    # The truth's own Bricks113A measures a spread of 0.0716 on the
+    # face alone - nearly the whole map's - and its blur profile
+    # decays from 0.068 at a two-pixel blur to 0.0087 at a
+    # hundred-and-twenty-eight. So the face has structure at EVERY
+    # scale, and the lane's face had none: the whole of the lane's
+    # variation was in the per-brick tone and the face was flat.
+    #
+    # So the face is a DOMAIN-WARPED field, and the warp is what
+    # makes the grain SWIRL - Material Maker's `warp` node, MIT
+    # licensed, and the same one the pebble field uses.
+    #
+    # And the sample's position is the BRICK'S OWN, so each brick's
+    # swirl is its own and a wall of them reads as a wall of worked
+    # stones and not as one field.
+    from golem_blender.pbr import noise_perlin, warp
+
+    # The sample's own position WITHIN its brick, in the brick's
+    # units - and it is a full grid, because the two axes have their
+    # own scales: the course is one brick tall and the brick is
+    # `aspect` units wide.
+    #
+    # The brick's index and the position within it, across the
+    # image, and the course's down it - and each is TILED to the
+    # full grid.
+    # The face is a full (resolution, resolution) grid, because the
+    # writer's image is square.
+    #
+    # The brick's own position WITHIN the brick, in brick units, is
+    # what the grain follows - and it is the image's own pixel
+    # divided by the brick's own size, so it is a full grid.
+    pixel_axis = numpy.arange(resolution, dtype=numpy.float64)
+    within_x = ((pixel_axis + 0.5) * row_width / resolution - 0.5) - numpy.floor(
+        (pixel_axis + 0.5) * row_width / resolution - 0.5
+    )
+    within_y = ((pixel_axis + 0.5) * courses / resolution - 0.5) - numpy.floor(
+        (pixel_axis + 0.5) * courses / resolution - 0.5
+    )
+    within_x = numpy.tile(within_x.reshape(1, -1), (resolution, 1))
+    within_y = numpy.tile(within_y.reshape(-1, 1), (1, resolution))
+    # And the BRICK's and the COURSE's own indices, so each brick's
+    # swirl is its own.
+    brick_of = numpy.tile(
+        numpy.floor((pixel_axis + 0.5) * row_width / resolution - 0.5)
+        .astype(numpy.int32)
+        .reshape(1, -1),
+        (resolution, 1),
+    )
+    course_of = numpy.tile(
+        numpy.floor((pixel_axis + 0.5) * courses / resolution - 0.5)
+        .astype(numpy.int32)
+        .reshape(-1, 1),
+        (1, resolution),
+    )
+
+    # The face's own HEIGHT, and it is the brick's own: a perlin
+    # over the brick's own position, and so every brick has a swirl
+    # of its own.
+    height = noise_perlin.perlin_2d(
+        within_x * BRICK_FACE_LATTICE + course_of * 0.37,
+        within_y * BRICK_FACE_LATTICE + brick_of * 0.41,
+        period=BRICK_FACE_LATTICE,
+        seed=11,
+    )
+    height_reach = max(1e-6, float(height.max() - height.min()))
+    height = (height - float(height.min())) / height_reach
+    warped_x, warped_y = warp.warped_coordinates(
+        within_x,
+        within_y,
+        height,
+        amount=BRICK_FACE_WARP,
+        step=BRICK_FACE_WARP_STEP,
+        iterations=1,
+    )
+    # The face's own GRAIN, and it is the warped field's own value:
+    # a ridged one, so the grain is a set of lines and not a cloud.
+    grain = noise_perlin.perlin_2d(
+        warped_x * BRICK_FACE_FREQUENCY,
+        warped_y * BRICK_FACE_FREQUENCY,
+        period=BRICK_FACE_LATTICE,
+        seed=13,
+    )
+    grain_reach = max(1e-6, float(grain.max() - grain.min()))
+    grain = (grain - float(grain.min())) / grain_reach
+    # And the face's own TOOTH, at a finer scale than the grain: a
+    # worked stone is smooth and pitted at once.
+    tooth = surface_texture(resolution, BRICK_FACE_LATTICE * BRICK_FACE_TOOTH)
+    tooth_reach = max(1e-6, float(tooth.max() - tooth.min()))
+    tooth = (tooth - float(tooth.min())) / tooth_reach
+    face = 0.65 * grain + 0.35 * tooth
+    # And the face's own DRIFT, at the SURFACE's scale.
+    #
+    # The truth's own Tiles141 carries a spread of 0.0349 at a
+    # hundred-and-twenty-eight-pixel blur - a fifth of the whole map -
+    # and its drift's period is a hundred and ninety-two pixels, so
+    # five features across. A tile is a large flat surface and it
+    # STAINS, and the stain is the drift.
+    #
+    # And the truth's own Bricks113A carries 0.0087 at the same
+    # blur - a ninth of the tile's - because a brick is a mosaic of
+    # worked pieces and the pieces do not stain together.
+    #
+    # So the drift is the TILE's and the brick's face is the
+    # pieces, and the two are different surfaces.
+    drift = slow_variation(resolution, max(2, BRICK_FACE_DRIFT_CELLS))
+    face = face + (drift - 0.5) * BRICK_FACE_DRIFT
+
+    return cell.astype(numpy.int32), edge, (row_width, courses), face
 
 
 def _nearest_divisor(limit: int, wanted: int) -> int:

@@ -1146,6 +1146,81 @@ SCRATCH_STRENGTHS: dict[str, float] = {
 }
 
 
+# How much a BRICK's own FACE carries, and a TILE's face is flat.
+#
+# A brick is a piece of stone that was cut and worked, and its face
+# carries the grain of the stone and the marks of the working. A
+# TILE is glazed and flat, and the truth's own Tiles141 keeps 0.0349
+# of its spread at a hundred-and-twenty-eight-pixel blur - its
+# variation is a slow drift and not a face.
+#
+# Measured on the truth's own: the brick's blur profile runs 0.0682,
+# 0.0561, 0.0349 and 0.0087, and the tile's 0.0556, 0.0445, 0.0334
+# and 0.0349.
+BRICK_FACE_STRENGTHS: dict[str, float] = {
+    # The SPECIFIC kinds are read first, and the generic ones after.
+    # The truth's own Tiles141 is tagged with BOTH "stone" and
+    # "tiles", and the word "stone" is the generic one - so a table
+    # that reads "stone" first gave the tile a brick's worked face
+    # and the wall came out as a chequerboard of swirls.
+    "tiles": 0.06,
+    "tile": 0.06,
+    "ceramic": 0.06,
+    "porcelain": 0.06,
+    "glazed": 0.05,
+    "bricks": 0.85,
+    "brick": 0.85,
+    "concrete": 0.20,
+    "plaster": 0.12,
+    "stone": 0.55,
+    "rock": 0.5,
+}
+
+# How much a surface's SLOW DRIFT carries, and it is a TILE's and not
+# a BRICK's.
+#
+# A tile is a large flat surface and it STAINS, and the stain is
+# the drift: the truth's own Tiles141 carries a spread of 0.0349 at
+# a hundred-and-twenty-eight-pixel blur - a fifth of the whole map -
+# and its drift's period is a hundred and ninety-two pixels.
+#
+# And a brick is a mosaic of worked pieces and the pieces do not
+# stain together: the truth's own Bricks113A carries 0.0087 at the
+# same blur, a ninth of the tile's.
+DRIFT_STRENGTHS: dict[str, float] = {
+    # The SPECIFIC kinds first, and the generic ones after - the same
+    # rule the pattern's own routing uses.
+    "tiles": 0.85,
+    "tile": 0.85,
+    "ceramic": 0.85,
+    "porcelain": 0.85,
+    "plaster": 0.65,
+    "concrete": 0.5,
+    "bricks": 0.10,
+    "brick": 0.10,
+    "stone": 0.25,
+    "rock": 0.15,
+}
+
+
+def drift_strength_for_description(description: str) -> float:
+    """How much the surface's SLOW DRIFT carries, from its words."""
+    words = set(description.lower().replace(",", " ").split())
+    for word, strength in DRIFT_STRENGTHS.items():
+        if word in words:
+            return strength
+    return 0.0
+
+
+def brick_face_strength_for_description(description: str) -> float:
+    """How much a brick's own FACE carries, from its words."""
+    words = set(description.lower().replace(",", " ").split())
+    for word, strength in BRICK_FACE_STRENGTHS.items():
+        if word in words:
+            return strength
+    return 0.0
+
+
 def scratch_strength_for_description(description: str) -> float:
     """How much the surface's SCRATCHES carry, from its words."""
     words = set(description.lower().replace(",", " ").split())
@@ -1629,6 +1704,10 @@ def palette_for_description(
         "curvature_strength": curvature_strength_for_description(description),
         # And how much the surface's SCRATCHES carry.
         "scratch_strength": scratch_strength_for_description(description),
+        # And how much a BRICK's own FACE carries.
+        "brick_face_strength": brick_face_strength_for_description(description),
+        # And how much the surface's SLOW DRIFT carries.
+        "drift_strength": drift_strength_for_description(description),
         # And how much a STONE's hue varies from the surface's own.
         "hue_variation": hue_variation_for_description(description),
         "target_spread": spread,
