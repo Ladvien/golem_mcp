@@ -327,6 +327,14 @@ MATRIX_SHADOW_SHARE = 0.55
 # a truth's 0.172, and the stone-to-matrix contrast read 0.372
 # against a truth's 0.430.
 MATRIX_TONE_BASE = 0.20
+# How much of a BRICK's own hue the brick's hash carries.
+#
+# Measured on the truth's own: the truth's Bricks113A's per-brick
+# red share has a spread of 0.0070 and its blue 0.0074, and the
+# lane's at the full hash read 0.0143 and 0.0105 - twice the
+# truth's, and a wall of differently coloured bricks where the
+# truth's is one wall of slightly different clays.
+BRICK_HUE_SPREAD = 0.4
 # How much of the MATRIX's own grit the surface's mottle carries.
 #
 # The truth's own ground's matrix carries a spread of 0.0824 - two
@@ -1017,6 +1025,35 @@ def write_procedural_base_color(
                 cell_hue * variation,
                 -cell_hue * 0.4 * variation,
                 -cell_hue * 1.2 * variation,
+            ),
+            axis=2,
+        )
+        stone = _np.clip(
+            stone + stone_hue_vector * offsets * stone_luma[:, :, _np.newaxis],
+            0.0,
+            1.0,
+        )
+    if kind == "brick":
+        # A BRICK's own HUE, and it is the brick's own: a wall is a
+        # mix of clay types, and the truth's own three bricks measure
+        # 0.506, 0.463, 0.392, 0.577, 0.478, 0.332 and 0.513, 0.486,
+        # 0.441 on their faces - three different colours - and the
+        # lane's three all read 0.506, 0.445, 0.349.
+        #
+        # So the brick carries its own hue offset, the brick's own
+        # hash, and it is applied to the HUE and not to the
+        # brightness - so a brick is a patch of a different clay and
+        # not a lighter or darker one.
+        variation = hue_variation if hue_variation is not None else 0.10
+        weights = _np.array([0.2126, 0.7152, 0.0722], dtype=_np.float32)
+        stone_luma = (stone * weights).sum(axis=2)
+        stone_hue_vector = stone / _np.maximum(stone_luma[:, :, _np.newaxis], 1e-6)
+        brick_hue = (hashed - 0.5) * 2.0 * BRICK_HUE_SPREAD * 0.4
+        offsets = _np.stack(
+            (
+                brick_hue * variation,
+                -brick_hue * 0.4 * variation,
+                -brick_hue * 1.2 * variation,
             ),
             axis=2,
         )

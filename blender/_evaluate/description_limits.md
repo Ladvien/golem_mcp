@@ -145,6 +145,25 @@ is not the index at the first, and the wrap joined two courses with
 different grain - the brick's horizontal seam read 1.875x, as big
 as the biggest feature.
 
+### A field's period must be a whole number of cells
+
+A value-noise's period is its lattice's size, and a STRETCH that is
+a factor on the *sample* makes the period a fraction of a cell - and
+a fraction of a cell is not a whole cell, so the field does not wrap.
+
+The metal's grain was stretched by a quarter, and its own wrap read
+0.136 against its spread of 0.132: it did not wrap at all. The
+corrugated steel's seam read 6.52 against the truth's 0.35 - nineteen
+times - and it reads 0.45 now.
+
+The stretch is the lattice's own SIZE now, so the period is a whole
+number of cells and the wrap joins two whole ones.
+
+The same holds for the ribs' count, which was the cells times eleven,
+and for the envelope's lattice, and for the scratches' cells: a
+count that does not divide the resolution leaves a fraction of a
+cell at the edge, and the wrap joins it to a whole one.
+
 ### The value cannot be refitted honestly
 
 The palette's material values are a fit against the truth's own
