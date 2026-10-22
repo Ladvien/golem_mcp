@@ -6,20 +6,23 @@ ambientcg sets; the wide sample is in `coverage_audit.md` and it is
 the honest baseline, and `description_limits.md` records what the
 WORDS can and cannot say.
 
+Run them with `scripts/benchmarks/run_benchmark.py`, which runs each
+set in its own root and its own processes.
+
 ## The score, before and after
 
 | | start of round 7 | now |
 |---|---|---|
 | **the twenty sets** | | |
 | mean brightness ratio | 0.95x | 0.93x |
-| mean contrast ratio | 1.03x | 1.15x |
+| mean contrast ratio | 1.03x | 1.14x |
 | mean scale ratio | 1.57x | 1.05x |
-| mean seam | 3.87x | 0.43x (the truth's 0.60x) |
+| mean seam | 3.87x | 0.52x (the truth's 0.60x) |
 | **the eighty-seven wide sets** | | |
 | mean brightness ratio | 1.07x | 1.10x |
-| mean contrast ratio | 1.60x | 1.31x |
-| mean scale ratio | 1.23x | 1.34x |
-| mean seam | 2.39x | 0.71x (the truth's 0.54x) |
+| mean contrast ratio | 1.60x | 1.29x |
+| mean scale ratio | 1.23x | 1.33x |
+| mean seam | 2.39x | 0.39x (the truth's 0.54x) |
 
 The wide set's numbers are WORSE than the twenty's and that is the
 point: the twenty were chosen by hand and they are the easy ones.
@@ -111,7 +114,17 @@ Measured: the roof's seam read 12.4x the truth's and the parquet's
 3.5x to 7x - and both are under 2x now, with a SMOOTH field
 carrying the per-cell variation instead of a hash.
 
-### 8. TWO SCALES, NOT ONE
+### 8. THE UPSAMPLE CLIPPED INSTEAD OF WRAPPING
+
+A field computed on a coarse grid and brought up has to wrap at the
+upsample, and the coarse grid has to cover its period AND one step
+more so its last entry is the field's own first.
+
+Measured: the rock's distance field had a seam of 0.032 and the
+rock's seam read 2.54x the truth's, and the asphalt's 2.26x. The
+distance field's seam is 0.000000 now.
+
+### 9. TWO SCALES, NOT ONE
 
 A leather is a coarse envelope and a fine grain on it, and the fine
 carries most of the spread. A wallpaper's design is the same. And a
@@ -139,7 +152,7 @@ by `scripts/benchmarks/fit_palette.py`, and the tables are MERGED and
 not replaced - a word the truth set does not measure keeps the value
 the word's own sense gives it.
 
-And five rules the fitting exposed:
+And six rules the fitting exposed:
 
 - a colour's value is fitted where the colour is the **only** word
   about it: "blue" names three materials in the wide set and their
@@ -150,9 +163,12 @@ And five rules the fitting exposed:
 - the **most specific material** decides, and a generic one lets the
   colour: a carpet is a carpet and not a fabric, and a wood's
   brightness is its colour's and not its kind's.
-- a metal's own word is the **specific** one, and it says how much
-  the sheet varies: "gold" names one material and its spread is
-  0.0064 - the truth's own Metal048A to within a thousandth.
+- a material's own word says how much it **varies**: a "clean" thing
+  can be a leather at 0.0031 of spread or a checkered cloth at
+  0.1888 - a sixtyfold range.
+- a metal's own word is the **specific** one: "gold" names one
+  material and its spread is 0.0064 - the truth's own Metal048A to
+  within a thousandth.
 - the **darkest** colour named wins, and not the first: a "blue,
   dark" thing is a dark blue, and the truth's own Carpet012 is 0.229.
 
@@ -181,3 +197,5 @@ And five rules the fitting exposed:
 4. The ground's two scales: the truth's gravel has a fine scale (the
    stones) and a coarse one (the drift), and the drift is what the
    feature measure reads.
+5. The CURVATURE and the SCRATCHES are ported and not yet WIRED
+   into any pattern: a worn metal and a worn stone both want them.

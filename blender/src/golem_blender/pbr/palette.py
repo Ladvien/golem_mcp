@@ -1105,6 +1105,42 @@ def hue_variation_for_description(description: str) -> float:
     return SCATTER_HUE_VARIATION
 
 
+# How much a ROCK's CURVATURE carries, and it is the ROCK's word and
+# not a general one.
+#
+# The curvature is what gives a rock its FACETS - the sharp edges
+# between flat faces - and the truth's own Rock051 carries a gradient
+# of 0.037, one and a half times the sheet's own variation, where
+# the lane's rock is a smooth blob field with no edge in it.
+#
+# So a rock asks for the curvature and nothing else does.
+CURVATURE_STRENGTHS: dict[str, float] = {
+    "rock": 1.2,
+    "rocky": 1.0,
+    "cliff": 1.2,
+    "cave": 1.0,
+    "stone": 0.7,
+    "bricks": 0.5,
+    "concrete": 0.35,
+}
+
+
+def curvature_strength_for_description(description: str) -> float:
+    """How much the surface's CURVATURE carries, from its words.
+
+    The curvature is Material Maker's `smooth_curvature2` - a
+    discrete second difference over a cone of offsets - and it is the
+    map that gives a hand-painted edge treatment its rim and a cavity
+    mask its darkness. A rock is a set of flat faces with sharp edges
+    between them, and it is what the curvature is for.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    for word, strength in CURVATURE_STRENGTHS.items():
+        if word in words:
+            return strength
+    return 0.0
+
+
 def _paint_colour(description: str) -> tuple[float, float, float]:
     """The colour a ROAD MARKING is painted in.
 
@@ -1559,6 +1595,8 @@ def palette_for_description(
         # truth's own Road007 is a pale line on a luma of 0.309 and
         # Road008A is a yellow one.
         "paint_rgb": _paint_colour(description),
+        # And how much the surface's CURVATURE carries.
+        "curvature_strength": curvature_strength_for_description(description),
         # And how much a STONE's hue varies from the surface's own.
         "hue_variation": hue_variation_for_description(description),
         "target_spread": spread,

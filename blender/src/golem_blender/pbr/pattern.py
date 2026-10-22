@@ -772,6 +772,9 @@ def fractal_stones(
     cells: int,
     octaves=STONE_OCTAVES,
     pebble_factor: float = 1.0,
+    curvature_strength: float = 0.0,
+    curvature_radius: float = 4.0,
+    curvature_quality: int = 4,
 ):
     """A field of FRACTAL stones: big ones made of small ones.
 
@@ -1134,6 +1137,34 @@ def fractal_stones(
     # So the surface's variation is a SMOOTH field, and the cells
     # only decide where the joints fall.
     field["envelope"] = _bilinear(coarse["distance"], grid_row, grid_column)
+    # The surface's CURVATURE, and it is what gives a ROCK its
+    # facets.
+    #
+    # A rock is a set of flat faces with sharp edges between them,
+    # and the truth's own Rock051 carries a gradient of 0.037 - one
+    # and a half times the sheet's own variation - and the lane's
+    # rock is a smooth blob field with no edge in it.
+    #
+    # The curvature is Material Maker's `smooth_curvature2`: a
+    # discrete second difference over a cone of offsets, and it is
+    # the map that gives a hand-painted edge treatment its rim and a
+    # cavity mask its darkness.
+    #
+    # It is a function of the HEIGHT, and the height here is the
+    # distance to the joint - so the curvature is the joint's own
+    # sharpness, measured at a scale of a few cells.
+    if curvature_strength > 0.0:
+        from golem_blender.pbr import curvature as curvature_module
+
+        height = field["envelope"]
+        curved = curvature_module.curvature(
+            height,
+            radius=curvature_radius,
+            quality=curvature_quality,
+        )
+        field["curvature"] = curved
+    else:
+        field["curvature"] = None
     # The CELL is the BASE octave's.
     #
     # The cell is what gives a stone its own colour, and the colour's

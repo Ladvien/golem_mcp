@@ -368,6 +368,7 @@ def write_procedural_base_color(
     lines_per_cell: int = DEFAULT_LINES_PER_CELL,
     fibre_strength: float = FIBRE_STRENGTH,
     pebble_factor: float = 1.0,
+    curvature_strength: float = 0.0,
     brick_aspect: float | None = None,
     metal_horizontal: bool = False,
     metal_banded: bool = True,
@@ -430,6 +431,7 @@ def write_procedural_base_color(
 
     cell_width = cells
     cell_height = cells
+    curvature_field = None
     if kind == "scattered":
         # A loose ground is SCATTERED stones, not a Voronoi.
         #
@@ -460,9 +462,15 @@ def write_procedural_base_color(
         # joint's width needs, because it is an exact distance to the
         # cell's border - so a joint drawn from it is the same width
         # in pixels whatever the cell's size.
-        stones = pattern.fractal_stones(resolution, cells, pebble_factor=pebble_factor)
+        stones = pattern.fractal_stones(
+            resolution,
+            cells,
+            pebble_factor=pebble_factor,
+            curvature_strength=curvature_strength,
+        )
         cell = stones["cell"]
         edge = stones["distance"]
+        curvature_field = stones.get("curvature")
         grid = (cells, cells)
     elif kind == "brick":
         cell, edge, grid = pattern.brick_field(
@@ -994,6 +1002,19 @@ def write_procedural_base_color(
         if surface_amplitude > 0.0:
             surface = surface / surface_amplitude * 2.0 - 1.0
         wear = surface * min(variation, 1.0) * ramp_spread * SURFACE_SHARE
+    if curvature_field is not None:
+        # A ROCK's FACETS, and they are the CURVATURE.
+        #
+        # The curvature is the map that gives a hand-painted edge
+        # treatment its rim and a cavity mask its darkness - and a
+        # rock is a set of flat faces with sharp edges between them.
+        #
+        # The truth's own Rock051 carries a gradient of 0.037, one and
+        # a half times the sheet's own variation, and the lane's rock
+        # is a smooth blob field with no edge in it.
+        curved = numpy.clip(curvature_field, 0.0, 1.0)
+        curved = curved / max(1e-6, float(curved.max()))
+        wear = wear + (curved - 0.5) * curvature_strength * ramp_spread
     # The wear is a change of LUMA, not of each channel equally: a
     # grey wear on a chromatic stone GREYS the stone out, and the
     # truth's ground is warm to the last. So the wear is added along
