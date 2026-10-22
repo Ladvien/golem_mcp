@@ -10,9 +10,9 @@ give, and look at every picture.
 
 | | start | end |
 |---|---|---|
-| **the twenty hand-picked sets** - brightness / contrast / scale | 0.95x / 1.03x / 1.57x | 0.97x / 1.02x / 1.06x |
-| **twenty sets - seam** | **3.87x** | **0.51x** (truth 0.60x) |
-| **the eighty-seven wide sets** - brightness / contrast / scale | 1.07x / 1.60x / 1.23x | 1.07x / 1.16x / 1.33x |
+| **the twenty hand-picked sets** - brightness / contrast / scale | 0.95x / 1.03x / 1.57x | 0.97x / 1.02x / 0.96x |
+| **twenty sets - seam** | **3.87x** | **0.50x** (truth 0.60x) |
+| **the eighty-seven wide sets** - brightness / contrast / scale | 1.07x / 1.60x / 1.23x | 1.07x / 1.16x / 1.05x |
 | **eighty-seven sets - seam** | **2.39x** | **0.31x** (truth 0.54x) |
 | **the value's word-fit** (87 materials) | 0.0790 | **0.0594** |
 | **the spread's word-fit** (87 materials) | 0.0151 | **0.0115** |
@@ -21,6 +21,10 @@ The wide set's numbers are *worse* than the twenty's - correctly,
 because the twenty were hand-picked. The seventeen materials the
 popular list never reaches (leather, roofing tiles, wallpaper,
 carpets, parquets, planks) are the ones that found the rules below.
+
+The wide set's means are inflated by two materials and its medians
+are the honest summary: brightness 1.000, contrast 1.003, scale
+1.000.
 
 ## What the pictures found that the score could not
 
@@ -56,9 +60,20 @@ carpets, parquets, planks) are the ones that found the rules below.
   measures the bright stones' widths at 1, 2, 3, 4, 5, 7 and 8
   pixels in the counts 1071, 541, 30, 8, 2, 2 and 1, and its darkest
   thousandth is 0.000. The count is what puts the shadow in.
+- **A ROCK's joint is a CRACK** - the truth's own Rock064's cracks
+  read a luma of 0.336 where its ramp's dark end is 0.324, and a
+  brick's grout reads 0.427 where its value is 0.460. A crack is a
+  shadow; a grout is a filled joint.
 - **A wood's RINGS are not its features** - at four rings the lane
   reads 9.2 features and at eight it reads 19.3, so the features are
   two and a third times the rings.
+- **A leather's CRACKLE follows the surface** - the truth's six
+  leathers measure nineteen to five hundred and twelve features and
+  the crackle is what the measure reads on four of them.
+- **A ROCK's moss is a patch** - the truth's own Rock064's green share
+  has a standard deviation of 0.0336 over sixteen-pixel blocks and
+  the lane's had 0.0019, because the hue variation was applied only
+  to the scattered path's stones.
 
 ## The rules the eighty-seven taught
 
@@ -102,9 +117,13 @@ stones. A fabric is a **weave** and its threads are all the cloth.
 - The palette's value can't be refitted honestly: a leave-one-out
   refit of the material table is *worse* (0.0870 against 0.0716), so
   the table stands and the word simply cannot pin the value.
-- The WOOD's structure is a board with straight seams and knots, and
-  the lane's is a field of swirls. The wood's feature scale now
-  reads 0.82x the truth's where it read 1.74x, but the *shape* is
-  still wrong.
+- The WOOD's structure is a board with straight seams, knots and
+  nested cathedral arcs, and the lane's is a field of soft blobs.
+  The wood's feature scale now reads 0.82x the truth's where it read
+  1.74x, but the *shape* is still wrong.
+- The ROCK is a set of flat facets with thin joints and the truth's
+  is a continuous relief: the truth's gradient's median is 0.0362
+  and only one and a half per cent of its surface is flat, where the
+  lane's is flat over fifty-four per cent.
 
 That and the rest is in `description_limits.md`.
