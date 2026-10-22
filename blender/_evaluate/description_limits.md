@@ -68,9 +68,41 @@ colour and came out a saturated orange.
 | a road with markings came out with no markings | the lane | yes - the markings are geometry |
 | a parquet's grain ran across the board | the lane | yes - the lattice's axes were the wrong way round |
 | a leather's crackle was nine pixels wide | the lane | yes - the truth's is two |
+| a brick's face was flat and a tile's was a chequerboard | the lane | yes - a brick is worked and a tile is glazed |
+| the extreme words lost to the material's word | the lane | yes - the kind says nothing about the lightness |
+| the spread read the tiers in order and a roof was a tile | the lane | yes - the most specific word wins |
 | a wood floor's brightness is a factor of two out | the WORDS | no |
 | a leather's spread is a factor of ten out | the WORDS | no |
 | a road's paint colour is the road's own and not the paint's | the WORDS | partly - the wear is a guess |
+
+### The value cannot be refitted honestly
+
+The palette's material values are a fit against the truth's own
+eighty-seven, and every word's value is the mean of the materials
+that name it. A refit of that table on the same eighty-seven gives
+a mean error of 0.0594 against 0.0716 - and a **leave-one-out**
+refit, which drops each material from its own word's mean before
+measuring it, gives 0.0870: WORSE than the table it refits.
+
+So the table is not under-fitted; the WORDS are the limit. A
+description that names a material whose own brightness spans 0.23 to
+0.56 cannot say which one it means, and no refit of the same words
+can fix it.
+
+The one thing the words CAN say is the extreme: "black", "white",
+"dark" and "light" are about the lightness and about nothing else,
+and the truth's own Rock035 is a "black, cave, cliff, grey, rock,
+stone" at a luma of 0.094 while the material's word said 0.362. So
+the extreme words are read first - and that is a fact about the
+words, not a fit.
+
+### A word that names FEW materials can still disagree with itself
+
+"granular" names two materials in the wide set and the two disagree:
+the truth's own Asphalt033 at a spread of 0.0178 and its Gravel043
+at 0.0856. So the word's own materials must AGREE for the word to
+be trusted, and an unreliable modifier loses to the material's own
+word beside it.
 
 ## The honest summary
 
