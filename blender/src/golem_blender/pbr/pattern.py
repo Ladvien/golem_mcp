@@ -364,7 +364,7 @@ FIBRE_FOLDS = 1
 #
 # The truth's own wood's figure is horizontal, and an isotropic
 # envelope gave the wood blobs where the truth has bands.
-GRAIN_ENVELOPE_STRETCH = 4.0
+GRAIN_ENVELOPE_STRETCH = 2.0
 # How many fibre lines the image carries across, per 1024 pixels.
 #
 # The truth's wood has its lines 7.4 pixels apart in a 1024 row, so
