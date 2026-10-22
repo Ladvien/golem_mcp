@@ -187,7 +187,7 @@ ENVELOPE_WEIGHT = 1.0
 # diagonally - the lattice's own geometry is square, so a mild
 # compression leaves the patches as squares with a diagonal long
 # axis - and the truth's fibre is along the board.
-FIBRE_STRETCH = 0.08
+FIBRE_STRETCH = 0.25
 FIBRE_OCTAVES = 3
 FIBRE_PERSISTENCE = 0.5
 # The FIBRE's orientation and carrier, for the Gabor that draws it.

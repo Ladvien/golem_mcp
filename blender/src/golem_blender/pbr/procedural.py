@@ -682,7 +682,14 @@ def write_procedural_base_color(
             resolution,
             max(2, round(cells / pattern.GRAIN_CELLS_PER_FEATURE)),
             lines_per_cell=lines_per_cell,
-            fibre_cells=max(2, round(cells * pattern.FIBRE_CELLS_PER_RING)),
+            fibre_cells=max(
+                2,
+                round(
+                    cells
+                    / pattern.GRAIN_CELLS_PER_FEATURE
+                    * pattern.FIBRE_CELLS_PER_RING
+                ),
+            ),
         )
     elif kind == "metal":
         cell, edge, grid, fibre = pattern.metal_field(
