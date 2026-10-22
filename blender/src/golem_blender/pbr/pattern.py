@@ -309,7 +309,32 @@ BRICK_ASPECT = 1.34
 # Measured on the truth's own: the floor's row-to-column change ratio
 # is 0.24, and it is the most horizontal surface in the wide sample.
 # A brick's 1.34 would make it a wall of squares.
-PARQUET_ASPECT = 4.0
+PARQUET_ASPECT = 2.0
+# And how many blocks a PARQUET has ACROSS a course.
+#
+# The truth's own parquet carries ten joint lines across a thousand
+# and twenty-four, so there are about ten blocks across and about six
+# courses down - and the blocks are WIDE and LOW.
+#
+# The aspect is the ratio of a block's width to its height, and it
+# is the courses divided by the blocks across: six courses and ten
+# blocks is a ratio of 0.6, and the blocks are wider than they are
+# tall by about one and a half times.
+PARQUET_BLOCKS_ACROSS = 10
+# The GRAIN's own lattice, how many octaves it has, and how strong it
+# is.
+#
+# The lattice is the number of cells ACROSS the surface, and the
+# lines are the noise's ridges - so a lattice of sixty-four gives a
+# line every sixteen pixels of a thousand and twenty-four, and the
+# truth's own parquet carries fine lines at about that spacing.
+#
+# The grain was the WOOD's own fibre field, and that is a CATHEDRAL
+# SWIRL - the wood's rings and its cathedral figure - and a parquet's
+# boards are cut flat, so their grain is a set of straight lines and
+# not a swirl. Measured, the floor came out as a field of blobs.
+PARQUET_GRAIN_LATTICE = 64
+PARQUET_GRAIN_OCTAVES = 2
 # A CARPET's pile, as a multiple of the surface's own feature count.
 #
 # The truth's own carpet is almost flat - a spread of 0.029 over
@@ -1769,23 +1794,29 @@ def parquet_field(
     the most horizontal surface in the sample - the blocks are long
     and low and they run across.
 
-    So the blocks are the brick's courses, with the brick's half-block
-    offset between the courses, and the block is PARQUET_ASPECT times
-    as wide as it is tall.
+    So the blocks are the BRICK's courses, with the brick's half-block
+    offset between the courses, and the block is much wider than the
+    brick's.
 
-    The blocks are also STAGGERED in a PATTERN and not only offset by
-    half: the truth's own parquet is laid in a herringbone-adjacent
-    arrangement, and every block carries its own tone so the floor
-    reads as a mosaic of boards.
+    The blocks are the brick's own field and the writer's own path,
+    so the block's tone and the block's joint are the ones the
+    benchmark already measured for the brick. The parquet adds ONE
+    thing to them: the block's own GRAIN, which is the wood's own
+    fibre.
     """
     import numpy
 
-    # The blocks are the brick's courses, and the count is a power of
-    # two so the wall's own wrap joins two whole blocks.
+    # The blocks are the BRICK's own courses, and the count is a
+    # power of two so the floor's own wrap joins two whole blocks.
     courses = _power_of_two_nearest(cells)
     while courses > 1 and resolution % courses != 0:
         courses //= 2
-    across = max(1, round(courses / max(aspect, 0.05)))
+    # The bricks ACROSS a course, and the floor's blocks are WIDE:
+    # the truth's own parquet carries ten joint lines across a
+    # thousand and twenty-four.
+    across = max(1, PARQUET_BLOCKS_ACROSS)
+    while across > 1 and resolution % across != 0:
+        across //= 2
 
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
@@ -1796,7 +1827,15 @@ def parquet_field(
     row = numpy.floor(sample_y * courses)
     offset = numpy.mod(row, 2.0) * 0.5
     column = numpy.floor((sample_x + offset / across) * across)
-    cell = (row.astype(numpy.int32) * 100003 + column.astype(numpy.int32)).astype(
+
+    # The cell is a LINEAR index - the course times the row's width
+    # plus the block's own index in it - and that is the encoding the
+    # colour's hash decodes.
+    #
+    # It was `row * 100003 + column`, and the hash splits the index by
+    # the row's width - so every block got the same colour and the
+    # floor came out as one flat sheet.
+    cell = (row.astype(numpy.int32) * across + column.astype(numpy.int32)).astype(
         numpy.int32
     )
 
@@ -1809,7 +1848,50 @@ def parquet_field(
         numpy.minimum(within_x, 1.0 - within_x), numpy.minimum(within_y, 1.0 - within_y)
     )
     edge = numpy.clip(distance * min(across, courses), 0.0, 1.0)
-    return cell, edge, (across, courses), None
+
+    # The block's own GRAIN, and it is STRAIGHT LINES running along
+    # the block.
+    #
+    # It was the WOOD's own fibre field, and that is a CATHEDRAL
+    # SWIRL - the wood's rings and its cathedral figure - and a
+    # parquet's boards are cut flat, so their grain is a set of
+    # straight lines and not a swirl.
+    #
+    # So the grain is a RIDGED value noise with many cells across and
+    # ONE along: the ridges are the lines, they run along the board,
+    # and they are irregular because the noise is.
+    #
+    # The lattice's y period is ONE, so the field's features are as
+    # tall as the whole domain - and the lines run across it.
+    from golem_blender.pbr import noise
+
+    lattice_x = max(4, PARQUET_GRAIN_LATTICE)
+    while lattice_x > 1 and resolution % lattice_x != 0:
+        lattice_x //= 2
+    # The lattice's x period is ONE and its y period is MANY: the
+    # field is CONSTANT along x and varies along y - so the ridges
+    # it folds into run ACROSS, which is along the board.
+    #
+    # The x sample is in the x lattice's units and the x lattice is
+    # ONE cell, so the x sample is the domain itself; and the y
+    # sample is in the y lattice's units, so it is the domain times
+    # the y lattice.
+    coarse = noise.fbm_2d_value(
+        sample_x,
+        sample_y * lattice_x,
+        size=1,
+        octaves=PARQUET_GRAIN_OCTAVES,
+        seed=0,
+        folds=1,
+        size_y=lattice_x,
+    )
+    from golem_blender.pbr.noise_worley_fbm import _bilinear
+
+    grid_axis = numpy.linspace(0.0, resolution, resolution, endpoint=False)
+    grid_row, grid_column = numpy.meshgrid(grid_axis, grid_axis, indexing="ij")
+    grain = _bilinear(coarse, grid_row, grid_column)
+    fibre = numpy.abs(grain - 0.5) * 2.0
+    return cell, edge, (across, courses), fibre
 
 
 def carpet_field(
@@ -1870,7 +1952,14 @@ def carpet_field(
     fine = (fine - float(fine.min())) / fine_reach
 
     edge = 1.0 - pile
-    return 0, edge, (cells, cells), fine
+    # The CELL is a constant array and not a scalar: the writer
+    # hashes it, and a scalar has no shape to hash.
+    return (
+        numpy.zeros((resolution, resolution), dtype=numpy.int32),
+        edge,
+        (cells, cells),
+        fine,
+    )
 
 
 def leather_field(
@@ -1965,7 +2054,7 @@ def wallpaper_field(
     column = numpy.floor(sample_x * lattice)
     row = numpy.floor(sample_y * lattice)
     parity = numpy.mod(column + row, 2.0)
-    cell = (row.astype(numpy.int32) * 100003 + column.astype(numpy.int32)).astype(
+    cell = (row.astype(numpy.int32) * lattice + column.astype(numpy.int32)).astype(
         numpy.int32
     )
     edge = numpy.clip(1.0 - parity, 0.0, 1.0)

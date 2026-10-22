@@ -124,6 +124,13 @@ SCATTER_MATRIX_WIDTH = 2.0
 # truth's fifty-three when the drift was on the stone's own tone,
 # and the drift's own share is what moved it.
 SCATTER_DRIFT_SHARE = 0.55
+# How much of the surface's spread a PARQUET's block grain carries.
+#
+# A parquet is a wood floor, and a wood's fibre is most of its
+# variation: the truth's own wood carries 0.51 of its spread in the
+# fibre and 0.49 in the envelope. So the block's grain is the same
+# share.
+PARQUET_FIBRE_STRENGTH = 0.5
 # Where a stone's joint becomes hard. A stone's edge is an edge and
 # not a gradient, and the soft falloff made the ground a field of
 # glowing blobs.
@@ -403,7 +410,7 @@ def write_procedural_base_color(
         # A PARQUET is the brick's courses with a wood's palette and
         # a much wider block, and the wide set says so: the truth's
         # own parquet measures a row-to-column change ratio of 0.24.
-        cell, edge, grid, _fibre = pattern.parquet_field(
+        cell, edge, grid, fibre = pattern.parquet_field(
             resolution,
             cells,
             aspect=brick_aspect if brick_aspect is not None else pattern.PARQUET_ASPECT,
@@ -736,11 +743,27 @@ def write_procedural_base_color(
     # so the mottle is instead sampled at the pattern's own
     # coordinates and its lattice size is chosen to divide the
     # pattern's domain.
-    surface = pattern.surface_texture(resolution, cells)
-    surface_amplitude = float(surface.max() - surface.min())
-    if surface_amplitude > 0.0:
-        surface = surface / surface_amplitude * 2.0 - 1.0
-    wear = surface * min(variation, 1.0) * ramp_spread * SURFACE_SHARE
+    if kind == "parquet" and fibre is not None:
+        # A PARQUET's wear is the block's own GRAIN, and it is the
+        # wood's own fibre - and not a generic mottle.
+        #
+        # The mottle is a fine noise, and a fine noise over a wood
+        # floor is a field of swirls where the truth has fine lines
+        # along each board.
+        #
+        # The fibre is a DARKNESS - one at the line and zero between
+        # the lines - and the wear is signed about the middle, so
+        # the light parts go above the base and the dark parts below
+        # it, which is what a board's grain does.
+        surface = numpy.clip(fibre, 0.0, 1.0)
+        surface = surface / max(1e-6, float(surface.max())) * 2.0 - 1.0
+        wear = surface * PARQUET_FIBRE_STRENGTH * ramp_spread
+    else:
+        surface = pattern.surface_texture(resolution, cells)
+        surface_amplitude = float(surface.max() - surface.min())
+        if surface_amplitude > 0.0:
+            surface = surface / surface_amplitude * 2.0 - 1.0
+        wear = surface * min(variation, 1.0) * ramp_spread * SURFACE_SHARE
     # The wear is a change of LUMA, not of each channel equally: a
     # grey wear on a chromatic stone GREYS the stone out, and the
     # truth's ground is warm to the last. So the wear is added along

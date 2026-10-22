@@ -145,10 +145,19 @@ def pattern_for_description(description: str) -> str:
     the material.
     """
     words = description.lower()
-    for word, pattern in _STRUCTURE_PATTERNS:
+    # The SPECIFIC kinds are read first: a "parquet floor" is a
+    # parquet and not a plank, and a "carpet" is a carpet and not a
+    # fabric.
+    #
+    # The structures were read first and they took the word "wood" and
+    # the word "plank" - so a parquet floor, which is a wood floor
+    # laid in blocks, came out as a plain grain, and the truth's own
+    # parquet measures a row-to-column change ratio of 0.24 while a
+    # grain is nowhere near that.
+    for word, pattern in _COURSE_PATTERNS:
         if word in words:
             return pattern
-    for word, pattern in _COURSE_PATTERNS:
+    for word, pattern in _STRUCTURE_PATTERNS:
         if word in words:
             return pattern
     for word, pattern in _FLAT_PATTERNS:

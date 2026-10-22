@@ -152,6 +152,12 @@ def fbm_2d_value(
     with sharp creases. Material-maker's `fbm4` has the same fold,
     and it is what a fibre wants - a smooth value noise is soft
     waves, and a ridged one is lines.
+
+    `size_y` is the lattice's period along Y, and it defaults to
+    `size`. The two samples are in their OWN base lattice units: the
+    x sample is in units of the x lattice and the y sample in units
+    of the y lattice, so a field with a period of one cell in x and
+    sixty-four in y is a set of vertical stripes.
     """
     import numpy
 
@@ -178,16 +184,18 @@ def fbm_2d_value(
         # seam read 75.41x and the second wood's 25.24x.
         lattice = size * (lacunarity**octave)
         lattice_y = lattice if size_y is None else size_y * (lacunarity**octave)
+        # The octave's own SCALE, and it is the SAME on both axes: a
+        # finer octave samples both coordinates further along, and
+        # both wrap at a correspondingly larger period.
+        #
+        # The y sample was scaled by the y lattice's own rate, and
+        # that was wrong: the sample's y coordinate is in BASE
+        # lattice units of the y lattice, and the octave advances it
+        # by the lacunarity like the x one.
         scale = float(lacunarity**octave)
-        # The y sample is scaled by the Y lattice's own rate, and not
-        # by the x one: the sample's y coordinate is in base lattice
-        # units of the Y lattice.
-        scale_y = scale
-        if size_y is not None:
-            scale_y = float(lattice_y) / float(size_y)
         octave_value = value_noise_2d(
             sample_x * scale,
-            sample_y * scale_y,
+            sample_y * scale,
             lattice,
             seed + octave,
             size_y=lattice_y,
