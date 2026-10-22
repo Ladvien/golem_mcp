@@ -195,9 +195,15 @@ def test_the_value_follows_the_material_s_kind():
     assert value_for_description("blue, fabric, fur, microfiber, soft") == (
         pytest.approx(0.5266, abs=0.01)
     )
-    # The orange one: the colour says 0.4331 and the kind 0.5240.
+    # The orange one: the colour says 0.3743 and the kind 0.5240,
+    # and the truth's own Fabric085 measures 0.374.
+    #
+    # The DARKEST colour named wins, and not the first one: a
+    # description that says "orange, red" means a red-orange, and the
+    # truth's own orange wool is 0.374 and the "orange" word's fitted
+    # value is 0.4331.
     assert value_for_description("fabric, orange, red, wool") == (
-        pytest.approx(0.4331, abs=0.01)
+        pytest.approx(0.3743, abs=0.01)
     )
     # The bricks: their kind says 0.4604 and their colour 0.4790.
     assert value_for_description("bricks, bricks113a, natural, stone") == (
