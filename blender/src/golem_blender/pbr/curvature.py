@@ -183,7 +183,8 @@ def scratches(
         count = max(1, round(1.0 / max(1e-6, float(size))))
         # Each cell's own randomness: its angle and its wave phase.
         angle_random = generator.random((count, count))
-        phase_random = generator.random((count, count))
+        offset_random = generator.random((count, count))
+        wave_random = generator.random((count, count))
 
         for cell_y in range(count):
             for cell_x in range(count):
@@ -199,7 +200,8 @@ def scratches(
                         # drawn cell: the content at a place is the
                         # content of the place, and the domain's edge
                         # has the same content as its other side.
-                        place_phase = phase_random[place_y, place_x]
+                        place_offset = offset_random[place_y, place_x]
+                        place_wave = wave_random[place_y, place_x]
                         place_angle = (
                             2.0
                             * np.pi
@@ -220,30 +222,95 @@ def scratches(
                         local_y = sample_y * count - place_y
                         local_x = local_x - np.round(local_x)
                         local_y = local_y - np.round(local_y)
-                        # The WAVE, and it is measured in the GLOBAL x
-                        # so it continues into the next cell - and its
-                        # PHASE is the PLACE's own, not the cell's.
-                        #
-                        # The phase was the drawn cell's own, and the
-                        # cell at the edge of the domain was drawn
-                        # with its own phase while the cell beside it
-                        # had another - so the wave jumped at the
-                        # border. Measured: the scratch map's seam
-                        # read 0.12 against the truth's 0.00.
-                        local_y = local_y + 0.5 * waviness * np.cos(
-                            2.0 * np.pi * sample_x * count + 2.0 * np.pi * place_phase
-                        )
                         place_cosine = np.cos(place_angle)
                         place_sine = np.sin(place_angle)
                         rotated_x = local_x * place_cosine - local_y * place_sine
                         rotated_y = local_x * place_sine + local_y * place_cosine
 
-                        border_x = np.abs(rotated_x) * 2.0
-                        border_y = np.abs(rotated_y) * 2.0
-                        border = np.minimum(border_x, border_y)
-                        value = np.clip(
-                            1.0 - border / max(1e-6, float(width)), 0.0, 1.0
+                        # And the scratch is a LINE and not a blob.
+                        #
+                        # Material Maker's own: the cell's frame is
+                        # turned by the cell's angle, the x is divided
+                        # by the cell's LENGTH and the y by the cell's
+                        # width times the cell's count - so the frame
+                        # is long and thin - and the value is a tight
+                        # band around the frame's own y of zero, times
+                        # a taper along the length.
+                        #
+                        # The port drew a RECTANGLE: the distance to
+                        # the nearest of the two cell's edges, so a
+                        # scratch came out as a blob at the cell's
+                        # centre, and the truth's scratches are long
+                        # thin lines.
+                        #
+                        # So the value is the distance to the line, and
+                        # the line is thin: the tight band is the
+                        # hundred-and-one power of the frame's own y.
+                        # The frame is in CELL units: the x and the
+                        # y both run from minus a half to a half
+                        # across the cell.
+                        #
+                        # Material Maker's own divides the x by the
+                        # cell's LENGTH and the y by the cell's width
+                        # times the cell's count, and the value is
+                        # `min(border.x, border.y)` times
+                        # `1 - uv.x*uv.x` times a band a THOUSAND
+                        # times the divided y squared.
+                        #
+                        # So the line is at the divided frame's y of
+                        # zero, and the band is a thousandth of the
+                        # DIVIDED y - and the divided y is small, so
+                        # the band is wide in the cell.
+                        #
+                        # Material Maker's own divides the x by the
+                        # cell's LENGTH and the y by the cell's width
+                        # times the cell's count, and the value is
+                        # `min(border.x, border.y)` times
+                        # `1 - uv.x*uv.x` times a band a THOUSAND
+                        # times the divided y squared.
+                        #
+                        # The border is the distance to the cell's own
+                        # edge - and it is a FACTOR and not a mask, so
+                        # a scratch fades out towards the cell's
+                        # border and the two cells either side of it
+                        # both go to nothing there. Without it the
+                        # scratches showed the cells' own GRID.
+                        #
+                        # Material Maker's own, step for step:
+                        #
+                        #   uv = 2.0*uv - vec2(1.0);        the frame
+                        #   uv = vec2(c*uv.x+s*uv.y, ...);    the turn
+                        #   uv.y += 2.0*r1.y-1.0;             the line's
+                        #   uv.y += 0.5*waviness*cos(2*pi*uv.x + 2*pi*r2.y);
+                        #   uv.x /= cut;                     the length
+                        #   uv.y /= subdivide*size.y;         the width
+                        #   return min(border.x, border.y)
+                        #          * (1.0-uv.x*uv.x)
+                        #          * max(0.0, 1.0-1000.0*uv.y*uv.y);
+                        #
+                        # So the LINE sits at a random place in the
+                        # cell - the offset is a whole cell - and the
+                        # border is the cell's own edge distance, and
+                        # it is a FACTOR and not a mask, so a scratch
+                        # fades out towards the cell's border.
+                        #
+                        # The port had the line always at the cell's
+                        # centre and the border as a mask, so the
+                        # scratches came out as blobs in a GRID.
+                        line_y = rotated_y * 2.0
+                        line_y = line_y + 2.0 * place_offset - 1.0
+                        line_y = line_y + 0.5 * waviness * np.cos(
+                            2.0 * np.pi * rotated_x * 2.0 + 2.0 * np.pi * place_wave
                         )
+                        divided_x = rotated_x * 2.0 / max(1e-6, float(size) * count)
+                        divided_y = line_y / max(1e-6, float(width) * count)
+                        band = np.clip(1.0 - 1000.0 * divided_y**2, 0.0, 1.0)
+                        # And the TAPER along the length, which is
+                        # Material Maker's own `1 - uv.x*uv.x`: the
+                        # scratch fades towards both of its ends.
+                        length_fade = np.clip(1.0 - divided_x**2, 0.0, 1.0)
+                        border = np.minimum(np.abs(local_x), np.abs(local_y))
+                        value = band * length_fade * border
                         # The TAPER, and it is the cell's own distance
                         # to its edge - so a scratch fades out before
                         # it reaches the border and the two cells
