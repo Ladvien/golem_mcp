@@ -46,12 +46,14 @@ class Params(NamedTuple):
     venv_site_packages: str
     source_fingerprint: str
     graph_json: str = ""
+    description: str = ""
 
 
 class Result(NamedTuple):
     status: str
     output_path: str = ""
     message: str = ""
+    kind: str = ""
 
 
 def _purge_if_stale(repository_src: str, source_fingerprint: str) -> None:
@@ -107,20 +109,38 @@ def main(params: Params) -> Result:
 
     setattr(golem_blender, _FINGERPRINT_ATTRIBUTE, params.source_fingerprint)
 
+    from golem_blender.pbr.palette import (  # pylint: disable=import-outside-toplevel
+        palette_for_description,
+    )
+    from golem_blender.pbr.patterns import (  # pylint: disable=import-outside-toplevel
+        pattern_for_description,
+    )
     from golem_blender.pbr.procedural import (  # pylint: disable=import-outside-toplevel
         write_procedural_base_color,
     )
 
+    # The DESCRIPTION chooses the kind when the caller does not, and it
+    # always chooses the palette - the same two calls the benchmark
+    # measures, so what the benchmark scores is what the agent gets.
+    kind = params.kind or (
+        pattern_for_description(params.description) if params.description else "voronoi"
+    )
+    palette = (
+        palette_for_description(params.description, path=kind)
+        if params.description
+        else {}
+    )
     try:
         written = write_procedural_base_color(
             pathlib.Path(params.output_path),
-            kind=params.kind,
+            kind=kind,
             scale_cells=params.scale_cells,
             width_px=params.width_px,
             height_px=params.height_px,
             graph=_graph_of(params.graph_json),
+            **palette,
         )
     except (OSError, TypeError, ValueError) as error:
         return Result(status="error", message=str(error))
 
-    return Result(status="ok", output_path=str(written))
+    return Result(status="ok", output_path=str(written), kind=kind)

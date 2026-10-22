@@ -70,7 +70,8 @@ def register(mcp: FastMCP) -> None:
     )
     async def generate_procedural_base_color(
         texture_name: str,
-        kind: str = "voronoi",
+        description: str = "",
+        kind: str = "",
         scale_cells: float = 16.0,
         width_px: int = 2048,
         height_px: int = 2048,
@@ -96,9 +97,20 @@ def register(mcp: FastMCP) -> None:
         map's seam is a property of the SAMPLE, so four generations
         of one prompt measured 1.38x, 1.57x, 1.10x and 1.38x.
 
-        `kind` is the cell shape: "voronoi" for rounded stones,
-        "brick" for courses. `scale_cells` is how many cells across
-        the image.
+        `description` is the material in words - "grey cliff rock",
+        "white brick wall", "dark espresso hardwood floor", "brushed
+        silver steel" - and it chooses the COLOURS (brightness, hue,
+        spread, mortar) and, unless `kind` names one, the PATTERN. Give
+        it every time: without it the map is a default grey.
+
+        `kind` overrides the pattern: "voronoi" (set stones), "scattered"
+        (loose gravel), "brick" (courses; tiles are an aligned grid),
+        "grain" (a board's growth rings), "parquet" (staggered planks),
+        "herringbone", "marble" (a veined crackle), "metal" (a brushed
+        or rolled sheet), "flat" (plaster, paint, concrete), "rock" (a
+        rock face), "moss", "grass", "woven" (cloth), "carpet",
+        "leather", "wallpaper", "roof" (shingles), "markings" (road
+        lines). `scale_cells` is how many features cross the image.
 
         `graph_json` COMPOSES the texture instead of choosing one
         pattern, and it is how a description that is really a STACK
@@ -143,6 +155,7 @@ def register(mcp: FastMCP) -> None:
             venv_site_packages=VENV_SITE_PACKAGES,
             source_fingerprint=source_fingerprint(),
             graph_json=graph_json,
+            description=description,
         )
         code = toolcode_format_call(_TOOL_CALL, params)
         response = send_code(code, strict_json=True)
@@ -163,7 +176,8 @@ def register(mcp: FastMCP) -> None:
             "success": True,
             "texture_name": texture_name,
             "mac_path": str(written),
-            "kind": kind,
+            "kind": result.get("kind") or kind,
+            "description": description,
             "composed": bool(graph_json),
             "scale_cells": scale_cells,
             "width_px": width_px,

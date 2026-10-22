@@ -481,9 +481,20 @@ EXPECTED_TOOLS = [
         "map's seam is a property of the SAMPLE, so four generations\n"
         "of one prompt measured 1.38x, 1.57x, 1.10x and 1.38x.\n"
         "\n"
-        '`kind` is the cell shape: "voronoi" for rounded stones,\n'
-        '"brick" for courses. `scale_cells` is how many cells across\n'
-        "the image.\n"
+        '`description` is the material in words - "grey cliff rock",\n'
+        '"white brick wall", "dark espresso hardwood floor", "brushed\n'
+        'silver steel" - and it chooses the COLOURS (brightness, hue,\n'
+        "spread, mortar) and, unless `kind` names one, the PATTERN. Give\n"
+        "it every time: without it the map is a default grey.\n"
+        "\n"
+        '`kind` overrides the pattern: "voronoi" (set stones), "scattered"\n'
+        '(loose gravel), "brick" (courses; tiles are an aligned grid),\n'
+        '"grain" (a board\'s growth rings), "parquet" (staggered planks),\n'
+        '"herringbone", "marble" (a veined crackle), "metal" (a brushed\n'
+        'or rolled sheet), "flat" (plaster, paint, concrete), "rock" (a\n'
+        'rock face), "moss", "grass", "woven" (cloth), "carpet",\n'
+        '"leather", "wallpaper", "roof" (shingles), "markings" (road\n'
+        "lines). `scale_cells` is how many features cross the image.\n"
         "\n"
         "`graph_json` COMPOSES the texture instead of choosing one\n"
         "pattern, and it is how a description that is really a STACK\n"
@@ -515,7 +526,12 @@ EXPECTED_TOOLS = [
         "inputSchema": {
             "properties": {
                 "texture_name": {"title": "Texture Name", "type": "string"},
-                "kind": {"default": "voronoi", "title": "Kind", "type": "string"},
+                "description": {
+                    "default": "",
+                    "title": "Description",
+                    "type": "string",
+                },
+                "kind": {"default": "", "title": "Kind", "type": "string"},
                 "scale_cells": {
                     "default": 16.0,
                     "title": "Scale Cells",

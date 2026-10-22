@@ -20,12 +20,18 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 0. **Choose how the base colour is made.** There are two routes, and
    the choice is not obvious from the result.
 
-   - `generate_procedural_base_color(texture_name="<Name>")` builds it
-     from Blender's own nodes - a Voronoi pattern's cell edges are the
-     joints, each cell is a stone, and the cell's own random value is
-     its colour. The whole set can then be made with bpy alone: the
-     base colour, the relief, and the ORM and normal map baked from
-     that relief.
+   - `generate_procedural_base_color(texture_name="<Name>",
+     description="<the material in words>", scale_cells=<features
+     across>)` computes it. The DESCRIPTION chooses the pattern (a
+     brick wall's courses, a board's growth rings, a rock face's grain,
+     a lawn's blades, a marble's veins) and the colours - brightness,
+     hue, spread - from tables fitted on 214 real ambientCG materials.
+     Without a description the map is a default grey. Name the colour
+     and the finish as well as the material: "white brick wall", "dark
+     espresso hardwood planks", "brushed silver steel". `kind` overrides
+     the pattern when the words choose wrong. The whole set can then be
+     made with bpy alone: the base colour, the relief, and the ORM and
+     normal map baked from that relief.
    - `generate_texture_base(prompt="...")` generates it with FLUX on
      the golem server. That is the photoreal route, and the only one
      that is.
