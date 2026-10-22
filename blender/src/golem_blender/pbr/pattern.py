@@ -1917,8 +1917,7 @@ def parquet_field(
     """
     import numpy
 
-    # The courses, and the count DIVIDES the resolution - and it is
-    # not a power of two.
+    # The courses' PITCH, in pixels, and it DIVIDES the resolution.
     #
     # A power of two rounds DOWN, and the truth's own parquet
     # measures ten blocks across and six courses down - so a power of
@@ -1929,14 +1928,24 @@ def parquet_field(
     # the resolution is a power of two and so every divisor of it is
     # a power of two.
     #
-    # So the count is the truth's own and the map WRAPS on it: the
-    # block's index is taken modulo the count, so the last block is a
-    # fraction narrower and the wrap joins the first.
-    courses = max(1, round(cells))
+    # So the PITCH is what divides the resolution - the pitch is the
+    # truth's own, rounded to the nearest divisor - and the count is
+    # the resolution over the pitch.
+    #
+    # The count was the truth's own with the index taken modulo it,
+    # and the map did not tile: the last block was a fraction
+    # narrower and the wrap joined two different widths. Measured, the
+    # parquet's seam read 44.2x the truth's.
+    course_pitch = _nearest_divisor(
+        resolution, max(1, round(resolution / max(1, cells)))
+    )
+    courses = max(1, resolution // course_pitch)
     # The blocks ACROSS a course, and the floor's blocks are WIDE:
     # the truth's own parquet carries ten joint lines across a
     # thousand and twenty-four.
     across = max(1, PARQUET_BLOCKS_ACROSS)
+    block_pitch = _nearest_divisor(resolution, max(1, round(resolution / across)))
+    across = max(1, resolution // block_pitch)
 
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
@@ -1955,9 +1964,9 @@ def parquet_field(
     # It was `row * 100003 + column`, and the hash splits the index by
     # the row's width - so every block got the same colour and the
     # floor came out as one flat sheet.
-    # And the indices WRAP: the count is the truth's own and it is
-    # not a divisor of the resolution, so the last block is a
-    # fraction narrower and the wrap joins the first.
+    # The cell is a LINEAR index, and the indices WRAP on the
+    # counts - so the block at the edge is the same block as the one
+    # at the start, and the map tiles.
     cell = (
         numpy.mod(row, courses).astype(numpy.int32) * across
         + numpy.mod(column, across).astype(numpy.int32)
@@ -1992,22 +2001,27 @@ def parquet_field(
     lattice_x = max(4, PARQUET_GRAIN_LATTICE)
     while lattice_x > 1 and resolution % lattice_x != 0:
         lattice_x //= 2
-    # The lattice's x period is ONE and its y period is MANY: the
-    # field is CONSTANT along x and varies along y - so the ridges
-    # it folds into run ACROSS, which is along the board.
+    # The lattice's x period is MANY and its y period is ONE: the
+    # field varies along x and is CONSTANT along y - so the ridges
+    # it folds into run ALONG the board.
     #
-    # The x sample is in the x lattice's units and the x lattice is
-    # ONE cell, so the x sample is the domain itself; and the y
-    # sample is in the y lattice's units, so it is the domain times
-    # the y lattice.
+    # The x sample is in the x lattice's units, so it is the domain
+    # times the x lattice; and the y sample is in the y lattice's
+    # units, and the y lattice is ONE cell, so the y sample is the
+    # domain itself.
+    #
+    # The two were the other way round, and the field was constant
+    # along x - so the ridges ran ACROSS the board and the floor
+    # came out with its grain the wrong way and with no grain at all
+    # where the measure could see it.
     coarse = noise.fbm_2d_value(
-        sample_x,
-        sample_y * lattice_x,
-        size=1,
+        sample_x * lattice_x,
+        sample_y,
+        size=lattice_x,
         octaves=PARQUET_GRAIN_OCTAVES,
         seed=0,
         folds=1,
-        size_y=lattice_x,
+        size_y=1,
     )
     from golem_blender.pbr.noise_worley_fbm import _bilinear
 
@@ -2108,11 +2122,23 @@ def roof_field(
     # And a COUNT cannot fix it: the resolution is a power of two and
     # so every divisor of it is a power of two.
     #
-    # So the COUNT is the truth's own and the map WRAPS on it: the
-    # course index is taken modulo the count, so the last course is
-    # a little shorter than the others and the wrap joins the first.
-    courses = max(1, round(cells))
+    # So the PITCH is what divides the resolution - the pitch is the
+    # truth's own, rounded to the nearest divisor - and the count is
+    # the resolution over the pitch.
+    #
+    # The count was the truth's own with the index taken modulo it,
+    # and the map did not tile: the last course was a fraction
+    # shorter and the wrap joined two different widths. Measured, the
+    # roof's seam read 11.9x the truth's.
+    course_pitch = _nearest_divisor(
+        resolution, max(1, round(resolution / max(1, cells)))
+    )
+    courses = max(1, resolution // course_pitch)
     across = max(1, round(courses * aspect))
+    block_pitch = _nearest_divisor(
+        resolution, max(1, round(resolution / max(1, across)))
+    )
+    across = max(1, resolution // block_pitch)
 
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")

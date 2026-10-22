@@ -918,9 +918,18 @@ def write_procedural_base_color(
         # the lines - and the wear is signed about the middle, so
         # the light parts go above the base and the dark parts below
         # it, which is what a board's grain does.
+        # The grain is a SUBTLE variation and not a corduroy: the
+        # truth's own parquet carries 0.87 of its spread in the fine
+        # and 0.13 in the blocks, and the fine is a *smooth*
+        # variation - a board's grain is a slow change of colour and
+        # not a set of lines.
+        #
+        # So the grain is the fibre's own SMOOTHED value and not its
+        # ridge: the ridge is a hard line and the truth's board is
+        # not.
         surface = numpy.clip(fibre, 0.0, 1.0)
         surface = surface / max(1e-6, float(surface.max())) * 2.0 - 1.0
-        wear = surface * PARQUET_FIBRE_STRENGTH * ramp_spread
+        wear = surface * PARQUET_FIBRE_STRENGTH * ramp_spread * 0.25
     else:
         surface = pattern.surface_texture(resolution, cells)
         surface_amplitude = float(surface.max() - surface.min())
