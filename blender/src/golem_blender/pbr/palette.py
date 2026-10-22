@@ -838,6 +838,38 @@ METAL_SPREAD_TIERS = (
     ),
     ("clean", "smooth", "fine", "satin", "polished", "mirror", "chrome"),
 )
+# How many materials each SPREAD word names, and a word that names
+# FEW is a specific one.
+#
+# The wide set's "leather" names six materials and their spreads run
+# from 0.0031 to 0.0636 - a twentyfold range - so its value is a
+# mean of nothing in particular. And "stitched" names ONE.
+#
+# The counts are the fitter's own.
+SPREAD_SPECIFICITY: dict[str, int] = {
+    "stitched": 1,
+    "leather": 6,
+    "hide": 1,
+    "carpet": 3,
+    "rug": 1,
+    "parquet": 4,
+    "wallpaper": 1,
+    "woodchip": 1,
+    "roof": 3,
+    "roofing": 3,
+    "shingle": 3,
+    "herringbone": 1,
+    "basketweave": 1,
+    "woven": 2,
+    "weave": 1,
+    "textile": 2,
+    "cloth": 4,
+    "linen": 1,
+    "microfiber": 1,
+    "velvet": 1,
+    "fur": 3,
+}
+
 SPREAD_TIERS = (
     # The SOFT textures, whose variation is a whisper.
     ("soft", "fur", "microfiber", "velvet", "satin", "wool", "fabric", "linen"),
@@ -1182,10 +1214,25 @@ def spread_for_description(description: str) -> float:
         for word in tier:
             if word in words:
                 return _spread_of(word)
-    for word in description.lower().replace(",", " ").split():
-        spread = SPREADS.get(word.strip(".,"))
-        if spread is not None:
-            return spread
+    # The words that are not in a tier, and the MOST SPECIFIC of them
+    # wins.
+    #
+    # "leather" names six materials in the wide set and their spreads
+    # run from 0.0031 to 0.0636 - a twentyfold range - so its own
+    # value is a mean of nothing in particular. And "stitched" names
+    # ONE, and it says exactly how much the surface varies.
+    #
+    # So the words that name few materials win, and the general ones
+    # are the fallback.
+    named = [
+        word.strip(".,")
+        for word in description.lower().replace(",", " ").split()
+        if word.strip(".,") in SPREADS
+    ]
+    if named:
+        named = [(word, index) for index, word in enumerate(named)]
+        named.sort(key=lambda pair: (SPREAD_SPECIFICITY.get(pair[0], 99), pair[1]))
+        return _spread_of(named[0][0])
     return DEFAULT_SPREAD
 
 

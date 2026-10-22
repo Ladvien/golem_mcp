@@ -2594,10 +2594,18 @@ def leather_field(
     envelope_reach = max(1e-6, float(envelope.max() - envelope.min()))
     envelope = (envelope - float(envelope.min())) / envelope_reach
 
-    # The edge is the crackle and the fibre is the envelope, and the
-    # writer draws the crackle as the joint and the envelope as the
-    # wear.
-    return cell, fine, (lattice, lattice), envelope
+    # The edge is the ENVELOPE and the fibre is the CRACKLE, and the
+    # writer draws the crackle as the wear and the envelope as the
+    # joint.
+    #
+    # They were the other way round, and the joint is a THIN line -
+    # so the crackle was a thread on a smooth sheet, and the whole
+    # spread was in the envelope.
+    #
+    # Measured on the truth's own: the six leathers carry two thirds
+    # of their spread in the fine and a third in the envelope, and
+    # the fine is a CRACKLE and not a smooth variation.
+    return cell, envelope, (lattice, lattice), fine
 
 
 def wallpaper_field(
