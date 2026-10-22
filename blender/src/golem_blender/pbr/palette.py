@@ -135,6 +135,24 @@ EXTREME_LIGHT_WORDS = ("black", "white", "dark", "light")
 #
 # The shares are fitted the same way the luma was: a word's hue is
 # the mean over the materials that name it.
+#
+# And they are fitted on the EIGHTY-SEVEN wide materials and not on
+# the twenty hand-picked ones: fourteen of the words were off by more
+# than three hundredths on the wide set, and "beige" - which names
+# fourteen of the eighty-seven - was 0.09 off and a quarter too grey,
+# so every material that says "beige" came out a pale grey where the
+# truth's is a warm tan.
+#
+# The biggest was "dark": the lane said 0.555, 0.344, 0.101 - a
+# saturated orange - and the truth's own fifteen dark materials
+# average 0.370, 0.326, 0.303, which is a near neutral. A dark thing
+# is dark and not orange.
+#
+# The leave-one-out refit - each material's own value left out of
+# its word's mean before the word is read - gives a mean error of
+# 0.0559 against the in-sample 0.0552, so the fit is not seeing
+# itself. The mean error fell from 0.0570 and the worst from 0.4198
+# to 0.3399.
 HUES: dict[str, tuple[float, float, float]] = {
     "natural": (0.4063, 0.3476, 0.2462),
     "blue": (0.2416, 0.3295, 0.429),

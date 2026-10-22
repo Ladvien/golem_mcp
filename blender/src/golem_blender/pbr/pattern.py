@@ -347,6 +347,16 @@ BRICK_ASPECT = 1.34
 # 0.068 at a two-pixel blur to 0.0087 at a hundred-and-twenty-eight.
 # So the face has structure at EVERY scale, and a flat face has none.
 BRICK_FACE_LATTICE = 8
+# How much of the face's PIXEL-level grain the field carries.
+#
+# A Perlin is smooth between its own lattice's corners however fine
+# the lattice is, and the truth's own brick face is SAND and not a
+# smooth field.
+#
+# A per-pixel random field was tried instead and it changed nothing:
+# the face's correlation at a one-pixel lag stayed at 0.223, so the
+# sand is not what the measure reads.
+BRICK_FACE_GRAIN_NOISE = 0.55
 BRICK_FACE_WARP = 0.06
 BRICK_FACE_WARP_STEP = 0.1
 BRICK_FACE_FREQUENCY = 3.0
@@ -1590,35 +1600,45 @@ def brick_field(resolution: int, cells: int, aspect: float = BRICK_ASPECT):
         (1, resolution),
     )
 
-    # The face's own HEIGHT, and it is the brick's own: a perlin
-    # over the brick's own position, and so every brick has a swirl
-    # of its own.
-    height = noise_perlin.perlin_2d(
-        within_x * BRICK_FACE_LATTICE + course_of * 0.37,
-        within_y * BRICK_FACE_LATTICE + brick_of * 0.41,
-        period=BRICK_FACE_LATTICE,
-        seed=11,
-    )
-    height_reach = max(1e-6, float(height.max() - height.min()))
-    height = (height - float(height.min())) / height_reach
-    warped_x, warped_y = warp.warped_coordinates(
-        within_x,
-        within_y,
-        height,
-        amount=BRICK_FACE_WARP,
-        step=BRICK_FACE_WARP_STEP,
-        iterations=1,
-    )
-    # The face's own GRAIN, and it is the warped field's own value:
-    # a ridged one, so the grain is a set of lines and not a cloud.
-    grain = noise_perlin.perlin_2d(
-        warped_x * BRICK_FACE_FREQUENCY,
-        warped_y * BRICK_FACE_FREQUENCY,
-        period=BRICK_FACE_LATTICE,
+    # The face's own GRIT, and it is a FINE field and not a swirl.
+    #
+    # The face was a DOMAIN-WARPED field - a perlin over the
+    # brick's own position, warped - and a warp has a DIRECTION, so
+    # every brick carried the same diagonal herringbone and the wall
+    # came out as a field of chevrons.
+    #
+    # The truth's own brick face is GRIT: its correlation falls
+    # steadily from +0.391 at a one-pixel lag to +0.086 at a
+    # thirty-two, with no dominant scale and no direction.
+    #
+    # So the face is the surface's own mottle at a fine scale, with
+    # the brick's own hash for the patch-to-patch difference.
+    grit = noise_perlin.perlin_2d(
+        within_x * BRICK_FACE_LATTICE * 4 + brick_of * 0.41,
+        within_y * BRICK_FACE_LATTICE * 4 + course_of * 0.37,
+        period=BRICK_FACE_LATTICE * 4,
         seed=13,
     )
-    grain_reach = max(1e-6, float(grain.max() - grain.min()))
-    grain = (grain - float(grain.min())) / grain_reach
+    # And the grit's own PIXEL-level noise, because the truth's face
+    # is sand and not a smooth field.
+    #
+    # The truth's own brick face has a correlation of +0.391 at a
+    # one-pixel lag and the lane's had +0.183 - and a perlin is SMOOTH
+    # inside its own cell whatever the cell's size, so the lattice
+    # could not bring it.
+    #
+    # So the face carries a per-pixel field as well, and the two
+    # together are the sand.
+    grit = grit + BRICK_FACE_GRAIN_NOISE * (
+        noise_perlin.perlin_2d(
+            within_x * resolution + brick_of * 0.41,
+            within_y * resolution + course_of * 0.37,
+            period=resolution,
+            seed=17,
+        )
+    )
+    grain_reach = max(1e-6, float(grit.max() - grit.min()))
+    grain = (grit - float(grit.min())) / grain_reach
     # And the face's own TOOTH, at a finer scale than the grain: a
     # worked stone is smooth and pitted at once.
     tooth = surface_texture(resolution, BRICK_FACE_LATTICE * BRICK_FACE_TOOTH)
