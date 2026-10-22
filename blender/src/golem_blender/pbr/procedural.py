@@ -262,15 +262,15 @@ DEFAULT_LINE_WIDTH = 0.35
 # gradient and not as a set of rings. Measured, a narrow envelope
 # drew hard white waves where the truth has a soft gradient.
 ENVELOPE_LINE_WIDTH = 1.0
-ENVELOPE_STRENGTH = 0.40
+ENVELOPE_STRENGTH = 0.60
 # The FIBRE's line: how wide it is, and how much of the spread it
 # carries.
 #
 # The fibre is FINE and it is most of the spread: the truth's own
 # wood carries 0.51 of its spread in the fibre and 0.49 in the
 # envelope, and the two are nearly equal.
-FIBRE_LINE_WIDTH = 0.35
-FIBRE_STRENGTH = 0.35
+FIBRE_LINE_WIDTH = 0.12
+FIBRE_STRENGTH = 0.15
 # The METAL's grain is fainter than the wood's fibre.
 #
 # A sheet's grain is a brushed streak - a very fine variation - and
@@ -726,18 +726,22 @@ def write_procedural_base_color(
         # Wood096 measures 5.8 and its rings are two and a half; the
         # truth's own Wood092 measures 37.9 and its rings are
         # sixteen.
+        # And the FIBRE's own lattice is NOT passed in: the lane's own
+        # said the fibre's lattice was the rings' count, and the rings'
+        # count is the surface's own feature count - so a wood's fine
+        # grain came out a hundred pixels apart and the wood came out
+        # as smooth blobs with no grain in them.
+        #
+        # The fibre's lattice is its OWN: the truth's own wood has its
+        # lines seven and a half pixels apart in a thousand-and-
+        # twenty-four row, and a value noise's ridge crosses the middle
+        # of its range twice per lattice cell - so the lattice is a
+        # hundred and forty across the image, whatever the surface's
+        # own feature count is.
         cell, edge, grid, fibre = pattern.grain_field(
             resolution,
             max(2, round(cells / pattern.GRAIN_CELLS_PER_FEATURE)),
             lines_per_cell=lines_per_cell,
-            fibre_cells=max(
-                2,
-                round(
-                    cells
-                    / pattern.GRAIN_CELLS_PER_FEATURE
-                    * pattern.FIBRE_CELLS_PER_RING
-                ),
-            ),
         )
     elif kind == "metal":
         cell, edge, grid, fibre = pattern.metal_field(
@@ -1998,8 +2002,24 @@ def _write_line_pattern(
     # So the darkness is shifted so that its own mean is the half,
     # and the base is reached in the light parts and the line colour
     # in the dark ones.
-    darkness = darkness - 0.5 * float(darkness.mean())
-    darkness = _np.clip(darkness * 2.0, 0.0, 1.0)
+    # And the darkness is NORMALISED to its own range before it is
+    # centred, and the centring is the range's own middle.
+    #
+    # The darkness was shifted by half its mean and then doubled, and
+    # the doubling assumes a range of one - but the darkness's range
+    # is the two layers' own sum, and with a strong envelope and a
+    # strong fibre it runs to 0.9. So the shift left the lower half
+    # of the structure below zero and the clip DROPPED IT, and the
+    # wood came out with no grain in it at all: a few smooth blobs
+    # where the truth has dense fine lines.
+    #
+    # So the darkness is scaled to zero and one first, and then
+    # centred on the middle of that range.
+    dark_low = float(darkness.min())
+    dark_high = float(darkness.max())
+    if dark_high - dark_low > 1e-9:
+        darkness = (darkness - dark_low) / (dark_high - dark_low)
+    darkness = _np.clip(darkness - 0.5, -0.5, 0.5) * 2.0 + 0.5
     # The surface is drawn BOTH LIGHTER AND DARKER than the base.
     #
     # The blend was one-sided - the base colour everywhere the

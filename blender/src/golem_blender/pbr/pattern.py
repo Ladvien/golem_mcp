@@ -195,7 +195,7 @@ ENVELOPE_WEIGHT = 1.0
 # diagonally - the lattice's own geometry is square, so a mild
 # compression leaves the patches as squares with a diagonal long
 # axis - and the truth's fibre is along the board.
-FIBRE_STRETCH = 0.25
+FIBRE_STRETCH = 2.0
 FIBRE_OCTAVES = 3
 FIBRE_PERSISTENCE = 0.5
 # The FIBRE's orientation and carrier, for the Gabor that draws it.
@@ -241,7 +241,11 @@ FIBRE_LATTICE = 256
 # resolution - and a Gabor is a direct trigonometric sum over the
 # lattice's bins, so the resolution is the whole cost: measured, it
 # took 11.8 seconds at 1024 across.
-FIBRE_RESOLUTION = 512
+# And the resolution the FIBRE is computed at. It is the OUTPUT's
+# own, and not a coarse one: the fibre's lines are seven and a half
+# pixels apart in a thousand-and-twenty-four row, and a bilinear
+# upsample from five hundred and twelve blurs them into ramps.
+FIBRE_RESOLUTION = 2048
 # How far the FIBRE's lines wander, in lattice cells.
 #
 # A Gabor's carrier is a regular set of stripes, and the truth's
@@ -273,7 +277,7 @@ FIBRE_CELLS_PER_RING = 1.0
 # features and its rings are two and a half, and the truth's own
 # Wood092 measures 37.9 and its rings are sixteen.
 GRAIN_CELLS_PER_FEATURE = 2.3
-FIBRE_STRETCH = 0.25
+FIBRE_STRETCH = 2.0
 FIBRE_OCTAVES = 4
 FIBRE_FOLDS = 1
 # The percentile the line's steepness is measured against. The
@@ -2020,7 +2024,17 @@ def grain_field(
         # 1024 across and would take a minute at 2048. The fibre is
         # FINE DETAIL - the strokes are soft - so a coarse grid and a
         # bilinear bring it up.
-        fibre_side = max(4, min(resolution, FIBRE_RESOLUTION))
+        # And the fibre is computed at the OUTPUT's resolution and
+        # not at a coarse one and upsampled.
+        #
+        # The fibre's lines are seven and a half pixels apart in a
+        # thousand-and-twenty-four row, so at a coarse side of five
+        # hundred and twelve they are three and a half pixels - and
+        # the bilinear upsample to two thousand and forty-eight
+        # BLURS them into ramps. The fibre's line came out a smooth
+        # gradient over twenty pixels and the wood came out as a few
+        # big smooth blobs with no grain in them at all.
+        fibre_side = max(4, min(resolution, FIBRE_RESOLUTION, resolution))
         fibre_axis = (numpy.arange(fibre_side) + 0.5) / fibre_side
         fibre_x, fibre_y = numpy.meshgrid(fibre_axis, fibre_axis, indexing="ij")
         # The fibre is WARPED, so the lines wander.
@@ -2165,14 +2179,21 @@ def grain_field(
         # The ridge is the field folded about its middle, and the
         # line is where the fold creases - so the steepness is the
         # line's darkness.
+        # And the line is the RIDGE's own CREST and not the slope.
+        #
+        # The noise is already ridged - the fBm's folds - and a fold's
+        # crest is a LINE, a continuous stroke. The slope of that
+        # ridge is two lines, one on each side of the crest, and the
+        # crest itself is a point where they meet - so the slope made
+        # the grain a field of DOTS.
+        #
+        # So the line is the ridge's own high values, and the line's
+        # darkness is how far above the ridge's own middle it is.
         ridge = numpy.abs(fibre_field - 0.5)
-        slope = numpy.abs(numpy.gradient(ridge, axis=0)) + numpy.abs(
-            numpy.gradient(ridge, axis=1)
-        )
-        reach = float(numpy.percentile(slope, FIBRE_SLOPE_PERCENTILE))
+        reach = float(numpy.percentile(ridge, FIBRE_SLOPE_PERCENTILE))
         if reach <= 0.0:
             reach = 1.0
-        fibre_dark = numpy.clip(slope / reach, 0.0, 1.0)
+        fibre_dark = numpy.clip(1.0 - ridge / reach, 0.0, 1.0)
 
         # The fibre's own DARKNESS, for the writer to draw on its
         # own - the same two-scale structure the metal has, so the
