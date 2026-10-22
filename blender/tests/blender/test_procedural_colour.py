@@ -133,6 +133,39 @@ def test_the_procedural_colour_carries_a_joint_network(empty_scene, tmp_path):
     )
 
 
+def test_a_grey_surface_stays_grey_when_it_is_lightened(empty_scene, tmp_path):
+    """The lift to the description's value keeps the surface's hue.
+
+    The lift moved every pixel along that pixel's OWN colour over its
+    luma, and a near-black pixel's ratio is quantisation noise: the
+    grey cloth came out with pure red specks - a saturation of 1.0 on
+    a palette whose own is 0.02.
+    """
+    import numpy
+
+    from golem_blender.pbr.palette import palette_for_description
+    from golem_blender.pbr.procedural import write_procedural_base_color
+
+    palette = palette_for_description("fabric, rough", path="woven")
+    path = write_procedural_base_color(
+        tmp_path / "T_Cloth_BaseColor.png",
+        kind="woven",
+        scale_cells=40.0,
+        width_px=256,
+        height_px=256,
+        **palette,
+    )
+    image = bpy.data.images.load(str(path))
+    width, height = image.size
+    pixels = numpy.empty(width * height * 4, dtype=numpy.float32)
+    image.pixels.foreach_get(pixels)
+    rgb = pixels.reshape((height, width, 4))[:, :, :3]
+    saturation = rgb.max(axis=2) - rgb.min(axis=2)
+    assert float(saturation.max()) < 0.15, (
+        f"a grey cloth carries a pixel of saturation {saturation.max():.2f}"
+    )
+
+
 def test_an_unknown_colour_kind_is_refused(empty_scene, tmp_path):
     """A misspelled kind names itself rather than writing nothing."""
     from golem_blender.pbr.procedural import write_procedural_base_color

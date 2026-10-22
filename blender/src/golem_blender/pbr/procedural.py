@@ -1848,6 +1848,16 @@ def _shift_to_value(colour, target_value: float):
     The shift is along the image's own hue - a surface's colour does
     not change when it is lighter or darker, it is the same colour at
     another level - so the hue survives the shift.
+
+    The hue is the IMAGE's mean hue - one direction for the whole
+    surface - and not each pixel's own. A pixel's own hue is its
+    colour over its luma, and a near-black pixel's luma is a few
+    thousandths, so its "hue" is quantisation noise blown up a
+    thousand times: a pixel of (0.003, 0.001, 0.001) has a hue of
+    (2.0, 0.7, 0.7), and a lift of 0.4 moved it to pure red. Measured:
+    the woven fabric's saturation was 0.02 before the shift and 1.0
+    after it, and the black marble's 0.006 and 0.46 - red and pink
+    specks over a grey cloth and a black stone.
     """
     import numpy as _np
 
@@ -1856,8 +1866,9 @@ def _shift_to_value(colour, target_value: float):
     measured = float(luma.mean())
     if measured <= 1e-9:
         return colour
-    hue = colour / _np.maximum(luma[:, :, _np.newaxis], 1e-6)
-    shifted = colour + hue * (target_value - measured)
+    mean_colour = colour.reshape(-1, 3).mean(axis=0)
+    hue = mean_colour / measured
+    shifted = colour + hue[_np.newaxis, _np.newaxis, :] * (target_value - measured)
     return _np.clip(shifted, 0.0, 1.0)
 
 
