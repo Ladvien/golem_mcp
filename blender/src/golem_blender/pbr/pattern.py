@@ -481,6 +481,12 @@ CARPET_FIBRE_STRETCH = 2.0
 # cells came out at nine pixels and read a spread of 0.0388 where
 # the truth's is 0.0032.
 LEATHER_CELL_COUNT = 512
+# How many CRACKLE cells a leather's surface feature carries.
+#
+# The truth's own six leathers measure nineteen to five hundred and
+# twelve features across, and the crackle is what the measure reads
+# on four of them - so the crackle's own count follows the surface's.
+LEATHER_CELL_FACTOR = 1.0
 LEATHER_CELL_JITTER = 0.7
 # A WALLPAPER's motif, as a multiple of the surface's own feature
 # count: a wallpaper's design is a thing you see from across a room.
@@ -2865,7 +2871,13 @@ def leather_field(
     # The hide's own CELLS, and they are TIGHT and even: a fine
     # Worley crackle, at the leather's own grain and not the
     # surface's count.
-    cell_lattice = _power_of_two_nearest(max(8, LEATHER_CELL_COUNT))
+    #
+    # The count is the SURFACE's own, and not a fixed five hundred
+    # and twelve: the truth's six leathers measure nineteen to five
+    # hundred and twelve features across, and the crackle is what
+    # the measure reads on four of them. A fixed count made every
+    # leather a five-hundred-and-twelve feature surface.
+    cell_lattice = _power_of_two_nearest(max(8, round(cells * LEATHER_CELL_FACTOR)))
     while cell_lattice > 1 and resolution % cell_lattice != 0:
         cell_lattice //= 2
     while cell_lattice > 1 and cell_lattice * 2 > resolution:
