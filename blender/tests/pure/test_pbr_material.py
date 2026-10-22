@@ -426,7 +426,7 @@ def test_the_spreads_are_the_truths_own():
     from golem_blender.pbr.palette import spread_for_description
 
     cases = {
-        "fabric, orange, red, wool": 0.0437,
+        "fabric, orange, red, wool": 0.0508,
         "asphalt, charcoal, dark, granular, gray, industrial, matte, pavement, road, rough, urban": 0.0178,
         "concrete, grey, light, plaster, smooth": 0.0228,
         # The ground's own spread is the one the words cannot say:

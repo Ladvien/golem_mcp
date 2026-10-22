@@ -1702,6 +1702,60 @@ LEATHER_SPREADS: dict[str, float] = {
 }
 
 # The tiers, and the ORDER matters: the specific finishes first.
+# A FABRIC's FINISH, and its spread, and the tables are fitted on
+# the truth's own thirteen fabrics.
+#
+# The truth's own fabrics' spreads run from 0.0032 to 0.1986 - a
+# sixtyfold range - and the material's own word said 0.1245, a mean
+# of nothing in particular.
+#
+# But the FINISH says which:
+#
+#     "printed" 0.0032   "soft" 0.0090   "white, wool" 0.0295
+#     "clean, smooth" 0.0347   "wool" 0.0508   "weave" 0.0529
+#     "grey" 0.0815   "dirty" 0.1134   "rough" 0.1282
+#     "checkered" 0.1877
+#
+# So the finish decides first, and the material's own word decides
+# when no finish is named - the same rule the metal's and the
+# leather's have.
+FABRIC_SPREADS: dict[str, float] = {
+    "printed": 0.0032,
+    "plastisol": 0.0032,
+    "soft": 0.0090,
+    "fur": 0.0090,
+    "microfiber": 0.0090,
+    "white": 0.0295,
+    "wool": 0.0508,
+    "clean": 0.0347,
+    "smooth": 0.0347,
+    "weave": 0.0529,
+    "woven": 0.0529,
+    "grey": 0.0815,
+    "gray": 0.0815,
+    "dirty": 0.1134,
+    "smudge": 0.1134,
+    "rough": 0.1282,
+    "checkered": 0.1877,
+    "chequered": 0.1877,
+    "patterned": 0.1877,
+    "fabric": 0.0815,
+    "cloth": 0.0815,
+    "textile": 0.0815,
+    "cotton": 0.1877,
+}
+
+# The tiers, and the ORDER matters: the specific finishes first.
+FABRIC_SPREAD_TIERS = (
+    ("printed", "plastisol"),
+    ("soft", "fur", "microfiber"),
+    ("checkered", "chequered", "patterned", "cotton"),
+    ("rough", "dirty", "smudge"),
+    ("clean", "smooth"),
+    ("wool", "weave", "woven", "white"),
+    ("grey", "gray"),
+)
+
 LEATHER_SPREAD_TIERS = (
     ("stitched", "seam", "quilted"),
     ("suede", "rough", "coarse", "scuffed"),
@@ -3028,6 +3082,20 @@ def spread_for_description(description: str) -> float:
                 key=lambda word: (METAL_SPECIFICITY.get(word, 99), tier.index(word))
             )
             own = METAL_SPREADS.get(metal_words[0])
+            if own is not None:
+                return own
+    if words & {"fabric", "cloth", "textile", "woven", "weave", "wool"}:
+        # A FABRIC's FINISH is its character, the same way a metal's
+        # and a leather's are.
+        #
+        # The truth's own thirteen fabrics' spreads run from 0.0032 to
+        # 0.1986 - a sixtyfold range - and the material's own word
+        # said 0.1245, a mean of nothing in particular.
+        for tier in FABRIC_SPREAD_TIERS:
+            finish_words = [word for word in tier if word in words]
+            if not finish_words:
+                continue
+            own = FABRIC_SPREADS.get(finish_words[0])
             if own is not None:
                 return own
     if "leather" in words or "hide" in words:
