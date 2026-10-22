@@ -518,15 +518,6 @@ MORTAR_SPREAD_FRACTION = 1.0
 # the fabric read 0.57x, the brick 0.47x, the rock 0.49x and the
 # asphalt 0.55x.
 RAMP_SPREAD_FACTOR = 1.7320508
-# How much darker a JOINT is than the stones, as a fraction of the
-# surface's spread. A joint is part of the surface's variation, not
-# a separate darkness: a fixed 0.06 offset is six times the whole
-# spread of a soft fabric, and the joint then dominates the image's
-# contrast.
-#
-# Measured, the fabric's contrast read 4.84x the truth's while its
-# ramp alone read 0.35x - the joint was doing all of it.
-MORTAR_SPREAD_FRACTION = 1.0
 
 # How much the surface's colour VARIES, by the texture words. This is
 # the other thing a description says, and the truth sets show how much

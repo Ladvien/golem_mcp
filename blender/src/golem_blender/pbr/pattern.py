@@ -209,49 +209,6 @@ ENVELOPE_WEIGHT = 1.0
 FIBRE_STRETCH = 0.0625
 FIBRE_OCTAVES = 4
 FIBRE_PERSISTENCE = 0.5
-# The FIBRE's orientation and carrier, for the Gabor that draws it.
-#
-# The orientation is the direction the field varies FASTEST, and the
-# strokes run ACROSS it. A plank's fibre runs along the board, so
-# the carrier is along the board and the strokes are across it -
-# which is the convention measured on the vendored Gabor itself: the
-# field's standard deviation along the requested carrier is 0.884
-# and across it 0.064.
-#
-# The frequency is the carrier's cycles per lattice cell, and the
-# line count follows it: measured, a frequency of 8 gave 9 lines
-# across, 16 gave 17 and 32 gave 31 - so the count is the frequency.
-#
-# The truth's wood has its lines 3, 5, 6, 9, 14 and 17 pixels apart
-# in a 1024 row, so about a hundred and forty of them.
-# The FIBRE's carrier direction, in radians. The carrier is the way
-# the field varies fastest, and the strokes run ACROSS it.
-#
-# A wood's grain lines run along the plank, and a row of the map runs
-# along the plank too - so the carrier must be ACROSS the row, and
-# the orientation is a quarter turn.
-#
-# It was not, and the wood's lines ran across the row instead of
-# along it: measured, a row of the Gabor carried ONE line where it
-# should carry sixty-two. So the fibre was not in the row at all, and
-# the wood's feature scale read 0.84x the truth's - the envelope was
-# doing all the reading and the fibre was invisible, exactly as the
-# close crop showed.
-FIBRE_ORIENTATION = math.pi / 2.0
-FIBRE_FREQUENCY = 64.0
-# The FIBRE's lattice, which is the carrier's own grid.
-#
-# The line count follows the FREQUENCY and not the lattice - measured:
-# a frequency of 32 gave 31 lines and 64 gave 62, at every lattice
-# from 128 to 512. The truth's wood has its lines 3, 5, 6, 9, 14 and
-# 17 pixels apart in a 1024 row, so about a hundred and forty of
-# them.
-FIBRE_LATTICE = 256
-# The resolution the FIBRE is computed at. The fibre is fine detail
-# and its strokes are soft, so it does not need the output's
-# resolution - and a Gabor is a direct trigonometric sum over the
-# lattice's bins, so the resolution is the whole cost: measured, it
-# took 11.8 seconds at 1024 across.
 # And the resolution the FIBRE is computed at. It is the OUTPUT's
 # own, and not a coarse one: the fibre's lines are seven and a half
 # pixels apart in a thousand-and-twenty-four row, and a bilinear
@@ -263,15 +220,6 @@ FIBRE_RESOLUTION = 2048
 # fibre is not: its lines come 3, 5, 6, 9, 14 and 17 pixels apart,
 # and they bend where the board was cut across the log's rings.
 FIBRE_WARP = 0.004
-# The FIBRE's noise: its lattice, how far it is stretched along the
-# plank, and how many times it is ridged.
-#
-# Measured against the truth's own wood: at a lattice of eight and a
-# stretch of 0.15 the fibre reads fifteen and a half features and its
-# correlation decays as the truth's does - 0.35 at a lag of ten
-# against the truth's 0.52. At a lattice of sixteen it reads
-# twenty-eight and the correlation stops decaying.
-FIBRE_LATTICE = 4
 # How many FIBRE lines a wood's ring carries, and it is the ratio of
 # the surface's across-count to its down-count.
 #
@@ -646,25 +594,6 @@ def _bricks_across(courses: int, aspect: float = BRICK_ASPECT) -> int:
     return max(1, round(courses / aspect))
 
 
-def _nearest_divisor(resolution: int, wanted: int) -> int:
-    """The divisor of the resolution CLOSEST to the count wanted.
-
-    A count that does not divide the resolution leaves a fraction of
-    a brick at the edge, and the wrap joins it to a whole one - so
-    the seam shows. Measured, the brick's seam read 7.55x the
-    truth's.
-
-    So the count is a divisor, and the one nearest the count wanted:
-    the aspect's own count when it divides, and its closest
-    divisor when it does not.
-    """
-    best = 1
-    for candidate in range(1, min(wanted, resolution) + 1):
-        if resolution % candidate == 0:
-            best = candidate
-    return best
-
-
 # How far a GRAIN's line drifts from its own line, as a fraction of
 # the cell.
 #
@@ -887,23 +816,6 @@ STONE_PEBBLE_COLOUR = 0.12
 # the fine lattice put the scale at 4.17x the truth's, because the
 # measure then read the pebbles' colour and not the envelope's.
 STONE_PEBBLE_CELL_FROM = "coarse"
-# A METAL's SCRATCHES: how long a streak is, how wide, at what angle,
-# and how the sheet is divided into cells.
-#
-# Material-maker's `scratches` node is the design, and its defaults
-# are the numbers: the sheet is divided into cells a quarter of the
-# way along, each cell gets one streak at a random angle, the streak
-# is faded at the cell's border so it does not cross it, and the
-# layers combine by their maximum.
-#
-# The truth's polished silver crosses its midpoint 122 times where
-# its envelope is nine features, so a sheet's fine structure is a
-# field of streaks and not a set of parallel bands.
-SCRATCH_CELL_FRACTION = 4.0
-SCRATCH_ANGLE = 0.5
-SCRATCH_HALF_LENGTH = 0.5
-SCRATCH_HALF_WIDTH = 0.04
-SCRATCH_BORDER_FADE = 0.12
 
 
 def warp(
@@ -2935,8 +2847,6 @@ def marble_field(
     # The truth's own Marble021 has a p10 of 0.918 and a p90 of
     # 0.973: the stone itself VARIES, gently, and the veins are the
     # fine network on top of it.
-    stone = 1.0 - numpy.clip(contour, 0.0, 1.0)
-    #
     # And the ENVELOPE is the BED's own shape, not the inverse of
     # the contour's narrow band.
     #
@@ -4592,82 +4502,6 @@ def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES
         period=size,
         seed=0,
     )
-
-
-def scratch_streaks(resolution: int, cells: int, seed: int = 0):
-    """A sheet's SCRATCHES: discrete streaks of random length and angle.
-
-    A brushed or rolled sheet is not a set of parallel bands. It is a
-    set of STREAKS - each one a short line at its own angle, with its
-    own length and its own waviness - and material-maker's `scratches`
-    node is the design: the sheet is divided into cells, each cell
-    gets one streak at a random angle, the streak is faded at the
-    cell's border so it does not cross it, and the layers combine by
-    their maximum.
-
-    The streaks are what a metal's close crop shows, and the truth's
-    is a field of them: the truth's polished silver crosses its
-    midpoint 122 times where its envelope is nine features.
-
-    The streak's own profile is a taper along its length - so it
-    fades at both ends - and it is THIN across, so it reads as a
-    scratch and not as a band.
-    """
-    import numpy
-
-    axis = _domain_samples(resolution)
-    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
-    two_pi = 2.0 * numpy.pi
-
-    # The sheet is divided into cells, and each cell gets one streak.
-    # The cells are the streaks' length scale.
-    # The lattice DIVIDES the resolution, so every cell's border
-    # lands on whole pixels and the wrap joins two whole cells.
-    #
-    # It was the cells times a fraction, and the fraction is not a
-    # power of two: the metal's scratches' vertical wrap read 0.155
-    # against their own spread of 0.19 - eighty per cent of the
-    # whole field - and the corrugated steel's seam read 6.52
-    # against the truth's 0.35.
-    lattice = _power_of_two_nearest(max(2, round(cells * SCRATCH_CELL_FRACTION)))
-    while lattice > 1 and resolution % lattice != 0:
-        lattice //= 2
-    cell_x = numpy.floor(sample_x * lattice)
-    cell_y = numpy.floor(sample_y * lattice)
-    # The cell's own random values, from the same hash the lane's
-    # cell colours use - so the streaks and the sheet's own colours
-    # come from the same sheet.
-    from golem_blender.pbr.procedural import _cell_hash
-
-    hash_x = cell_x.astype(numpy.int32)
-    hash_y = cell_y.astype(numpy.int32)
-    # The seed is folded into the cell's own index, so each streak's
-    # randomness is a function of where it is and of which sheet it is
-    # on - and the same hash the lane's cell colours use.
-    index = (hash_y % lattice) * lattice + (hash_x % lattice)
-    index = index + seed * lattice * lattice
-    random_a = _cell_hash(index, lattice, lattice)
-
-    # The streak's own frame: the cell's centre, rotated by its angle.
-    local_x = (sample_x * lattice - cell_x) - 0.5
-    local_y = (sample_y * lattice - cell_y) - 0.5
-    angle_rad = (random_a - 0.5) * two_pi * SCRATCH_ANGLE
-    rotated_x = local_x * numpy.cos(angle_rad) + local_y * numpy.sin(angle_rad)
-    rotated_y = -local_x * numpy.sin(angle_rad) + local_y * numpy.cos(angle_rad)
-
-    # The streak runs along its own frame's x, and is faded at the
-    # cell's border so it does not cross into its neighbour.
-    fade = numpy.minimum(
-        numpy.minimum(local_x + 0.5, 0.5 - local_x),
-        numpy.minimum(local_y + 0.5, 0.5 - local_y),
-    )
-    fade = numpy.clip(fade / SCRATCH_BORDER_FADE, 0.0, 1.0)
-    # The streak's own profile: a taper along its length and a thin
-    # line across it.
-    along = numpy.abs(rotated_x) / SCRATCH_HALF_LENGTH
-    across = numpy.abs(rotated_y) / SCRATCH_HALF_WIDTH
-    streak = numpy.clip(1.0 - along, 0.0, 1.0) * numpy.clip(1.0 - across, 0.0, 1.0)
-    return numpy.clip(streak * fade, 0.0, 1.0)
 
 
 def joint_response(
