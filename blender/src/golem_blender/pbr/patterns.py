@@ -38,6 +38,7 @@ _STRUCTURE_PATTERNS = (
     ("plank", "grain"),
     ("timber", "grain"),
     ("wood", "grain"),
+    ("bark", "grain"),
     ("brushed", "metal"),
     ("corrugated", "metal"),
     ("metal", "metal"),
@@ -46,6 +47,15 @@ _STRUCTURE_PATTERNS = (
     ("bricks", "brick"),
     ("tiles", "brick"),
     ("tile", "brick"),
+    # A MARBLE is a STRUCTURE and not a material: the truth's own
+    # Marble012 says "stone" as well as "marble", and "stone" is a
+    # Voronoi - so the marble has to be read before it.
+    #
+    # And "veined" says the same thing without naming the stone.
+    ("marble", "marble"),
+    ("onyx", "marble"),
+    ("travertine", "marble"),
+    ("veined", "marble"),
 )
 
 # The FLAT surfaces: a sheet with no cells in it.
@@ -186,6 +196,11 @@ _MATERIAL_PATTERNS = (
     ("fabric", "woven"),
     ("wool", "woven"),
     ("fur", "carpet"),
+    # A MOSAIC is a BRICK: the truth's own mosaic tiles are square
+    # and their grout is a joint, and the marble's own is a network of
+    # veins.
+    ("mosaic", "brick"),
+    ("paving", "scattered"),
     ("metal", "voronoi"),
 )
 

@@ -457,6 +457,19 @@ WOVEN_COARSE_PERIOD = 8
 # a hundred and seventy-seven pixels and the shingles every a hundred
 # and eighty-five.
 ROOF_ASPECT = 1.0
+# A MARBLE's veins: how far the warp displaces them, the step it
+# takes, and how sharp the vein's own line is.
+#
+# Measured on the truth's own: the truth's Marble012's veins cover
+# eight per cent of the surface and their correlation is +0.280 at an
+# eight-pixel lag and -0.004 at a hundred and twenty-eight, so they
+# are a fine network.
+MARBLE_WARP = 0.08
+MARBLE_WARP_STEP = 0.1
+MARBLE_VEIN_WIDTH = 0.14
+# How many vein BANDS the warped field carries, and it is the number
+# of contours the field crosses.
+MARBLE_VEIN_FREQUENCY = 12.0
 # A HERRINGBONE floor's own aspect, and a board is as wide as it is
 # long.
 HERRINGBONE_ASPECT = 1.0
@@ -2406,6 +2419,99 @@ def herringbone_field(
         + numpy.where(parity > 0.5, 1, 0).astype(numpy.int32)
     ).astype(numpy.int32)
     return cell, edge, (squares * 2, squares), None
+
+
+def marble_field(
+    resolution: int,
+    cells: int,
+    octaves=DEFAULT_LINE_OCTAVES,
+    lines_per_cell: int = 1,
+):
+    """A MARBLE: a fine network of VEINS.
+
+    A marble is a stone that was cut across its bed, and the cut
+    exposes the veins: a network of fine dark lines that wander
+    across the surface.
+
+    Measured on the truth's own: the truth's Marble012's veins cover
+    eight per cent of the surface and their correlation is +0.280 at
+    an eight-pixel lag, +0.079 at a thirty-two and -0.004 at a
+    hundred and twenty-eight - so the veins are a fine network that
+    decorrelates inside a hundred pixels, and the whole surface's
+    correlation crosses zero there.
+
+    A vein is a RIDGE and not a cloud: the stone's minerals collect
+    along a line, and the line is where the stone changed. So the
+    field is a ridged Perlin - Material Maker's `shard_fbm`, which is
+    a Perlin with folds, and the folds are the ridging.
+
+    And the veins WANDER: a marble's veins are not straight lines
+    and not a random noise, and a warped field is what makes them
+    wander - Material Maker's `warp` node, MIT licensed, and the same
+    one the brick's face uses.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise_perlin, warp
+
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
+
+    # The veins' own lattice, and it is a power of two that divides
+    # the resolution, so the field's wrap joins two whole cells.
+    lattice = _power_of_two_nearest(max(4, cells))
+    while lattice > 1 and resolution % lattice != 0:
+        lattice //= 2
+    while lattice > 1 and lattice * 4 > resolution:
+        lattice //= 2
+
+    # The WARP, and it is the veins' own bed: a low-frequency field
+    # that the veins ride, so they wander.
+    bed = noise_perlin.perlin_2d(
+        sample_x * max(2, lattice // 8),
+        sample_y * max(2, lattice // 8),
+        period=max(2, lattice // 8),
+        seed=17,
+    )
+    bed_reach = max(1e-6, float(bed.max() - bed.min()))
+    bed = (bed - float(bed.min())) / bed_reach
+    warped_x, warped_y = warp.warped_coordinates(
+        sample_x,
+        sample_y,
+        bed,
+        amount=MARBLE_WARP,
+        step=MARBLE_WARP_STEP,
+        iterations=1,
+    )
+    # The veins themselves: the CONTOURS of a warped field.
+    #
+    # A vein is where the stone's bed changed, and a bed is a
+    # continuous field - so a vein is a LEVEL SET of it, and a level
+    # set of a smooth field is a LINE.
+    #
+    # A RIDGE was tried and it is not the same thing: a ridge is where
+    # the field is near its own maximum, and a maximum is a point and
+    # not a line, so the veins came out as isolated blobs.
+    #
+    # So the vein is the sine of the warped field - the classic
+    # marble, where the bands are the field's own contours and the
+    # warp is what makes them wander.
+    bed = noise_perlin.perlin_2d(
+        warped_x * lattice,
+        warped_y * lattice,
+        period=lattice,
+        seed=23,
+    )
+    veins = numpy.abs(numpy.sin(bed * MARBLE_VEIN_FREQUENCY * numpy.pi))
+    # And the vein's own WIDTH, and it is a LINE and not a band: the
+    # truth's own Marble012's veins are six pixels across.
+    veins = numpy.clip(1.0 - numpy.abs(veins - 1.0) / MARBLE_VEIN_WIDTH, 0.0, 1.0)
+    return (
+        numpy.zeros((resolution, resolution), dtype=numpy.int32),
+        veins,
+        (lattice, lattice),
+        veins,
+    )
 
 
 def roof_field(

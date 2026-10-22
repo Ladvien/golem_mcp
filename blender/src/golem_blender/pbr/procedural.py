@@ -218,6 +218,7 @@ PROCEDURAL_COLOUR_KINDS = (
     "voronoi",
     "brick",
     "grain",
+    "marble",
     "metal",
     "flat",
     "scattered",
@@ -616,6 +617,19 @@ def write_procedural_base_color(
             cells,
             lines_per_cell=lines_per_cell,
         )
+    elif kind == "marble":
+        # A MARBLE is a fine network of VEINS, and the veins are a
+        # warped ridged field.
+        #
+        # And the veins are the FIBRE and not the envelope: a marble's
+        # surface is one colour and the veins are the fine lines in
+        # it, and the truth's own Marble012's veins cover eight per
+        # cent of its surface.
+        cell, edge, grid, fibre = pattern.marble_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
+        )
     elif kind == "roof":
         # A ROOF is courses of overlapping shingles, and each shingle
         # carries its own tone: a roof is a patchwork of weathered
@@ -787,7 +801,7 @@ def write_procedural_base_color(
             colour = _shift_to_value(colour, target_value)
         return _write_image(output_path, resolution, width_px, height_px, colour)
 
-    if kind in ("grain", "metal"):
+    if kind in ("grain", "metal", "marble"):
         # A GRAIN and a METAL are LINES on a surface, not stones in a
         # joint. A cobblestone's treatment - a random colour per
         # cell, a mortar joint, a wear wave - is wrong for both: a
@@ -810,6 +824,8 @@ def write_procedural_base_color(
         # the base: a dark surface's lines are darker by less in
         # absolute terms than a pale one's, which is what the truth
         # does.
+        import numpy as _np
+
         if line_contrast is None:
             line_contrast = LINE_CONTRAST
         base = _luma_of(stone_dark_rgb)
@@ -817,6 +833,14 @@ def write_procedural_base_color(
         line_rgb = tuple(
             max(0.0, channel * (1.0 - darkening)) for channel in stone_dark_rgb
         )
+        if kind == "marble":
+            # A MARBLE's veins are the FIBRE and its base is the
+            # ENVELOPE, and the line pattern draws the envelope as a
+            # broad gradient and the fibre as the fine lines.
+            #
+            # So the roles are swapped: the veins are the fine lines
+            # and the base is the broad field.
+            edge, fibre = fibre, _np.ones_like(fibre) * 0.5
         return _write_line_pattern(
             output_path,
             edge=edge,
