@@ -64,6 +64,16 @@ _FLAT_PATTERNS = (
     ("paper", "flat"),
     ("cardboard", "flat"),
     ("paperless", "flat"),
+    # A CONCRETE is a SHEET and not a set of pieces.
+    #
+    # The truth's own Concrete048 measures seventy-nine features
+    # across with a spread of 0.0280, and it is a fine even surface
+    # - and the lane's answer for a concrete was a VORONOI, whose
+    # cells are large flat pieces with hard borders. So a concrete
+    # came out as a field of cobbles and its contrast read 2.58x the
+    # truth's.
+    ("concrete", "flat"),
+    ("cement", "flat"),
 )
 
 # The material words, and the pattern each calls for. Everything that
