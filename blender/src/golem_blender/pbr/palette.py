@@ -571,6 +571,22 @@ GENERIC_MATERIALS = frozenset(
 #
 # So the words that name few materials win, and the general ones are
 # the fallback. The counts are the fitter's own.
+# How specific a colour word has to be to win outright.
+#
+# A word that names at most this many materials is SPECIFIC and its
+# own value says exactly how dark the thing is. A word that names
+# more is a GENERAL one, and the DARKEST colour named wins instead:
+# a "blue, dark" thing is a dark blue.
+#
+# The limit is ONE: "blue" names three materials and their lumas run
+# from 0.229 to 0.527, so its own value says nothing about how dark
+# a blue is - and the truth's own Carpet012 is a "blue, carpet, dark,
+# plain" that measures 0.229.
+#
+# "espresso" names one and it is 0.214, and the truth's own brown
+# hardwood floor is 0.214 - and the word wins outright.
+COLOUR_SPECIFICITY_LIMIT = 1
+
 COLOUR_SPECIFICITY: dict[str, int] = {
     "espresso": 1,
     "cobalt": 1,
@@ -655,7 +671,24 @@ def _colour_value(description: str) -> float | None:
     named = [word for word in words if word in COLOUR_VALUES]
     if not named:
         return None
+    # The DARKEST colour wins, and not the most specific one.
+    #
+    # A description that says "blue, dark" means a DARK blue, and
+    # the truth's own Carpet012 is a dark blue at 0.229 while the
+    # "blue" word says 0.5266 and the "dark" word says 0.2835.
+    #
+    # So among the colours named, the one with the lowest value is
+    # the one that reads: a "dark, blue" thing is darker than a
+    # "blue" thing.
+    #
+    # And a SPECIFIC colour still wins when the general one is
+    # DARKER: "espresso" names ONE and says 0.214, and a "brown,
+    # espresso" thing is a dark brown and not a mid one.
     named.sort(key=lambda word: (COLOUR_SPECIFICITY.get(word, 99), words.index(word)))
+    most_specific = named[0]
+    if COLOUR_SPECIFICITY.get(most_specific, 99) <= COLOUR_SPECIFICITY_LIMIT:
+        return COLOUR_VALUES[most_specific]
+    named.sort(key=lambda word: (COLOUR_VALUES.get(word, 1.0), words.index(word)))
     return COLOUR_VALUES[named[0]]
 
 
