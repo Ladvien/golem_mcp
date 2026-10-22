@@ -320,6 +320,22 @@ MATRIX_SHADOW_SHARE = 0.55
 # a truth's 0.172, and the stone-to-matrix contrast read 0.372
 # against a truth's 0.430.
 MATRIX_TONE_BASE = 0.20
+# How much of a surface's cells carry the MOSS, and how strongly the
+# others do.
+#
+# The truth's own Rock064 is a grey rock with green MOSS in parts of
+# it, and the moss is a MINORITY of the surface - a cell with a full
+# hue swing on every cell gave a green and a tan patchwork.
+MOSS_FRACTION = 0.55
+# How much of the RAMP a voronoi's cell is drawn on, and it is a
+# NARROW slice.
+#
+# A cell is a FACET of one surface and not a piece of it: the
+# truth's own Rock064 carries a spread of 0.0494 over its thirty-two
+# pixel blocks against a whole of 0.0921, so its cells are half the
+# surface's variation and not all of it.
+VORONOI_CELL_TONE_FRACTION = 0.6
+MOSS_PATCH_SHARE = 0.15
 MATRIX_TONE_RANGE = 0.80
 # A MEASUREMENT PLACEHOLDER - the sweep below picks the value.
 
@@ -914,6 +930,105 @@ def write_procedural_base_color(
         stone[:, :, channel] = ramp[
             _np.clip((hashed * 255).astype(numpy.int32), 0, 255)
         ]
+    if kind == "voronoi":
+        # A VORONOI's cell is a FACET of one surface, and its own
+        # tone is a NARROW slice of the ramp.
+        #
+        # The cells were drawn on the WHOLE ramp, and a rock came out
+        # as a mosaic of coloured pieces - and the truth's own
+        # Rock064 carries a spread of 0.0494 over its thirty-two
+        # pixel blocks against a whole of 0.0921, so its cells are
+        # HALF the surface's variation and not all of it.
+        #
+        # So the cell's tone is drawn about the ramp's middle, at
+        # three fifths of the ramp's width, and the SURFACE's
+        # variation is the rest.
+        middle = (stone_dark_rgb + stone_light_rgb) * 0.5
+        for channel in range(3):
+            stone[:, :, channel] = (
+                middle[channel]
+                + (stone[:, :, channel] - middle[channel]) * VORONOI_CELL_TONE_FRACTION
+            )
+    if kind == "voronoi":
+        # A VORONOI's cells each carry their own HUE, and a rock is
+        # a patchwork of them.
+        #
+        # The hue variation was applied only to the scattered path's
+        # stones, so a rock came out with ONE hue over the whole
+        # surface: the truth's own Rock064's green share has a
+        # standard deviation of 0.0336 and the lane's has 0.0019 -
+        # and the truth's is a grey rock with green MOSS on it, and
+        # the moss is a patch and not a tint.
+        #
+        # So the cell's own hue offset is the cell's hash, the same
+        # way the scattered path's stones are, and it is applied to
+        # the HUE and not to the brightness - so a cell is a patch of
+        # a different colour and not a lighter or darker one.
+        variation = hue_variation if hue_variation is not None else 0.10
+        weights = _np.array([0.2126, 0.7152, 0.0722], dtype=_np.float32)
+        stone_luma = (stone * weights).sum(axis=2)
+        stone_hue_vector = stone / _np.maximum(stone_luma[:, :, _np.newaxis], 1e-6)
+        # The hue's variation is a SMOOTH FIELD and not a per-cell
+        # constant, and it is at the MOSS's own scale.
+        #
+        # The truth's own Rock064's green share has a spread of
+        # 0.0258 over sixteen-pixel blocks and its moss patches are
+        # sixteen to thirty pixels across - and the lane's per-cell
+        # hash put the variation in patches as big as the cell, a
+        # hundred pixels, and the spread over the blocks was 0.0092.
+        #
+        # So the moss is a fine field of its own, and it is the
+        # surface's own slow field at the moss's scale.
+        from golem_blender.pbr import noise_perlin
+
+        samples = pattern._domain_samples(resolution)
+        sample_x, sample_y = _np.meshgrid(samples, samples, indexing="ij")
+        # The moss is a FEW PATCHES and not a per-cell hue, and its
+        # patches are the CELL's own size.
+        #
+        # It was a fine perlin at the moss's scale - sixteen to thirty
+        # pixels - and a rock came out as a green and an orange
+        # patchwork: a per-pixel hue change is a different COLOUR and
+        # not a patch of moss.
+        #
+        # So the hue is the cell's own hash - a patch of a cell's
+        # size - and the field's own slow variation rides on it, so
+        # the patches are not all the same.
+        hue_lattice = max(2, round(cells / 2))
+        hue_field = noise_perlin.perlin_2d(
+            sample_x * hue_lattice,
+            sample_y * hue_lattice,
+            period=hue_lattice,
+            seed=13,
+        )
+        hue_reach = max(1e-6, float(hue_field.max() - hue_field.min()))
+        # And only SOME of the cells carry the moss: the truth's own
+        # Rock064 is a grey rock with green moss in parts of it, and
+        # the moss is a MINORITY - a cell with a full hue swing on
+        # every cell gave a green and a tan patchwork.
+        #
+        # So the hue's offset is the cell's own hash, and a cell
+        # carries it only when its hash says so: the moss is in some
+        # places and not in others.
+        cell_hue = (hashed - 0.5) * 2.0 + (hue_field - 0.5) * 0.8
+        cell_hue = _np.where(
+            hashed > MOSS_FRACTION,
+            cell_hue,
+            cell_hue * MOSS_PATCH_SHARE,
+        )
+        offsets = _np.stack(
+            (
+                cell_hue * variation,
+                -cell_hue * 0.4 * variation,
+                -cell_hue * 1.2 * variation,
+            ),
+            axis=2,
+        )
+        stone = _np.clip(
+            stone + stone_hue_vector * offsets * stone_luma[:, :, _np.newaxis],
+            0.0,
+            1.0,
+        )
     if kind == "brick" and brick_face_strength <= BRICK_FACE_GRAIN_CUTOFF:
         # A TILE is a GLAZED surface, and its cells do not each have
         # their own random tone - they are all one firing, and what

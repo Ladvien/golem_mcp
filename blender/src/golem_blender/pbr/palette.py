@@ -1518,7 +1518,22 @@ SPREAD_TIERS = (
 # Measured on the truth's own gravel: the stones' red share runs
 # from 0.351 to 0.393, so the variation is a fiftieth of the hue.
 SCATTER_HUE_VARIATION = 0.10
-HUE_VARIATION_TIERS = (("leaves", "fallen", "autumn", "foliage"),)
+# The words that name a PATCHWORK of colours, and the patchwork
+# varies its hue more than a family does.
+#
+# A LEAF MAT is a patchwork, and so is a MOSSY ROCK: the truth's own
+# Rock064 is a grey stone with green MOSS on it, and its green share
+# has a standard deviation of 0.0336 - five times the lane's 0.0019.
+#
+# And the moss is a PATCH and not a tint: the truth's own ground
+# says "forest" and carries stones whose red share varies by 0.0119
+# - LESS than the gravel's - and "forest" is where the leaves are and
+# not a mat of them. So "forest" is NOT a patchwork word and "moss"
+# is.
+HUE_VARIATION_TIERS = (
+    ("leaves", "fallen", "autumn", "foliage"),
+    ("moss", "mossy", "lichen", "lichen"),
+)
 
 
 def hue_variation_for_description(description: str) -> float:
