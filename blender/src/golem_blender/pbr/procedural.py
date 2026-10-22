@@ -113,6 +113,17 @@ LINE_LIGHT_FRACTION = 0.18
 # with a matrix twelve pixels wide between stones that are sixteen
 # pixels across.
 SCATTER_MATRIX_WIDTH = 2.0
+# How much of the surface's spread the SLOW drift carries.
+#
+# The drift is the surface's own slow variation, and it is what the
+# feature measure finds: the truth's ground measures nineteen
+# features across where its stones are a couple of pixels across.
+#
+# So the drift carries a real share of the spread and not a trace of
+# it. Measured, the ground's period read fourteen pixels against the
+# truth's fifty-three when the drift was on the stone's own tone,
+# and the drift's own share is what moved it.
+SCATTER_DRIFT_SHARE = 0.55
 # Where a stone's joint becomes hard. A stone's edge is an edge and
 # not a gradient, and the soft falloff made the ground a field of
 # glowing blobs.
@@ -139,6 +150,10 @@ PROCEDURAL_COLOUR_KINDS = (
     "metal",
     "flat",
     "scattered",
+    "parquet",
+    "carpet",
+    "leather",
+    "wallpaper",
 )
 # How wide a LINE is, as a fraction of the distance to the nearest
 # line. A grain's rings and a metal's grain are soft, and the truth's
@@ -278,6 +293,7 @@ def write_procedural_base_color(
     line_width: float = DEFAULT_LINE_WIDTH,
     line_contrast: float | None = None,
     target_spread: float | None = None,
+    target_value: float | None = None,
     lines_per_cell: int = DEFAULT_LINES_PER_CELL,
     fibre_strength: float = FIBRE_STRENGTH,
     pebble_factor: float = 1.0,
@@ -357,7 +373,7 @@ def write_procedural_base_color(
         #
         # The joint is the MATRIX between the stones, and the stones'
         # own tone is the matrix's mottle.
-        cell, edge, grid, fibre = pattern.scattered_field(
+        cell, edge, grid, fibre, slow = pattern.scattered_field(
             resolution,
             cells,
             lines_per_cell=lines_per_cell,
@@ -382,6 +398,33 @@ def write_procedural_base_color(
             resolution,
             cells,
             aspect=brick_aspect if brick_aspect is not None else pattern.BRICK_ASPECT,
+        )
+    elif kind == "parquet":
+        # A PARQUET is the brick's courses with a wood's palette and
+        # a much wider block, and the wide set says so: the truth's
+        # own parquet measures a row-to-column change ratio of 0.24.
+        cell, edge, grid, _fibre = pattern.parquet_field(
+            resolution,
+            cells,
+            aspect=brick_aspect if brick_aspect is not None else pattern.PARQUET_ASPECT,
+        )
+    elif kind == "carpet":
+        cell, edge, grid, fibre = pattern.carpet_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
+        )
+    elif kind == "leather":
+        cell, edge, grid, fibre = pattern.leather_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
+        )
+    elif kind == "wallpaper":
+        cell, edge, grid, fibre = pattern.wallpaper_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
         )
     elif kind == "grain":
         cell, edge, grid, fibre = pattern.grain_field(
@@ -441,6 +484,21 @@ def write_procedural_base_color(
             base * max(1e-6, float(target_spread)) * 4.0
         )
         colour = _np.clip(colour, 0.0, 1.0)
+        # The sheet's CONTRAST is the description's spread, and it is
+        # measured and scaled like every other pattern's: a sheet's
+        # own shape carries a different amount of contrast than a
+        # joint's, and only measuring says how much.
+        #
+        # The sheet skipped the scale entirely, so the truth's own
+        # plaster read 0.77x the truth's contrast and the truth's
+        # concrete 0.77x as well.
+        colour = _scale_to_spread(colour, target_spread)
+        # And the sheet's MEAN is the description's own value, for
+        # the same reason the cell patterns' is: the sheet's own
+        # variation is centred and the base is the palette's, and the
+        # two together are not the description's value.
+        if target_value is not None:
+            colour = _shift_to_value(colour, target_value)
         return _write_image(output_path, resolution, width_px, height_px, colour)
 
     if kind in ("grain", "metal"):
@@ -485,6 +543,7 @@ def write_procedural_base_color(
             line_rgb=line_rgb,
             line_width=line_width,
             target_spread=target_spread,
+            target_value=target_value,
             fibre_strength=(
                 METAL_FIBRE_STRENGTH if kind == "metal" else fibre_strength
             ),
@@ -602,6 +661,18 @@ def write_procedural_base_color(
         # out as pale stones in a pale matrix. Measured, the stones
         # read 0.722 against a truth's 0.547 and the matrix 0.397
         # against a truth's 0.242.
+        # The STONES' own tone is the ramp's LIGHT end and the ramp
+        # is the stone-to-matrix contrast.
+        #
+        # The tone field is the SLOW field sampled at each stone, and
+        # it spans the WHOLE ramp: the truth's own ground has stones
+        # from 0.467 to 0.690 and a matrix at 0.244, and a ramp that
+        # the stones sat in the middle of made them flat.
+        #
+        # The ramp's own width is the description's SPREAD and it is
+        # narrow - a surface's colour varies little across itself -
+        # but the stone-to-matrix contrast IS the whole spread, and it
+        # has to be scaled up to fill it.
         for channel in range(3):
             ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
             stone[:, :, channel] = ramp[
@@ -695,15 +766,23 @@ def write_procedural_base_color(
         # So the matrix is the ramp's DARK end, moved by the scatter's
         # own slow field - and the scatter's field is the `fibre`
         # the stones' own tone came from.
-        # The matrix's tone is the ramp's DARK end, and it is the
-        # scatter's own SLOW variation within that dark end - so a
-        # worn patch of ground is a patch of paler matrix.
+        # The matrix's tone is the ramp's DARK end, and the SLOW
+        # variation rides on it - so a worn patch of ground is a
+        # patch of paler stones AND a paler matrix.
         #
-        # The scatter's `edge` is the stone's own SHAPE field: one
-        # inside a stone and zero in the matrix. The slow variation
-        # is the matrix's own, and it is the same field the stones'
-        # tone rides on.
-        matrix_tone = _np.clip(1.0 - fibre, 0.0, 1.0)
+        # The scatter's `fibre` is the STONES' own tone: zero on the
+        # matrix and the stone's own tone where the stone is. So the
+        # matrix's own tone is the complement, and the slow variation
+        # is the surface's own mottle.
+        #
+        # The slow variation matters for the MEASURE and not only for
+        # the eye: the truth's ground measures nineteen features
+        # across where the stones alone are a couple of pixels
+        # across, and the measure finds the surface's slow variation.
+        # The MATRIX is the ramp's DARK end, and the slow variation
+        # moves it within that dark end - so a worn patch of ground is
+        # a patch of paler matrix.
+        matrix_tone = _np.clip(0.10 + 0.26 * slow, 0.0, 1.0)
         matrix_colour = numpy.empty_like(stone)
         for channel in range(3):
             ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
@@ -711,6 +790,26 @@ def write_procedural_base_color(
                 _np.clip((matrix_tone * 255).astype(_np.int32), 0, 255)
             ]
         colour = colour * (1.0 - joint) + matrix_colour * joint
+        # And the SLOW drift rides on the WHOLE image, as a
+        # continuous layer.
+        #
+        # It was on the stone's own tone, and the stone is a couple of
+        # pixels across - so the drift was sampled at the stone's own
+        # scale and it broke up, and the surface's autocorrelation
+        # read the stones and not the drift.
+        #
+        # Measured: the ground's period read fourteen pixels against
+        # the truth's fifty-three.
+        #
+        # So the drift is added over the whole image, after the
+        # stones, and it moves the luma and not the hue - so a worn
+        # patch of ground is a paler patch and not a patch of a
+        # different colour.
+        drift = (slow - 0.5) * ramp_spread * SCATTER_DRIFT_SHARE
+        weights = _np.array([0.2126, 0.7152, 0.0722], dtype=_np.float32)
+        image_luma = (colour * weights).sum(axis=2)
+        image_hue = colour / _np.maximum(image_luma[:, :, _np.newaxis], 1e-6)
+        colour = _np.clip(colour + image_hue * drift[:, :, _np.newaxis], 0.0, 1.0)
     else:
         colour = colour * (1.0 - joint) + mortar * joint
     colour = numpy.clip(colour, 0.0, 1.0)
@@ -719,6 +818,22 @@ def write_procedural_base_color(
     # not only on its numbers, and only measuring says how much of
     # the spread this one carries.
     colour = _scale_to_spread(colour, target_spread)
+    # And the image's MEAN is the description's own VALUE.
+    #
+    # The spread is scaled about the image's mean and the mean is
+    # left alone, so whatever the pattern put there is what the
+    # image's brightness is. And a pattern does not necessarily put
+    # the description's value there: the scattered ground's stones
+    # sit at the ramp's light end and its matrix at the dark end,
+    # and the two together do not average to the ramp's middle.
+    #
+    # Measured: the ground's luma came out at 0.304 where the
+    # description's value is 0.391 and the truth's own is 0.360.
+    #
+    # So the image is shifted to the description's value, along its
+    # own hue so the shift does not change the colour.
+    if target_value is not None:
+        colour = _shift_to_value(colour, target_value)
 
     # The image is written at the resolution the pattern was computed
     # at, which is the requested one - there is no upscale, because an
@@ -779,6 +894,25 @@ def _luma_of(rgb) -> float:
     while its luma is 0.33, and the image's brightness is the luma.
     """
     return 0.2126 * float(rgb[0]) + 0.7152 * float(rgb[1]) + 0.0722 * float(rgb[2])
+
+
+def _shift_to_value(colour, target_value: float):
+    """Shift the image so its LUMA is the description's own value.
+
+    The shift is along the image's own hue - a surface's colour does
+    not change when it is lighter or darker, it is the same colour at
+    another level - so the hue survives the shift.
+    """
+    import numpy as _np
+
+    weights = _np.array([0.2126, 0.7152, 0.0722], dtype=_np.float32)
+    luma = (colour * weights).sum(axis=2)
+    measured = float(luma.mean())
+    if measured <= 1e-9:
+        return colour
+    hue = colour / _np.maximum(luma[:, :, _np.newaxis], 1e-6)
+    shifted = colour + hue * (target_value - measured)
+    return _np.clip(shifted, 0.0, 1.0)
 
 
 def _scale_to_spread(colour, target_spread):
@@ -861,6 +995,7 @@ def _write_line_pattern(
     line_rgb,
     line_width: float,
     target_spread: float | None = None,
+    target_value: float | None = None,
     fibre_strength: float = FIBRE_STRENGTH,
 ) -> Path:
     """Write a pattern of LINES on a base colour; returns the path.
@@ -974,6 +1109,9 @@ def _write_line_pattern(
     # contrast than a joint's, and only measuring says how much of
     # the spread this one carries.
     colour = _scale_to_spread(colour, target_spread)
+    # And the image's MEAN is the description's own value.
+    if target_value is not None:
+        colour = _shift_to_value(colour, target_value)
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -58,7 +58,6 @@ _STRUCTURE_PATTERNS = (
 # wall" is a painted wall.
 _FLAT_PATTERNS = (
     ("plaster", "flat"),
-    ("wallpaper", "flat"),
     ("paint", "flat"),
     ("render", "flat"),
     ("stucco", "flat"),
@@ -70,6 +69,41 @@ _FLAT_PATTERNS = (
 # The material words, and the pattern each calls for. Everything that
 # is not a course, a grain or a flat sheet is made of separate
 # pieces.
+# The kinds the lane had NO pattern for, and each is named by the
+# word that names it.
+#
+# A PARQUET is a wood floor: long blocks laid in a staggered pattern,
+# each block with its own tone. It is the BRICK's primitive with a
+# wood's palette and a much wider block - the truth's own parquet
+# measures a row-to-column change ratio of 0.24, and it is the most
+# horizontal surface in the sample.
+#
+# A CARPET is a pile of fibres: a directional, very fine grain. The
+# truth's own carpet measures 0.029 of spread over twenty-seven
+# thousand fine specks - it is almost flat, and what it has is a
+# directional fuzz.
+#
+# A LEATHER is a pebbled hide: a fine even grain of cells, and not
+# stones. It is the loose ground's primitive at a much finer scale
+# and with a much tighter packing.
+#
+# A WALLPAPER is a flat sheet with a PRINTED design on it, and the
+# design is a set of flat blocks of colour - a chequer, a stripe, a
+# motif. It is the FLAT sheet with the TILE's structure on it.
+_COURSE_PATTERNS = (
+    ("parquet", "parquet"),
+    ("planks", "parquet"),
+    ("plank", "parquet"),
+    ("carpet", "carpet"),
+    ("rug", "carpet"),
+    ("leather", "leather"),
+    ("hide", "leather"),
+    ("wallpaper", "wallpaper"),
+    ("wall paper", "wallpaper"),
+    ("printed", "wallpaper"),
+    ("patterned", "wallpaper"),
+)
+
 _MATERIAL_PATTERNS = (
     # The LOOSE grounds are SCATTERED stones and not a Voronoi.
     #
@@ -95,8 +129,6 @@ _MATERIAL_PATTERNS = (
     ("fabric", "voronoi"),
     ("wool", "voronoi"),
     ("fur", "voronoi"),
-    ("leather", "voronoi"),
-    ("carpet", "voronoi"),
     ("metal", "voronoi"),
 )
 
@@ -114,6 +146,9 @@ def pattern_for_description(description: str) -> str:
     """
     words = description.lower()
     for word, pattern in _STRUCTURE_PATTERNS:
+        if word in words:
+            return pattern
+    for word, pattern in _COURSE_PATTERNS:
         if word in words:
             return pattern
     for word, pattern in _FLAT_PATTERNS:

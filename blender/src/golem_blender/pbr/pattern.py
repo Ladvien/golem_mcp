@@ -303,6 +303,33 @@ DEFAULT_CELL_FRACTION = 1.0
 # thirds as wide as it is tall. The three-to-one default put 48
 # bricks across where the truth shows 6.
 BRICK_ASPECT = 1.34
+# A PARQUET's block is much wider than it is tall: a parquet floor is
+# laid in long boards.
+#
+# Measured on the truth's own: the floor's row-to-column change ratio
+# is 0.24, and it is the most horizontal surface in the wide sample.
+# A brick's 1.34 would make it a wall of squares.
+PARQUET_ASPECT = 4.0
+# A CARPET's pile, as a multiple of the surface's own feature count.
+#
+# The truth's own carpet is almost flat - a spread of 0.029 over
+# twenty-seven thousand specks - so the pile is much finer than the
+# surface's measured features.
+CARPET_FIBRE_FACTOR = 8.0
+# And the pile is STRETCHED along the fibre's direction, by this
+# much: the truth's carpet reads 1.20 times more change along a row
+# than down a column.
+CARPET_FIBRE_STRETCH = 4.0
+# A LEATHER's cells, as a multiple of the surface's own feature
+# count, and how far a cell's own point may move from its centre.
+#
+# A hide is a fine even grain: the cells are tight and even, and not
+# the loose ground's scattered stones.
+LEATHER_CELL_FACTOR = 6.0
+LEATHER_CELL_JITTER = 0.7
+# A WALLPAPER's motif, as a multiple of the surface's own feature
+# count: a wallpaper's design is a thing you see from across a room.
+WALLPAPER_MOTIF_FACTOR = 0.5
 
 
 # The bricks ACROSS a course, from the number of courses.
@@ -672,7 +699,7 @@ def fractal_stones(
     from golem_blender.pbr.noise_worley_fbm import _bilinear
     from golem_blender.pbr.procedural import _cell_hash
 
-    samples = (numpy.arange(resolution) + 0.5) / resolution
+    samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
     # The stones are WARPED, and that is what keeps the fine octaves
     # from locking the feature measure.
@@ -1013,7 +1040,7 @@ def cell_and_edge(
     """
     import numpy
 
-    samples = (numpy.arange(resolution) + 0.5) / resolution
+    samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
     sample_x, sample_y = warp(sample_x, sample_y, cells, octaves)
 
@@ -1285,6 +1312,34 @@ def _power_of_two_nearest(value: float) -> int:
     return count
 
 
+def _domain_samples(resolution: int):
+    """The samples of a tileable field, over ONE period of the domain.
+
+    The sample of pixel `i` is `i / resolution` and NOT
+    `(i + 0.5) / resolution`.
+
+    A field with a period of `L` cells is sampled at `i * L / N` for
+    the pixel `i`, and the pixel after the last - the one the tile
+    wraps to - is at `L`, which is the field's own start. So the
+    image's last pixel and its first are one step apart in the
+    field's own period, and the wrap is exact.
+
+    The half-pixel offset sampled `(i + 0.5) / N`, so the last pixel
+    was at `L * (N - 0.5) / N` and the first at `L * 0.5 / N` - a
+    distance of `L * (N - 1) / N` and NOT `L`. The image covered
+    N-1 steps of the field's period and not N, so the wrap joined two
+    places the field had never been.
+
+    Measured: the wood's seam read 11.88x the truth's and the second
+    wood's 10.44x, and the Perlin's own seam grew with its lattice -
+    0.006 at eight cells and 0.011 at sixteen - because the bigger
+    the lattice the more of the period the image missed.
+    """
+    import numpy
+
+    return numpy.arange(resolution, dtype=numpy.float64) / resolution
+
+
 def grain_field(
     resolution: int, cells: int, octaves=DEFAULT_LINE_OCTAVES, lines_per_cell: int = 1
 ):
@@ -1320,7 +1375,7 @@ def grain_field(
     """
     import numpy
 
-    axis = (numpy.arange(resolution) + 0.5) / resolution
+    axis = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
 
     # The rings: counted on the X axis, so they run as COLUMNS. The
@@ -1533,17 +1588,43 @@ def grain_field(
         # features and its correlation decays as the truth's does; at a
         # lattice of sixteen it reads twenty-eight and the correlation
         # stops decaying.
+        # The fibre's lattice is RECTANGULAR: more cells across the
+        # plank than along it, so the patches run along the board.
+        #
+        # The stretch was a FRACTION applied to the sample's y
+        # coordinate, and a fraction of a lattice cell does not wrap:
+        # the noise's period is a whole number of cells, and the
+        # field's edge met a place the field had never been.
+        #
+        # Measured: the coarse fibre's seam read 0.16 and the wood's
+        # own seam 11.88x the truth's.
+        #
+        # So the stretch is the LATTICE's own period along y, and it
+        # is a whole number of cells, and the noise's y period is
+        # that number.
+        lattice_y = max(1, round(FIBRE_LATTICE * FIBRE_STRETCH))
         coarse_fibre = noise.fbm_2d_value(
             (fibre_x + warp_field * FIBRE_WARP) * FIBRE_LATTICE,
-            fibre_y * FIBRE_LATTICE * FIBRE_STRETCH,
+            fibre_y * FIBRE_LATTICE,
             size=FIBRE_LATTICE,
             octaves=FIBRE_OCTAVES,
             seed=0,
             folds=FIBRE_FOLDS,
+            size_y=lattice_y,
         )
         fibre_field = coarse_fibre
-        fibre_rows = numpy.linspace(0.0, fibre_side - 1.0, resolution)
-        fibre_columns = numpy.linspace(0.0, fibre_side - 1.0, resolution)
+        # The upsample's grid is PERIODIC, and the coarse field is
+        # sampled at the positions the coarse field's own domain
+        # covers - the end EXCLUSIVE, so the last sample is just
+        # before the first and the two meet.
+        #
+        # The grid ran from zero to `fibre_side - 1` INCLUSIVE, so the
+        # last row of the fine field was the coarse field's LAST row
+        # and the first was its FIRST, and the coarse field's own
+        # periodicity was broken there. Measured: the wood's seam
+        # read 11.88x the truth's and the second wood's 10.44x.
+        fibre_rows = numpy.linspace(0.0, fibre_side, resolution, endpoint=False)
+        fibre_columns = numpy.linspace(0.0, fibre_side, resolution, endpoint=False)
         fibre_row, fibre_column = numpy.meshgrid(
             fibre_rows, fibre_columns, indexing="ij"
         )
@@ -1622,7 +1703,7 @@ def flat_field(
 
     from golem_blender.pbr import noise
 
-    axis = (numpy.arange(resolution) + 0.5) / resolution
+    axis = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
 
     # The sheet's slow variation, and it is the ENVELOPE: the truth's
@@ -1673,6 +1754,222 @@ def flat_field(
     edge = 1.0 - sheet
     fine_edge = fine
     return 0, edge, (cells, cells), fine_edge
+
+
+def parquet_field(
+    resolution: int,
+    cells: int,
+    aspect: float = PARQUET_ASPECT,
+):
+    """A wood floor: long BLOCKS, staggered, each with its own tone.
+
+    A parquet is the BRICK's primitive with a wood's palette and a
+    much wider block, and the wide set says so: the truth's own
+    parquet measures a row-to-column change ratio of 0.24, and it is
+    the most horizontal surface in the sample - the blocks are long
+    and low and they run across.
+
+    So the blocks are the brick's courses, with the brick's half-block
+    offset between the courses, and the block is PARQUET_ASPECT times
+    as wide as it is tall.
+
+    The blocks are also STAGGERED in a PATTERN and not only offset by
+    half: the truth's own parquet is laid in a herringbone-adjacent
+    arrangement, and every block carries its own tone so the floor
+    reads as a mosaic of boards.
+    """
+    import numpy
+
+    # The blocks are the brick's courses, and the count is a power of
+    # two so the wall's own wrap joins two whole blocks.
+    courses = _power_of_two_nearest(cells)
+    while courses > 1 and resolution % courses != 0:
+        courses //= 2
+    across = max(1, round(courses / max(aspect, 0.05)))
+
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
+
+    # The block's own coordinates, and the courses are offset by HALF
+    # a block - so the vertical joints do not line up, and the floor
+    # reads as laid boards and not as a grid.
+    row = numpy.floor(sample_y * courses)
+    offset = numpy.mod(row, 2.0) * 0.5
+    column = numpy.floor((sample_x + offset / across) * across)
+    cell = (row.astype(numpy.int32) * 100003 + column.astype(numpy.int32)).astype(
+        numpy.int32
+    )
+
+    # The JOINT is the line between the blocks, and it is a THIN
+    # line: a parquet's blocks meet at a seam and not at a mortar
+    # trench.
+    within_x = (sample_x + offset / across) * across - column
+    within_y = sample_y * courses - row
+    distance = numpy.minimum(
+        numpy.minimum(within_x, 1.0 - within_x), numpy.minimum(within_y, 1.0 - within_y)
+    )
+    edge = numpy.clip(distance * min(across, courses), 0.0, 1.0)
+    return cell, edge, (across, courses), None
+
+
+def carpet_field(
+    resolution: int,
+    cells: int,
+    octaves=DEFAULT_LINE_OCTAVES,
+    lines_per_cell: int = 1,
+):
+    """A CARPET: a pile of fibres, a fine directional fuzz.
+
+    A carpet is almost flat. The truth's own carpet measures a luma
+    spread of 0.029 over twenty-seven thousand fine specks, and its
+    row-to-column change ratio is 1.20 - so it is a soft directional
+    mottle and not a set of cells.
+
+    It was a VORONOI, and a Voronoi's cells are large flat pieces
+    with hard borders - so a carpet came out as a field of pebbles.
+    It is a FIBRE: a fine, directional, tileable mottle.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    axis = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+
+    # The pile's own scale, and it is FINE: the truth's specks are a
+    # couple of pixels across in a thousand and twenty-four.
+    lattice = _power_of_two_nearest(max(2, cells) * CARPET_FIBRE_FACTOR)
+    while lattice > 1 and resolution % lattice != 0:
+        lattice //= 2
+    while lattice > 1 and lattice * 4 > resolution:
+        lattice //= 2
+
+    # The pile is DIRECTIONAL: a carpet's fibres lie in one
+    # direction, and the truth's own reads 1.20 times more change
+    # along the row than down the column.
+    #
+    # So the lattice is stretched along the fibre's direction, and
+    # the stretch is a whole number so the field stays periodic.
+    stretched = lattice * CARPET_FIBRE_STRETCH
+    while stretched > 1 and resolution % stretched != 0:
+        stretched //= 2
+    pile = noise.fbm_2d_value(
+        sample_x * stretched,
+        sample_y * lattice,
+        size=lattice,
+        octaves=1,
+        seed=11,
+    )
+    reach = max(1e-6, float(pile.max() - pile.min()))
+    pile = (pile - float(pile.min())) / reach
+
+    # The CARPET'S OWN surface, and it is a fine mottle over the
+    # pile: a carpet is a pile of fibres and not a single direction.
+    fine = surface_texture(resolution, max(2, cells) * CARPET_FIBRE_FACTOR)
+    fine_reach = max(1e-6, float(fine.max() - fine.min()))
+    fine = (fine - float(fine.min())) / fine_reach
+
+    edge = 1.0 - pile
+    return 0, edge, (cells, cells), fine
+
+
+def leather_field(
+    resolution: int,
+    cells: int,
+    octaves=DEFAULT_LINE_OCTAVES,
+    lines_per_cell: int = 1,
+):
+    """A LEATHER: a fine even PEBBLED hide.
+
+    A leather is a field of small cells - a grain, a pebble - and the
+    cells are TIGHT and EVEN. It is the loose ground's primitive at a
+    much finer scale: a gravel's stones are scattered and irregular,
+    and a hide's cells are packed and even.
+
+    Measured on the truth's own: a leather's cells are a couple of
+    pixels across, so the cell count is high and the field is a fine
+    crackle and not a plate of pebbles.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise_worley_fbm
+
+    # The cells are the SURFACE's own count and not a loose ground's:
+    # a hide is a fine crackle, so the lattice is a power of two that
+    # divides the resolution.
+    lattice = _power_of_two_nearest(max(4, round(cells * LEATHER_CELL_FACTOR)))
+    while lattice > 1 and resolution % lattice != 0:
+        lattice //= 2
+    while lattice > 1 and lattice * 4 > resolution:
+        lattice //= 2
+
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
+
+    # The cells are the Worley's own, and the field is the distance
+    # to the BISECTOR - an exact distance to the cell's border, so a
+    # joint drawn from it is the same width in pixels whatever the
+    # cell's size.
+    stones = noise_worley_fbm.worley_fbm_2d(
+        sample_x * lattice,
+        sample_y * lattice,
+        period=lattice,
+        octaves=1,
+        jitter=LEATHER_CELL_JITTER,
+        seed=5,
+    )
+    distance = stones["distance"]
+    cell = stones["cell"]
+    edge = numpy.clip(distance, 0.0, 1.0)
+
+    # The hide's own TOOTH, and it is a fine mottle over the cells:
+    # a leather's surface is not smooth between the pebbles.
+    fine = surface_texture(resolution, max(4, lattice))
+    fine_reach = max(1e-6, float(fine.max() - fine.min()))
+    fine = (fine - float(fine.min())) / fine_reach
+    return cell, edge, (lattice, lattice), fine
+
+
+def wallpaper_field(
+    resolution: int,
+    cells: int,
+    octaves=DEFAULT_LINE_OCTAVES,
+    lines_per_cell: int = 1,
+):
+    """A WALLPAPER: a flat sheet with a PRINTED design on it.
+
+    A wallpaper is a plain sheet and the design is on it: a chequer,
+    a stripe, a motif. The truth's own printed fabric is a white
+    sheet with a soft grey field and no structure at all, and the
+    truth's checkered one is a grid of two tones.
+
+    So the sheet is FLAT and the design is a GRID of flat blocks, and
+    the two tones are the sheet's own colour and a darker one.
+    """
+    import numpy
+
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
+
+    # The design's own grid, and it is coarse: a wallpaper's motif is
+    # a thing you see from across a room.
+    lattice = _power_of_two_nearest(max(2, round(cells * WALLPAPER_MOTIF_FACTOR)))
+    while lattice > 1 and resolution % lattice != 0:
+        lattice //= 2
+    while lattice > 1 and lattice * 4 > resolution:
+        lattice //= 2
+
+    # The CHEQUER: a grid of two tones, and the tone is the cell's
+    # own parity. The design is what a wallpaper is and the sheet is
+    # what it is printed on.
+    column = numpy.floor(sample_x * lattice)
+    row = numpy.floor(sample_y * lattice)
+    parity = numpy.mod(column + row, 2.0)
+    cell = (row.astype(numpy.int32) * 100003 + column.astype(numpy.int32)).astype(
+        numpy.int32
+    )
+    edge = numpy.clip(1.0 - parity, 0.0, 1.0)
+    return cell, edge, (lattice, lattice), parity
 
 
 def scattered_field(
@@ -1741,9 +2038,7 @@ def scattered_field(
     # So the slow variation is a smooth field at the SURFACE's scale,
     # and it varies the stones' tones together - which is what a worn
     # patch of ground does.
-    slow = surface_texture(resolution, max(2, cells))
-    slow_reach = max(1e-6, float(slow.max() - slow.min()))
-    slow = (slow - float(slow.min())) / slow_reach
+    slow = slow_variation(resolution, max(2, cells))
 
     # The MATRIX is the DARK ground the stones sit in, and it is the
     # surface's own slow variation.
@@ -1785,7 +2080,7 @@ def scattered_field(
     # So the dome is cut by a set of half-planes, and each plane's
     # angle and offset come from the stone's own place.
     generator = numpy.random.default_rng(STONE_SCATTER_SEED + 11)
-    for index, (centre_x, centre_y, this_size, _, _, _) in enumerate(places):
+    for centre_x, centre_y, this_size, _, _, _ in places:
         # The stone's own cut lines, and they are relative to the
         # stone's own centre and its own size - so a cut is the
         # stone's own edge and not a cut across the whole surface.
@@ -1799,18 +2094,19 @@ def scattered_field(
         centre_px = int(centre_x * resolution)
         centre_py = int(centre_y * resolution)
 
-        # The stone's own TONE, and the stones are all MUCH THE SAME.
+        # The stone's own TONE, and it is the SLOW field sampled at
+        # the stone's own place.
         #
-        # The truth's own gravel is a field of stones that are all one
-        # grey, and the variation is in the MATRIX and in the stones'
-        # EDGES. So the stones' tones vary by a tenth and not by
-        # half: with a wide variation the measure reads the stones
-        # and not the surface, and the ground's feature scale read
-        # 1.46x the truth's.
+        # It was a per-stone HASH with the slow field's value
+        # multiplied in, and a hash is uncorrelated from stone to
+        # stone: so neighbouring stones had unrelated tones and the
+        # surface's autocorrelation fell to nothing in a few pixels.
         #
-        # And the SLOW variation rides on them: the stone's tone is
-        # its own hash, scaled by the slow field where the stone
-        # sits, so a worn patch of ground is a patch of paler stones.
+        # The truth's ground is a field whose correlation reaches
+        # fifty-three pixels while its stones are a pixel or two
+        # across - so the tone is a SMOOTH field and the stones are
+        # its samples. A worn patch of ground is a patch of paler
+        # stones, and the patch is bigger than a stone.
         slow_here = float(
             slow[
                 min(resolution - 1, max(0, centre_py)),
@@ -1825,11 +2121,10 @@ def scattered_field(
         # the ramp and the matrix -0.08 of it, so the ramp is the
         # stone-to-matrix contrast and not a variation within one
         # population.
-        tone = (
-            0.78
-            + 0.16
-            * float(numpy.random.default_rng(STONE_SCATTER_SEED + index).random())
-        ) * (0.85 + 0.3 * slow_here)
+        # The stone's tone is the slow field's own value, plus a
+        # little of the stone's own hash so two stones in the same
+        # patch are not identical.
+        tone = 0.50 + 0.50 * slow_here
 
         # The stone's own EDGES, and they are cut by a set of
         # half-planes whose angles and offsets come from the stone's
@@ -1907,7 +2202,24 @@ def scattered_field(
     # The FIBRE is the STONES' own tone field: zero on the matrix and
     # the stone's own tone where the stone is. The writer draws the
     # stone at the ramp's light end and the matrix at its dark end.
-    return numpy.zeros_like(edge, dtype=numpy.int32), edge, (cells, cells), stones_tone
+    #
+    # And the SLOW field is returned with it, because the MATRIX's
+    # tone is the slow field and not the complement of the stones':
+    # a complement is a CONSTANT wherever there is no stone, and a
+    # constant matrix has no drift in it.
+    #
+    # That matters for the measure and not only for the eye: the
+    # truth's ground measures nineteen features across where its
+    # stones are a couple of pixels across, and the measure finds the
+    # surface's slow variation. Measured, the constant matrix put the
+    # period at sixteen pixels against the truth's fifty-three.
+    return (
+        numpy.zeros_like(edge, dtype=numpy.int32),
+        edge,
+        (cells, cells),
+        stones_tone,
+        slow,
+    )
 
 
 def metal_field(
@@ -1941,7 +2253,7 @@ def metal_field(
     """
     import numpy
 
-    axis = (numpy.arange(resolution) + 0.5) / resolution
+    axis = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
 
     # The bands are counted on the X axis, so they run as COLUMNS -
@@ -2315,6 +2627,46 @@ def surface_octaves_for(resolution: int):
     )
 
 
+def slow_variation(resolution: int, cells: int, seed: int = 4):
+    """The surface's own SLOW variation, at the SURFACE's scale.
+
+    A surface's slow variation is the drift of the whole thing - the
+    worn patch, the damp corner, the patch of sand - and it is at
+    the scale the SURFACE's features are at.
+
+    It is not the stone's own mottle, which is a fine Perlin at
+    twelve patches a cell: the truth's own ground measures nineteen
+    features across where its stones are a couple of pixels across,
+    and the measure finds the slow variation and not the stones.
+
+    So the slow variation is a Perlin at the surface's OWN count - the
+    count the truth's feature measure gives - and it is one octave,
+    so it has no ripple in it and the measure reads the drift.
+
+    The lattice is a power of two that divides the resolution, so the
+    field's wrap joins two whole cells and the map still tiles.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
+
+    lattice = _power_of_two_nearest(max(2, cells))
+    while lattice > 1 and resolution % lattice != 0:
+        lattice //= 2
+    field = noise.fbm_2d_value(
+        sample_x * lattice,
+        sample_y * lattice,
+        size=lattice,
+        octaves=1,
+        seed=seed,
+    )
+    reach = max(1e-6, float(field.max() - field.min()))
+    return (field - float(field.min())) / reach
+
+
 def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES):
     """A stone's own SURFACE: the mottle within it, and the grain of
     it.
@@ -2348,7 +2700,7 @@ def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES
 
     from golem_blender.pbr import noise_perlin
 
-    axis = (numpy.arange(resolution) + 0.5) / resolution
+    axis = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
 
     # The lattice's size is the mottle's scale: a stone carries a
@@ -2399,7 +2751,7 @@ def scratch_streaks(resolution: int, cells: int, seed: int = 0):
     """
     import numpy
 
-    axis = (numpy.arange(resolution) + 0.5) / resolution
+    axis = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
     two_pi = 2.0 * numpy.pi
 
