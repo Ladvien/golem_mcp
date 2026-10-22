@@ -420,7 +420,12 @@ LEATHER_CELL_COUNT = 170
 LEATHER_CELL_JITTER = 0.7
 # A WALLPAPER's motif, as a multiple of the surface's own feature
 # count: a wallpaper's design is a thing you see from across a room.
-WALLPAPER_MOTIF_FACTOR = 0.5
+WALLPAPER_MOTIF_COUNT = 128
+# How far a wallpaper's flecks are WARPED, in lattice cells.
+#
+# A regular lattice of flecks is a dither and the picture showed a
+# visible diagonal weave, and a printed design is scattered.
+WALLPAPER_FLECK_WARP = 0.05
 
 
 # The bricks ACROSS a course, from the number of courses.
@@ -1370,6 +1375,24 @@ def brick_field(resolution: int, cells: int, aspect: float = BRICK_ASPECT):
     return cell.astype(numpy.int32), edge, (row_width, courses)
 
 
+def _nearest_divisor(limit: int, wanted: int) -> int:
+    """The divisor of `limit` nearest to `wanted`.
+
+    A pattern's cells must be a whole number of pixels, or the wrap
+    joins a cell that was cut in half. So the count is a divisor of
+    the resolution - and it need not be a power of two, which is what
+    let a roof's five-and-a-half courses become four.
+    """
+    wanted = max(1, int(wanted))
+    best = 1
+    for candidate in range(1, limit + 1):
+        if limit % candidate:
+            continue
+        if abs(candidate - wanted) < abs(best - wanted):
+            best = candidate
+    return best
+
+
 def _power_of_two_at_least(value: int) -> int:
     """The smallest power of two that is at least `value`.
 
@@ -2062,14 +2085,21 @@ def roof_field(
     """
     import numpy
 
-    # The courses, and the count is a power of two so the roof's own
-    # wrap joins two whole courses.
-    courses = _power_of_two_nearest(cells)
-    while courses > 1 and resolution % courses != 0:
-        courses //= 2
+    # The courses' PITCH, in pixels, and it divides the resolution.
+    #
+    # A power of two rounds DOWN - and the truth's own roof measures
+    # 5.6 courses and 5.9 shingles across, so a power of two gave
+    # four of each and the roof came out with 256-pixel shingles
+    # where the truth's are 185.
+    #
+    # And a COUNT cannot fix it: the resolution is a power of two and
+    # so every divisor of it is a power of two.
+    #
+    # So the COUNT is the truth's own and the map WRAPS on it: the
+    # course index is taken modulo the count, so the last course is
+    # a little shorter than the others and the wrap joins the first.
+    courses = max(1, round(cells))
     across = max(1, round(courses * aspect))
-    while across > 1 and resolution % across != 0:
-        across //= 2
 
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
@@ -2082,9 +2112,13 @@ def roof_field(
 
     # The cell is a LINEAR index, and that is the encoding the
     # colour's hash decodes.
-    cell = (row.astype(numpy.int32) * across + column.astype(numpy.int32)).astype(
-        numpy.int32
-    )
+    # And the indices WRAP: the count is the truth's own and it is
+    # not a divisor of the resolution, so the last course is a
+    # fraction shorter and the wrap joins the first.
+    cell = (
+        numpy.mod(row, courses).astype(numpy.int32) * across
+        + numpy.mod(column, across).astype(numpy.int32)
+    ).astype(numpy.int32)
 
     # The JOINT is the line between the shingles, and it is a THIN
     # line and not a mortar trench: a shingle lies on the one below
@@ -2502,53 +2536,65 @@ def wallpaper_field(
 ):
     """A WALLPAPER: a flat sheet with a PRINTED design on it.
 
-    A wallpaper is a plain sheet and the design is on it: a chequer,
-    a stripe, a motif. The truth's own printed fabric is a white
-    sheet with a soft grey field and no structure at all, and the
-    truth's checkered one is a grid of two tones.
+    A wallpaper is a plain sheet and the design is on it. The
+    truth's own woodchip wallpaper carries sixteen thousand bright
+    flecks and fourteen thousand dark ones in a thousand and
+    twenty-four, and they come every eight pixels - so the design is
+    a fine SCATTERED speckle and not a grid.
 
-    So the sheet is FLAT and the design is a GRID of flat blocks, and
-    the two tones are the sheet's own colour and a darker one.
+    The design was a chequer of half the cells and half the other
+    half, and the wallpaper came out as a chessboard.
     """
     import numpy
 
-    samples = _domain_samples(resolution)
-    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
+    from golem_blender.pbr import noise, noise_perlin
 
-    # The design's own grid, and it is coarse: a wallpaper's motif is
-    # a thing you see from across a room.
-    lattice = _power_of_two_nearest(max(2, round(cells * WALLPAPER_MOTIF_FACTOR)))
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
+
+    # The design's own grid, and it is FINE: the truth's own woodchip
+    # wallpaper's flecks come every eight pixels.
+    lattice = _power_of_two_nearest(max(2, WALLPAPER_MOTIF_COUNT))
     while lattice > 1 and resolution % lattice != 0:
         lattice //= 2
     while lattice > 1 and lattice * 4 > resolution:
         lattice //= 2
 
-    # The CHEQUER: a grid of two tones, and the tone is the cell's
-    # own parity. The design is what a wallpaper is and the sheet is
-    # what it is printed on.
+    # The flecks are IRREGULAR, and the field is WARPED so they are.
+    #
+    # A regular lattice of flecks is a dither, and the picture showed
+    # a visible diagonal weave. A printed design is scattered, and
+    # the warp is what scatters it.
+    warp_lattice = max(2, lattice // 4)
+    warp = noise_perlin.perlin_2d(
+        sample_x * warp_lattice,
+        sample_y * warp_lattice,
+        period=warp_lattice,
+        seed=8,
+    )
+    fleck = noise.fbm_2d_value(
+        (sample_x + warp * WALLPAPER_FLECK_WARP) * lattice,
+        (sample_y + warp * WALLPAPER_FLECK_WARP) * lattice,
+        size=lattice,
+        octaves=1,
+        seed=6,
+    )
+    # The flecks are the field's own EXTREMES and not its whole
+    # range: a fleck is a speck of one colour and the rest of the
+    # sheet is the other.
+    reach = max(1e-6, float(fleck.max() - fleck.min()))
+    fleck = (fleck - float(fleck.min())) / reach
+    motif = numpy.where(fleck > 0.5, 1.0, 0.0)
+
+    # The sheet's own cells, and a wallpaper has none to speak of -
+    # the design is on the sheet and not made of the sheet.
     column = numpy.floor(sample_x * lattice)
     row = numpy.floor(sample_y * lattice)
-    parity = numpy.mod(column + row, 2.0)
     cell = (row.astype(numpy.int32) * lattice + column.astype(numpy.int32)).astype(
         numpy.int32
     )
-    # The design's own EDGE, and it is SOFT: a printed design is a
-    # whisper and not a step.
-    #
-    # Measured on the truth's own printed plastisol: its spread is
-    # 0.0032 and its wallpaper's 0.0072 - so the design carries a
-    # twentieth of what a sheet's own variation would.
-    #
-    # The edge is the distance to the nearest cell's border, and the
-    # motif is the parity BLURRED over the cell - so the square's
-    # edge is a gradient.
-    within_x = sample_x * lattice - column
-    within_y = sample_y * lattice - row
-    distance = numpy.minimum(
-        numpy.minimum(within_x, 1.0 - within_x), numpy.minimum(within_y, 1.0 - within_y)
-    )
-    edge = numpy.clip(distance * lattice, 0.0, 1.0)
-    return cell, edge, (lattice, lattice), parity
+    edge = numpy.clip(1.0 - motif, 0.0, 1.0)
+    return cell, edge, (lattice, lattice), motif
 
 
 def scattered_field(
