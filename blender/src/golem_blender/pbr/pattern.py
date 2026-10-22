@@ -114,12 +114,14 @@ ROCK_GRAIN_SHARE = 0.5
 ROCK_SCRIBBLE_SHARE = 0.4
 # A MOSS's speckle lattice.
 MOSS_SPECKLE_LATTICE = 256
-# A GRASS's blades: how many across a blade's direction and along it
-# (a blade about sixteen pixels long and three wide at 1024), and the
+# A GRASS's blades: how many cross the lawn per feature of the
+# surface's own count, how much longer a blade is than it is wide, and
+# the
 # integer directions they lie in - every vector is whole, so a blade
 # turned along it still repeats on the tile.
-GRASS_BLADE_ACROSS = 320
-GRASS_BLADE_ALONG = 64
+GRASS_BLADES_PER_FEATURE = 6.0
+GRASS_BLADE_ASPECT = 5
+GRASS_MIN_BLADES = 192
 GRASS_BLADE_DIRECTIONS = (
     (0, 1),
     (1, 1),
@@ -351,6 +353,10 @@ WOOD_RING_COUNT = 96
 WOOD_RING_BEND = 0.015
 WOOD_RING_LEVELS = 3
 WOOD_RING_SHARPNESS = 8.0
+# How many rings a grain's own cell carries.
+WOOD_RINGS_PER_CELL = 8.0
+# The fewest rings a board carries, whatever its cell count.
+WOOD_MIN_RINGS = 64
 # How many fibre lines the image carries across, per 1024 pixels.
 #
 # The truth's wood has its lines 7.4 pixels apart in a 1024 row, so
@@ -1839,7 +1845,7 @@ def _domain_samples(resolution: int):
     return numpy.arange(resolution, dtype=numpy.float64) / resolution
 
 
-def wood_ring_lightness(sample_x, sample_y, seed: int = 0):
+def wood_ring_lightness(sample_x, sample_y, seed: int = 0, rings: int = 0):
     """A board's growth rings as a LIGHTNESS: low on the grain lines.
 
     The bands are a value noise of ONE cell along the board and
@@ -1856,11 +1862,12 @@ def wood_ring_lightness(sample_x, sample_y, seed: int = 0):
         sample_x * 4, sample_y * 4, size=4, octaves=2, seed=seed + 1
     )
     slow = (slow - float(slow.mean())) / max(1e-9, float(slow.std()))
+    rings = int(rings) if rings > 0 else WOOD_RING_COUNT
     shifted = sample_x + slow * WOOD_RING_BEND
     field = noise.fbm_2d_value(
-        shifted * WOOD_RING_COUNT,
+        shifted * rings,
         sample_y,
-        size=WOOD_RING_COUNT,
+        size=rings,
         size_y=1,
         octaves=3,
         persistence=0.6,
@@ -1966,7 +1973,21 @@ def grain_field(
     # along the board and many across it, so every band runs the whole
     # length, and a slow field that shifts the bands across the board
     # so they bend together.
-    edge = wood_ring_lightness(sample_x, sample_y)
+    # And the ring count follows the grain's own cells: a constant
+    # ninety-six read the same twelve features on every wood, where
+    # the truth's woods read five to fifteen. Eight rings a cell,
+    # measured over the top set's fourteen woods: the mean |log|
+    # scale error 0.490 -> 0.359.
+    #
+    # And never fewer than WOOD_MIN_RINGS: the measure reads a row's
+    # slow bend and not the ring density, and at a wood's few cells
+    # the rings came out as broad bands where the truth's Wood049 is
+    # dense grain.
+    edge = wood_ring_lightness(
+        sample_x,
+        sample_y,
+        rings=max(WOOD_MIN_RINGS, round(cells * WOOD_RINGS_PER_CELL)),
+    )
     # The fibre's own edge is the rings' when there is no fibre - so
     # the writer always has two fields to draw.
     fine_edge = edge
@@ -2399,12 +2420,15 @@ def moss_field(resolution: int, cells: int):
         seed=4,
     )
     clump = noise.fbm_2d_value(
-        sample_x * lattice * 2,
-        sample_y * lattice * 2,
-        size=lattice * 2,
+        sample_x * lattice,
+        sample_y * lattice,
+        size=lattice,
         octaves=4,
         seed=8,
     )
+    # The clumps are at the surface's OWN scale: at twice it the moss
+    # read 13.3 features where the truth's Moss002 reads 6.0, and at
+    # its own 8.3.
     field = 0.6 * _unit(fine) + 0.4 * _unit(clump)
     return 0, _unit(field), (lattice, lattice), None
 
@@ -2432,14 +2456,25 @@ def grass_field(resolution: int, cells: int):
     lattice = max(2, int(cells))
     total = numpy.zeros_like(sample_x)
     weight = numpy.zeros_like(sample_x)
+    # The blade count follows the surface's own feature count: a fixed
+    # three hundred and twenty read 128 features on a lawn whose own
+    # are 73 and 43 on a forest floor whose are 10. Six blades a
+    # feature, measured on Grass001, Grass004 and Ground037: the mean
+    # |log| scale error 0.745 -> 0.253.
+    #
+    # And never fewer than GRASS_MIN_BLADES: a forest floor's few
+    # features are its moss and dirt patches, not its blades, and at
+    # ten features the blades came out as big scribbled strokes.
+    blades_across = max(GRASS_MIN_BLADES, round(lattice * GRASS_BLADES_PER_FEATURE))
+    blades_along = max(1, blades_across // GRASS_BLADE_ASPECT)
     for index, (along_x, along_y) in enumerate(GRASS_BLADE_DIRECTIONS):
         along = along_x * sample_x + along_y * sample_y
         across = -along_y * sample_x + along_x * sample_y
         blade = noise.fbm_2d_value(
-            across * GRASS_BLADE_ACROSS,
-            along * GRASS_BLADE_ALONG,
-            size=GRASS_BLADE_ACROSS,
-            size_y=GRASS_BLADE_ALONG,
+            across * blades_across,
+            along * blades_along,
+            size=blades_across,
+            size_y=blades_along,
             octaves=1,
             seed=20 + index,
             folds=1,
