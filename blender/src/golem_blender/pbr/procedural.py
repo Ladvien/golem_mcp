@@ -311,7 +311,7 @@ BRICK_FACE_DRIFT_CONTINUITY = 0.7
 # somewhere darker than the stones' own darkest to sit, and the
 # palette's ramp has no room there. The truth's own ground reads a
 # matrix of 0.172 where the palette's ramp starts at 0.218.
-MATRIX_SHADOW_SHARE = 0.72
+MATRIX_SHADOW_SHARE = 0.55
 # And where the matrix's own tone RIDES on that extended ramp: at
 # the bottom, for the gaps, and up to the top of it for a worn patch.
 #
@@ -321,6 +321,7 @@ MATRIX_SHADOW_SHARE = 0.72
 # against a truth's 0.430.
 MATRIX_TONE_BASE = 0.20
 MATRIX_TONE_RANGE = 0.80
+# A MEASUREMENT PLACEHOLDER - the sweep below picks the value.
 
 
 def _cell_mean(field, cell, width: int, height: int):

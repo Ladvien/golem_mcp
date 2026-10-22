@@ -610,34 +610,40 @@ STONE_PEBBLE_JITTER = 0.35
 #
 # The SIZE is the truth's own, measured off the truth's own pixels.
 #
-# Measured: the truth's gravel at the eightieth percentile holds
-# sixteen thousand bright blobs whose median diameter is 1.6 px in a
-# thousand and twenty-four and whose ninetieth percentile is 4.4 px.
-# The stones cover a fifth of the surface.
+# Measured on the truth's own ground: the bright stones' widths run
+# 1 px, 2 px, 3 px, 4 px, 5 px, 7 px, 8 px in the counts 1071, 541,
+# 30, 8, 2, 2 and 1 - so the median stone is TWO pixels across, the
+# ninetieth is two and a half, and only a handful reach four.
 #
-# The stone was a twenty-seventh of the surface - twenty-seven pixels
-# of a thousand and twenty-four - and so it was a plate of cracked
-# mud. The truth's stone is a one-hundred-and-sixtieth, and the
-# picture it made was a field of big flat pebbles in a pale matrix.
+# The size was 0.0060, which is three times the truth's: the stones
+# came out a median of 3.4 px across and a ninetieth of 10.8, and the
+# ground read as a field of pebbles where the truth's is a grit.
 #
-# So the size is a ONE-HUNDRED-AND-SIXTIETH of the surface.
-STONE_SCATTER_SIZE = 0.0060
+# So the size is a TWO-THOUSANDTH of the surface.
+STONE_SCATTER_SIZE = 0.0020
 # How many stones the surface carries.
 #
-# The count follows the SIZE and not the cell count: a stone is
-# STONE_SCATTER_SIZE of the surface across, and the surface holds
-# thirty thousand of them.
+# The count follows the SIZE and not the cell count, because a stone
+# is STONE_SCATTER_SIZE of the surface across.
 #
-# The count was seven hundred, which was a stone every thirty-six
-# pixels - six times the stone's own size - and so the stones were
-# islands in a wide matrix instead of a packed gravel. Measured: the
-# truth's ground holds sixteen thousand bright blobs and ours held
-# thirteen hundred and eighty, and the ninetieth percentile diameter
-# was 26 px against the truth's 4.4.
+# And the count is what makes the ground PACKED: the truth's own
+# ground is a bed of stones with a thin shadow between them, and the
+# shadow is a fifth of a per cent of the surface - the truth's own
+# darkest hundredth is 0.119 and its darkest thousandth is 0.000.
 #
-# So the count is thirty thousand, and the stone's own size law
-# decides how much of the surface they cover.
-STONE_SCATTER_DENSITY = 30000.0
+# So the count is large, and the stones' own size law decides how
+# much of the surface they cover: a stone's area goes with the square
+# of its size, so the size falling threefold needs nine times the
+# stones to cover the same ground.
+#
+# And the count is what puts the SHADOW in: at sixty thousand the
+# stones were islands in a wide lit matrix and the ground's luma
+# floored at 0.192; at three hundred and fifty thousand the stones
+# pack and the shadow appears between them, and the ground's luma
+# floors at 0.000 - the truth's own - with its first percentile at
+# 0.113 against the truth's 0.119, and its tenth at 0.213 against the
+# truth's 0.212.
+STONE_SCATTER_DENSITY = 350000.0
 # How much the stones' sizes vary, as a fraction of their own size.
 #
 # The truth's gravel is a mix: mostly small chips and a few big
