@@ -848,6 +848,10 @@ METAL_SPREAD_TIERS = (
 # The counts are the fitter's own.
 SPREAD_SPECIFICITY: dict[str, int] = {
     "stitched": 1,
+    "roof": 3,
+    "roofing": 3,
+    "tiling": 3,
+    "clay": 3,
     "leather": 6,
     "hide": 1,
     "carpet": 3,
@@ -871,6 +875,13 @@ SPREAD_SPECIFICITY: dict[str, int] = {
 }
 
 SPREAD_TIERS = (
+    # The ROOF, and it is its own tier: a roof's own word says more
+    # about how much it varies than the "tiles" it is made of.
+    #
+    # The truth's own three roofs measure spreads of 0.0169, 0.0257
+    # and 0.0149, and the "tiles" word says 0.0529 over eleven
+    # materials.
+    ("roof", "roofing", "tiling", "shingle"),
     # The SOFT textures, whose variation is a whisper.
     ("soft", "fur", "microfiber", "velvet", "satin", "wool", "fabric", "linen"),
     # The ROAD, which is a material and not a coat: an asphalt's

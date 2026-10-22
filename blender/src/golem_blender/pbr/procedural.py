@@ -170,6 +170,13 @@ WALLPAPER_DESIGN_DEPTH = 0.05
 # measures five hundred and twelve features across - its envelope is
 # nearly flat and the crackle is everything.
 LEATHER_CRACKLE_STRENGTH = 0.7
+# How much of the ramp a ROOF's shingle tone covers.
+#
+# The truth's own RoofingTiles013A's eight-by-eight blocks of shingles
+# measure between 0.165 and 0.214 - a spread of 0.049, a seventh of
+# the surface's own mean - and the hash spans the whole ramp, so the
+# roof came out with a threefold spread of shingles.
+ROOF_SHINGLE_TONE = 0.25
 # A WALLPAPER's DESIGN's own spread.
 #
 # Measured on the truth's own printed plastisol: its design measures
@@ -481,45 +488,6 @@ def write_procedural_base_color(
             cells,
             aspect=pattern.ROOF_ASPECT,
         )
-    elif kind == "herringbone":
-        # A HERRINGBONE floor is BOARDS at ninety degrees to each
-        # other, in pairs, and the truth's own parquet is a
-        # basketweave and not a staggered course.
-        cell, edge, grid, _fibre = pattern.herringbone_field(
-            resolution,
-            cells,
-            aspect=pattern.HERRINGBONE_ASPECT,
-        )
-    elif kind == "woven":
-        # A WOVEN cloth is a CROSSHATCH, and the lane's answer for a
-        # fabric was a VORONOI - whose cells are large flat pieces
-        # with hard borders - so a fabric came out as a field of
-        # pebbles.
-        cell, edge, grid, fibre = pattern.woven_field(
-            resolution,
-            cells,
-            lines_per_cell=lines_per_cell,
-        )
-    elif kind == "markings":
-        # A ROAD MARKING is painted GEOMETRY on a surface, and the
-        # surface's own texture goes on underneath it.
-        cell, edge, grid, fibre = pattern.markings_field(
-            resolution,
-            cells,
-            lines_per_cell=lines_per_cell,
-        )
-    elif kind == "carpet":
-        cell, edge, grid, fibre = pattern.carpet_field(
-            resolution,
-            cells,
-            lines_per_cell=lines_per_cell,
-        )
-    elif kind == "leather":
-        cell, edge, grid, fibre = pattern.leather_field(
-            resolution,
-            cells,
-            lines_per_cell=lines_per_cell,
-        )
     elif kind == "wallpaper":
         cell, edge, grid, fibre = pattern.wallpaper_field(
             resolution,
@@ -706,10 +674,15 @@ def write_procedural_base_color(
         median_edge = float(numpy.median(edge))
         reach = median_edge if median_edge > 0 else 1.0
         joint = numpy.clip(edge / reach, 0.0, 1.0)
-    elif kind == "markings":
-        # The MARKINGS are their own mask and not a joint: the paint
-        # is a stripe of a colour and it is either there or it is
-        # not, and there is no falloff at its edge.
+    elif kind in ("markings", "roof"):
+        # The MARKINGS and a ROOF's shingles are their own masks and
+        # not joints: a painted line is a stripe of a colour and it is
+        # either there or it is not, and a shingle lies ON the one
+        # below it.
+        #
+        # The joint's falloff - a gradient from the edge - is a BEVEL,
+        # and the truth's own roof is a mosaic of FLAT shingles with a
+        # per-shingle tone and a thin shadow at the edge.
         #
         # The joint's normalisation divides the field by its
         # maximum, and the markings' field is one on the road and
@@ -758,7 +731,14 @@ def write_procedural_base_color(
         # gradient, and the soft falloff made the ground a field of
         # glowing blobs.
         joint = numpy.where(joint > SCATTER_JOINT_EDGE, joint, 1.0)
-    if kind != "markings":
+    if kind == "roof":
+        # A ROOF's joint is a THIN SHADOW and not a bevel: the
+        # shingle above casts a line on the one below.
+        joint = numpy.where(joint > 0.94, 1.0, 0.0)
+        # And the shadow is DARK and not the pale mortar: a roof's
+        # shadow is a shadow.
+        joint = joint * 0.45
+    if kind not in ("markings", "roof"):
         # The joint's FALLOFF, and the MARKINGS' mask is not one.
         #
         # The falloff turns a distance into a joint - one at the
@@ -1091,6 +1071,29 @@ def write_procedural_base_color(
         image_luma = (colour * weights).sum(axis=2)
         image_hue = colour / _np.maximum(image_luma[:, :, _np.newaxis], 1e-6)
         colour = _np.clip(colour + image_hue * drift[:, :, _np.newaxis], 0.0, 1.0)
+    elif kind == "roof":
+        # A ROOF's shingles are a MOSAIC of flat tiles, each with its
+        # own tone, and the line between them is a SHADOW.
+        #
+        # The joint blended with the pale mortar, and the roof came
+        # out as a light brickwork with a bright outline around every
+        # shingle - and the truth's own roof is a dark sheet where the
+        # shingles' edges are barely there.
+        #
+        # And the shingle's tone is a SMALL part of the ramp: the
+        # truth's own RoofingTiles013A's eight-by-eight blocks of
+        # shingles measure between 0.165 and 0.214 - a spread of
+        # 0.049, a seventh of the surface's own mean.
+        #
+        # The hash spans the whole ramp, so the roof came out with a
+        # threefold spread of shingles and a contrast of 3.55x the
+        # truth's.
+        middle = (
+            numpy.array(stone_dark_rgb, dtype=numpy.float32)
+            + numpy.array(stone_light_rgb, dtype=numpy.float32)
+        ) * 0.5
+        colour = middle + (colour - middle) * ROOF_SHINGLE_TONE
+        colour = colour * (1.0 - joint) + mortar * joint
     elif kind == "woven":
         # A WOVEN cloth is a CROSSHATCH of two thread fields, and it
         # is drawn as a WEAR and not as a joint.
