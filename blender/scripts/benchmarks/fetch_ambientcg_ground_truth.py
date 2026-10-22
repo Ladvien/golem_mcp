@@ -32,6 +32,18 @@ ROOT = pathlib.Path(
         "/Users/ladvien/mnt/codex_fs/game_assets/benchmarks/ambientcg",
     )
 )
+# The KINDS the benchmark fetches and how many of each, and the total.
+#
+# They are read from the environment so ONE script fetches every
+# truth set: the sets differ in the kinds they cover, and a second
+# script would be a second copy of the same download logic.
+#
+# The default is the first set's - the twenty hand-picked materials'
+# kinds - and the popular set overrides it with the kinds the
+# popular list has and the first two sets do not.
+KINDS_OVERRIDE = os.environ.get("GOLEM_BENCH_KINDS", "")
+PER_KIND_OVERRIDE = os.environ.get("GOLEM_BENCH_PER_KIND", "")
+WANTED_OVERRIDE = os.environ.get("GOLEM_BENCH_WANTED", "")
 ROOT.mkdir(parents=True, exist_ok=True)
 
 API = "https://ambientcg.com/api/v2/full_json?type=Material&sort=popular&limit={limit}&include=downloadData"
@@ -82,30 +94,38 @@ def download(url, target):
 #
 # So the sample is wider: eight of each kind and seventy in all, over
 # fifteen kinds.
-PER_KIND = 8
-WANTED = 70
+PER_KIND = int(PER_KIND_OVERRIDE) if PER_KIND_OVERRIDE else 8
+WANTED = int(WANTED_OVERRIDE) if WANTED_OVERRIDE else 70
 # The KINDS the benchmark fetches, and the words that name each.
 #
 # The popular list is all bricks, so the kinds are chosen to cover
 # the surfaces the lane claims to make - and the more kinds there are,
 # the less any one of them can be fitted to.
 KINDS = (
-    "brick",
-    "wood",
-    "tiles",
-    "metal",
-    "ground",
-    "rock",
-    "fabric",
-    "concrete",
-    "plaster",
-    "gravel",
-    "sand",
-    "asphalt",
-    "leather",
-    "carpet",
-    "roof",
-    "wallpaper",
+    tuple(
+        kind.strip()
+        for kind in KINDS_OVERRIDE.split(",")
+        if kind.strip()
+    )
+    if KINDS_OVERRIDE
+    else (
+        "brick",
+        "wood",
+        "tiles",
+        "metal",
+        "ground",
+        "rock",
+        "fabric",
+        "concrete",
+        "plaster",
+        "gravel",
+        "sand",
+        "asphalt",
+        "leather",
+        "carpet",
+        "roof",
+        "wallpaper",
+    )
 )
 
 

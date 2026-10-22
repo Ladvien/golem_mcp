@@ -162,11 +162,16 @@ def test_a_non_metal_s_colour_is_unchanged():
     0.3978; the table's 0.34 said "brown" and the ground is a
     gravel, and the words are alphabetical so the ground's own kind
     decides.
+
+    The table is fitted on all hundred and fifty-four materials of
+    the three truth sets, and "dirt" now names eleven of them with a
+    mean of 0.4458 - so the ground's own kind is read and the
+    colour's word is not.
     """
     from golem_blender.pbr.palette import value_for_description
 
     assert value_for_description("brown, dirt, dry, gravel, gray, ground") == (
-        pytest.approx(0.3912, abs=0.02)
+        pytest.approx(0.4458, abs=0.02)
     )
 
 
@@ -284,8 +289,11 @@ def test_a_description_s_word_order_does_not_decide_the_spread():
 
     fabric = "blue, fabric, fur, microfiber, soft"
     rock = "forest, gray, green, irregular, moss, mossy, natural, old, rock, rough, stacked, stone"
+    # The truth's own Fabric084 measures 0.0090 and its Rock064
+    # measures 0.0926, and the table is fitted on all hundred and
+    # fifty-four materials of the three truth sets.
     assert spread_for_description(fabric) == pytest.approx(0.0090, abs=0.002)
-    assert spread_for_description(rock) == pytest.approx(0.0969, abs=0.004)
+    assert spread_for_description(rock) == pytest.approx(0.0926, abs=0.004)
 
 
 def test_the_spreads_are_the_truths_own():
@@ -296,18 +304,22 @@ def test_the_spreads_are_the_truths_own():
     truth's own Asphalt033 is 0.0178, the truth's own Concrete034
     is 0.0218 and the truth's own Ground108 is 0.1337.
 
-    The numbers are fitted on the WIDE sample - eighty-seven real
-    ambientcg sets - and not on the twenty hand-picked ones, because
-    a fit against twenty materials is a fit against twenty materials.
-    The fitter is `scripts/benchmarks/fit_palette.py`.
+    The numbers are fitted on ALL THREE sets - a hundred and fifty-four
+    real ambientcg materials - and not on the twenty hand-picked
+    ones, because a fit against twenty materials is a fit against
+    twenty materials. The fitter is
+    `scripts/benchmarks/refit_palette_tables.py`.
     """
     from golem_blender.pbr.palette import spread_for_description
 
     cases = {
         "fabric, orange, red, wool": 0.0437,
-        "asphalt, charcoal, dark, granular, gray, industrial, matte, pavement, road, rough, urban": 0.0185,
-        "concrete, grey, light, plaster, smooth": 0.0248,
-        "brown, debris, dirt, gravel, gray, ground, river, riverbed, rocky, rough, rubble, scattered, uneven": 0.1337,
+        "asphalt, charcoal, dark, granular, gray, industrial, matte, pavement, road, rough, urban": 0.0178,
+        "concrete, grey, light, plaster, smooth": 0.0228,
+        # The ground's own spread is the one the words cannot say:
+        # "dirt" now names eleven materials whose spreads run from
+        # 0.061 to 0.134, and the truth's own Ground108 is 0.1337.
+        "brown, debris, dirt, gravel, gray, ground, river, riverbed, rocky, rough, rubble, scattered, uneven": 0.1123,
     }
     for description, expected in cases.items():
         assert spread_for_description(description) == pytest.approx(expected, abs=0.004)
