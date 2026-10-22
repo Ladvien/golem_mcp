@@ -474,6 +474,10 @@ MARBLE_VEIN_WIDTH = 0.14
 # The vein's own period is the LATTICE's cell - the surface's own
 # feature scale - and the bed is the finer field it is cut from.
 MARBLE_BED_FINENESS = 2
+# How far the warp may carry the veins, as a fraction of the vein's
+# own period - and it is BOUNDED, because the slope is not.
+MARBLE_WARP_LIMIT_CELLS = 0.4
+MARBLE_VEIN_BANDS = 1.0
 # A HERRINGBONE floor's own aspect, and a board is as wide as it is
 # long.
 HERRINGBONE_ASPECT = 1.0
@@ -2461,20 +2465,26 @@ def marble_field(
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
 
-    # The veins' own lattice, and it is a power of two that divides
-    # the resolution, so the field's wrap joins two whole cells.
-    lattice = _power_of_two_nearest(max(4, cells))
-    while lattice > 1 and resolution % lattice != 0:
-        lattice //= 2
-    while lattice > 1 and lattice * 4 > resolution:
-        lattice //= 2
+    # The veins' own PERIOD, and it is the CELLS - the surface's own
+    # feature count - and not a power of two.
+    #
+    # The power of two was a quantisation for the field's WRAP, and
+    # the wrap does not need it: the noise's own period handles the
+    # tiling. And the quantisation was coarse - the truth's own
+    # Marble012 measures fourteen features across and its Marble016
+    # twenty-two, and both quantised to sixteen, so the two marbles
+    # came out with the SAME veins.
+    #
+    # So the period is the cells themselves.
+    period = max(4, int(cells))
 
     # The WARP, and it is the veins' own bed: a low-frequency field
     # that the veins ride, so they wander.
+    warp_lattice = max(2, period // 4)
     bed = noise_perlin.perlin_2d(
-        sample_x * max(2, lattice // 2),
-        sample_y * max(2, lattice // 2),
-        period=max(2, lattice // 2),
+        sample_x * warp_lattice,
+        sample_y * warp_lattice,
+        period=warp_lattice,
         seed=17,
     )
     bed_reach = max(1e-6, float(bed.max() - bed.min()))
@@ -2487,6 +2497,21 @@ def marble_field(
         step=MARBLE_WARP_STEP,
         iterations=1,
     )
+    # And the warp's DISPLACEMENT is BOUNDED, and the bound is a
+    # fraction of the vein's own period.
+    #
+    # The warp displaces along the field's SLOPE, and the slope is
+    # unbounded: where the bed is steep the displacement runs to
+    # many cells, and the vein's contours are crowded into a fine
+    # mess. The truth's own Marble012's veins measure fourteen
+    # features across and ours read a hundred and forty-six - the
+    # warp was folding the contours into itself.
+    #
+    # So the displacement is clipped to a fraction of a cell, and the
+    # cell is the vein's own period.
+    limit = MARBLE_WARP_LIMIT_CELLS / period
+    warped_x = numpy.clip(warped_x, sample_x - limit, sample_x + limit)
+    warped_y = numpy.clip(warped_y, sample_y - limit, sample_y + limit)
     # The veins themselves: the CONTOURS of a warped field.
     #
     # A vein is where the stone's bed changed, and a bed is a
@@ -2506,35 +2531,43 @@ def marble_field(
     # veins are six pixels across and a hundred and forty-four
     # apart, so the contour has to wander over many of the bed's own
     # features.
-    bed_lattice = lattice * MARBLE_BED_FINENESS
-    while bed_lattice > 1 and resolution % bed_lattice != 0:
-        bed_lattice //= 2
+    bed_lattice = period * MARBLE_BED_FINENESS
     bed = noise_perlin.perlin_2d(
         warped_x * bed_lattice,
         warped_y * bed_lattice,
         period=bed_lattice,
         seed=23,
     )
-    # And the vein's own FREQUENCY, and it is the BED's own fineness
-    # over the LATTICE: the vein's period is the lattice's cell, and
-    # the bed is the finer field it is cut from.
+    # And the vein's own FREQUENCY, and it is the BED's own lattice
+    # over its FINENESS: the bed is cut at the vein's period times
+    # the fineness, and the sine's factor is what puts the veins in.
     #
-    # The sine of a value that spans the whole range has half as many
-    # bands as its argument's factor, so the factor that puts one vein
-    # in every lattice cell is two over the bed's fineness.
+    # The sine of a value that spans the whole range carries half as
+    # many bands as its argument's factor, so the factor that puts
+    # one vein in every bed cell is two - and the bed's cell is
+    # MARBLE_BED_FINENESS times finer than the vein's own period.
     #
     # A fixed frequency was tried and it does not work: the bed is
-    # eight times finer than the lattice, so a fixed frequency made
+    # eight times finer than the period, so a fixed frequency made
     # the veins four times finer than the material's own scale, and
     # the marble's feature scale read 6.55x the truth's.
-    veins = numpy.abs(numpy.sin(bed * (2.0 / MARBLE_BED_FINENESS) * numpy.pi))
+    # The vein is the SINE of the bed, and the sine's own argument
+    # puts the bands where they go.
+    #
+    # The vein is a LINE and not a blob, and the line is what the
+    # width's clip makes of the sine's PEAKS - so the peaks have to
+    # be LINES, and a peak is a line when the field it comes from
+    # varies slowly ALONG the peak.
+    veins = numpy.abs(
+        numpy.sin(bed * (MARBLE_VEIN_BANDS * 2.0 / MARBLE_BED_FINENESS) * numpy.pi)
+    )
     # And the vein's own WIDTH, and it is a LINE and not a band: the
     # truth's own Marble012's veins are six pixels across.
     veins = numpy.clip(1.0 - numpy.abs(veins - 1.0) / MARBLE_VEIN_WIDTH, 0.0, 1.0)
     return (
         numpy.zeros((resolution, resolution), dtype=numpy.int32),
         veins,
-        (lattice, lattice),
+        (period, period),
         veins,
     )
 
