@@ -790,7 +790,7 @@ STONE_PEBBLE_JITTER = 0.35
 # ground read as a field of pebbles where the truth's is a grit.
 #
 # So the size is a TWO-THOUSANDTH of the surface.
-STONE_SCATTER_SIZE = 0.0120
+STONE_SCATTER_SIZE = 0.00625
 # How many stones the surface carries.
 #
 # The count follows the SIZE and not the cell count, because a stone
@@ -813,13 +813,20 @@ STONE_SCATTER_SIZE = 0.0120
 # floors at 0.000 - the truth's own - with its first percentile at
 # 0.113 against the truth's 0.119, and its tenth at 0.213 against the
 # truth's 0.212.
-STONE_SCATTER_DENSITY = 12000.0
+STONE_SCATTER_DENSITY = 120000
 # How much the stones' sizes vary, as a fraction of their own size.
 #
 # The truth's gravel is a mix: mostly small chips and a few big
 # stones, and the sizes vary by about eight times. So the jitter is
 # wide - the stone's own size is a MEAN and the spread is real.
 STONE_SCATTER_SIZE_JITTER = 0.8
+# How much of a stone's own size is a splat's own cell.
+#
+# A splat is drawn in its own cell, so the cell has to be the
+# splat's own size or the stones are clipped or lost. And the
+# truth's own ground carries eighty-five stones across at twelve
+# pixels each, so the cell is a little larger than the stone.
+STONE_SCATTER_COUNT_FACTOR = 0.35
 # How many straight edges cut each stone, and so how angular it is.
 STONE_SCATTER_EDGES = 3
 # The seed the stones' places and cuts come from.
@@ -3736,7 +3743,25 @@ def scattered_field(
     # 0.85x the truth's at twenty features and 1.43x at twenty-nine,
     # with a constant count.
     scale = max(1.0, float(cells))
+    #
+    # The stones' COUNT follows their own SIZE and not the surface's
+    # feature count.
+    #
+    # The truth's own ground carries eighty-five stones across and
+    # its stones are twelve pixels across, so the count is the
+    # surface's own area divided by the stones' own area - and the
+    # surface's feature count (nine, twenty) has nothing to do with
+    # it.
+    #
+    # The count followed the feature count, and so it followed the
+    # square of it: the ground with twenty features had six hundred
+    # stones and the one with sixteen had three hundred and eighty-
+    # four, and the measure read the stones' own count.
     count = max(8, round(STONE_SCATTER_DENSITY * (scale / 20.0) ** 2))
+    # And the splats' own LATTICE is the stones' size: a splat is
+    # drawn in its own cell, so the cell has to be the splat's own
+    # size or the stones are either clipped or lost.
+    count = max(8, round((1.0 / max(1e-6, size * STONE_SCATTER_COUNT_FACTOR)) ** 2))
     field, places = splatter.splatter_field(
         resolution,
         count=count,
@@ -4322,8 +4347,23 @@ def metal_field(
                 folds=FIBRE_FOLDS,
             )
         ridge = numpy.abs(grain_field - 0.5)
-        slope = numpy.abs(numpy.gradient(ridge, axis=0)) + numpy.abs(
-            numpy.gradient(ridge, axis=1)
+        #
+        # And the slope is computed on the WRAPPED field.
+        #
+        # numpy.gradient is ONE-SIDED at the edges: at index zero it
+        # uses the difference to the next sample and not the
+        # difference to the last one, so the edge row and column of
+        # the slope are not the slope of the field that the tile
+        # continues from.
+        #
+        # The field's own seam read 0.0045 and the SLOPE's read
+        # 0.227 - fifty times more - and the metal's own seam read
+        # 8.47 against the truth's 0.60.
+        #
+        # So the difference is taken against the field's own last
+        # sample, which is the one the tile wraps to.
+        slope = numpy.abs(ridge - numpy.roll(ridge, 1, axis=0)) + numpy.abs(
+            ridge - numpy.roll(ridge, 1, axis=1)
         )
         reach = float(numpy.percentile(slope, FIBRE_SLOPE_PERCENTILE))
         if reach <= 0.0:

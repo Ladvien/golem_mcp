@@ -265,6 +265,42 @@ was clipped away.
 A centring is a **shift**. The range is already one; doubling it
 takes it out of the space it is supposed to live in.
 
+## A loose ground: the stones are their own size
+
+The ground came out as a field of big flat pebbles where the truth's
+is a dense mass of small stones. The truth's own Ground112 carries
+**eighty-five stones** along a row of a thousand and twenty-four and
+ours carried forty, and its stones were **forty-five pixels across**
+where the truth's are two to nine.
+
+Two faults, and the second hid the first:
+
+1. The stone's **SIZE was a constant**, and the splat's radius is
+   the size times one and a half, so a size of 0.012 drew a stone
+   thirty-nine pixels across. The truth's own ground says twelve.
+2. The stone's **COUNT followed the surface's feature count**, and so
+   it followed the *square* of it — the ground with twenty features
+   had six hundred stones and the one with sixteen had three hundred
+   and eighty-four. The count is the surface's own area divided by
+   the stones' own area.
+
+And a splat is drawn in its own **cell**, so the cell has to be the
+splat's own size or the stones are either clipped or lost.
+
+## A general lesson: a gradient at the edge is not the gradient
+
+`numpy.gradient` is **one-sided at the edges**: at index zero it uses
+the difference to the next sample and not the difference to the last
+one, so the edge row and column of the slope are not the slope of
+the field that the tile continues from.
+
+The field's own seam read 0.0045 and the **slope's** read 0.227 —
+fifty times more — and the metal's own seam read 8.47 against the
+truth's 0.60.
+
+The difference is taken against the field's own **last** sample,
+which is the one the tile wraps to.
+
 ## The ORM
 
 Blender 5.2 has **no metallic bake pass** — the pass enum is
