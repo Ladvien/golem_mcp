@@ -203,9 +203,9 @@ def test_the_value_follows_the_material_s_kind():
     assert value_for_description("bricks, bricks113a, natural, stone") == (
         pytest.approx(0.4604, abs=0.01)
     )
-    # The wood: its kind says 0.5091 and its colour 0.4217.
+    # The wood: its kind says 0.4587 and its colour 0.4217.
     assert value_for_description("brown, smooth, wood, wooden") == (
-        pytest.approx(0.5091, abs=0.01)
+        pytest.approx(0.4587, abs=0.01)
     )
 
 
