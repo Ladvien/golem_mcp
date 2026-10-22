@@ -34,6 +34,41 @@ import bpy
 from golem_blender.pbr import benchmark
 from golem_blender.pbr import paths as pbr_paths
 
+SEAM_SCALED_DIR = pathlib.Path("/tmp/golem-seam-scaled")
+
+
+def _seam_at_truth_resolution(recreated, truth_map) -> float:
+    """The recreated map's seam, measured at the TRUTH's own size.
+
+    The recreated maps are 2048 pixels and the truths are 1024, and
+    the seam's step is the step across ONE pixel while the interior's
+    step is the step between two - so the interior's step halves with
+    the resolution and the seam's does not, and a map at twice the
+    resolution reads a worse seam against the same truth for no
+    reason at all.
+
+    Measured on the truth's own Metal032: at its own 1024 the seam
+    reads 0.98x its interior's biggest step - which is what a tiling
+    map is - and at 2048 the same map reads 7.76x.
+    """
+    from PIL import Image
+
+    with Image.open(truth_map) as handle:
+        truth_size = handle.size
+    with Image.open(recreated) as handle:
+        our_size = handle.size
+    if our_size == truth_size:
+        return pbr_paths.tile_seam_ratio(recreated)
+    SEAM_SCALED_DIR.mkdir(parents=True, exist_ok=True)
+    scaled = SEAM_SCALED_DIR / f"{pathlib.Path(recreated).stem}_at_truth.png"
+    with Image.open(recreated) as handle:
+        handle.convert("RGB").resize(truth_size, Image.LANCZOS).save(scaled)
+    try:
+        return pbr_paths.tile_seam_ratio(scaled)
+    finally:
+        scaled.unlink(missing_ok=True)
+
+
 ROOT = pathlib.Path(
     os.environ.get(
         "GOLEM_BENCH_ROOT",
@@ -68,7 +103,7 @@ for entry in manifest:
     if truth_map is None:
         continue
     albedo = benchmark.compare_albedo(truth_map, recreated)
-    seam = pbr_paths.tile_seam_ratio(recreated)
+    seam = _seam_at_truth_resolution(recreated, truth_map)
 
     print(
         f"SCORE {asset_id:16s} the brightness is {albedo['brightness_ratio']:5.2f}x "
