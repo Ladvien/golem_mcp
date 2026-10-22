@@ -98,6 +98,32 @@ to the minus two and the lane's matches it, so the energy is in the
 right places; it is the *shape* of the surface that differs, and a
 facet-and-joint mosaic is not a relief.
 
+### The ground's two scales, and the slow one cannot be pinned
+
+A ground has TWO scales: the slow variation at the surface's own
+scale and the stones at theirs, and they are far apart. Measured on
+the truth's own: the truth's Ground110's slow field decorrelates at
+112 pixels and its stones at sixteen - a ratio of seven - and the
+truth's Ground106's at 243 and seventeen, a ratio of fourteen.
+
+The lane's stones decorrelated at thirty-six pixels, because at
+random a Poisson field has a hole in it as often as it has a pair,
+and the stones came in clumps. So the stones are on a JITTERED
+LATTICE, and the jitter is about each cell's own centre - a jitter
+from the corner makes the first cell of a row nine tenths of the
+lattice wide and the last one a tenth, and the wrap joins a wide
+cell to a narrow one.
+
+And the stones' own size is a CONSTANT: the truth's eight grounds
+all have a stone scale of twelve to twenty pixels, whatever their
+feature count.
+
+What the words cannot say is the SLOW scale's own value: the
+truth's slow fields run from 101 to 243 pixels across eight grounds,
+and their correlation with the feature count is only 0.57 - so the
+lane's is a constant 142, which is the middle of the truth's range
+and the best a single number can do.
+
 ### The value cannot be refitted honestly
 
 The palette's material values are a fit against the truth's own
