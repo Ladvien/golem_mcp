@@ -203,6 +203,8 @@ EXTREME_REFLECTIVE_WORDS = frozenset(
 # And the DARKEST of them wins, so a "black, dark" thing is very
 # dark and a "light, white" thing is very light.
 EXTREME_LIGHT_WORDS = ("black", "white", "dark", "light")
+# The extremes that point the DARK way.
+EXTREME_DARK_WORDS = frozenset({"black", "dark"})
 # The HUE each colour word carries, as (red, green, blue) SHARES of
 # the colour's sum - so the hue is independent of the luma.
 #
@@ -1242,7 +1244,29 @@ SPECIFIC_MATERIALS = frozenset(
 # and "brown, espresso". A wood's own fitted value is 0.4587 and it
 # is none of them.
 GENERIC_MATERIALS = frozenset(
-    {"fabric", "stone", "metal", "wool", "carpet", "leather", "parquet", "wood"}
+    {
+        "fabric",
+        "stone",
+        "metal",
+        "wool",
+        "carpet",
+        "leather",
+        "parquet",
+        "wood",
+        # And a BRICK is a SHAPE and not a colour.
+        #
+        # The truth's own twelve bricks split by their words: the
+        # eight that say "natural, stone" are a warm tan - a hue of
+        # 0.40, 0.34, 0.25 - and the one that says "white" is a
+        # neutral 0.341, 0.332, 0.326, which is "white"'s own hue
+        # to three decimal places.
+        #
+        # So a brick wears the colour the description gives it, and
+        # "bricks" says what KIND of thing it is and not what colour
+        # it is - the same rule as a wood and a fabric.
+        "brick",
+        "bricks",
+    }
 )
 
 # How many materials each colour word names, and a word that names
@@ -1577,7 +1601,27 @@ def value_for_description(description: str) -> float:
         ]
         if textured:
             return min(textured)
-        return min(extreme)
+        # And the extreme that points the SAME WAY as the description
+        # wins.
+        #
+        # The rule was "the darkest of them wins", and it is right
+        # for a "black, dark" thing. But the truth's own materials
+        # never carry a dark word and a light word together - not one
+        # of the twenty-nine in the four sets - so the extremes only
+        # ever point one way.
+        #
+        # And when they point the LIGHT way, the BRIGHTEST of them
+        # wins: the truth's own Bricks060 is a "brick, bricks,
+        # bright, light, wall, white" at a luma of 0.846, and its
+        # Travertine009 is a "light, white" at 0.805 - both of them
+        # brighter than "white" alone is.
+        #
+        # Measured over the truth's own: the materials that name
+        # "white" and no dark word average 0.735, and the two that
+        # name "light" as well are the brightest of them.
+        if words & EXTREME_DARK_WORDS:
+            return min(extreme)
+        return max(extreme)
     # The MATERIAL'S word decides, and the colour's word is the
     # fallback.
     #
