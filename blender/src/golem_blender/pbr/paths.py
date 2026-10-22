@@ -110,6 +110,52 @@ def normal_file_name(texture_name: str) -> str:
 TILE_SEAM_LIMIT = 0.60
 
 
+def _tile_seam_ratio_jpeg(image_path: Path) -> float:
+    """The seam of a JPEG, measured the same way as a PNG's.
+
+    The PNG path is a pure-Python reader with no numpy, so it runs in
+    the MCP server's process as well as inside Blender. A JPEG needs
+    a decoder, and Pillow is the one that is there.
+
+    The measure is the same: the seam's mean absolute step from the
+    last column to the first, over the ninety-fifth percentile of the
+    steps between adjacent columns.
+    """
+    try:
+        from PIL import Image
+    except ImportError as error:  # pragma: no cover - Pillow is a capture extra
+        raise ValueError(
+            f"{image_path} is not a PNG file and Pillow is not installed, "
+            "so it cannot be read."
+        ) from error
+
+    try:
+        import numpy
+    except ImportError as error:  # pragma: no cover - numpy is a Blender extra
+        raise ValueError(
+            f"{image_path} is not a PNG file and numpy is not installed, "
+            "so it cannot be measured."
+        ) from error
+
+    try:
+        with Image.open(image_path) as image:
+            array = numpy.asarray(image.convert("RGB"), dtype=numpy.float32) / 255.0
+    except Exception as error:
+        raise ValueError(f"{image_path} is not a readable image.") from error
+    luma = 0.2126 * array[:, :, 0] + 0.7152 * array[:, :, 1] + 0.0722 * array[:, :, 2]
+    height, width = luma.shape
+    sample = range(0, height, max(height // 256, 1))
+    seam = 0.0
+    for row in sample:
+        seam += abs(float(luma[row, width - 1]) - float(luma[row, 0]))
+    seam /= len(sample)
+    interior = numpy.abs(numpy.diff(luma, axis=1)).ravel()
+    baseline = float(numpy.percentile(interior, 95)) if interior.size else 0.0
+    if baseline <= 0.0:
+        return 0.0
+    return seam / baseline
+
+
 def tile_seam_ratio(image_path: Path) -> float:
     """How large a texture's seam is, against the features it crosses.
 
@@ -137,7 +183,10 @@ def tile_seam_ratio(image_path: Path) -> float:
 
     data = Path(image_path).read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise ValueError(f"{image_path} is not a PNG file.")
+        # A JPEG is measured too, and the ambientcg archive gives
+        # JPGs as well as PNGs - and the truth set is only measured
+        # for its PNGs otherwise, which is half of itself.
+        return _tile_seam_ratio_jpeg(Path(image_path))
 
     position = 8
     compressed = b""

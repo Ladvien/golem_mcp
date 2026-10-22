@@ -62,7 +62,12 @@ for entry in manifest:
     if not recreated.is_file():
         continue
 
-    albedo = benchmark.compare_albedo(directory / "albedo.png", recreated)
+    truth_map = next(iter(sorted(directory.glob("albedo.png"))), None)
+    if truth_map is None:
+        truth_map = next(iter(sorted(directory.glob("albedo.jpg"))), None)
+    if truth_map is None:
+        continue
+    albedo = benchmark.compare_albedo(truth_map, recreated)
     seam = pbr_paths.tile_seam_ratio(recreated)
 
     print(

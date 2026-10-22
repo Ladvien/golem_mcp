@@ -176,6 +176,24 @@ def fit(root: pathlib.Path, extra_roots=()) -> dict:
     spreads: dict[str, list[float]] = collections.defaultdict(list)
     values: dict[str, list[float]] = collections.defaultdict(list)
     hues: dict[str, list[tuple[float, float, float]]] = collections.defaultdict(list)
+    # The COLOUR words' own values, and they are fitted on the
+    # materials where the colour is the ONLY word that says the
+    # colour.
+    #
+    # "blue" names three materials in the wide set - a blue microfibre
+    # at 0.527, a blue carpet at 0.229 and a blue cloth at 0.243 - and
+    # their mean is 0.333, which is no material's colour.
+    #
+    # A colour word's value is its own when the word is ALONE about
+    # the colour: a "blue, fabric, fur, microfiber, soft" is a blue
+    # thing and the blue says how light it is.
+    #
+    # So the colour's value is fitted on the materials whose
+    # description names that colour and NO other colour.
+    colour_values: dict[str, list[float]] = collections.defaultdict(list)
+    colour_hues: dict[str, list[tuple[float, float, float]]] = collections.defaultdict(
+        list
+    )
 
     for entry in statistics:
         asset_id = entry["asset_id"]
@@ -189,6 +207,19 @@ def fit(root: pathlib.Path, extra_roots=()) -> dict:
             total = albedo["red_mean"] + albedo["green_mean"] + albedo["blue_mean"]
             if total > 0:
                 hues[word].append(
+                    (
+                        albedo["red_mean"] / total,
+                        albedo["green_mean"] / total,
+                        albedo["blue_mean"] / total,
+                    )
+                )
+        named = words & set(COLOUR_WORDS)
+        if len(named) == 1:
+            word = next(iter(named))
+            colour_values[word].append(albedo["luma_mean"])
+            total = albedo["red_mean"] + albedo["green_mean"] + albedo["blue_mean"]
+            if total > 0:
+                colour_hues[word].append(
                     (
                         albedo["red_mean"] / total,
                         albedo["green_mean"] / total,
@@ -254,7 +285,7 @@ def fit(root: pathlib.Path, extra_roots=()) -> dict:
         },
         "colour_values": {
             word: round(_mean(values_list), 4)
-            for word, values_list in measured(values).items()
+            for word, values_list in measured(colour_values).items()
             if word in COLOUR_WORDS
         },
         # And the HUES are split the same way: a MATERIAL's hue is
@@ -266,9 +297,9 @@ def fit(root: pathlib.Path, extra_roots=()) -> dict:
             if hues[word] and word in MATERIAL_WORDS
         },
         "hues": {
-            word: tuple(round(part, 3) for part in _mean_hue(hues[word]))
-            for word in hues
-            if hues[word] and word in COLOUR_WORDS
+            word: tuple(round(part, 3) for part in _mean_hue(colour_hues[word]))
+            for word in colour_hues
+            if colour_hues[word] and word in COLOUR_WORDS
         },
     }
 

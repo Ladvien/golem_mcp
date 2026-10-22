@@ -41,7 +41,12 @@ manifest = json.loads((ROOT / "manifest.json").read_text())
 results = []
 for entry in manifest:
     directory = pathlib.Path(entry["directory"])
+    # The map may be a PNG or a JPG: the 1K-JPG archive gives JPGs
+    # and the wider one gives PNGs, and a truth set that is only
+    # measured for its PNGs measures half of itself.
     albedo = next(iter(sorted(directory.glob("albedo.png"))), None)
+    if albedo is None:
+        albedo = next(iter(sorted(directory.glob("albedo.jpg"))), None)
     if albedo is None:
         continue
     statistics = benchmark.albedo_statistics(albedo)
