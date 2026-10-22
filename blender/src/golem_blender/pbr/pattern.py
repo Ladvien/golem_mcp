@@ -3496,7 +3496,16 @@ def metal_field(
     #
     # So the ribs are the envelope's cells times the factor, and the
     # envelope is the perlin's own lattice.
-    rib_cells = cells * METAL_PRESSED_RIB_FACTOR
+    # The ribs' count DIVIDES the resolution, so every rib lands on
+    # whole pixels and the wrap joins two whole ribs.
+    #
+    # It was the cells times eleven, and eleven is not a power of
+    # two: the cells of four gave forty-four ribs and forty-four
+    # does not divide a thousand and twenty-four - so the last rib
+    # was a fraction of a rib's width and the wrap joined it to a
+    # whole one, and the sheet's vertical seam read 6.52 against the
+    # truth's 0.35.
+    rib_cells = _nearest_divisor(resolution, cells * METAL_PRESSED_RIB_FACTOR)
     bands = (across + warp) * rib_cells
     band = numpy.floor(bands).astype(numpy.int32)
     within = bands - band
@@ -3535,7 +3544,13 @@ def metal_field(
     # steel's period was eighty-three pixels and its feature scale
     # read 2.31x the truth's, and the truth's period is a hundred and
     # seventy-three.
-    band_lattice = max(2, round(cells / envelope_factor))
+    # The envelope's lattice is a POWER OF TWO that divides the
+    # resolution, for the same reason the ribs' is: a Perlin's own
+    # lattice is the period of its field, and a period that does not
+    # divide the domain does not wrap.
+    band_lattice = _power_of_two_nearest(max(2, round(cells / envelope_factor)))
+    while band_lattice > 1 and resolution % band_lattice != 0:
+        band_lattice //= 2
     band_field = noise_perlin.perlin_2d(
         sample_x * band_lattice,
         sample_y * band_lattice,
@@ -3685,20 +3700,32 @@ def metal_field(
         # along it, and a PRESSED sheet's streaks run DOWN the image
         # and not along a row.
         lattice = METAL_GRAIN_LATTICE
+        # The stretch is the LATTICE's own size and not a factor on
+        # the sample, so the field's period is a whole number of
+        # cells and the wrap joins two whole cells.
+        #
+        # The stretch was a factor on the sample, and a quarter of a
+        # cell is not a whole cell: the field's own wrap read 0.136
+        # against its spread of 0.132 - it did not wrap at all - and
+        # the corrugated steel's seam read 6.52 against the truth's
+        # 0.35.
+        stretched = max(1, round(lattice * METAL_GRAIN_STRETCH))
         if horizontal:
             grain_field = noise.fbm_2d_value(
                 sample_x * lattice,
-                sample_y * lattice * METAL_GRAIN_STRETCH,
+                sample_y * stretched,
                 size=lattice,
+                size_y=stretched,
                 octaves=FIBRE_OCTAVES,
                 seed=1,
                 folds=FIBRE_FOLDS,
             )
         else:
             grain_field = noise.fbm_2d_value(
-                sample_x * lattice * METAL_GRAIN_STRETCH,
+                sample_x * stretched,
                 sample_y * lattice,
-                size=lattice,
+                size=stretched,
+                size_y=lattice,
                 octaves=FIBRE_OCTAVES,
                 seed=1,
                 folds=FIBRE_FOLDS,
@@ -3963,7 +3990,17 @@ def scratch_streaks(resolution: int, cells: int, seed: int = 0):
 
     # The sheet is divided into cells, and each cell gets one streak.
     # The cells are the streaks' length scale.
-    lattice = max(2, round(cells * SCRATCH_CELL_FRACTION))
+    # The lattice DIVIDES the resolution, so every cell's border
+    # lands on whole pixels and the wrap joins two whole cells.
+    #
+    # It was the cells times a fraction, and the fraction is not a
+    # power of two: the metal's scratches' vertical wrap read 0.155
+    # against their own spread of 0.19 - eighty per cent of the
+    # whole field - and the corrugated steel's seam read 6.52
+    # against the truth's 0.35.
+    lattice = _power_of_two_nearest(max(2, round(cells * SCRATCH_CELL_FRACTION)))
+    while lattice > 1 and resolution % lattice != 0:
+        lattice //= 2
     cell_x = numpy.floor(sample_x * lattice)
     cell_y = numpy.floor(sample_y * lattice)
     # The cell's own random values, from the same hash the lane's
