@@ -2525,52 +2525,79 @@ def leather_field(
     """A LEATHER: a fine even PEBBLED hide.
 
     A leather is a field of small cells - a grain, a pebble - and the
-    cells are TIGHT and EVEN. It is the loose ground's primitive at a
+    cells are TIGHT and even. It is the loose ground's primitive at a
     much finer scale: a gravel's stones are scattered and irregular,
     and a hide's cells are packed and even.
 
-    Measured on the truth's own: a leather's cells are a couple of
-    pixels across, so the cell count is high and the field is a fine
-    crackle and not a plate of pebbles.
+    And a leather is TWO scales: a COARSE envelope and a FINE grain
+    on it.
+
+    Measured on the truth's own: the six leathers' envelopes measure
+    six to thirty-five features across and their fine textures
+    measure a hundred and fourteen to five hundred and twelve, and
+    the FINE carries most of the spread - Leather037's envelope
+    carries 0.0001 of its 0.0032 and the fine carries the rest.
+
+    So the pattern is the envelope at the surface's own count and a
+    fine grain over it, and the measure finds the envelope - which
+    is what the truth's own measure finds too.
     """
     import numpy
 
-    from golem_blender.pbr import noise_worley_fbm
+    from golem_blender.pbr import noise, noise_worley_fbm
 
-    # The cells are the SURFACE's own count and not a loose ground's:
-    # a hide is a fine crackle, so the lattice is a power of two that
-    # divides the resolution.
-    lattice = _power_of_two_nearest(max(4, LEATHER_CELL_COUNT))
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
+
+    # The ENVELOPE's own count, and it is the surface's own: the
+    # truth's own leather measures six to thirty-five features across
+    # and the measure finds the envelope.
+    lattice = _power_of_two_nearest(max(2, cells))
     while lattice > 1 and resolution % lattice != 0:
         lattice //= 2
     while lattice > 1 and lattice * 4 > resolution:
         lattice //= 2
 
-    samples = _domain_samples(resolution)
-    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
+    # The hide's own CELLS, and they are TIGHT and even: a fine
+    # Worley crackle, at the leather's own grain and not the
+    # surface's count.
+    cell_lattice = _power_of_two_nearest(max(8, LEATHER_CELL_COUNT))
+    while cell_lattice > 1 and resolution % cell_lattice != 0:
+        cell_lattice //= 2
+    while cell_lattice > 1 and cell_lattice * 2 > resolution:
+        cell_lattice //= 2
 
-    # The cells are the Worley's own, and the field is the distance
-    # to the BISECTOR - an exact distance to the cell's border, so a
-    # joint drawn from it is the same width in pixels whatever the
-    # cell's size.
     stones = noise_worley_fbm.worley_fbm_2d(
-        sample_x * lattice,
-        sample_y * lattice,
-        period=lattice,
+        sample_x * cell_lattice,
+        sample_y * cell_lattice,
+        period=cell_lattice,
         octaves=1,
         jitter=LEATHER_CELL_JITTER,
         seed=5,
     )
     distance = stones["distance"]
     cell = stones["cell"]
-    edge = numpy.clip(distance, 0.0, 1.0)
+    # The crackle is the distance to the cells' borders, and it is
+    # FINE: the truth's own Leather037's detail has a period of two
+    # pixels in a thousand and twenty-four.
+    fine = numpy.clip(distance * cell_lattice, 0.0, 1.0)
 
-    # The hide's own TOOTH, and it is a fine mottle over the cells:
-    # a leather's surface is not smooth between the pebbles.
-    fine = surface_texture(resolution, max(4, lattice))
-    fine_reach = max(1e-6, float(fine.max() - fine.min()))
-    fine = (fine - float(fine.min())) / fine_reach
-    return cell, edge, (lattice, lattice), fine
+    # The ENVELOPE, and it is the surface's own slow variation: a
+    # hide's large-scale unevenness.
+    envelope = noise.fbm_2d_value(
+        sample_x * lattice,
+        sample_y * lattice,
+        size=lattice,
+        octaves=1,
+        seed=4,
+    )
+    envelope_reach = max(1e-6, float(envelope.max() - envelope.min()))
+    envelope = (envelope - float(envelope.min())) / envelope_reach
+
+    # The edge is the crackle and the fibre is the envelope, and the
+    # writer draws the crackle as the joint and the envelope as the
+    # wear.
+    return cell, fine, (lattice, lattice), envelope
 
 
 def wallpaper_field(
@@ -2599,18 +2626,56 @@ def wallpaper_field(
 
     # The design's own grid, and it is FINE: the truth's own woodchip
     # wallpaper's flecks come every eight pixels.
-    lattice = _power_of_two_nearest(max(2, WALLPAPER_MOTIF_COUNT))
+    # The design's own grid, and it is the SURFACE's own feature
+    # count.
+    #
+    # The truth's own woodchip wallpaper measures five and a half
+    # features across - a coarse envelope - and the sixteen thousand
+    # flecks on it are the FINE texture inside that envelope.
+    #
+    # The flecks were the whole design, and the flecks' own grid was
+    # a hundred and twenty-eight, and the map measured ninety-three
+    # features across where the truth measures five and a half.
+    lattice = _power_of_two_nearest(max(2, cells))
     while lattice > 1 and resolution % lattice != 0:
         lattice //= 2
     while lattice > 1 and lattice * 4 > resolution:
         lattice //= 2
 
-    # The flecks are IRREGULAR, and the field is WARPED so they are.
+    # The design's ENVELOPE, and it is the coarse one: a printed
+    # design has a pattern of blocks and the pattern is what the
+    # measure reads.
     #
-    # A regular lattice of flecks is a dither, and the picture showed
-    # a visible diagonal weave. A printed design is scattered, and
-    # the warp is what scatters it.
-    warp_lattice = max(2, lattice // 4)
+    # The truth's own woodchip wallpaper measures five and a half
+    # features across - a coarse envelope - and the sixteen thousand
+    # flecks on it are the FINE texture inside that envelope.
+    #
+    # The flecks were the whole design, and the flecks' own grid was
+    # a hundred and twenty-eight, and the map measured ninety-three
+    # features across where the truth measures five and a half.
+    envelope = noise.fbm_2d_value(
+        sample_x * lattice,
+        sample_y * lattice,
+        size=lattice,
+        octaves=1,
+        seed=6,
+    )
+    envelope_reach = max(1e-6, float(envelope.max() - envelope.min()))
+    envelope = (envelope - float(envelope.min())) / envelope_reach
+    envelope = numpy.abs(envelope - 0.5) * 2.0
+
+    # The FINE flecks on it, and they are the texture inside the
+    # envelope: the truth's own woodchip wallpaper carries sixteen
+    # thousand bright flecks in a thousand and twenty-four.
+    #
+    # And they are WARPED, because a regular lattice of flecks is a
+    # dither and the picture showed a visible diagonal weave.
+    fleck_lattice = _power_of_two_nearest(max(4, lattice * 8))
+    while fleck_lattice > 1 and resolution % fleck_lattice != 0:
+        fleck_lattice //= 2
+    while fleck_lattice > 1 and fleck_lattice * 4 > resolution:
+        fleck_lattice //= 2
+    warp_lattice = max(2, fleck_lattice // 4)
     warp = noise_perlin.perlin_2d(
         sample_x * warp_lattice,
         sample_y * warp_lattice,
@@ -2618,18 +2683,21 @@ def wallpaper_field(
         seed=8,
     )
     fleck = noise.fbm_2d_value(
-        (sample_x + warp * WALLPAPER_FLECK_WARP) * lattice,
-        (sample_y + warp * WALLPAPER_FLECK_WARP) * lattice,
-        size=lattice,
+        (sample_x + warp * WALLPAPER_FLECK_WARP) * fleck_lattice,
+        (sample_y + warp * WALLPAPER_FLECK_WARP) * fleck_lattice,
+        size=fleck_lattice,
         octaves=1,
         seed=6,
     )
     # The flecks are the field's own EXTREMES and not its whole
     # range: a fleck is a speck of one colour and the rest of the
     # sheet is the other.
-    reach = max(1e-6, float(fleck.max() - fleck.min()))
-    fleck = (fleck - float(fleck.min())) / reach
-    motif = numpy.where(fleck > 0.5, 1.0, 0.0)
+    fleck_reach = max(1e-6, float(fleck.max() - fleck.min()))
+    fleck = (fleck - float(fleck.min())) / fleck_reach
+    fleck = numpy.where(fleck > 0.5, 1.0, 0.0)
+    # And the design is the envelope WITH the flecks on it: a printed
+    # sheet has both a pattern and a texture.
+    motif = numpy.clip(0.65 * envelope + 0.35 * fleck, 0.0, 1.0)
 
     # The sheet's own cells, and a wallpaper has none to speak of -
     # the design is on the sheet and not made of the sheet.
