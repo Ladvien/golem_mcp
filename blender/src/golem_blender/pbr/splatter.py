@@ -116,8 +116,13 @@ def splatter_field(
     for index in range(count):
         row = index // lattice
         column = index % lattice
-        centre_x = (column + jitter * generator.random()) * cell_width
-        centre_y = (row + jitter * generator.random()) * cell_width
+        # The jitter is about the cell's own CENTRE, and not from
+        # its corner: a jitter from the corner makes the first cell
+        # of the row nine tenths of the lattice wide and the last one
+        # a tenth, and the wrap joins a wide cell to a narrow one and
+        # the seam reads 0.94x - as big as the biggest feature.
+        centre_x = (column + 0.5 + (generator.random() - 0.5) * jitter) * cell_width
+        centre_y = (row + 0.5 + (generator.random() - 0.5) * jitter) * cell_width
         # The splat's own size, and its own angle.
         #
         # The sizes are HEAVY-TAILED and not uniform: a loose ground
