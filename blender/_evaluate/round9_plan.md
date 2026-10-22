@@ -70,3 +70,32 @@ Breadth first: A1 (seven materials), B1 (nineteen woods), B8 (an
 artifact), B9's seam (a wrap bug), B3, B4, B5, B6, B7, A2, A3, B2,
 B9, B10, then C. Each fix gets a before/after crop READ in the
 transcript; the four sets re-run after each batch.
+
+## Progress (each fix looked at in a before/after crop sheet)
+
+| defect | cause found | fix | commit |
+|---|---|---|---|
+| A1 red/pink specks | `_shift_to_value` moved each pixel along ITS OWN colour/luma; a near-black pixel's ratio is noise | lift along the image's mean hue; Blender test fails before (sat 1.00), passes after | fdbad6d |
+| A2 gold metal grey | silver+steel outvoted gold | a coloured metal takes its metal's hue (2 materials change, both better) | (coloured metal) |
+| B1 wood smudges | envelope was a Perlin's magnitude (blobs, same on every wood) | Material Maker's wood: 1-cell-along x 96-across noise, bent by a slow field | f6ed97c |
+| B8 concrete checker | single-octave value noise shows its lattice | 4/3-octave fBm | c20f460 |
+| B9 floor seam 16.46x | in-board position read against the WRAPPED column; stagger was whole blocks | fraction of the staggered coordinate; per-course golden fraction; boards get ring grain | 0334de2 |
+| (roof) | same two faults | half-shingle / golden fraction | roof commit |
+| B3 Bricks060 flat peach | "brick" sorted before "white" for hue; "bright" (one fitted marble) set the spread | white-only hue; lightness words step aside for a material word (holdout 0.4085 -> 0.4060) | 3006acb |
+| B4 tiles staggered | tiles went down the brick path with its stagger | `staggered=False` for tiles, two features per tile, glazed tone at a twentieth of the ramp | 3006acb |
+| B5/B6 rock, moss, grass | routed to voronoi / scattered | rock_field, moss_field, grass_field; routing | (natural kinds) |
+| palette fitted on 3 sets | grass/moss hues fitted on one olive ground | refit on four sets incl. MATERIAL_HUES | (natural kinds) |
+| dead code | 4 duplicate/dead definitions | deleted | 3287a0f |
+
+Measured but NOT taken (lost on the holdout or in-sample): colour-word-first hue (41 better / 56 worse);
+a one-colour-word hue (28/58); dropping lightness words from the spread outright (holdout 0.4323);
+refusing words fitted on one material (holdout 0.5384).
+
+## Still open
+
+- Moss002 too pale (value 0.466 vs 0.353) and unsaturated; Concrete031 olive; Wood066 too light.
+- B2 brushed metal shows no brushing; B7 fabric weave; B10 road lane count.
+- Marble012/014 hue; Rock hue slightly green (the "rock" hue includes mossy rocks).
+- Compositing: `pbr/layers.py` is built and tested (moss in brick joints, rust in steel cavities -
+  both looked at); it needs an MCP tool so the agent can call it.
+- `curvature.scratches` is O(cells^2 x resolution^2): every cell draws over the whole image.
