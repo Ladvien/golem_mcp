@@ -626,9 +626,22 @@ def write_procedural_base_color(
         # across and eight down. The rings were built at the across
         # count, so they were eight times too fine and the wood's
         # feature scale read 2.79x the truth's.
+        # The RINGS are the ENVELOPE and the FIBRE is the fine one.
+        #
+        # The rings were at the surface's own feature count, and the
+        # ring's own count is not the feature count: the surface's
+        # feature count is the WHOLE surface's - the rings AND the
+        # fibre - and the fibre decorrelates the rings.
+        #
+        # Measured on the truth's own: at four cells the lane reads
+        # 9.2 features and at eight it reads 19.3, so the features
+        # are two and a third times the cells. The truth's own
+        # Wood096 measures 5.8 and its rings are two and a half; the
+        # truth's own Wood092 measures 37.9 and its rings are
+        # sixteen.
         cell, edge, grid, fibre = pattern.grain_field(
             resolution,
-            cells,
+            max(2, round(cells / pattern.GRAIN_CELLS_PER_FEATURE)),
             lines_per_cell=lines_per_cell,
             fibre_cells=max(2, round(cells * pattern.FIBRE_CELLS_PER_RING)),
         )
