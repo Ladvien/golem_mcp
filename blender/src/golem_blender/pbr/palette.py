@@ -119,6 +119,17 @@ EXTREME_VALUES: dict[str, float] = {
     "white": 0.797,
     "dark": 0.266,
     "light": 0.626,
+    # And "bright" is an extreme too.
+    #
+    # The truth's own three "bright" materials - a marble at 0.950,
+    # a brick at 0.846 and a leather at 0.794 - average 0.863, and
+    # the word is MORE SPECIFIC than "white": it names three
+    # materials and "white" names nineteen.
+    #
+    # And it is brighter than "white" is: the truth's own Marble021
+    # is a "bright, marble, reflective, shiny, white" at 0.950, and
+    # the "white" extreme said 0.797.
+    "bright": 0.863,
 }
 # And a black REFLECTIVE surface is a different black from a black
 # dielectric one, and the words cannot tell them apart.
@@ -202,7 +213,7 @@ EXTREME_REFLECTIVE_WORDS = frozenset(
 )
 # And the DARKEST of them wins, so a "black, dark" thing is very
 # dark and a "light, white" thing is very light.
-EXTREME_LIGHT_WORDS = ("black", "white", "dark", "light")
+EXTREME_LIGHT_WORDS = ("black", "white", "dark", "light", "bright")
 # The extremes that point the DARK way.
 EXTREME_DARK_WORDS = frozenset({"black", "dark"})
 # The HUE each colour word carries, as (red, green, blue) SHARES of

@@ -548,7 +548,7 @@ MARBLE_VEIN_LEVEL = 0.5
 #
 # The constants are kept so the measurement can be repeated.
 MARBLE_CRACKLE_LATTICE = 56
-MARBLE_CRACKLE_WIDTH = 0.18
+MARBLE_CRACKLE_WIDTH = 0.04
 MARBLE_CRACKLE_SHARE = 0.0
 # And the crackle's own JITTER, and how narrow the vein's line is
 # about the cell's border.
@@ -561,6 +561,13 @@ MARBLE_CRACKLE_LINE_WIDTH = 0.06
 # How much finer the crackle's cells are than the surface's own
 # feature count.
 MARBLE_CRACKLE_FACTOR = 2.0
+# A MARBLE's vein's own width, in PIXELS.
+#
+# The truth's own Marble012's veins are six pixels across and a
+# hundred and forty-four apart, and its Marble021's are six pixels
+# across and thirty-six apart. So a vein is a fixed number of pixels
+# and not a fixed fraction of its cell.
+MARBLE_VEIN_PIXELS = 6.0
 # How wide the CONTOUR's own band is, as a fraction of the bed's
 # whole range.
 #
@@ -569,6 +576,12 @@ MARBLE_CRACKLE_FACTOR = 2.0
 # own Marble021's veins cover eight per cent of the surface and the
 # crackle is eight per cent of it.
 MARBLE_CONTOUR_WIDTH = 0.05
+# The marble's STONE mottle: how fine it is and how many octaves.
+#
+# The truth's own Marble021's stone is a fine even cloud and not a
+# few big blobs, and the bed's own lattice is the vein's own period.
+MARBLE_MOTTLE_FACTOR = 4.0
+MARBLE_MOTTLE_OCTAVES = 3
 # A HERRINGBONE floor's own aspect, and a board is as wide as it is
 # long.
 HERRINGBONE_ASPECT = 1.0
@@ -2835,9 +2848,17 @@ def marble_field(
         crackle_lattice //= 2
     while crackle_lattice > 1 and crackle_lattice * 2 > resolution:
         crackle_lattice //= 2
+    # And the crackle's cells are WARPED, so the veins wander.
+    #
+    # A Worley cell's border is a straight line between two points,
+    # and the marble came out as a POLYGON MESH - a net of straight
+    # edges - where the truth's own Marble012's veins wander.
+    #
+    # So the crackle's own coordinates ride on the bed, the same warp
+    # the contour's veins ride on, and the cells are irregular.
     stones = noise_worley_fbm.worley_fbm_2d(
-        sample_x * crackle_lattice,
-        sample_y * crackle_lattice,
+        warped_x * crackle_lattice,
+        warped_y * crackle_lattice,
         period=crackle_lattice,
         octaves=1,
         jitter=MARBLE_CRACKLE_JITTER,
@@ -2862,7 +2883,19 @@ def marble_field(
     # four hundredths covers 4.9 per cent at a lattice of thirty-two
     # and 4.9 per cent at a hundred and twenty-eight.
     gap = stones["F2"] - stones["F1"]
-    vein_line = numpy.clip(1.0 - gap / MARBLE_CRACKLE_WIDTH, 0.0, 1.0)
+    #
+    # And the vein's width is the vein's own PIXEL width, and not a
+    # fixed fraction of the gap.
+    #
+    # The truth's own Marble012's veins are six pixels across and a
+    # hundred and forty-four apart - so a vein is a twentieth of its
+    # own cell - and the truth's Marble021's veins are six pixels
+    # across and thirty-six apart - a sixth.
+    #
+    # A fixed fraction of the gap gave the coarse marble a one-pixel
+    # vein and the fine one a vein too faint to see.
+    vein_width = max(1e-6, MARBLE_VEIN_PIXELS * crackle_lattice / float(resolution))
+    vein_line = numpy.clip(1.0 - gap / vein_width, 0.0, 1.0)
     # And the CONTOURS ride on it, for the marble that has them: a
     # marble's bed shows through the crackle as a broad mottle.
     #
@@ -2883,9 +2916,55 @@ def marble_field(
     # the veins are the low ones - and a marble's veins are dark on a
     # pale stone.
     veins = 1.0 - numpy.clip(numpy.maximum(vein_line, contour), 0.0, 1.0)
+    #
+    # And the ENVELOPE is the stone's own MOTTLE and the FIBRE is the
+    # crackle.
+    #
+    # They were the same array, and the writer's marble branch put a
+    # FLAT half in the envelope's slot - so the stone had no
+    # variation at all and the marble came out as a flat field with
+    # a few dark specks in it.
+    #
+    # The truth's own Marble021 has a p10 of 0.918 and a p90 of
+    # 0.973: the stone itself VARIES, gently, and the veins are the
+    # fine network on top of it.
+    stone = 1.0 - numpy.clip(contour, 0.0, 1.0)
+    #
+    # And the ENVELOPE is the BED's own shape, not the inverse of
+    # the contour's narrow band.
+    #
+    # The envelope was the inverse of a band that is zero almost
+    # everywhere, so it was one almost everywhere, and the writer's
+    # line function - which divides by the field's own maximum - made
+    # it a constant, and the stone came out with no variation at all.
+    #
+    # The truth's own Marble021's stone varies: its p10 is 0.918 and
+    # its p90 0.973. So the envelope is a mottle over the whole
+    # surface.
+    #
+    # And the mottle is FINE: the bed's own lattice is the vein's
+    # own period, and a marble's stone is a fine even cloud and not
+    # a few big blobs. So the envelope is a value noise at a lattice
+    # of its own.
+    from golem_blender.pbr import noise
+
+    mottle_lattice = max(4, round(period * MARBLE_MOTTLE_FACTOR))
+    mottle = noise.fbm_2d_value(
+        sample_x * mottle_lattice,
+        sample_y * mottle_lattice,
+        size=mottle_lattice,
+        octaves=MARBLE_MOTTLE_OCTAVES,
+        seed=31,
+    )
+    mottle_reach = max(1e-6, float(mottle.max() - mottle.min()))
+    mottle = (mottle - float(mottle.min())) / mottle_reach
+    # And the mottle rides on the BED, so the stone's large-scale
+    # shape is the bed's own - a marble is one piece of stone and its
+    # cloud is one cloud.
+    mottle = 0.5 * mottle + 0.5 * numpy.clip(bed, 0.0, 1.0)
     return (
         numpy.zeros((resolution, resolution), dtype=numpy.int32),
-        veins,
+        mottle,
         (period, period),
         veins,
     )

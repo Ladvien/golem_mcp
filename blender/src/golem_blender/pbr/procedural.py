@@ -254,6 +254,15 @@ PROCEDURAL_COLOUR_KINDS = (
 # Measured on the truth's own row: the range is 0.0797 and the
 # spread 0.0135, so the fibre occupies a fifth of the row's range.
 DEFAULT_LINE_WIDTH = 0.35
+# A MARBLE's own balance between its veins and its stone.
+#
+# The two are a FINE NETWORK and a GENTLE CLOUD, and the wood's
+# balance - a broad envelope at three fifths and a weak fibre at a
+# sixth - is the other way round: the stone's cloud swamped the
+# veins and the marble came out as a cloudy surface with no veins in
+# it at all.
+MARBLE_FIBRE_STRENGTH = 0.5
+MARBLE_ENVELOPE_STRENGTH = 0.4
 # The ENVELOPE's line: how wide it is, as a fraction of its own
 # field's reach, and how much of the spread it carries.
 #
@@ -475,6 +484,7 @@ def write_procedural_base_color(
     target_value: float | None = None,
     lines_per_cell: int = DEFAULT_LINES_PER_CELL,
     fibre_strength: float = FIBRE_STRENGTH,
+    envelope_strength: float = ENVELOPE_STRENGTH,
     pebble_factor: float = 1.0,
     curvature_strength: float = 0.0,
     scratch_strength: float = 0.0,
@@ -943,8 +953,16 @@ def write_procedural_base_color(
             # veins are six pixels across.
             #
             # So the veins go into the FIBRE's slot, and the base is
-            # the envelope's flat field.
-            edge = _np.ones_like(fibre) * 0.5
+            # the envelope's field.
+            #
+            # And the envelope is NOT flat: the stone's own mottle
+            # rides under the veins, and a flat half put the stone at
+            # one value and the marble came out as a flat field with
+            # a few dark specks in it. The truth's own Marble021 has
+            # a p10 of 0.918 and a p90 of 0.973 - the stone itself
+            # VARIES, gently, and the veins are the fine network on
+            # top of it.
+            edge = _np.clip(edge, 0.0, 1.0)
         return _write_line_pattern(
             output_path,
             edge=edge,
@@ -959,7 +977,14 @@ def write_procedural_base_color(
             target_spread=target_spread,
             target_value=target_value,
             fibre_strength=(
-                METAL_FIBRE_STRENGTH if kind == "metal" else fibre_strength
+                METAL_FIBRE_STRENGTH
+                if kind == "metal"
+                else MARBLE_FIBRE_STRENGTH
+                if kind == "marble"
+                else fibre_strength
+            ),
+            envelope_strength=(
+                MARBLE_ENVELOPE_STRENGTH if kind == "marble" else ENVELOPE_STRENGTH
             ),
         )
 
@@ -1918,6 +1943,7 @@ def _write_line_pattern(
     target_spread: float | None = None,
     target_value: float | None = None,
     fibre_strength: float = FIBRE_STRENGTH,
+    envelope_strength: float = ENVELOPE_STRENGTH,
 ) -> Path:
     """Write a pattern of LINES on a base colour; returns the path.
 
@@ -1965,7 +1991,7 @@ def _write_line_pattern(
         return line * line * (3.0 - 2.0 * line)
 
     # The envelope: a broad gradient, at a third of the spread.
-    envelope_line = line_of(edge, ENVELOPE_LINE_WIDTH) * ENVELOPE_STRENGTH
+    envelope_line = line_of(edge, ENVELOPE_LINE_WIDTH) * envelope_strength
     # The fibre: fine lines, at the rest of the spread.
     fibre_line = line_of(fibre, FIBRE_LINE_WIDTH) * fibre_strength
 
@@ -2019,7 +2045,15 @@ def _write_line_pattern(
     dark_high = float(darkness.max())
     if dark_high - dark_low > 1e-9:
         darkness = (darkness - dark_low) / (dark_high - dark_low)
-    darkness = _np.clip(darkness - 0.5, -0.5, 0.5) * 2.0 + 0.5
+    #
+    # And the centring is a SHIFT and not a rescale: the range is
+    # already one, and doubling it took the field out of the zero to
+    # one it is supposed to live in - the mean landed at 1.28 and the
+    # top of the range was clipped away.
+    #
+    # So the darkness is shifted to the middle of its own range and
+    # no further.
+    darkness = _np.clip(darkness - 0.5, -0.5, 0.5) + 0.5
     # The surface is drawn BOTH LIGHTER AND DARKER than the base.
     #
     # The blend was one-sided - the base colour everywhere the

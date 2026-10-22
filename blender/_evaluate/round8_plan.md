@@ -217,6 +217,54 @@ lower half of the structure below zero and the clip DROPPED IT, and
 the wood came out with no grain in it at all. The darkness is scaled
 to its own range first and then centred on the middle of that range.
 
+## The marble: a crackle is a network, and a contour is a loop
+
+The marble came out as a handful of big closed rings on a pale stone,
+where the truth's own Marble021 is a fine network of veins that all
+join up.
+
+**A contour of a smooth field IS a closed loop.** That is what the
+vein was, and it is why the marble looked like a handful of rings.
+A crackle is the **distance to the borders of a set of cells**, and
+that is a *network* by construction: every border is a piece of it
+and they all meet.
+
+And the crackle is the **GAP** between the two nearest features
+(F2 − F1), which is zero *exactly* on the border between two cells.
+The distance to the *nearest* feature is not that: it is zero at
+every feature's own point, so a band about it is a set of **DOTS**
+at the cell's centres, and the network broke up into spots.
+
+And the gap's width does not depend on the lattice: a band of four
+hundredths covers 4.9 per cent at a lattice of thirty-two and 4.9
+per cent at a hundred and twenty-eight.
+
+Three more faults hid behind that one:
+
+- The cells were **straight-edged** — a Worley cell's border is a
+  straight line between two points — so the marble came out as a
+  **polygon mesh**. The cells are warped, so the veins wander.
+- The vein's width was a fixed fraction of the gap, which gave the
+  coarse marble a one-pixel vein and the fine one a vein too faint
+  to see. The truth's Marble012's veins are **six pixels** across
+  and a hundred and forty-four apart; its Marble021's are six pixels
+  across and thirty-six apart. So the width is a fixed number of
+  **pixels**.
+- The marble's two layers are the other way round from a wood's: a
+  marble's veins are a **fine network** and its stone a **gentle
+  cloud**, and the wood's balance swamped the veins with the cloud.
+
+## A general lesson: a centring that is a rescale leaves the range
+
+The writer's darkness is scaled to its own range first, and then it
+was clipped to half a range either side of its own middle and
+**doubled** — which takes a zero-to-one field to minus-a-half-to-
+one-and-a-half. The mean landed at **1.28** and the top of the range
+was clipped away.
+
+A centring is a **shift**. The range is already one; doubling it
+takes it out of the space it is supposed to live in.
+
 ## The ORM
 
 Blender 5.2 has **no metallic bake pass** — the pass enum is
