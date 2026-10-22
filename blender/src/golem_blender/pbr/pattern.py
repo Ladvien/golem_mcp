@@ -1959,9 +1959,18 @@ def parquet_field(
     # The block's own coordinates, and the courses are offset by HALF
     # a block - so the vertical joints do not line up, and the floor
     # reads as laid boards and not as a grid.
+    # The offset shifts the INDEX and not the sample: a half-block
+    # shift on a sample is a shift of a fraction of a cell, and the
+    # columns sat at half-cell positions and the wrap joined a column
+    # at a half to a column at a whole.
+    #
+    # And the offset's PARITY has to be the same at the top and the
+    # bottom of the image, or the wrap joins a course at a half to a
+    # course at a whole.
     row = numpy.floor(sample_y * courses)
-    offset = numpy.mod(row, 2.0) * 0.5
-    column = numpy.floor((sample_x + offset / across) * across)
+    wrapped_row = numpy.mod(row, courses)
+    offset = numpy.mod(numpy.floor(wrapped_row / 2.0), 2.0) * 2.0
+    column = numpy.floor(sample_x * across + offset).astype(numpy.int32)
 
     # The cell is a LINEAR index - the course times the row's width
     # plus the block's own index in it - and that is the encoding the
@@ -1974,7 +1983,7 @@ def parquet_field(
     # counts - so the block at the edge is the same block as the one
     # at the start, and the map tiles.
     cell = (
-        numpy.mod(row, courses).astype(numpy.int32) * across
+        wrapped_row.astype(numpy.int32) * across
         + numpy.mod(column, across).astype(numpy.int32)
     ).astype(numpy.int32)
 
