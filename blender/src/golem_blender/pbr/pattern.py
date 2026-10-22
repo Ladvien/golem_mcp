@@ -263,7 +263,7 @@ FIBRE_LATTICE = 4
 # Measured on the truth's own Wood096: sixty-eight features across
 # and eight down - so the fibre is eight and a half times finer than
 # the rings.
-FIBRE_CELLS_PER_RING = 8.0
+FIBRE_CELLS_PER_RING = 1.0
 # How many FEATURES a wood's ring carries, and it is the ratio of
 # the surface's own feature count to its ring count.
 #
