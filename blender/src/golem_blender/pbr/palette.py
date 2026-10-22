@@ -2004,6 +2004,31 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
         if MATERIAL_HUES.get(word.strip(".,")) is not None
         and word.strip(".,") not in GENERIC_MATERIALS
     ]
+    # And a COLOUR word beats the material's word when it names
+    # FEWER materials - the same specificity rule, read across the
+    # two tables.
+    #
+    # The truth's own Tiles141 is a "bathroom, beige, dirty, floor,
+    # grid, kitchen, rectangular, rough, stained, stone, tiles, urban,
+    # white" and its hue is 0.347, 0.333, 0.320 - a near neutral.
+    # And "tiles" names eleven materials at a mean of 0.395, 0.326,
+    # 0.279, and "white" names eight at 0.342, 0.337, 0.321.
+    #
+    # So the white tile is white and not a tan tile, and the more
+    # specific colour says so.
+    #
+    # Measured on the truth's own eighty-seven, the mean hue error
+    # fell from 0.0552 to 0.0513, the median from 0.0365 to 0.0300,
+    # and the worst from 0.3399 to 0.2763.
+    colours = [
+        word.strip(".,") for word in words if HUES.get(word.strip(".,")) is not None
+    ]
+    if colours and named:
+        colour_counts = min(MATERIAL_WORD_COUNTS.get(word, 99) for word in colours)
+        material_counts = min(MATERIAL_WORD_COUNTS.get(word, 99) for word in named)
+        if colour_counts < material_counts:
+            colours.sort(key=lambda word: (MATERIAL_WORD_COUNTS.get(word, 99), word))
+            return HUES[colours[0]]
     if named:
         named.sort(key=lambda word: (MATERIAL_WORD_COUNTS.get(word, 99), word))
         return MATERIAL_HUES[named[0]]

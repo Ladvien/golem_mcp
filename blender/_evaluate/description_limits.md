@@ -164,6 +164,23 @@ and for the envelope's lattice, and for the scratches' cells: a
 count that does not divide the resolution leaves a fraction of a
 cell at the edge, and the wrap joins it to a whole one.
 
+### A brick's colour is its clay, and the words cannot say which
+
+The truth's own seven bricks all carry the SAME description - "bricks,
+natural, stone" - and their faces measure 0.506, 0.463, 0.392,
+0.577, 0.478, 0.332 and 0.513, 0.486, 0.441. A twenty per cent
+spread in the red, and no word to tell them apart.
+
+So a brick carries its own hue - the brick's own hash, applied to the
+hue and not to the brightness, so a brick is a patch of a different
+clay and not a lighter or darker one. And the spread is measured
+against the truth's own: the truth's per-brick red share has a
+standard deviation of 0.0070 and the lane's at the full hash read
+0.0143, twice the truth's.
+
+What is still out of reach is the difference BETWEEN two materials
+with the same words, and that is the same limit as the value's.
+
 ### The value cannot be refitted honestly
 
 The palette's material values are a fit against the truth's own
