@@ -303,6 +303,25 @@ BRICK_FACE_GRAIN_CUTOFF = 0.25
 # a per-tile flat tone would step at every joint.
 BRICK_FACE_DRIFT_CONTINUITY = 0.7
 
+# The MATRIX's own SHADOW, and how far below the palette's dark end
+# the gaps go.
+#
+# The ramp is the stone-to-matrix contrast, and the matrix is the
+# shadow in the gaps between the stones - so the matrix has to have
+# somewhere darker than the stones' own darkest to sit, and the
+# palette's ramp has no room there. The truth's own ground reads a
+# matrix of 0.172 where the palette's ramp starts at 0.218.
+MATRIX_SHADOW_SHARE = 0.72
+# And where the matrix's own tone RIDES on that extended ramp: at
+# the bottom, for the gaps, and up to the top of it for a worn patch.
+#
+# The matrix ran to a third of the way up the palette's own ramp, so
+# the gaps were a pale grey: measured, the matrix read 0.246 against
+# a truth's 0.172, and the stone-to-matrix contrast read 0.372
+# against a truth's 0.430.
+MATRIX_TONE_BASE = 0.20
+MATRIX_TONE_RANGE = 0.80
+
 
 def _cell_mean(field, cell, width: int, height: int):
     """The field's own MEAN over each cell.
@@ -1159,10 +1178,32 @@ def write_procedural_base_color(
         # The MATRIX is the ramp's DARK end, and the slow variation
         # moves it within that dark end - so a worn patch of ground is
         # a patch of paler matrix.
-        matrix_tone = _np.clip(0.10 + 0.26 * slow, 0.0, 1.0)
+        #
+        # And the matrix goes BELOW the ramp's dark end, because the
+        # ramp is the stone-to-matrix contrast and the matrix is the
+        # shadow in the gaps. The truth's own ground reads a matrix
+        # of 0.172 where the palette's ramp starts at 0.186 - so the
+        # matrix was on the ramp's dark end and not under it, and the
+        # gap between the stones had no depth.
+        #
+        # And the matrix's tone stays at the BOTTOM of the ramp: it
+        # ran to a third of the way up, so the gaps between the stones
+        # were a pale grey and the ground came out flat. Measured:
+        # the matrix read 0.246 against a truth's 0.172 - a third too
+        # bright - and the stone-to-matrix contrast read 0.372 against
+        # a truth's 0.430.
+        #
+        # So the matrix's ramp starts UNDER the palette's dark end -
+        # the shadow's own share - and the matrix's tone rides at the
+        # bottom of it, with the slow variation for the patches.
+        matrix_tone = _np.clip(MATRIX_TONE_BASE + MATRIX_TONE_RANGE * slow, 0.0, 1.0)
         matrix_colour = numpy.empty_like(stone)
         for channel in range(3):
-            ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
+            # The matrix's own ramp is EXTENDED below the palette's
+            # dark end, so the shadow in the gaps has somewhere to go
+            # that is darker than the stones' own darkest.
+            dark = stone_dark_rgb[channel] * MATRIX_SHADOW_SHARE
+            ramp = _np.linspace(dark, stone_dark_rgb[channel], 256)
             matrix_colour[:, :, channel] = ramp[
                 _np.clip((matrix_tone * 255).astype(_np.int32), 0, 255)
             ]
