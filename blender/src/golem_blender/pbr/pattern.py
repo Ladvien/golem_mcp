@@ -486,6 +486,29 @@ MARBLE_BED_FINENESS = 1
 # own period - and it is BOUNDED, because the slope is not.
 MARBLE_WARP_LIMIT_CELLS = 0.4
 MARBLE_VEIN_LEVEL = 0.5
+# And the marble's CRACKLE - the fine web of one-pixel veins over the
+# mottle - was measured and DROPPED.
+#
+# The truth's own Marble012's high-pass is a dense web of veins a
+# pixel across, and its raw correlation decays smoothly from +0.743
+# at a lag of one to zero at seventy-two - so the crackle is there
+# and it is WEAK, and a slow mottle carries the rest of the
+# variation.
+#
+# A crackle was added at half the weight and it cost the feature
+# scale: the marbles read 93 features against the truth's 14 at a
+# lattice of fifty-six, and every share and every lattice tried made
+# it worse - a fine web dominates the autocorrelation's zero
+# crossing whatever its weight, because a zero crossing is a COARSE
+# statistic.
+#
+# So the marble is the mottle alone, and the marble's feature scale
+# is 0.456 against the truth's own.
+#
+# The constants are kept so the measurement can be repeated.
+MARBLE_CRACKLE_LATTICE = 56
+MARBLE_CRACKLE_WIDTH = 0.04
+MARBLE_CRACKLE_SHARE = 0.0
 # A HERRINGBONE floor's own aspect, and a board is as wide as it is
 # long.
 HERRINGBONE_ASPECT = 1.0
@@ -2058,11 +2081,23 @@ def grain_field(
         # and eight down - so the fibre is the across count and the
         # rings are the down count, and a fixed four made the fibre
         # sixteen times too coarse.
+        # And the lattice is the FIBRE's OWN and not the rings'.
+        #
+        # The truth's own wood has its lines seven and a half pixels
+        # apart in a thousand-and-twenty-four row, and a value
+        # noise's ridge crosses the middle of its range twice per
+        # lattice cell - so the lattice is a hundred and forty across
+        # the image, whatever the surface's own feature count is.
+        #
+        # The lattice was the rings' count, and the rings' count is
+        # the surface's own - so the fibre's lines came out a hundred
+        # pixels apart and the wood came out as smooth blobs with
+        # dark smears in them, where the truth has fine lines.
         lattice = max(
             4,
             round(fibre_cells)
             if fibre_cells is not None
-            else round(cells * FIBRE_CELLS_PER_RING),
+            else _fibre_lattice(resolution),
         )
         while lattice > 1 and resolution % lattice != 0:
             lattice //= 2
