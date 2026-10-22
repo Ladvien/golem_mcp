@@ -327,14 +327,6 @@ MATRIX_TONE_BASE = 0.20
 # it, and the moss is a MINORITY of the surface - a cell with a full
 # hue swing on every cell gave a green and a tan patchwork.
 MOSS_FRACTION = 0.55
-# How much of the RAMP a voronoi's cell is drawn on, and it is a
-# NARROW slice.
-#
-# A cell is a FACET of one surface and not a piece of it: the
-# truth's own Rock064 carries a spread of 0.0494 over its thirty-two
-# pixel blocks against a whole of 0.0921, so its cells are half the
-# surface's variation and not all of it.
-VORONOI_CELL_TONE_FRACTION = 0.6
 MOSS_PATCH_SHARE = 0.15
 MATRIX_TONE_RANGE = 0.80
 # A MEASUREMENT PLACEHOLDER - the sweep below picks the value.
@@ -930,25 +922,6 @@ def write_procedural_base_color(
         stone[:, :, channel] = ramp[
             _np.clip((hashed * 255).astype(numpy.int32), 0, 255)
         ]
-    if kind == "voronoi":
-        # A VORONOI's cell is a FACET of one surface, and its own
-        # tone is a NARROW slice of the ramp.
-        #
-        # The cells were drawn on the WHOLE ramp, and a rock came out
-        # as a mosaic of coloured pieces - and the truth's own
-        # Rock064 carries a spread of 0.0494 over its thirty-two
-        # pixel blocks against a whole of 0.0921, so its cells are
-        # HALF the surface's variation and not all of it.
-        #
-        # So the cell's tone is drawn about the ramp's middle, at
-        # three fifths of the ramp's width, and the SURFACE's
-        # variation is the rest.
-        middle = (stone_dark_rgb + stone_light_rgb) * 0.5
-        for channel in range(3):
-            stone[:, :, channel] = (
-                middle[channel]
-                + (stone[:, :, channel] - middle[channel]) * VORONOI_CELL_TONE_FRACTION
-            )
     if kind == "voronoi":
         # A VORONOI's cells each carry their own HUE, and a rock is
         # a patchwork of them.
