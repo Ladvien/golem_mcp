@@ -286,7 +286,7 @@ METAL_ORIENTATION = math.pi / 2.0
 # A sheet's grain is BROADBAND and irregular, the way the wood's
 # fibre is - a Gabor's carrier is a regular set of stripes, and a
 # regular pattern's autocorrelation locks onto it.
-METAL_GRAIN_LATTICE = 4
+METAL_GRAIN_LATTICE = 16
 # How much COARSER the metal's envelope's lattice is than its cell
 # count. A Perlin's value oscillates faster than its lattice, and the
 # measure reads the value.
@@ -303,7 +303,7 @@ METAL_SCRATCH_LAYERS = 4
 METAL_SCRATCH_WAVINESS = 0.5
 METAL_SCRATCH_ANGLE = 0.0
 METAL_SCRATCH_RANDOMNESS = 0.5
-METAL_GRAIN_STRETCH = 0.25
+METAL_GRAIN_STRETCH = 0.5
 METAL_FREQUENCY = 96.0
 # How wide the fibre's line is, as a fraction of the noise's own
 # range around the crossing.
