@@ -479,6 +479,25 @@ def write_procedural_base_color(
             cells,
             aspect=brick_aspect if brick_aspect is not None else pattern.PARQUET_ASPECT,
         )
+    elif kind == "herringbone":
+        # A HERRINGBONE floor is BOARDS at ninety degrees to each
+        # other, in pairs, and the truth's own parquet is a
+        # basketweave and not a staggered course.
+        cell, edge, grid, _fibre = pattern.herringbone_field(
+            resolution,
+            cells,
+            aspect=pattern.HERRINGBONE_ASPECT,
+        )
+    elif kind == "woven":
+        # A WOVEN cloth is a CROSSHATCH, and the lane's answer for a
+        # fabric was a VORONOI - whose cells are large flat pieces
+        # with hard borders - so a fabric came out as a field of
+        # pebbles.
+        cell, edge, grid, fibre = pattern.woven_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
+        )
     elif kind == "roof":
         # A ROOF is courses of overlapping shingles, and each shingle
         # carries its own tone: a roof is a patchwork of weathered
@@ -487,6 +506,32 @@ def write_procedural_base_color(
             resolution,
             cells,
             aspect=pattern.ROOF_ASPECT,
+        )
+    elif kind == "carpet":
+        # A CARPET is a pile of fibres, and the truth's own carpet is
+        # almost flat - a spread of 0.029 over twenty-seven thousand
+        # specks - and a directional fine grain.
+        cell, edge, grid, fibre = pattern.carpet_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
+        )
+    elif kind == "leather":
+        # A LEATHER is a fine even pebbled hide, and it is the loose
+        # ground's primitive at a much finer scale and a much
+        # tighter packing.
+        cell, edge, grid, fibre = pattern.leather_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
+        )
+    elif kind == "markings":
+        # A ROAD MARKING is painted GEOMETRY on a surface, and the
+        # surface's own texture goes on underneath it.
+        cell, edge, grid, fibre = pattern.markings_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
         )
     elif kind == "wallpaper":
         cell, edge, grid, fibre = pattern.wallpaper_field(
