@@ -2886,16 +2886,21 @@ def roof_field(
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
 
-    # The shingle's own place, and the courses are offset by HALF a
-    # shingle - the same offset a brick wall has.
+    # The shingle's own place, and alternate courses are offset by
+    # HALF a shingle - the same offset a brick wall has.
     #
-    # The offset shifts the INDEX and not the sample: a half-shingle
-    # shift on a sample is a shift of a fraction of a cell, and the
-    # columns sat at half-cell positions and the wrap joined a
-    # column at a half to a column at a whole.
+    # The offset was two WHOLE shingles, which moves no joint off the
+    # shingle lattice, so the joints of every course lined up. A half
+    # alternates its parity every course, so it wraps only when the
+    # course count is EVEN; an odd count takes each course's own
+    # golden-ratio fraction instead, which wraps whatever the count.
     row = numpy.floor(sample_y * courses)
     wrapped_row = numpy.mod(row, courses)
-    offset = numpy.mod(numpy.floor(wrapped_row / 2.0), 2.0) * 2.0
+    if courses % 2 == 0:
+        offset = numpy.mod(wrapped_row, 2.0) * 0.5
+    else:
+        offset = numpy.mod(wrapped_row * 0.6180339887, 1.0)
+    staggered = sample_x * across + offset
     column = numpy.floor(sample_x * across + offset).astype(numpy.int32)
 
     # The cell is a LINEAR index, and that is the encoding the
@@ -2912,7 +2917,11 @@ def roof_field(
     # The column is WRAPPED: the shingle at the edge of the image is
     # the same shingle as the one at the start, and the distance to
     # its border has to be measured in the wrapped frame.
-    within_x = sample_x * across + offset - numpy.mod(column, across)
+    # The position in the shingle is the staggered coordinate's own
+    # fraction, and not the coordinate less the WRAPPED column - that
+    # read about twenty in the last shingles of a staggered course and
+    # clipped the edge distance to solid joint.
+    within_x = staggered - numpy.floor(staggered)
     within_y = sample_y * courses - row
     distance = numpy.minimum(
         numpy.minimum(within_x, 1.0 - within_x), numpy.minimum(within_y, 1.0 - within_y)
