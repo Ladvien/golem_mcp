@@ -124,6 +124,19 @@ SCATTER_MATRIX_WIDTH = 2.0
 # truth's fifty-three when the drift was on the stone's own tone,
 # and the drift's own share is what moved it.
 SCATTER_DRIFT_SHARE = 0.55
+# How much a STONE's hue varies from the surface's own, as a
+# fraction of the hue's spread.
+#
+# Measured on the truth's own gravel: the stones' red share runs
+# from 0.351 to 0.393 and their blue share from 0.296 to 0.334, so
+# the variation is about a twentieth of the hue itself.
+#
+# The stone's own hue offset is a UNIFORM value in minus one to one,
+# so its standard deviation is a third of the range - and the
+# measured spread of the stones' red share came out at 0.0066
+# against the truth's 0.0153. So the fraction is a tenth and not a
+# fiftieth.
+SCATTER_HUE_VARIATION = 0.10
 # How much of the surface's spread a PARQUET's block grain carries.
 #
 # A parquet is a wood floor, and a wood's fibre is most of its
@@ -380,7 +393,7 @@ def write_procedural_base_color(
         #
         # The joint is the MATRIX between the stones, and the stones'
         # own tone is the matrix's mottle.
-        cell, edge, grid, fibre, slow = pattern.scattered_field(
+        cell, edge, grid, fibre, slow, stone_hue = pattern.scattered_field(
             resolution,
             cells,
             lines_per_cell=lines_per_cell,
@@ -813,6 +826,44 @@ def write_procedural_base_color(
                 _np.clip((matrix_tone * 255).astype(_np.int32), 0, 255)
             ]
         colour = colour * (1.0 - joint) + matrix_colour * joint
+        # And the STONES' own HUE variation, which is a per-stone
+        # constant.
+        #
+        # The whole surface was one hue, so a ground of grey stones
+        # came out as a ground of tan ones. The truth's own gravel
+        # carries stones whose red share runs from 0.351 to 0.393 -
+        # a fiftieth - and a close crop of the truth shows it.
+        #
+        # The offset is applied to the HUE and not to the channels:
+        # a stone that is a little greener is a stone with a
+        # different hue and not a different brightness.
+        if stone_hue is not None:
+            # The offsets are the hue's OWN direction, and a warm
+            # stone is red and blue against the green: the truth's
+            # stones' red and blue shares move together and their
+            # green share barely moves.
+            #
+            # Measured, the truth's stones' red share varies by
+            # 0.0153 and their blue by 0.0186 and their green by
+            # 0.0060 - so the green is a third of the red.
+            offsets = numpy.stack(
+                (
+                    stone_hue * SCATTER_HUE_VARIATION,
+                    -stone_hue * 0.4 * SCATTER_HUE_VARIATION,
+                    -stone_hue * 1.2 * SCATTER_HUE_VARIATION,
+                ),
+                axis=2,
+            )
+            weights = _np.array([0.2126, 0.7152, 0.0722], dtype=_np.float32)
+            stone_luma = (colour * weights).sum(axis=2)
+            stone_hue_vector = colour / _np.maximum(
+                stone_luma[:, :, numpy.newaxis], 1e-6
+            )
+            colour = _np.clip(
+                colour + stone_hue_vector * offsets * stone_luma[:, :, numpy.newaxis],
+                0.0,
+                1.0,
+            )
         # And the SLOW drift rides on the WHOLE image, as a
         # continuous layer.
         #

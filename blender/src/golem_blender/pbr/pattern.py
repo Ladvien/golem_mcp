@@ -2159,6 +2159,15 @@ def scattered_field(
     # stone's own tone where the stone is. The matrix's own tone is
     # the slow field, and the writer draws it from the complement.
     stones_tone = numpy.zeros((resolution, resolution), dtype=numpy.float64)
+    # The stones' own HUE variation, and it is a per-stone constant.
+    #
+    # A field of stones is not one colour: the truth's own gravel
+    # carries stones whose red share runs from 0.351 to 0.393, so
+    # the variation is a fiftieth of the surface's hue.
+    #
+    # And the whole surface was one hue before, so a ground of grey
+    # stones came out as a ground of tan ones.
+    stones_hue = numpy.zeros((resolution, resolution), dtype=numpy.float64)
 
     # The stones are ANGULAR: each is cut by a few straight edges.
     #
@@ -2169,7 +2178,7 @@ def scattered_field(
     # So the dome is cut by a set of half-planes, and each plane's
     # angle and offset come from the stone's own place.
     generator = numpy.random.default_rng(STONE_SCATTER_SEED + 11)
-    for centre_x, centre_y, this_size, _, _, _ in places:
+    for index, (centre_x, centre_y, this_size, _, _, _) in enumerate(places):
         # The stone's own cut lines, and they are relative to the
         # stone's own centre and its own size - so a cut is the
         # stone's own edge and not a cut across the whole surface.
@@ -2277,6 +2286,18 @@ def scattered_field(
                 # and not a stone's.
                 tone_window = stones_tone[lo_y:hi_y, lo_x:hi_x]
                 tone_window[inside > 0.0] = tone
+                # The stone's own hue offset, and it is the stone's
+                # OWN hash - so two stones in the same patch differ
+                # and the patch does not.
+                hue_window = stones_hue[lo_y:hi_y, lo_x:hi_x]
+                hue_window[inside > 0.0] = (
+                    float(
+                        numpy.random.default_rng(
+                            STONE_SCATTER_SEED + index * 7
+                        ).random()
+                    )
+                    - 0.5
+                ) * 2.0
 
     # The EDGE is what the shared path draws the joint from, and the
     # joint is dark where the edge is small.
@@ -2302,12 +2323,18 @@ def scattered_field(
     # stones are a couple of pixels across, and the measure finds the
     # surface's slow variation. Measured, the constant matrix put the
     # period at sixteen pixels against the truth's fifty-three.
+    #
+    # And the STONES' own HUE variation: a field of stones is not one
+    # colour, and the truth's own gravel carries stones whose red
+    # share varies by a fiftieth. So each stone carries its own hue
+    # offset, and it is zero on the matrix.
     return (
         numpy.zeros_like(edge, dtype=numpy.int32),
         edge,
         (cells, cells),
         stones_tone,
         slow,
+        stones_hue,
     )
 
 
