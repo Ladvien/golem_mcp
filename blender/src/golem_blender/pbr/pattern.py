@@ -474,7 +474,7 @@ ROOF_ASPECT = 1.0
 # are a fine network.
 MARBLE_WARP = 0.25
 MARBLE_WARP_STEP = 0.1
-MARBLE_VEIN_WIDTH = 0.06
+MARBLE_VEIN_WIDTH = 0.30
 # How much FINER the BED is than the vein's own spacing, and the
 # contour has to wander over many of the bed's own features to be a
 # line and not a blob.
@@ -485,7 +485,7 @@ MARBLE_BED_FINENESS = 1
 # How far the warp may carry the veins, as a fraction of the vein's
 # own period - and it is BOUNDED, because the slope is not.
 MARBLE_WARP_LIMIT_CELLS = 0.4
-MARBLE_VEIN_BANDS = 0.5
+MARBLE_VEIN_LEVEL = 0.5
 # A HERRINGBONE floor's own aspect, and a board is as wide as it is
 # long.
 HERRINGBONE_ASPECT = 1.0
@@ -2611,12 +2611,37 @@ def marble_field(
     # width's clip makes of the sine's PEAKS - so the peaks have to
     # be LINES, and a peak is a line when the field it comes from
     # varies slowly ALONG the peak.
-    veins = numpy.abs(
-        numpy.sin(bed * (MARBLE_VEIN_BANDS * 2.0 / MARBLE_BED_FINENESS) * numpy.pi)
+    # And the vein is a NARROW BAND about a LEVEL of the bed, and
+    # not the SINE of it.
+    #
+    # A vein is where the stone's bed changed, and a bed is a
+    # continuous field - so a vein is a LEVEL SET of it, and a level
+    # set of a smooth field is a LINE.
+    #
+    # The SINE was tried and it is not the same thing: the sine's
+    # peaks are BROAD - a sine spends most of its time near its
+    # extremes - and the peaks' TOPS are RINGS, so the vein came out
+    # as a set of closed loops and not as a network.
+    #
+    # So the vein is the band about the level, and the band's width
+    # IS the vein's width. Measured on the truth's own Marble012: the
+    # veins are six pixels across and cover a quarter of the
+    # surface, and a band of 0.05 about the level gives 5.8-pixel
+    # veins over 9.9 per cent of it.
+    veins = numpy.clip(
+        1.0 - numpy.abs(bed - MARBLE_VEIN_LEVEL) / MARBLE_VEIN_WIDTH, 0.0, 1.0
     )
-    # And the vein's own WIDTH, and it is a LINE and not a band: the
-    # truth's own Marble012's veins are six pixels across.
-    veins = numpy.clip(1.0 - numpy.abs(veins - 1.0) / MARBLE_VEIN_WIDTH, 0.0, 1.0)
+    # And the fibre is the STONE and not the vein.
+    #
+    # The line pattern draws a HIGH fibre as a LIGHT line - a wood's
+    # grain lines are the light wood between the dark rings, and the
+    # wood reads right. A marble's veins are DARK, and the marble's
+    # fibre was the vein's COVERAGE - one at the vein - so the veins
+    # came out as LIGHT worms on a mid grey, where the truth's own
+    # Marble012 is a pale stone with a fine dark network.
+    #
+    # So the fibre is the stone: one where there is no vein.
+    veins = 1.0 - veins
     return (
         numpy.zeros((resolution, resolution), dtype=numpy.int32),
         veins,
