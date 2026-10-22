@@ -217,6 +217,12 @@ MORTAR_SPREAD_FRACTION = 1.0
 # The values are the spreads measured from the truth sets, so the
 # mapping is read off the data rather than guessed.
 SPREADS: dict[str, float] = {
+    "cobalt": 0.0183,
+    "gold": 0.0064,
+    "iron": 0.0341,
+    "rust": 0.0269,
+    "silver": 0.0061,
+    "steel": 0.0514,
     "aged": 0.0595,
     "asphalt": 0.0344,
     "bathroom": 0.0655,
@@ -305,11 +311,9 @@ SPREADS: dict[str, float] = {
     "roofing": 0.0192,
     "rough": 0.0723,
     "rubble": 0.1337,
-    "rust": 0.0269,
     "rustic": 0.0490,
     "rusty": 0.0269,
     "scattered": 0.1068,
-    "silver": 0.0061,
     "slightly": 0.0546,
     "smooth": 0.0342,
     "soft": 0.0160,
@@ -319,7 +323,6 @@ SPREADS: dict[str, float] = {
     "square": 0.0504,
     "stacked": 0.0926,
     "stained": 0.0705,
-    "steel": 0.0514,
     "stone": 0.0723,
     "street": 0.0399,
     "striped": 0.0640,
@@ -756,11 +759,69 @@ def value_for_description(description: str) -> float:
 # They are read ONLY for a metal, because "rough" and "matte" are
 # in them and an asphalt's description says both - and an asphalt's
 # truth spread is 0.0178 where "rough" says 0.0840.
+# How many materials each METAL word names, and the fewest wins.
+#
+# The truth's own gold is one material and the truth's own silver is
+# one, and their spreads are 0.0064 and 0.0061 - and "metal" names
+# eight and its spread is 0.0294.
+METAL_SPECIFICITY: dict[str, int] = {
+    "gold": 1,
+    "silver": 1,
+    "cobalt": 1,
+    "iron": 1,
+    "gray": 9,
+    "grey": 9,
+    "black": 8,
+    "brass": 1,
+    "copper": 1,
+    "bronze": 1,
+    "chrome": 1,
+    "aluminium": 1,
+    "aluminum": 1,
+    "corrugated": 1,
+    "ribbed": 1,
+    "ridged": 1,
+    "brushed": 1,
+    "pipe": 1,
+    "polished": 5,
+    "fine": 5,
+    "satin": 2,
+    "clean": 11,
+    "smooth": 22,
+    "metal": 8,
+    "steel": 3,
+    "worn": 6,
+    "aged": 4,
+    "rusty": 2,
+    "rust": 3,
+    "rough": 26,
+    "matte": 2,
+    "glossy": 2,
+    "mirror": 1,
+}
+
 METAL_SPREAD_TIERS = (
     ("corrugated", "ribbed", "ridged", "brushed", "pipe"),
     ("oxidized", "aged", "rusty", "rust", "worn", "rough", "coarse", "matte"),
-    ("silver", "chrome", "mirror", "polished", "glossy"),
-    ("clean", "smooth", "fine", "satin"),
+    # The METAL, and it comes before the finish.
+    #
+    # The metal's word is the SPECIFIC one: "gold" names one material
+    # in the wide set and its spread measures 0.0064, and "silver"
+    # names one at 0.0061 - and the truth's own Metal048A is a
+    # "clean, gold, metal, smooth" that measures 0.0056.
+    #
+    # The finish words are the general ones: "clean" names eleven
+    # materials and their spreads run from 0.0031 to 0.1888, and
+    # "smooth" names twenty-two. So their means are means of nothing
+    # in particular.
+    # The COLOUR, and it is its own tier and it comes FIRST: a grey
+    # metal is a grey metal and not a generic one.
+    #
+    # The truth's own Metal032 is a "grey, metal, smooth" that
+    # measures a spread of 0.0131, and "metal" names eight materials
+    # and its spread is 0.0294 - so the generic word was twice the
+    # truth's.
+    ("gray", "grey", "black"),
     (
         "metal",
         "steel",
@@ -771,7 +832,11 @@ METAL_SPREAD_TIERS = (
         "bronze",
         "copper",
         "gold",
+        "silver",
+        "cobalt",
+        "rust",
     ),
+    ("clean", "smooth", "fine", "satin", "polished", "mirror", "chrome"),
 )
 SPREAD_TIERS = (
     # The SOFT textures, whose variation is a whisper.
@@ -948,28 +1013,28 @@ MATERIAL_HUES: dict[str, tuple[float, float, float]] = {
     "fabric": (0.347, 0.326, 0.327),
     "wood": (0.448, 0.332, 0.219),
     "ground": (0.389, 0.343, 0.267),
-    "scattered": (0.397, 0.342, 0.261),
-    "rocky": (0.381, 0.340, 0.278),
     "dirt": (0.388, 0.340, 0.272),
+    "rocky": (0.381, 0.340, 0.278),
     "gravel": (0.370, 0.339, 0.291),
+    "scattered": (0.397, 0.342, 0.261),
     "pavement": (0.348, 0.339, 0.313),
     "asphalt": (0.344, 0.338, 0.318),
     "tiles": (0.391, 0.328, 0.282),
-    "mud": (0.401, 0.342, 0.256),
     "soil": (0.400, 0.341, 0.259),
+    "mud": (0.401, 0.342, 0.256),
+    "rock": (0.351, 0.359, 0.289),
     "moss": (0.393, 0.372, 0.235),
     "mossy": (0.407, 0.379, 0.214),
-    "rock": (0.351, 0.359, 0.289),
-    "leaves": (0.437, 0.345, 0.217),
     "earth": (0.401, 0.353, 0.246),
+    "leaves": (0.437, 0.345, 0.217),
     "limestone": (0.393, 0.334, 0.273),
     "metal": (0.338, 0.336, 0.325),
     "steel": (0.336, 0.334, 0.329),
     "wooden": (0.446, 0.327, 0.227),
     "plank": (0.417, 0.331, 0.252),
     "parquet": (0.496, 0.338, 0.165),
-    "plaster": (0.336, 0.335, 0.329),
     "concrete": (0.347, 0.337, 0.316),
+    "plaster": (0.336, 0.335, 0.329),
     "iron": (0.333, 0.334, 0.333),
     "grass": (0.394, 0.379, 0.226),
     "planks": (0.481, 0.336, 0.183),
@@ -981,9 +1046,9 @@ MATERIAL_HUES: dict[str, tuple[float, float, float]] = {
     "cloth": (0.314, 0.335, 0.352),
     "woven": (0.338, 0.325, 0.336),
     "leather": (0.454, 0.311, 0.235),
-    "roof": (0.433, 0.304, 0.263),
     "clay": (0.433, 0.304, 0.263),
     "roofing": (0.433, 0.304, 0.263),
+    "roof": (0.433, 0.304, 0.263),
     "woodchip": (0.335, 0.336, 0.329),
     "wallpaper": (0.335, 0.336, 0.329),
     "marble": (0.347, 0.333, 0.320),
@@ -1072,9 +1137,22 @@ def spread_for_description(description: str) -> float:
     words = _words_of(description)
     if is_metal(description):
         for tier in METAL_SPREAD_TIERS:
-            for word in tier:
-                if word in words:
-                    return _spread_of(word)
+            # The tier's own MOST SPECIFIC word, and not its first.
+            #
+            # The tier read "metal" before "gold", and "metal" names
+            # eight materials and its spread is 0.0294 - while "gold"
+            # names ONE and its spread is 0.0064, which is the
+            # truth's own Metal048A to within a thousandth.
+            #
+            # So the tier is read by the word's own SPECIFICITY: the
+            # fewest materials, and the first of those in the
+            # description's own order.
+            named = [word for word in tier if word in words]
+            if named:
+                named.sort(
+                    key=lambda word: (METAL_SPECIFICITY.get(word, 99), tier.index(word))
+                )
+                return _spread_of(named[0])
     for tier in SPREAD_TIERS:
         for word in tier:
             if word in words:

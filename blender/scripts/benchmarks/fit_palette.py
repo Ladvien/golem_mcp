@@ -281,6 +281,16 @@ def fit(root: pathlib.Path, extra_roots=()) -> dict:
             word: round(_mean(values_list), 4)
             for word, values_list in table(spreads).items()
         },
+        # The METAL words' spreads, and they are SPECIFIC: "gold"
+        # names one material in the wide set and its spread measures
+        # 0.0064, and the finish words - "clean" and "smooth" - name
+        # eleven and twenty-two and their means are means of nothing
+        # in particular.
+        "metal_spreads": {
+            word: round(_mean(values_list), 4)
+            for word, values_list in measured(spreads).items()
+            if word in METAL_WORDS
+        },
         # The palette keeps the MATERIAL's value and the COLOUR's
         # value apart, and the reason is the reading order: a
         # material says what the surface is made of and a colour says
@@ -368,8 +378,53 @@ def write_tables(tables: dict) -> None:
     """
     source = PALETTE.read_text()
     for name, table in tables.items():
+        if name == "metal_spreads":
+            continue
         source = _merge_table(source, name, table)
+    # The METAL words' spreads go into the SPREADS table too: they
+    # are the SPECIFIC words for a metal's variation, and the
+    # finish words - "clean" and "smooth" - name eleven and
+    # twenty-two materials and their means are means of nothing in
+    # particular.
+    metal_spreads = tables.get("metal_spreads", {})
+    if metal_spreads:
+        source = _merge_values(source, "SPREADS", metal_spreads)
     PALETTE.write_text(source)
+
+
+def _merge_values(source: str, name: str, values: dict) -> str:
+    """Merge some values into one table, and leave the rest."""
+    marker = f"{name}: dict[str, "
+    start = source.find(marker)
+    if start < 0:
+        raise SystemExit(f"the palette has no table named {name!r}")
+    open_brace = source.index("{", start)
+    depth = 0
+    for index in range(open_brace, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                close = index
+                break
+    body = source[open_brace + 1 : close]
+    existing: dict[str, str] = {}
+    for line in body.split("\n"):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key = stripped.split(":", 1)[0].strip().strip("\"'")
+        existing[key] = stripped
+    lines: list[str] = []
+    for word, value in values.items():
+        lines.append(f'    "{word}": {value:.4f},')
+    for word, line in existing.items():
+        if word not in values:
+            lines.append(line)
+    return (
+        source[: open_brace + 1] + "\n" + "\n".join(lines) + "\n}" + source[close + 1 :]
+    )
 
 
 def _merge_table(source: str, name: str, table: dict) -> str:
