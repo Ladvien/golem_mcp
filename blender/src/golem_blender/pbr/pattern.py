@@ -392,6 +392,13 @@ PARQUET_ASPECT = 2.0
 # blocks is a ratio of 0.6, and the blocks are wider than they are
 # tall by about one and a half times.
 PARQUET_BLOCKS_ACROSS = 10
+# And how many COURSES a parquet has for every block across a course.
+#
+# The truth's own WoodFloor051's boards are about a hundred and
+# eighty pixels wide and about fifty-five tall, so a floor of six
+# boards across is about eighteen courses down - and the courses are
+# STAGGERED, so the joints do not line up.
+PARQUET_COURSES_PER_ACROSS = 3.0
 # The GRAIN's own lattice, how many octaves it has, and how strong it
 # is.
 #
@@ -2332,15 +2339,41 @@ def parquet_field(
     # features across and ONE down, and the courses were the across
     # count - so the floor came out as a grid of squares, seven
     # across and seven down, where the truth has long boards.
+    # And the COURSES, and they are the boards' own count and not the
+    # truth's DOWN count.
+    #
+    # The truth's own down count is 0.0 or 1.0 for five of its seven
+    # parquets - because a row of a parquet is SMOOTH along its
+    # length, and the measure reads the boards and not the rows. So
+    # the courses were one, and the floor came out as one row of
+    # narrow boards: vertical stripes.
+    #
+    # And the truth's own WoodFloor051's boards are about a hundred
+    # and eighty pixels wide and about fifty-five tall, so a floor of
+    # six boards across is about eighteen courses down.
+    across_count = max(1, round(cells * aspect / max(1.0, PARQUET_COURSES_PER_ACROSS)))
     course_pitch = _nearest_divisor(
         resolution,
-        max(1, round(resolution / max(1, courses if courses else cells))),
+        max(1, round(resolution / max(1, across_count * PARQUET_COURSES_PER_ACROSS))),
     )
     courses = max(1, resolution // course_pitch)
-    # The blocks ACROSS a course, and the floor's blocks are WIDE:
-    # the truth's own parquet carries ten joint lines across a
-    # thousand and twenty-four.
-    across = max(1, PARQUET_BLOCKS_ACROSS)
+    # The blocks ACROSS a course, and the floor's boards are WIDE.
+    #
+    # The truth's own WoodFloor051 is a set of horizontal boards, and
+    # the boards are about a hundred and eighty pixels wide and about
+    # fifty-five tall - so the board's own aspect is three and a half
+    # to one, and a floor of square blocks is not a floor at all.
+    #
+    # And the boards' COUNT comes from the truth's own feature count,
+    # which is the whole surface's: the truth's own WoodFloor051
+    # measures 5.7 features across, and its boards are six across.
+    #
+    # The count was a CONSTANT - ten blocks across - and the courses
+    # came from the truth's DOWN count, which is 0.0 or 1.0 for five
+    # of the seven parquets in the truth's own, because a row of a
+    # parquet is SMOOTH along its length. So the floor came out as
+    # one row of ten narrow blocks.
+    across = max(1, round(cells * aspect / max(1.0, PARQUET_COURSES_PER_ACROSS)))
     block_pitch = _nearest_divisor(resolution, max(1, round(resolution / across)))
     across = max(1, resolution // block_pitch)
 
