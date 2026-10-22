@@ -307,12 +307,21 @@ FIBRE_BAND = 0.22
 # one on each side of it - so the slope made the grain a field of
 # DOTS.
 FIBRE_FOLDS = 1
-# The GRAIN's ENVELOPE's stretch: how much longer the envelope's
-# features are along the board than across it.
+# A wood's GROWTH RINGS: how many bands cross the board, how far the
+# slow field bends them, how many lines each band carries, and how
+# thin a line is.
 #
-# The truth's own wood's figure is horizontal, and an isotropic
-# envelope gave the wood blobs where the truth has bands.
-GRAIN_ENVELOPE_STRETCH = 2.0
+# Material Maker's own wood draws its bands as a noise of one cell
+# along the board and sixty-four across it. The truth's own woods
+# carry about a hundred grain lines across a thousand-and-twenty-four
+# board, and a band of a value noise carries one line per level its
+# sine crosses - so ninety-six bands at three levels. The bend is a
+# sixtieth of the board: a twentieth folded the lines into closed
+# eyes, which a sawn board's grain does not have.
+WOOD_RING_COUNT = 96
+WOOD_RING_BEND = 0.015
+WOOD_RING_LEVELS = 3
+WOOD_RING_SHARPNESS = 8.0
 # How many fibre lines the image carries across, per 1024 pixels.
 #
 # The truth's wood has its lines 7.4 pixels apart in a 1024 row, so
@@ -1799,6 +1808,39 @@ def _domain_samples(resolution: int):
     return numpy.arange(resolution, dtype=numpy.float64) / resolution
 
 
+def wood_ring_lightness(sample_x, sample_y, seed: int = 0):
+    """A board's growth rings as a LIGHTNESS: low on the grain lines.
+
+    The bands are a value noise of ONE cell along the board and
+    WOOD_RING_COUNT across it, so every band runs the whole length; a
+    slow field shifts them across the board so neighbouring lines bend
+    together; and the line is the band's own level crossings, made thin
+    by a power. Both noises have whole-number periods, so the map tiles.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    slow = noise.fbm_2d_value(
+        sample_x * 4, sample_y * 4, size=4, octaves=2, seed=seed + 1
+    )
+    slow = (slow - float(slow.mean())) / max(1e-9, float(slow.std()))
+    shifted = sample_x + slow * WOOD_RING_BEND
+    field = noise.fbm_2d_value(
+        shifted * WOOD_RING_COUNT,
+        sample_y,
+        size=WOOD_RING_COUNT,
+        size_y=1,
+        octaves=3,
+        persistence=0.6,
+        seed=seed,
+    )
+    reach = max(1e-9, float(field.max() - field.min()))
+    field = (field - float(field.min())) / reach
+    line = numpy.abs(numpy.sin(field * numpy.pi * WOOD_RING_LEVELS))
+    return 1.0 - line**WOOD_RING_SHARPNESS
+
+
 def grain_field(
     resolution: int,
     cells: int,
@@ -1879,102 +1921,24 @@ def grain_field(
 
     rings = (sample_x + warp) * cells
 
-    # The cell is the ring's index, and the edge is the distance to
-    # the nearest ring line.
+    # The cell is the ring's index.
     band = numpy.floor(rings).astype(numpy.int32)
-    within = rings - band
-    edge = numpy.minimum(within, 1.0 - within)
-
-    # The ENVELOPE is a smooth field, not a set of rings.
+    # The ENVELOPE is the board's own GROWTH RINGS: long lines that run
+    # the length of the board and bend TOGETHER.
     #
-    # The envelope is the slow variation the fibre follows - a
-    # cathedral swirl - and the truth's is a smooth gradient that
-    # darkens slowly across the board. Measured on the truth's own
-    # wood: its envelope amplitude is 0.0079 against a total spread
-    # of 0.0155, so it is half the spread, and it is a smooth one.
+    # It was a low-frequency Perlin's magnitude - blobs - and the close
+    # sheet showed every wood as a flat brown with a few dark smudges
+    # where the truth's woods are dense parallel grain lines, at 1024
+    # and at 2048 alike. And every wood had the SAME smudges.
     #
-    # A set of RINGS is not that: the rings are hard lines half a
-    # cell apart, and the close crop showed hard white waves where
-    # the truth has a soft gradient. So the envelope is a low
-    # frequency Perlin - a smooth field with no preferred
-    # direction - and the rings stay only as the CELL INDEX, which
-    # is what the feature scale reads.
-    from golem_blender.pbr import noise_perlin
-
-    envelope_lattice = max(2, cells)
-    # And the envelope's lattice is RECTANGULAR.
-    #
-    # The truth's own wood's figure is HORIZONTAL - its low-frequency
-    # structure runs along the board and not across it, and every one
-    # of the truth's own woods says the same - and the envelope was an
-    # isotropic Perlin, so the wood came out with blobs where the
-    # truth has bands.
-    #
-    # The y period is SMALLER than the x one, so the features are long
-    # along x and flat across y. And it has to be an INTEGER, because
-    # the wrap takes the lattice index modulo the period and a
-    # fractional period would not wrap at all.
-    envelope_period_y = max(
-        1, round(envelope_lattice / max(1.0, GRAIN_ENVELOPE_STRETCH))
-    )
-    envelope_field = noise_perlin.perlin_2d(
-        sample_x * envelope_lattice,
-        sample_y * envelope_period_y,
-        period=envelope_lattice,
-        period_y=envelope_period_y,
-        seed=3,
-    )
-    envelope_reach = max(1e-6, float(envelope_field.max() - envelope_field.min()))
-    # The envelope is the RINGS' own smooth shape - a SINE, so a
-    # broad gradient rather than a hard line - with the Perlin
-    # modulating how strong each part of it is.
-    #
-    # The rings' POSITIONS are what the feature scale reads, so they
-    # have to stay: measured, the envelope on its own - the Perlin
-    # with no rings - read 3.25x the truth's, because the measure
-    # found the Perlin's own features instead of the rings.
-    #
-    # So the envelope is the sine wave times the Perlin's own
-    # magnitude, which is smooth and has no direction of its own.
-    #
-    # A TRIANGLE was a hard ridge at each ring's peak, and the close
-    # crop showed hard white waves where the truth has a soft
-    # gradient - so it is a sine, which has no ridge.
-    # The envelope is the PERLIN's own shape - irregular, with no
-    # preferred direction - and the rings' positions only decide how
-    # big it is.
-    #
-    # A SINE over the rings was a regular WAVE across the whole image,
-    # and the close crop showed broad smooth bands where the truth has
-    # a cathedral swirl. The truth's envelope is irregular: measured,
-    # its amplitude is 0.0079 against a total spread of 0.0155, and
-    # it is a smooth and UNEVEN gradient.
-    #
-    # So the envelope is the Perlin's magnitude - smooth, irregular,
-    # and with no line in it - and the rings' own positions are the
-    # lattice it is sampled on, which is what the feature scale reads.
-    #
-    # The rings' own shape modulates it, so the envelope is stronger
-    # near a ring and weaker between them - and the ring's positions
-    # are what the feature measure reads.
-    #
-    # The envelope is a DARKNESS and it runs the WHOLE range, from
-    # zero to one. It used to run from 0.248 to 0.750 - the ring's
-    # weight had a floor of a quarter - so the base colour was never
-    # reached and every wood and metal came out dark: the wood's mean
-    # was 0.210 against a base of 0.600.
-    ring_weight = numpy.abs(numpy.cos((within - 0.5) * numpy.pi))
-    edge = numpy.abs(envelope_field) / envelope_reach * ring_weight
-
-    # The fibre's own edge, which is the ENVELOPE's edge when there is
-    # no fibre - so the writer always has two fields to draw.
+    # Material Maker's own wood is the design: a noise of ONE cell
+    # along the board and many across it, so every band runs the whole
+    # length, and a slow field that shifts the bands across the board
+    # so they bend together.
+    edge = wood_ring_lightness(sample_x, sample_y)
+    # The fibre's own edge is the rings' when there is no fibre - so
+    # the writer always has two fields to draw.
     fine_edge = edge
-    # The envelope is a DARKNESS, not a distance: one at the ring's
-    # own dark line and zero at its lightest. The writer draws a
-    # darkness directly, and a distance would have to be inverted -
-    # and an inverted one put the envelope's light bands where its
-    # dark ones were, so the crop showed white waves.
-    edge = 1.0 - edge
 
     # A GRAIN IS TWO SCALES. The rings above are the ENVELOPE - the
     # slow cathedral swirl a plank's fibre follows - and the truth's
