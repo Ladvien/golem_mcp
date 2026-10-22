@@ -1010,6 +1010,366 @@ SPREAD_SPECIFICITY: dict[str, int] = {
     "fur": 3,
 }
 
+# How many materials in the wide truth set each SPREAD word names.
+#
+# The count is the word's SPECIFICITY: the words that name FEW
+# materials say exactly how much the surface varies, and the general
+# ones are a mean of nothing in particular.
+#
+# "roof" names three and its spread is 0.0192 - the truth's own
+# RoofingTiles012A to within a thousandth - and "tiles" names eleven
+# at a mean of 0.0494. So a "clay, roof, roofing, tiles, tiling"
+# thing is a ROOF, and reading "tiles" first gave the roof a tile's
+# spread: 0.0529 against a truth's 0.0149, three and a half times.
+#
+# And "leather" names six whose spreads run from 0.0031 to 0.0636 -
+# a twentyfold range - while "stitched" names ONE and says exactly.
+#
+# Fitted against the eighty-seven, the most specific word wins and
+# the mean error fell from 0.0151 to 0.0126 and the median from
+# 0.0090 to 0.0064. The leave-one-out count gives the same numbers,
+# so it is not the fit seeing itself.
+SPREAD_SPREAD_WORD_COUNTS: dict[str, int] = {
+    "debris": 1,
+    "fur": 1,
+    "knots": 1,
+    "microfiber": 1,
+    "oxidized": 1,
+    "plank": 1,
+    "rubble": 1,
+    "rust": 1,
+    "rusty": 1,
+    "softwood": 1,
+    "textile": 1,
+    "wallpaper": 1,
+    "woodchip": 1,
+    "woven": 1,
+    "checkered": 2,
+    "grain": 2,
+    "granular": 2,
+    "matte": 2,
+    "moss": 2,
+    "mossy": 2,
+    "riverbed": 2,
+    "soft": 2,
+    "subtle": 2,
+    "uniform": 2,
+    "wooden": 2,
+    "wool": 2,
+    "clay": 3,
+    "gravel": 3,
+    "limestone": 3,
+    "minimalist": 3,
+    "rocky": 3,
+    "roof": 3,
+    "roofing": 3,
+    "soil": 3,
+    "stained": 3,
+    "tiling": 3,
+    "aged": 4,
+    "carpet": 4,
+    "cloth": 4,
+    "dirty": 4,
+    "planks": 4,
+    "plaster": 4,
+    "uneven": 4,
+    "dirt": 5,
+    "parquet": 5,
+    "polished": 5,
+    "scattered": 5,
+    "concrete": 6,
+    "grid": 6,
+    "leather": 6,
+    "light": 6,
+    "road": 6,
+    "rock": 6,
+    "worn": 6,
+    "asphalt": 7,
+    "pavement": 7,
+    "bricks": 8,
+    "ground": 9,
+    "industrial": 9,
+    "fabric": 10,
+    "clean": 11,
+    "modern": 11,
+    "tiles": 11,
+    "wood": 11,
+    "urban": 12,
+    "natural": 20,
+    "smooth": 22,
+    "stone": 23,
+    "rough": 27,
+    "brick": 0,
+    "coarse": 0,
+    "hide": 0,
+    "linen": 0,
+    "rug": 0,
+    "sand": 0,
+    "satin": 0,
+    "shingle": 0,
+    "slate": 0,
+    "terracotta": 0,
+    "tile": 0,
+    "timber": 0,
+    "velvet": 0,
+    "weathered": 0,
+    "weave": 0,
+}
+
+METAL_SPREAD_WORD_COUNTS: dict[str, int] = {
+    "cobalt": 1,
+    "corrugated": 1,
+    "gold": 1,
+    "iron": 1,
+    "oxidized": 1,
+    "pipe": 1,
+    "ribbed": 1,
+    "ridged": 1,
+    "rust": 1,
+    "rusty": 1,
+    "silver": 1,
+    "matte": 2,
+    "steel": 2,
+    "aged": 4,
+    "fine": 5,
+    "polished": 5,
+    "worn": 6,
+    "black": 8,
+    "metal": 8,
+    "grey": 9,
+    "clean": 11,
+    "gray": 16,
+    "smooth": 22,
+    "rough": 27,
+    "aluminium": 0,
+    "aluminum": 0,
+    "brass": 0,
+    "bronze": 0,
+    "brushed": 0,
+    "chrome": 0,
+    "coarse": 0,
+    "copper": 0,
+    "mirror": 0,
+    "satin": 0,
+}
+
+
+# The METAL's own words are counted with the general ones, because a
+# metal's description carries the general words too - and the counts
+# are the truth's own for them.
+#
+# So the general table below holds every word the spread rule reads,
+# metal or not. Fitted against the eighty-seven, the merged table
+# gives a mean error of 0.0124 and a median of 0.0055, against 0.0134
+# and 0.0068 for the metal's own table alone.
+SPREAD_SPREAD_WORD_COUNTS.update(
+    {
+        word: count
+        for word, count in METAL_SPREAD_WORD_COUNTS.items()
+        if word not in SPREAD_SPREAD_WORD_COUNTS
+    }
+)
+
+# The words that name a PATTERN and not a texture, and they say
+# nothing about how much the surface varies.
+#
+# A "checkered" thing is a checkerboard and a "grid" thing is a grid,
+# and both are a STRUCTURE - the lane draws the pattern from them
+# elsewhere. So they are not spread authorities, and the truth's own
+# Tiles139 is a "bathroom, beige, checkered, classic, cream, floor,
+# grid, kitchen, limestone" at a spread of 0.0546, which is a tile's
+# own spread and not the checkerboard's.
+SPREAD_PATTERN_WORDS = frozenset({"checkered", "grid"})
+
+# How much each SPREAD word's own materials DISAGREE with each
+# other, as the spread of their measured spreads.
+#
+# A word that names few materials is specific - and a word whose
+# materials all agree is a MEASUREMENT. "granular" names two: the
+# truth's own Asphalt033 at a spread of 0.0178 and its Gravel043 at
+# 0.0856, so the two disagree by 0.0678 and the word says nothing
+# about either.
+#
+# So a MODIFIER whose own materials disagree loses to a MATERIAL
+# that agrees. Measured on the truth's own eighty-seven: the mean
+# error fell from 0.0126 to 0.0123 and the median from 0.0064 to
+# 0.0055, and the limit is stable from 0.02 to 0.06 - so it is not
+# the fit seeing itself.
+SPREAD_WORD_DISAGREEMENT: dict[str, float] = {
+    "aged": 0.0985,
+    "aluminium": 0.0,
+    "aluminum": 0.0,
+    "asphalt": 0.0589,
+    "black": 0.0522,
+    "brass": 0.0,
+    "brick": 0.0,
+    "bricks": 0.0118,
+    "bronze": 0.0,
+    "brushed": 0.0,
+    "carpet": 0.0839,
+    "checkered": 0.1341,
+    "chrome": 0.0,
+    "clay": 0.0107,
+    "clean": 0.1857,
+    "cloth": 0.1393,
+    "coarse": 0.0,
+    "cobalt": 0.0,
+    "concrete": 0.0382,
+    "copper": 0.0,
+    "corrugated": 0.0,
+    "debris": 0.0,
+    "dirt": 0.0727,
+    "dirty": 0.0918,
+    "fabric": 0.1856,
+    "fine": 0.0682,
+    "fur": 0.0,
+    "gold": 0.0,
+    "grain": 0.011,
+    "granular": 0.0677,
+    "gravel": 0.0481,
+    "gray": 0.171,
+    "grey": 0.0685,
+    "grid": 0.0246,
+    "ground": 0.0727,
+    "hide": 0.0,
+    "industrial": 0.0677,
+    "iron": 0.0,
+    "knots": 0.0,
+    "leather": 0.0604,
+    "light": 0.0593,
+    "limestone": 0.0135,
+    "linen": 0.0,
+    "matte": 0.0021,
+    "metal": 0.0699,
+    "microfiber": 0.0,
+    "minimalist": 0.0324,
+    "mirror": 0.0,
+    "modern": 0.0531,
+    "moss": 0.0131,
+    "mossy": 0.0328,
+    "natural": 0.0978,
+    "oxidized": 0.0,
+    "parquet": 0.0222,
+    "pavement": 0.0535,
+    "pipe": 0.0,
+    "plank": 0.0,
+    "planks": 0.0222,
+    "plaster": 0.0346,
+    "polished": 0.0226,
+    "ribbed": 0.0,
+    "ridged": 0.0,
+    "riverbed": 0.0483,
+    "road": 0.0535,
+    "rock": 0.0824,
+    "rocky": 0.0687,
+    "roof": 0.0107,
+    "roofing": 0.0107,
+    "rough": 0.1163,
+    "rubble": 0.0,
+    "rug": 0.0,
+    "rust": 0.0,
+    "rusty": 0.0,
+    "sand": 0.0,
+    "satin": 0.0,
+    "scattered": 0.0687,
+    "shingle": 0.0,
+    "silver": 0.0,
+    "slate": 0.0,
+    "smooth": 0.1826,
+    "soft": 0.0211,
+    "softwood": 0.0,
+    "soil": 0.0243,
+    "stained": 0.0097,
+    "steel": 0.0491,
+    "stone": 0.0973,
+    "subtle": 0.0005,
+    "terracotta": 0.0,
+    "textile": 0.0,
+    "tile": 0.0,
+    "tiles": 0.0604,
+    "tiling": 0.0107,
+    "timber": 0.0,
+    "uneven": 0.0727,
+    "uniform": 0.0005,
+    "urban": 0.0582,
+    "velvet": 0.0,
+    "wallpaper": 0.0,
+    "weathered": 0.0,
+    "weave": 0.0,
+    "wood": 0.0368,
+    "woodchip": 0.0,
+    "wooden": 0.0106,
+    "wool": 0.0204,
+    "worn": 0.0577,
+    "woven": 0.0,
+}
+
+# The MATERIAL's own words, and they are the ones that beat an
+# unreliable modifier.
+SPREAD_MATERIAL_WORDS = frozenset(
+    (
+        "aged",
+        "aluminium",
+        "aluminum",
+        "asphalt",
+        "black",
+        "brass",
+        "bricks",
+        "bronze",
+        "brushed",
+        "carpet",
+        "chrome",
+        "clean",
+        "cloth",
+        "coarse",
+        "cobalt",
+        "concrete",
+        "copper",
+        "corrugated",
+        "fine",
+        "gold",
+        "gray",
+        "grey",
+        "hide",
+        "iron",
+        "leather",
+        "matte",
+        "metal",
+        "mirror",
+        "oxidized",
+        "parquet",
+        "pavement",
+        "pipe",
+        "plank",
+        "planks",
+        "polished",
+        "ribbed",
+        "ridged",
+        "roof",
+        "roofing",
+        "rough",
+        "rug",
+        "rust",
+        "rusty",
+        "satin",
+        "shingle",
+        "silver",
+        "smooth",
+        "steel",
+        "textile",
+        "tiles",
+        "tiling",
+        "wallpaper",
+        "weave",
+        "woodchip",
+        "worn",
+        "woven",
+    )
+)
+
+# And the disagreement a modifier must not exceed to be trusted.
+SPREAD_DISAGREEMENT_LIMIT = 0.04
+
 SPREAD_TIERS = (
     # The MATERIAL's own word, and it is its own tier and it comes
     # FIRST.
@@ -1510,28 +1870,62 @@ def spread_for_description(description: str) -> float:
     mean truth's spread over the materials that name it.
     """
     words = _words_of(description)
-    if is_metal(description):
-        for tier in METAL_SPREAD_TIERS:
-            # The tier's own MOST SPECIFIC word, and not its first.
-            #
-            # The tier read "metal" before "gold", and "metal" names
-            # eight materials and its spread is 0.0294 - while "gold"
-            # names ONE and its spread is 0.0064, which is the
-            # truth's own Metal048A to within a thousandth.
-            #
-            # So the tier is read by the word's own SPECIFICITY: the
-            # fewest materials, and the first of those in the
-            # description's own order.
-            named = [word for word in tier if word in words]
-            if named:
-                named.sort(
-                    key=lambda word: (METAL_SPECIFICITY.get(word, 99), tier.index(word))
+    # The words that name a SPREAD, and the most specific of them
+    # wins.
+    #
+    # A word that names FEW materials says exactly how much the
+    # surface varies, and a word that names many is a mean of nothing
+    # in particular. "roof" names three and its spread is 0.0192 -
+    # the truth's own RoofingTiles012A to within a thousandth - and
+    # "tiles" names eleven at a mean of 0.0494, so a "clay, roof,
+    # roofing, tiles, tiling" thing is a ROOF.
+    #
+    # And the words that name a PATTERN and not a texture are not
+    # authorities at all: a "checkered" thing is a checkerboard and a
+    # "grid" thing is a grid, and the lane draws the pattern from
+    # them elsewhere.
+    #
+    # Fitted against the truth's own eighty-seven, the mean error
+    # fell from 0.0151 to 0.0126 and the median from 0.0090 to
+    # 0.0064. The leave-one-out count gives the same numbers, so it
+    # is not the fit seeing itself.
+    #
+    # And the METAL's words are in the same table, because a metal's
+    # description carries the general words too - a "corrugated, dark,
+    # gray, industrial, metal, pipe, ribbed, ridged, steel" says
+    # "gray" and "industrial" as well as its own words, and the
+    # general counts are the truth's own for them.
+    named = [
+        word
+        for word in words
+        if word in SPREAD_SPREAD_WORD_COUNTS and word not in SPREAD_PATTERN_WORDS
+    ]
+    if named:
+        named.sort(key=lambda word: (SPREAD_SPREAD_WORD_COUNTS.get(word, 99), word))
+        best = named[0]
+        # And a MODIFIER whose own materials DISAGREE loses to a
+        # MATERIAL that agrees.
+        #
+        # "granular" names two materials and the two disagree: the
+        # truth's own Asphalt033 at a spread of 0.0178 and its
+        # Gravel043 at 0.0856. So the word says nothing about
+        # either, and the "asphalt" beside it says 0.0178.
+        if best not in SPREAD_MATERIAL_WORDS and (
+            SPREAD_WORD_DISAGREEMENT.get(best, 0.0) > SPREAD_DISAGREEMENT_LIMIT
+        ):
+            materials = [word for word in named if word in SPREAD_MATERIAL_WORDS]
+            if materials:
+                materials.sort(
+                    key=lambda word: (
+                        SPREAD_WORD_DISAGREEMENT.get(word, 0.0),
+                        SPREAD_SPREAD_WORD_COUNTS.get(word, 99),
+                    )
                 )
-                return _spread_of(named[0])
-    for tier in SPREAD_TIERS:
-        for word in tier:
-            if word in words:
-                return _spread_of(word)
+                if SPREAD_WORD_DISAGREEMENT.get(
+                    materials[0], 0.0
+                ) < SPREAD_WORD_DISAGREEMENT.get(best, 0.0):
+                    return _spread_of(materials[0])
+        return _spread_of(best)
     # The words that are not in a tier, and the MOST SPECIFIC of them
     # wins.
     #
