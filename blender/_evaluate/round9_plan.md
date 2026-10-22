@@ -86,16 +86,25 @@ transcript; the four sets re-run after each batch.
 | B5/B6 rock, moss, grass | routed to voronoi / scattered | rock_field, moss_field, grass_field; routing | (natural kinds) |
 | palette fitted on 3 sets | grass/moss hues fitted on one olive ground | refit on four sets incl. MATERIAL_HUES | (natural kinds) |
 | dead code | 4 duplicate/dead definitions | deleted | 3287a0f |
+| grass/moss/wood scale | grass's 320 blades, moss's clumps at 2x, wood's 96 rings: fixed counts whatever the surface | blades = 6/feature (min 192), clumps at the surface's scale, rings = 8/cell (min 64); scale error 0.745 -> 0.253 (grass), 0.490 -> 0.359 (woods) | cb01ddf |
+| the agent never got the palette | `generate_procedural_base_color` took no description: every map the agent wrote was default grey | `description` chooses the kind and the palette, the benchmark's own two calls | 8dd6719 |
+| C compositing | no tool | `generate_layered_texture_set`: BaseColor/ORM/Normal from a described base + described layers under height/noise/cavity masks | 6716074 |
+| C moss on whole bricks | height read from the colour: a weathered wall's dark bricks are darker than its mortar (2.2x the moss) | a jointed kind's height is its own joint field (`joint_height_out`) | 6716074 |
+| C rust was a grey metal | "rust" a METAL word; its hue/roughness fitted on one grey glossy steel | rust is weathering when a metal is named and an orange rough crust when not; dust/grime/rust route flat | 6716074 |
 
 Measured but NOT taken (lost on the holdout or in-sample): colour-word-first hue (41 better / 56 worse);
 a one-colour-word hue (28/58); dropping lightness words from the spread outright (holdout 0.4323);
-refusing words fitted on one material (holdout 0.5384).
+refusing words fitted on one material (holdout 0.5384); a wood's warmth fitted on its predicted
+value (the truths' darker woods ARE warmer, -0.49 with their own luma, but only -0.23 with the
+value the words predict; leave-one-out hue 0.1110 -> 0.1166, 13/13); fitting each material once
+instead of once per set (leave-one-out 65 better / 66 worse).
 
 ## Still open
 
-- Moss002 too pale (value 0.466 vs 0.353) and unsaturated; Concrete031 olive; Wood066 too light.
+- Moss002 too pale (value 0.466 vs 0.353) and unsaturated; Concrete031 olive; dark woods too
+  light (Wood067 1.71x, Wood026 1.54x): the truths are saturated red-brown.
 - B2 brushed metal shows no brushing; B7 fabric weave; B10 road lane count.
-- Marble012/014 hue; Rock hue slightly green (the "rock" hue includes mossy rocks).
-- Compositing: `pbr/layers.py` is built and tested (moss in brick joints, rust in steel cavities -
-  both looked at); it needs an MCP tool so the agent can call it.
+- Marble012/014 hue; Rock hue slightly green (the "rock" hue includes mossy rocks; "grey cliff
+  rock" reads greenish through the tool).
+- Ground037 is a forest floor (moss and dirt patches with twigs): a layered set, not one field.
 - `curvature.scratches` is O(cells^2 x resolution^2): every cell draws over the whole image.

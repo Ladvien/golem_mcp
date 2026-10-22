@@ -287,6 +287,7 @@ PROCEDURE_TOOL_NAMES = (
     "search_reference_images",
     "save_reference_images",
     "generate_procedural_base_color",
+    "generate_layered_texture_set",
 )
 PROCEDURE_OP_NAMES = (
     "add_relief_slab",

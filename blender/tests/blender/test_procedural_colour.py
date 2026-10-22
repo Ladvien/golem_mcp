@@ -166,6 +166,47 @@ def test_a_grey_surface_stays_grey_when_it_is_lightened(empty_scene, tmp_path):
     )
 
 
+@pytest.mark.parametrize("scale_cells", [4.0, 16.0])
+def test_a_tile_floor_s_grout_is_a_hairline_whatever_the_tile_s_size(
+    empty_scene, tmp_path, scale_cells
+):
+    """A tile's grout is a pixel or two wide, as the truths' own are.
+
+    The grout was a fraction of the tile's half-width, so it grew with
+    the tile: 15-27 pixels in 1024, soft, where the truths measure 1-4.
+    """
+    import numpy
+
+    from golem_blender.pbr.palette import palette_for_description
+    from golem_blender.pbr.procedural import write_procedural_base_color
+
+    palette = palette_for_description("tiles, white", path="brick")
+    path = write_procedural_base_color(
+        tmp_path / "T_Tiles_BaseColor.png",
+        kind="brick",
+        scale_cells=scale_cells,
+        width_px=1024,
+        height_px=1024,
+        **palette,
+    )
+    image = bpy.data.images.load(str(path))
+    pixels = numpy.empty(1024 * 1024 * 4, dtype=numpy.float32)
+    image.pixels.foreach_get(pixels)
+    luma = pixels.reshape((1024, 1024, 4))[:, :, :3].mean(axis=2)
+    profile = luma.mean(axis=0)
+    floor = float(numpy.median(profile))
+    grout = profile < floor - (floor - float(profile.min())) / 2
+    runs, run = [], 0
+    for in_grout in numpy.concatenate([grout, grout[:1]]):
+        if in_grout:
+            run += 1
+        elif run:
+            runs.append(run)
+            run = 0
+    assert runs, "the tile floor carries no grout"
+    assert max(runs) <= 4, f"the grout is {max(runs)} pixels wide in 1024"
+
+
 def test_an_unknown_colour_kind_is_refused(empty_scene, tmp_path):
     """A misspelled kind names itself rather than writing nothing."""
     from golem_blender.pbr.procedural import write_procedural_base_color

@@ -388,6 +388,37 @@ MATRIX_TONE_RANGE = 0.80
 # A MEASUREMENT PLACEHOLDER - the sweep below picks the value.
 
 
+# A tile's grout, in pixels at 1024 across: the truths' own measure one
+# to two (Tiles141/139/143/142/144: 1; Tiles107/040, Concrete031: 2).
+TILE_GROUT_PX = 2.0
+# A glazed tile face's fine tooth: its lattice's cell in pixels at the
+# map's own resolution, and its share of the ramp. Swept against the
+# truths' face correlation lengths (pixels in 1024, ours/truth): at 0.0
+# Tiles040 31/2, Tiles141 33/4, Concrete031 51/13; at 0.3 2/2, 2/4,
+# 35/13; at 1.0 every one 2.
+TILE_TOOTH_PX = 4
+TILE_TOOTH_STRENGTH = 0.3
+
+
+def _tile_grout(cell, width_px: float):
+    """One where a different cell lies within half `width_px`, along either axis.
+
+    The rolls WRAP, so a grout line at the image's edge meets its own
+    other half and the map tiles.
+    """
+    import numpy
+
+    reach = max(1, round(width_px / 2))
+    grout = numpy.zeros(cell.shape, dtype=bool)
+    for axis in (0, 1):
+        for step in range(1, reach + 1):
+            grout |= cell != numpy.roll(cell, step, axis=axis)
+            grout |= cell != numpy.roll(cell, -step, axis=axis)
+    # The pixel on each side of a boundary differs from its neighbour,
+    # so a reach of one is a two-pixel line: the width, as asked.
+    return grout.astype(numpy.float32)
+
+
 def _cell_mean(field, cell, width: int, height: int):
     """The field's own MEAN over each cell.
 
@@ -1130,6 +1161,20 @@ def write_procedural_base_color(
         # So the falloff inverted the markings, and the road came
         # out white with the paint dark.
         joint = numpy.clip(1.0 - joint / max(width, 1e-6), 0.0, 1.0)
+    if kind == "brick" and not brick_staggered:
+        # A TILE's grout is a HAIRLINE a fixed number of pixels wide,
+        # and not a fraction of the tile: the truths' own grout
+        # measures 1-4 pixels in 1024 (Tiles141, 139, 143, 142, 144:
+        # one; Tiles107, 040, Concrete031: two) where the falloff, a
+        # fraction of the TILE's half-width, drew it 15-27 pixels wide
+        # and soft. A brick's mortar is a fraction of its size and its
+        # truths agree (5-11 pixels against the lane's 4-7.5); a tile
+        # is twice a brick's cell, and the same fraction doubled it.
+        #
+        # So the grout is drawn from the CELLS: a pixel is grout where a
+        # different tile lies within half the grout's width, along
+        # either axis - with the rolls WRAPPED, so the grout tiles.
+        joint = _tile_grout(cell, TILE_GROUT_PX * resolution / 1024)
 
     # The stones' colours, from each cell's own random value.
     #
@@ -1292,10 +1337,29 @@ def write_procedural_base_color(
         # the whole ramp, the spread correction then pressed the grout
         # flat, and the floor came out as blotches of 2x2 tiles with
         # the grout barely there.
+        #
+        # And a glazed face's own variation is FINE: the truths' tile
+        # faces decorrelate within 2-5 pixels in 1024 (Tiles107, 040,
+        # 138, 140, 141, 143), and with the grout a hairline the spread
+        # correction scaled the slow drift up into blotches 31-51
+        # pixels across. A fine tooth carries the face's spread.
+        from golem_blender.pbr import noise
+
+        axis = pattern._domain_samples(resolution)
+        sample_x, sample_y = _np.meshgrid(axis, axis, indexing="ij")
+        lattice = max(2, round(resolution / TILE_TOOTH_PX))
+        tooth = noise.fbm_2d_value(
+            sample_x * lattice,
+            sample_y * lattice,
+            size=lattice,
+            octaves=2,
+            seed=11,
+        )
+        tone = drift_at_cell + (drift - drift_at_cell) * BRICK_FACE_DRIFT_CONTINUITY
+        tone = 0.5 + (tone - 0.5) * TILE_TONE_FRACTION
+        tone = tone + (tooth - 0.5) * TILE_TOOTH_STRENGTH
         for channel in range(3):
             ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
-            tone = drift_at_cell + (drift - drift_at_cell) * BRICK_FACE_DRIFT_CONTINUITY
-            tone = 0.5 + (tone - 0.5) * TILE_TONE_FRACTION
             stone[:, :, channel] = ramp[
                 _np.clip((tone * 255).astype(numpy.int32), 0, 255)
             ]

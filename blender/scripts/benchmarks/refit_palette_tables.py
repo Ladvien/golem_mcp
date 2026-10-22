@@ -147,15 +147,44 @@ def main():
     # names: the table was fitted on the wide set alone, where the only
     # grassy material is an olive mossy ground, and every grass and
     # moss on the popular list came out khaki.
+    #
+    # And each is fitted on the descriptions that name NO colour - the
+    # word's own colour, where it is the only word about the colour. The
+    # mossy rocks ("gray, green, moss, rock") pulled "rock" yellow-green
+    # and a "grey cliff rock" came out greenish. Leave-one-out over the
+    # 159 distinct materials: hue error 0.0818 -> 0.0802, median 0.0559
+    # -> 0.0539, 33 better and 19 worse. A word no colourless
+    # description names keeps the fit over all of them.
+    import sys
+
+    sys.path.insert(0, str(SOURCE.parents[2]))
+    from golem_blender.pbr.palette import HUE_COLOUR_WORDS
+
+    colour_words = set(HUE_COLOUR_WORDS)
+    colourless_hue = group(
+        [
+            material
+            for material in materials
+            if not set(material["tags"]) & colour_words
+        ],
+        "hue",
+    )
     material_words = re.findall(
         r'^    "([a-z]+)": \(',
-        re.search(r"MATERIAL_HUES: dict\[.*?\] = \{(.*?)\n\}", source, re.DOTALL).group(1),
+        re.search(r"MATERIAL_HUES: dict\[.*?\] = \{(.*?)\n\}", source, re.DOTALL).group(
+            1
+        ),
         re.MULTILINE,
     )
+
+    def material_hue(word):
+        items = colourless_hue.get(word) or grouped_hue[word]
+        return tuple(
+            round(sum(item[k] for item in items) / len(items), 3) for k in range(3)
+        )
+
     material_hues = "\n".join(
-        f'    "{word}": ({round(sum(item[0] for item in grouped_hue[word]) / len(grouped_hue[word]), 3)}, '
-        f"{round(sum(item[1] for item in grouped_hue[word]) / len(grouped_hue[word]), 3)}, "
-        f"{round(sum(item[2] for item in grouped_hue[word]) / len(grouped_hue[word]), 3)}),"
+        f'    "{word}": {material_hue(word)},'
         for word in material_words
         if grouped_hue.get(word)
     )
