@@ -906,6 +906,10 @@ METAL_WEATHERING_COLOURS = frozenset({"black", "brown"})
 # darker than a reflective one.
 METAL_COAT_DARKENING = 0.73
 
+# The metals that are a COLOUR and not a grey, in the order they win:
+# a gold sheet is gold whatever else it is called.
+COLOURED_METAL_WORDS = ("gold", "copper", "bronze", "brass")
+
 METAL_COLOURS: dict[str, float] = {
     "black": 0.2463,
     "gold": 0.8916,
@@ -3178,6 +3182,22 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     # is the fallback.
     if "wood" in words or "wooden" in words:
         return MATERIAL_HUES["wood"]
+    # And a COLOURED METAL is its metal's own colour.
+    #
+    # A gold or a copper sheet IS that colour; a steel or a silver one
+    # is grey. The truth's own Metal007 is a "bumpy, gold, metal,
+    # scratches, silver, steel" and its hue is 0.461, 0.354, 0.186 - a
+    # gold - and the rule read it as a near-neutral grey, 0.336, 0.335,
+    # 0.329, because "silver" and "steel" outvoted it.
+    #
+    # Measured over the four sets' hundred and fifty-nine materials:
+    # two change, Metal007 and Metal048A, and both come nearer the
+    # truth; nothing else moves.
+    words_set = {word.strip(".,") for word in words}
+    if words_set & {"metal", "metallic"}:
+        coloured = [word for word in COLOURED_METAL_WORDS if word in words_set]
+        if coloured and HUES.get(coloured[0]) is not None:
+            return HUES[coloured[0]]
     if colours and named:
         colour_counts = min(MATERIAL_WORD_COUNTS.get(word, 99) for word in colours)
         material_counts = min(MATERIAL_WORD_COUNTS.get(word, 99) for word in named)
