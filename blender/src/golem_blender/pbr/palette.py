@@ -120,6 +120,86 @@ EXTREME_VALUES: dict[str, float] = {
     "dark": 0.266,
     "light": 0.626,
 }
+# And a black REFLECTIVE surface is a different black from a black
+# dielectric one, and the words cannot tell them apart.
+#
+# A black METAL is a mirror of a dark room and a black ASPHALT is a
+# dark road under a bright sky, and both of them CATCH the light and
+# so both of them are much lighter than the black they are named
+# after. A black PLASTIC or a black LEATHER is the colour itself, and
+# it is much darker.
+#
+# Measured on the truth's own fifteen blacks: the reflective ones -
+# the metals and the asphalts - average 0.2499 and the dielectric
+# ones - the plastics, the leathers, the rocks and the tiles -
+# average 0.1401.
+#
+# So a reflective black has its own value, and it is the higher one.
+EXTREME_REFLECTIVE_VALUES: dict[str, float] = {
+    "black": 0.2499,
+}
+# And a black SMOOTH surface is darker than a black TEXTURED one, and
+# the reason is physical: a rough surface catches the light in its
+# own texture and a smooth one has nowhere to catch it.
+#
+# Measured on the truth's own seven dielectric blacks: the smooth
+# ones average 0.0640 - the truth's own Plastic006 at 0.0303 and its
+# Leather026 at 0.0976 - and the textured ones average 0.1705, a
+# factor of 2.7 between them.
+#
+# So a black dielectric is 0.0640 when it is smooth and 0.1705 when
+# it is not, and the truth's own Plastic006 read 7.02x the truth's
+# brightness before the split.
+EXTREME_SMOOTH_VALUES: dict[str, float] = {
+    "black": 0.0640,
+}
+EXTREME_TEXTURED_VALUES: dict[str, float] = {
+    "black": 0.1705,
+}
+# The words that name a SMOOTH surface.
+EXTREME_SMOOTH_WORDS = frozenset(
+    {
+        "smooth",
+        "shiny",
+        "polished",
+        "clean",
+        "glossy",
+        "mirror",
+        "flat",
+        "new",
+    }
+)
+# The words that name a REFLECTIVE surface: a metal, and a road.
+#
+# A "black" thing with any of these is a mirror of a dark room and
+# not a black colour.
+EXTREME_REFLECTIVE_WORDS = frozenset(
+    {
+        "metal",
+        "steel",
+        "iron",
+        "asphalt",
+        "road",
+        "pavement",
+        "street",
+        "tarmac",
+        "chrome",
+        "silver",
+        "gold",
+        "copper",
+        "bronze",
+        "brass",
+        # "reflective" and "glossy" say the surface REFLECTS, and a
+        # surface that reflects catches the light and is lighter
+        # than its colour. The truth's own Marble016 is a "black,
+        # marble, reflective, shiny" at 0.2436 - a dark stone with a
+        # polished face, and not a black colour.
+        "reflective",
+        "glossy",
+        "polished",
+        "mirror",
+    }
+)
 # And the DARKEST of them wins, so a "black, dark" thing is very
 # dark and a "light, white" thing is very light.
 EXTREME_LIGHT_WORDS = ("black", "white", "dark", "light")
@@ -1350,6 +1430,40 @@ def value_for_description(description: str) -> float:
         if word in _words_of(description)
     ]
     if extreme:
+        # And a REFLECTIVE black is a different black, and it is
+        # lighter: a black metal mirrors a dark room and a black
+        # asphalt is a dark road under a bright sky.
+        #
+        # The truth's own fifteen blacks split in two: the reflective
+        # ones average 0.2499 and the dielectric ones 0.1401, and
+        # Plastic006 - a black plastic at 0.030 - read 7.02x the
+        # truth's brightness.
+        words = _words_of(description)
+        if words & EXTREME_REFLECTIVE_WORDS:
+            reflective = [
+                EXTREME_REFLECTIVE_VALUES[word]
+                for word in EXTREME_LIGHT_WORDS
+                if word in words and word in EXTREME_REFLECTIVE_VALUES
+            ]
+            if reflective:
+                return min(reflective)
+        # And a SMOOTH dielectric black is darker than a textured
+        # one: a rough surface catches the light in its own texture
+        # and a smooth one has nowhere to catch it.
+        smooth = [
+            EXTREME_SMOOTH_VALUES[word]
+            for word in EXTREME_LIGHT_WORDS
+            if word in words and word in EXTREME_SMOOTH_VALUES
+        ]
+        if smooth and words & EXTREME_SMOOTH_WORDS:
+            return min(smooth)
+        textured = [
+            EXTREME_TEXTURED_VALUES[word]
+            for word in EXTREME_LIGHT_WORDS
+            if word in words and word in EXTREME_TEXTURED_VALUES
+        ]
+        if textured:
+            return min(textured)
         return min(extreme)
     # The MATERIAL'S word decides, and the colour's word is the
     # fallback.

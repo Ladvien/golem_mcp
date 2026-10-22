@@ -181,6 +181,37 @@ def test_a_metals_own_colour_table_beats_the_general_one():
     )
 
 
+def test_a_black_is_three_blacks_and_the_words_choose():
+    """A "black" is a reflective one, a smooth one or a textured one.
+
+    The truth's own fifteen blacks split three ways, and the word
+    "black" cannot tell them apart:
+
+    - a REFLECTIVE black catches the light and is the lightest:
+      the truth's own Metal046B is 0.2463 and its Marble016 0.2436;
+    - a SMOOTH dielectric has nowhere to catch it and is the
+      darkest: the truth's own Plastic006 is 0.0303 and its
+      Leather026 0.0976;
+    - a TEXTURED dielectric is in between: the truth's own
+      Plastic012A is 0.1700.
+
+    So the rule reads the surface's kind, and the three values are
+    fitted on the truth's own.
+    """
+    from golem_blender.pbr.palette import value_for_description
+
+    # A reflective black.
+    assert value_for_description("black, dark, dirty, metal") == pytest.approx(
+        0.2463, abs=0.01
+    )
+    # A smooth dielectric black.
+    assert value_for_description("black, plastic, shiny, smooth") == pytest.approx(
+        0.0640, abs=0.01
+    )
+    # A textured dielectric black.
+    assert value_for_description("black, plastic") == pytest.approx(0.1705, abs=0.01)
+
+
 def test_a_clean_silver_metal_is_bright():
     """A clean silver is the brightest surface the lane makes.
 
