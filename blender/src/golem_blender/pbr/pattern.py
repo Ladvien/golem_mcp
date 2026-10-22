@@ -363,7 +363,7 @@ CARPET_FIBRE_FACTOR = 8.0
 # And the pile is STRETCHED along the fibre's direction, by this
 # much: the truth's carpet reads 1.20 times more change along a row
 # than down a column.
-CARPET_FIBRE_STRETCH = 4.0
+CARPET_FIBRE_STRETCH = 2.0
 # A LEATHER's cells, as a multiple of the surface's own feature
 # count, and how far a cell's own point may move from its centre.
 #
@@ -2047,9 +2047,14 @@ def carpet_field(
     axis = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
 
-    # The pile's own scale, and it is FINE: the truth's specks are a
-    # couple of pixels across in a thousand and twenty-four.
-    lattice = _power_of_two_nearest(max(2, cells) * CARPET_FIBRE_FACTOR)
+    # The pile's own scale, and it is FINE: the truth's own carpet
+    # measures a period of NINE pixels in a thousand and twenty-four,
+    # so there are a hundred and fourteen features across.
+    #
+    # The lattice is the pile's own count and not the surface's
+    # feature count times a factor: the truth's carpet measures a
+    # hundred and fourteen features and the pile IS that.
+    lattice = _power_of_two_nearest(max(2, cells))
     while lattice > 1 and resolution % lattice != 0:
         lattice //= 2
     while lattice > 1 and lattice * 4 > resolution:
@@ -2061,24 +2066,85 @@ def carpet_field(
     #
     # So the lattice is stretched along the fibre's direction, and
     # the stretch is a whole number so the field stays periodic.
+    #
+    # The lattice's x period is ONE and its y period is MANY: the
+    # field's features are as wide as a cell of it and as tall as
+    # the whole surface - and the pile's streaks run ACROSS, which
+    # is along the fibre.
+    #
+    # The truth's own carpet reads 1.20 times more change along a
+    # ROW than down a column, so the streaks run along the row.
+    # The pile's own scale, and it is the SURFACE's own feature
+    # count: the truth's own carpet measures a hundred and fourteen
+    # features across and a period of nine pixels, and the pile IS
+    # that.
+    #
+    # The lattice is the number of cells ALONG the fibre, and the
+    # stretch is how much longer the features are ACROSS it.
+    #
+    # The stretch was eight, and the pile came out six times more
+    # varied along the row than down the column - where the truth's
+    # is 1.20. So the stretch is two: a carpet's fibres are only
+    # slightly directional.
     stretched = lattice * CARPET_FIBRE_STRETCH
     while stretched > 1 and resolution % stretched != 0:
         stretched //= 2
     pile = noise.fbm_2d_value(
-        sample_x * stretched,
-        sample_y * lattice,
-        size=lattice,
+        sample_x,
+        sample_y * stretched,
+        size=1,
         octaves=1,
         seed=11,
+        size_y=stretched,
     )
     reach = max(1e-6, float(pile.max() - pile.min()))
     pile = (pile - float(pile.min())) / reach
 
-    # The CARPET'S OWN surface, and it is a fine mottle over the
-    # pile: a carpet is a pile of fibres and not a single direction.
-    fine = surface_texture(resolution, max(2, cells) * CARPET_FIBRE_FACTOR)
+    # The CARPET'S OWN surface, and it is the pile and the pile's
+    # fine mottle together: a carpet is a pile of fibres and the
+    # fibres are what the eye reads.
+    #
+    # The mottle alone was the fibre, and it is a noise with no
+    # direction - so the carpet came out as a smooth sheet with a
+    # directional haze on it, and the truth's own carpet is a
+    # hundred and fourteen features across with a spread of 0.0301.
+    # The carpet's own MOTTLE, and it is the FINE structure: the
+    # truth's own carpet measures a period of nine pixels in a
+    # thousand and twenty-four and a row-to-column change ratio of
+    # 1.20 - so it is a fine ISOTROPIC fuzz and not a set of streaks.
+    #
+    # The pile was the main structure and it is a STREAK, and a
+    # streak's period and its directionality are the same number: at
+    # the truth's own scale the pile read six times more varied
+    # along the row than down it, and the truth's is 1.20.
+    #
+    # So the mottle leads and the pile is the direction ON it: the
+    # mottle is the carpet's own tooth and the pile is the way the
+    # fibres lie.
+    # The mottle's own lattice, and it is the SURFACE's own feature
+    # count: the truth's own carpet measures a hundred and fourteen
+    # features across and a period of nine pixels in a thousand and
+    # twenty-four, and the mottle IS that.
+    #
+    # The mottle's own lattice, and it is the SURFACE's own feature
+    # count: the truth's own carpet measures a hundred and fourteen
+    # features across and a period of nine pixels in a thousand and
+    # twenty-four, and the mottle IS that.
+    #
+    # The surface texture's own lattice is twelve patches a cell, so
+    # the cell count is divided by twelve to get it - and the truth's
+    # hundred and fourteen is close enough to a hundred and twenty-eight
+    # for the lattice's power of two to be a hundred and twenty-eight.
+    fine = surface_texture(
+        resolution, max(2, round(cells / SURFACE_PATCHES_PER_CELL / 2))
+    )
     fine_reach = max(1e-6, float(fine.max() - fine.min()))
     fine = (fine - float(fine.min())) / fine_reach
+    # And the pile is a FIFTH of it: the pile is the way the fibres
+    # lie and the mottle is the carpet's own tooth, and the truth's
+    # carpet is only slightly directional - a row-to-column change
+    # ratio of 1.20.
+    fine = 0.85 * fine + 0.15 * pile
 
     edge = 1.0 - pile
     # The CELL is a constant array and not a scalar: the writer

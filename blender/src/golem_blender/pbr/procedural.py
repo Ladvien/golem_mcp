@@ -153,6 +153,11 @@ SCATTER_HUE_VARIATION = 0.10
 # fibre and 0.49 in the envelope. So the block's grain is the same
 # share.
 PARQUET_FIBRE_STRENGTH = 0.5
+# How much of the surface's spread a CARPET's pile carries.
+#
+# The truth's own carpet measures a spread of 0.0301 and its pile IS
+# the variation - there is nothing else on a carpet but the pile.
+CARPET_FIBRE_STRENGTH = 1.0
 # Where a stone's joint becomes hard. A stone's edge is an edge and
 # not a gradient, and the soft falloff made the ground a field of
 # glowing blobs.
@@ -796,7 +801,29 @@ def write_procedural_base_color(
     # so the mottle is instead sampled at the pattern's own
     # coordinates and its lattice size is chosen to divide the
     # pattern's domain.
-    if kind == "parquet" and fibre is not None:
+    if kind == "carpet":
+        # A CARPET's wear is its own PILE, and it is a fine
+        # directional mottle.
+        #
+        # The cell path draws a joint from the edge field, and the
+        # carpet's edge is the pile's complement - so the pile was
+        # drawn as a JOINT and the carpet came out as a smooth
+        # sheet with a dark line in it.
+        #
+        # So the carpet's own field is the wear, and the wear is the
+        # pile and not a generic mottle: a carpet is a pile of
+        # fibres and the fibres are what the eye reads.
+        if fibre is not None:
+            surface = numpy.clip(fibre, 0.0, 1.0)
+            surface = surface / max(1e-6, float(surface.max())) * 2.0 - 1.0
+            wear = surface * CARPET_FIBRE_STRENGTH * ramp_spread
+        else:
+            surface = pattern.surface_texture(resolution, cells)
+            surface_amplitude = float(surface.max() - surface.min())
+            if surface_amplitude > 0.0:
+                surface = surface / surface_amplitude * 2.0 - 1.0
+            wear = surface * min(variation, 1.0) * ramp_spread * SURFACE_SHARE
+    elif kind == "parquet" and fibre is not None:
         # A PARQUET's wear is the block's own GRAIN, and it is the
         # wood's own fibre - and not a generic mottle.
         #

@@ -173,14 +173,26 @@ def fit(root: pathlib.Path) -> dict:
         """The words with enough materials behind them.
 
         A word with ONE material behind it is a single reading and
-        not a fit, and every word the wide set uses that the lane
-        needs has at least two.
+        not a fit - for the SPREAD, which is noisy, one material is
+        not enough.
         """
         return {
             word: source[word]
             for word in sorted(source)
             if len(source[word]) >= minimum
         }
+
+    def measured(source):
+        """The words with AT LEAST ONE material behind them.
+
+        A word's VALUE and HUE are a measurement and not a fit: a
+        single material's luma is its luma, and the lane's pattern
+        choice depends on the word being there at all.
+
+        "carpet" names one material in the wide set and the lane has
+        a kind for it, and the kind's colour is that material's.
+        """
+        return {word: source[word] for word in sorted(source) if source[word]}
 
     return {
         "spreads": {
@@ -197,12 +209,12 @@ def fit(root: pathlib.Path) -> dict:
         # brown's is the colour's.
         "material_values": {
             word: round(_mean(values_list), 4)
-            for word, values_list in table(values).items()
+            for word, values_list in measured(values).items()
             if word in MATERIAL_WORDS
         },
         "colour_values": {
             word: round(_mean(values_list), 4)
-            for word, values_list in table(values).items()
+            for word, values_list in measured(values).items()
             if word in COLOUR_WORDS
         },
         # And the HUES are split the same way: a MATERIAL's hue is
@@ -211,12 +223,12 @@ def fit(root: pathlib.Path) -> dict:
         "material_hues": {
             word: tuple(round(part, 3) for part in _mean_hue(hues[word]))
             for word in hues
-            if len(hues[word]) >= 2 and word in MATERIAL_WORDS
+            if hues[word] and word in MATERIAL_WORDS
         },
         "hues": {
             word: tuple(round(part, 3) for part in _mean_hue(hues[word]))
             for word in hues
-            if len(hues[word]) >= 2 and word in COLOUR_WORDS
+            if hues[word] and word in COLOUR_WORDS
         },
     }
 

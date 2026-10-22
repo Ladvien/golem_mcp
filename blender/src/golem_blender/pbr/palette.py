@@ -125,23 +125,29 @@ DEFAULT_VALUE = 0.5
 HUES: dict[str, object] = {
     "natural": (0.398, 0.348, 0.255),
     "orange": (0.519, 0.300, 0.181),
+    "red": (0.542, 0.275, 0.183),
     "light": (0.380, 0.333, 0.287),
     "beige": (0.395, 0.337, 0.267),
-    "brown": (0.408, 0.336, 0.256),
+    "blue": (0.217, 0.333, 0.451),
     "gray": (0.356, 0.343, 0.301),
+    "brown": (0.408, 0.336, 0.256),
+    "charcoal": (0.359, 0.342, 0.299),
     "dark": (0.372, 0.335, 0.294),
     "white": (0.342, 0.337, 0.321),
     "green": (0.421, 0.375, 0.204),
     "cream": (0.390, 0.334, 0.276),
+    "rust": (0.338, 0.335, 0.326),
+    "rusty": (0.338, 0.335, 0.326),
     "black": (0.317, 0.340, 0.343),
     "tan": (0.452, 0.335, 0.213),
     "yellow": (0.405, 0.346, 0.249),
     "grey": (0.323, 0.340, 0.337),
-    "blue": (0.217, 0.333, 0.451),
-    "red": (0.542, 0.275, 0.183),
+    "silver": (0.336, 0.335, 0.329),
+    "espresso": (0.398, 0.319, 0.282),
+    "gold": (0.399, 0.356, 0.245),
+    "cobalt": (0.332, 0.335, 0.333),
     "wood": (0.412, 0.332, 0.256),
     "wooden": (0.412, 0.332, 0.256),
-    "gold": (0.470, 0.390, 0.200),
     "moss": (0.300, 0.380, 0.240),
     "mossy": (0.300, 0.380, 0.240),
     "purple": (0.330, 0.280, 0.390),
@@ -154,8 +160,6 @@ HUES: dict[str, object] = {
     "limestone": (0.400, 0.335, 0.270),
     "concrete": (0.333, 0.333, 0.333),
     "metal": (0.336, 0.335, 0.329),
-    "silver": (0.336, 0.335, 0.329),
-    "charcoal": (0.344, 0.337, 0.319),
 }
 # The hue a description with no colour word gets: neutral.
 DEFAULT_HUE = (0.3333, 0.3333, 0.3333)
@@ -411,12 +415,15 @@ def _words_of(description: str) -> set[str]:
 MATERIAL_VALUES: dict[str, object] = {
     "asphalt": 0.3030,
     "bricks": 0.4546,
+    "carpet": 0.6921,
     "concrete": 0.5666,
     "dirt": 0.4064,
     "earth": 0.4582,
     "fabric": 0.5240,
+    "grass": 0.5635,
     "gravel": 0.4010,
     "ground": 0.4301,
+    "iron": 0.7450,
     "leaves": 0.4181,
     "limestone": 0.6955,
     "metal": 0.6367,
@@ -426,13 +433,17 @@ MATERIAL_VALUES: dict[str, object] = {
     "paint": 0.7446,
     "parquet": 0.3914,
     "pavement": 0.3119,
+    "plank": 0.4993,
+    "planks": 0.2835,
     "plaster": 0.7606,
     "rock": 0.3519,
     "rocky": 0.4070,
+    "sandstone": 0.4148,
     "scattered": 0.4114,
     "soil": 0.4165,
     "steel": 0.4686,
     "stone": 0.4736,
+    "stucco": 0.8303,
     "tiles": 0.5977,
     "wood": 0.4696,
     "wooden": 0.5103,
@@ -448,6 +459,22 @@ MATERIAL_VALUES: dict[str, object] = {
 
 # The materials that are SPECIFIC - a steel before a metal, a brick
 # before a stone - and so are read before the general ones.
+# The MATERIAL tiers, and the most specific first.
+#
+# A carpet is a carpet and not a fabric; a parquet is a parquet and
+# not a wood; a leather is a leather and not a fabric; a wallpaper is
+# a wallpaper and not a paper.
+#
+# The most specific material was found by taking the ALPHABETICALLY
+# first, and that is not the most specific - a "beige, carpet,
+# fabric, floor, soft, white, wool" found "fabric" and not "carpet",
+# and the lane's kind for a carpet took a fabric's colour.
+MATERIAL_TIERS = (
+    ("carpet", "rug", "leather", "hide", "parquet", "wallpaper"),
+    ("wool", "bricks", "tiles", "limestone", "corrugated", "asphalt", "concrete"),
+    ("silver", "steel", "fabric", "wood", "moss", "mossy", "dirt", "gravel", "ground"),
+    ("clay", "sand", "rust", "rusty", "oxidized"),
+)
 SPECIFIC_MATERIALS = frozenset(
     {
         "silver",
@@ -477,36 +504,53 @@ SPECIFIC_MATERIALS = frozenset(
 
 # The materials that are GENERIC - a fabric, a stone, a metal - and
 # so say a thing's KIND and not its colour.
-GENERIC_MATERIALS = frozenset({"fabric", "stone", "metal"})
+# The GENERIC materials, and they let the COLOUR decide.
+#
+# A generic material says what a thing is MADE OF and not what it
+# looks like: a "fabric" on its own is a thing's kind, and the
+# truth's two fabrics are 0.374 and 0.527 - the orange one and the
+# blue one - so the colour is what tells them apart.
+#
+# A WOOL is the same: it names a fibre and not a colour, and the
+# truth's own orange wool is 0.374 where the wool's own fitted
+# value says 0.533.
+GENERIC_MATERIALS = frozenset(
+    {"fabric", "stone", "metal", "wool", "carpet", "leather", "parquet"}
+)
 
 # The colour words, and the value each carries.
 COLOUR_VALUES: dict[str, object] = {
     "beige": 0.6021,
     "black": 0.2454,
+    "blue": 0.5266,
     "brown": 0.4217,
+    "charcoal": 0.3217,
+    "cobalt": 0.7594,
     "cream": 0.6804,
     "dark": 0.3182,
+    "espresso": 0.2140,
+    "gold": 0.8935,
     "gray": 0.3830,
     "green": 0.4723,
     "grey": 0.4927,
     "light": 0.5926,
     "natural": 0.4790,
     "orange": 0.4306,
+    "red": 0.3743,
+    "rust": 0.4295,
+    "rusty": 0.4295,
+    "silver": 0.9832,
     "tan": 0.5703,
     "white": 0.7967,
     "yellow": 0.3594,
-    "charcoal": 0.3217,
     "snow": 0.92,
     "clay": 0.42,
     "terracotta": 0.44,
     "brick": 0.4758,
-    "red": 0.3743,
-    "blue": 0.5266,
     "purple": 0.30,
     "pink": 0.66,
     "slate": 0.34,
     "lime": 0.74,
-    "silver": 0.9832,
     "steel": 0.43,
     "iron": 0.42,
     "chrome": 0.95,
@@ -515,9 +559,6 @@ COLOUR_VALUES: dict[str, object] = {
     "brass": 0.62,
     "bronze": 0.42,
     "copper": 0.52,
-    "gold": 0.70,
-    "rust": 0.34,
-    "rusty": 0.34,
     "oxidized": 0.30,
 }
 
@@ -543,6 +584,11 @@ def _material_word(description: str) -> str | None:
     stone.
     """
     words = _words_of(description)
+    # The TIERS are read first: the most specific material decides.
+    for tier in MATERIAL_TIERS:
+        for word in tier:
+            if word in words:
+                return word
     for word in sorted(words & SPECIFIC_MATERIALS):
         return word
     for word in sorted(words & MATERIAL_VALUES.keys()):
@@ -768,27 +814,34 @@ MATERIAL_HUES: dict[str, object] = {
     "wool": (0.454, 0.310, 0.236),
     "wood": (0.444, 0.330, 0.226),
     "ground": (0.393, 0.345, 0.262),
-    "rocky": (0.383, 0.341, 0.276),
     "dirt": (0.391, 0.340, 0.268),
     "gravel": (0.364, 0.339, 0.297),
+    "rocky": (0.383, 0.341, 0.276),
     "scattered": (0.405, 0.343, 0.252),
     "asphalt": (0.342, 0.338, 0.321),
     "pavement": (0.346, 0.339, 0.315),
     "tiles": (0.381, 0.334, 0.285),
     "mud": (0.401, 0.342, 0.256),
     "soil": (0.400, 0.341, 0.259),
-    "mossy": (0.413, 0.385, 0.202),
     "rock": (0.344, 0.358, 0.298),
     "moss": (0.394, 0.374, 0.233),
-    "leaves": (0.437, 0.345, 0.217),
+    "mossy": (0.413, 0.385, 0.202),
     "earth": (0.401, 0.353, 0.246),
+    "leaves": (0.437, 0.345, 0.217),
     "limestone": (0.394, 0.334, 0.271),
     "metal": (0.339, 0.337, 0.324),
     "steel": (0.336, 0.334, 0.329),
     "wooden": (0.459, 0.327, 0.215),
     "parquet": (0.486, 0.337, 0.176),
+    "plank": (0.417, 0.331, 0.252),
     "concrete": (0.350, 0.338, 0.313),
     "plaster": (0.337, 0.335, 0.328),
+    "iron": (0.333, 0.334, 0.333),
+    "grass": (0.394, 0.379, 0.226),
+    "planks": (0.555, 0.344, 0.101),
+    "carpet": (0.367, 0.345, 0.288),
+    "stucco": (0.339, 0.333, 0.328),
+    "sandstone": (0.501, 0.336, 0.163),
     "paint": (0.337, 0.337, 0.326),
     "marble": (0.347, 0.333, 0.320),
     "silver": (0.336, 0.335, 0.329),
