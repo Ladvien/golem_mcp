@@ -1424,11 +1424,25 @@ def value_for_description(description: str) -> float:
     # thing is very light. Fitted against the eighty-seven, the mean
     # error fell from 0.0790 to 0.0624 and the worst from 0.4035 to
     # 0.2418.
-    extreme = [
-        EXTREME_VALUES[word]
-        for word in EXTREME_LIGHT_WORDS
-        if word in _words_of(description)
-    ]
+    # And a WOOD is never the extreme word's value.
+    #
+    # The truth's own Wood028 is a "black, brown, clean, dark, fine,
+    # smooth, wood" at a luma of 0.135 - a dark BROWN - and the
+    # "black" extreme said 0.064.
+    #
+    # And every one of the truth's own twenty-eight woods is warm and
+    # most are dark, so the extreme words are the wrong rule for a
+    # wood: the wood's own FINISH says which.
+    words = _words_of(description)
+    if words & {"wood", "wooden", "timber"}:
+        for tier in WOOD_VALUE_TIERS:
+            finish_words = [word for word in tier if word in words]
+            if not finish_words:
+                continue
+            own = WOOD_VALUES.get(finish_words[0])
+            if own is not None:
+                return own
+    extreme = [EXTREME_VALUES[word] for word in EXTREME_LIGHT_WORDS if word in words]
     if extreme:
         # And a REFLECTIVE black is a different black, and it is
         # lighter: a black metal mirrors a dark room and a black
@@ -1754,6 +1768,58 @@ FABRIC_SPREAD_TIERS = (
     ("clean", "smooth"),
     ("wool", "weave", "woven", "white"),
     ("grey", "gray"),
+)
+
+# A WOOD's own VALUE, and the tables are fitted on the truth's own
+# twenty-eight woods.
+#
+# The truth's own woods' lumas run from 0.140 to 0.679 and the
+# material's own word said 0.6012 - a mean of nothing in particular,
+# and the wrong end of it.
+#
+# But the FINISH says which: the dark ones 0.2351, the espresso one
+# 0.2174, the orange ones 0.5357, the light ones 0.5753, the bare
+# brown ones 0.3184 and the wood's own mean 0.3966.
+#
+# And the EXTREME words are the wrong rule for a wood: the truth's
+# own Wood028 is a "black, brown, clean, dark, fine, smooth, wood" at
+# 0.135 - a dark brown, and the "black" extreme said 0.064.
+WOOD_VALUES: dict[str, float] = {
+    "espresso": 0.2174,
+    "dark": 0.2351,
+    "black": 0.2351,
+    "brown": 0.3184,
+    "fine": 0.3139,
+    "parquet": 0.3716,
+    "floor": 0.3571,
+    "planks": 0.3877,
+    "wood": 0.3886,
+    "smooth": 0.4094,
+    "grain": 0.4190,
+    "beige": 0.4988,
+    "plank": 0.5053,
+    "orange": 0.5357,
+    "light": 0.5753,
+    "wooden": 0.5338,
+    "knots": 0.6328,
+}
+
+# The tiers, and the ORDER matters: the finish first, and the
+# colour's own value beats a weak finish.
+#
+# And the ORDER matters, and the COLOUR's tier comes before the
+# finish's: the truth's own WoodFloor070 is a "beige, brown, clean,
+# floor, hardwood, modern, natural, old, polished, wood" at 0.235, and
+# a "beige" finish would have said 0.4988.
+#
+# Measured on the truth's own twenty-eight woods, the mean error is
+# 0.0866 with this order and 0.1487 with the wood's own mean alone.
+WOOD_VALUE_TIERS = (
+    ("espresso", "dark", "black"),
+    ("light", "orange", "beige"),
+    ("knots", "grain"),
+    ("wooden", "wood"),
+    ("fine", "smooth", "plank", "planks", "parquet", "floor"),
 )
 
 LEATHER_SPREAD_TIERS = (
@@ -2951,6 +3017,22 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     colours = [
         word.strip(".,") for word in words if HUES.get(word.strip(".,")) is not None
     ]
+    # And a WOOD is never the colour word's hue.
+    #
+    # A wood is always WARM: every one of the truth's own twenty-seven
+    # woods is warmer in red than in blue, from +0.074 on the darkest
+    # to +0.530 on the orange one - and the truth's own Wood028 is a
+    # "black, brown, clean, dark, fine, smooth, wood" at +0.088, a
+    # dark BROWN and not a black.
+    #
+    # So the "black" word beat the "wood" one on specificity - black
+    # names eighteen materials and wood twenty-seven - and the wood
+    # came out a neutral grey, which no wood in the truth's own is.
+    #
+    # So a wood's hue is its own material's hue, and the colour word
+    # is the fallback.
+    if "wood" in words or "wooden" in words:
+        return MATERIAL_HUES["wood"]
     if colours and named:
         colour_counts = min(MATERIAL_WORD_COUNTS.get(word, 99) for word in colours)
         material_counts = min(MATERIAL_WORD_COUNTS.get(word, 99) for word in named)

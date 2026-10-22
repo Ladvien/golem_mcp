@@ -222,6 +222,33 @@ def test_a_roughness_comes_from_the_words_and_not_a_constant():
     assert 0.0 <= roughness_for_description("planks, wood") <= 1.0
 
 
+def test_a_wood_is_warm_and_a_wood_is_never_the_extreme_word():
+    """A wood's HUE is its own, and its VALUE is its finish.
+
+    Every one of the truth's own twenty-eight woods is warmer in red
+    than in blue - from +0.074 on the darkest to +0.530 on the
+    orange one - and the truth's own Wood028 is a "black, brown,
+    clean, dark, fine, smooth, wood" at +0.088: a dark BROWN and not
+    a black.
+
+    So "black" must not win the hue over "wood", and the extreme
+    words must not win the value either: the "black" extreme said
+    0.064 and the truth is 0.135.
+    """
+    from golem_blender.pbr.palette import hue_for_description, value_for_description
+
+    hue = hue_for_description("black, brown, clean, dark, fine, smooth, wood")
+    assert hue[0] > hue[2], "a wood is warmer in red than in blue"
+    # And the value is the wood's own finish and not the extreme.
+    assert value_for_description("black, brown, clean, dark, fine, smooth, wood") == (
+        pytest.approx(0.2351, abs=0.01)
+    )
+    # And an ORANGE wood is the orange's own.
+    assert value_for_description("orange, plain, smooth, wood") == pytest.approx(
+        0.5357, abs=0.01
+    )
+
+
 def test_a_black_is_three_blacks_and_the_words_choose():
     """A "black" is a reflective one, a smooth one or a textured one.
 
