@@ -416,7 +416,13 @@ CARPET_FIBRE_STRETCH = 2.0
 # So the cell count is a FIXED grain and not the surface's own
 # feature count: the surface's count is what the measure reads and
 # the grain is what the eye reads, and they are different numbers.
-LEATHER_CELL_COUNT = 170
+#
+# And the grain is VERY fine: the truth's own Leather037's detail
+# has a period of two pixels in a thousand and twenty-four - it is
+# almost a smooth surface - and the crackle at a hundred and seventy
+# cells came out at nine pixels and read a spread of 0.0388 where
+# the truth's is 0.0032.
+LEATHER_CELL_COUNT = 512
 LEATHER_CELL_JITTER = 0.7
 # A WALLPAPER's motif, as a multiple of the surface's own feature
 # count: a wallpaper's design is a thing you see from across a room.
