@@ -75,6 +75,29 @@ colour and came out a saturated orange.
 | a leather's spread is a factor of ten out | the WORDS | no |
 | a road's paint colour is the road's own and not the paint's | the WORDS | partly - the wear is a guess |
 
+### A rock's moss is a patch, and the patch's colour is a second hue
+
+The truth's own Rock064 is a grey rock with green MOSS on it, and
+its green share has a standard deviation of 0.0336 over
+sixteen-pixel blocks - the moss is a patch, and the patch is a
+different hue from the rock.
+
+The lane draws one hue over the whole surface, and a rock's own hue
+is the grey: the words say "gray" and "stone" and "moss" and
+"mossy", and the moss is a minority of the surface. So a rock's
+cells carry their own hue and only some of them carry the moss -
+and a cell with a full hue swing on every cell gave a green and a
+tan patchwork instead.
+
+What is still wrong: the truth's rock is rough at EVERY scale - its
+gradient's median is 0.0362 and only one and a half per cent of its
+surface is flat, where the lane's rock is flat over fifty-four per
+cent. The lane's rock is a set of flat facets with thin joints and
+the truth's is a continuous relief. The truth's spectrum falls as k
+to the minus two and the lane's matches it, so the energy is in the
+right places; it is the *shape* of the surface that differs, and a
+facet-and-joint mosaic is not a relief.
+
 ### The value cannot be refitted honestly
 
 The palette's material values are a fit against the truth's own
