@@ -195,7 +195,7 @@ ENVELOPE_WEIGHT = 1.0
 # diagonally - the lattice's own geometry is square, so a mild
 # compression leaves the patches as squares with a diagonal long
 # axis - and the truth's fibre is along the board.
-FIBRE_STRETCH = 2.0
+FIBRE_STRETCH = 0.0625
 FIBRE_OCTAVES = 3
 FIBRE_PERSISTENCE = 0.5
 # The FIBRE's orientation and carrier, for the Gabor that draws it.
@@ -277,7 +277,7 @@ FIBRE_CELLS_PER_RING = 1.0
 # features and its rings are two and a half, and the truth's own
 # Wood092 measures 37.9 and its rings are sixteen.
 GRAIN_CELLS_PER_FEATURE = 2.3
-FIBRE_STRETCH = 2.0
+FIBRE_STRETCH = 0.0625
 FIBRE_OCTAVES = 4
 FIBRE_FOLDS = 1
 # The percentile the line's steepness is measured against. The
@@ -2125,9 +2125,18 @@ def grain_field(
         while lattice > 1 and lattice * 4 > resolution:
             lattice //= 2
         lattice_y = max(1, round(lattice * FIBRE_STRETCH))
+        # And the Y sample is in the STRETCHED lattice's own units.
+        #
+        # The two samples are in their own base lattice units, and
+        # the y lattice is the STRETCHED one - so the y sample is
+        # scaled by the stretched count. It was scaled by the plain
+        # one, so the stretch was applied to the lattice's PERIOD and
+        # not to the sample - and the fibre came out the same at
+        # every stretch, which is how the fault was found: the
+        # parameter had no effect at all.
         coarse_fibre = noise.fbm_2d_value(
             (fibre_x + warp_field * FIBRE_WARP) * lattice,
-            fibre_y * lattice,
+            fibre_y * lattice_y,
             size=lattice,
             octaves=FIBRE_OCTAVES,
             seed=0,
