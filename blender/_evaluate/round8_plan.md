@@ -158,6 +158,65 @@ centred on the middle of that range.
 structure it was meant to carry.** The `×2` after a shift is only
 valid for a [0,1] field.
 
+## The metal: three faults, each found by the sheet
+
+The metal's score was the worst group in the set (1.56 on the top
+set) and the sheet showed why: the truth's silver is a **fine brushed
+sheen** and ours had a few broad arcs and scattered stipples.
+
+1. **A BRUSHED sheet's streaks run ALONG the sheet.** The truth's
+   own brushed steel and silver both have their high-frequency
+   structure horizontal — a down period of four to ten pixels against
+   an across period of twenty-three to a hundred and sixty-four. The
+   measure reads along a row, so a sheet whose grain runs along the
+   row is the sheet whose streaks the measure sees. Measured: a
+   brushed sheet's scale error was 4.63 with the streaks across the
+   row and 3.49 with them along it.
+2. **The SCRATCHES were blobs.** Material Maker's own `scratches2`:
+   the cell's frame is turned by the cell's angle, the x is divided
+   by the cell's length and the y by the cell's width, and the value
+   is a band a *thousand* times the divided y squared, times a taper
+   along the length, times the cell's own edge distance. The port
+   drew a RECTANGLE — the distance to the nearest of the two cell's
+   edges — so a scratch came out as a blob at the cell's centre. The
+   line's own position within the cell is a random offset of a whole
+   cell, and without it the cells' own edges showed as a GRID.
+3. **A metal names SEVERAL of its own colours, and they are MEANED.**
+   The truth's own Metal009, Metal011 and Metal007 are all "silver,
+   steel" and measure 0.582, 0.627 and 0.611. The colour tier read
+   "steel" first — 0.439 — a third of the truth's. The mean of
+   "silver" and "steel" is 0.711, and a scratched sheet is four
+   fifths of a plain one, so 0.569 — the truth's within two per
+   cent.
+
+## A general lesson: a NAME can be a DIVISOR
+
+Three of the module's constants were each **defined twice**, and the
+second definition won. The fibre's stretch read as a divisor in one
+block and as a multiplier in the other, and the block that read it as
+a multiplier was the one that set it — so a change to the other
+block changed nothing, and the sweep over it read flat.
+
+The stretch is a divisor: the y lattice's cell count is the x count
+TIMES the stretch, so a SMALLER number gives FEWER cells along y and
+a LONGER streak. And the stretch was applied to the lattice's PERIOD
+and not to the SAMPLE — the two samples are in their own base lattice
+units, so the y sample has to be scaled by the STRETCHED count — and
+that is why EVERY value of it gave the identical picture.
+
+**A parameter that has no effect at all is a fault report.** A sweep
+that reads flat is telling you the parameter is not wired, and it
+found this in one run.
+
+## A general lesson: a normalisation that assumes a range clips the structure
+
+The writer's darkness was shifted by half its mean and then doubled,
+and the doubling assumes a range of one — but the darkness's range is
+the two layers' own sum and it runs to 0.9. So the shift left the
+lower half of the structure below zero and the clip DROPPED IT, and
+the wood came out with no grain in it at all. The darkness is scaled
+to its own range first and then centred on the middle of that range.
+
 ## The ORM
 
 Blender 5.2 has **no metallic bake pass** — the pass enum is
