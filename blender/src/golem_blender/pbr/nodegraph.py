@@ -445,10 +445,22 @@ def _render_node(
 
     if kind == "colorize":
         source = field_of(inputs["source"])
+        # And the ramp's stops are in the field's OWN range and not in
+        # a fixed zero to one.
+        #
+        # A marble's vein field is zero over most of the surface -
+        # thirteen per cent of it is a vein - so a ramp with its
+        # window at 0.09 to 0.34 of the FULL range caught almost none
+        # of the veins, and the composited marble came out empty.
+        #
+        # So the ramp reads the field's own reach, the way a
+        # painter's ramp reads the paint's own value.
+        reach = max(1e-9, float(source.max()) - float(source.min()))
+        scaled = (source - float(source.min())) / reach
         stops = params.get("stops") or []
         return numpy.clip(
             colorize_field(
-                source,
+                scaled,
                 stops,
                 interpolation=int(params.get("interpolation", 1)),
             ),
@@ -506,7 +518,16 @@ def _pattern_field(pattern_name: str, cells: int, resolution: int) -> numpy.ndar
     from golem_blender.pbr import pattern
 
     if pattern_name == "voronoi":
-        _cell, edge, _grid = pattern.cell_and_edge(resolution, cells)
+        # The SAME field the lane's own voronoi uses - the FRACTAL
+        # stones and not a single octave of cells.
+        #
+        # A single octave gave a plain grid of squares, and the
+        # lane's own voronoi is a field of big stones made of small
+        # ones. A graph that composes has to compose the same
+        # material the single-pattern path makes, or the two disagree
+        # about what a "voronoi" is.
+        stones = pattern.fractal_stones(resolution, cells)
+        edge = stones["distance"]
         # The edge distance is ZERO at the joint and LARGEST in the
         # middle of a stone, so the joint is ONE minus the distance.
         reach = max(1e-9, float(edge.max()))

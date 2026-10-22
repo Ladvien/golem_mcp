@@ -1568,41 +1568,55 @@ METAL_SPECIFICITY: dict[str, int] = {
 # 0.0064, "cobalt" 0.0183, "steel" 0.0354, "iron" 0.0442 and
 # "platinum" 0.1435.
 METAL_SPREADS: dict[str, float] = {
-    "clean": 0.0075,
-    "smooth": 0.0153,
+    "clean": 0.0076,
+    "smooth": 0.0106,
     "powder": 0.0174,
-    "covered": 0.0174,
-    "painted": 0.0174,
-    "scratched": 0.0160,
-    "fine": 0.0269,
-    "polished": 0.0269,
-    "glossy": 0.0269,
-    "aged": 0.0269,
-    "rust": 0.0269,
-    "rusty": 0.0269,
+    "covered": 0.0154,
+    "painted": 0.0154,
+    "scratched": 0.0273,
+    "bumpy": 0.0273,
+    "brushed": 0.0202,
+    "fine": 0.0265,
+    "polished": 0.0265,
+    "glossy": 0.0265,
+    "aged": 0.0265,
+    "rust": 0.0265,
+    "rusty": 0.0265,
     "oxidized": 0.0269,
-    "rough": 0.0637,
+    "rough": 0.0576,
     "corrugated": 0.0760,
     "ribbed": 0.0760,
     "ridged": 0.0760,
     "worn": 0.0760,
-    "brushed": 0.0760,
     "pipe": 0.0760,
     "rusted": 0.1361,
     "old": 0.1361,
     "damaged": 0.1398,
     "impure": 0.0390,
-    "silver": 0.0061,
-    "gold": 0.0064,
+    "silver": 0.0220,
+    "gold": 0.0164,
     "cobalt": 0.0183,
-    "platinum": 0.1435,
-    "steel": 0.0354,
-    "iron": 0.0442,
-    "metal": 0.0369,
+    "platinum": 0.1426,
+    "steel": 0.0294,
+    "iron": 0.0451,
+    "metal": 0.0341,
 }
 
+# And which of the METAL's tiers is the FINISH's, and the rest are
+# the structures.
+#
+# It was the index four, and a new tier was added to the structures
+# and the index moved - so the KIND's tier was read before the
+# finish's, and a smooth iron read as the iron's spread.
+METAL_SPREAD_FINISH_TIER = 5
+
 METAL_SPREAD_TIERS = (
-    ("corrugated", "ribbed", "ridged", "brushed", "pipe"),
+    ("corrugated", "ribbed", "ridged", "pipe"),
+    # And a BRUSHED sheet is its own tier: it was in the corrugated
+    # one, and the truth's own two brushed metals measure 0.0192 and
+    # 0.0213 against the corrugated sheet's 0.0762 - so a brushed
+    # sheet's spread read 3.8x the truth's.
+    ("brushed", "scratched", "bumpy"),
     (
         "oxidized",
         "aged",
@@ -2986,7 +3000,20 @@ def spread_for_description(description: str) -> float:
         #
         # So the finish's tier is read before the kind's, and the
         # kind decides only when no finish is named.
-        for tier in (METAL_SPREAD_TIERS[4], *METAL_SPREAD_TIERS[:4]):
+        # And the tiers are read by ROLE and not by index: the
+        # finish's tier is METAL_SPREAD_FINISH_TIER and the rest are
+        # the structures, and a new tier was added to the structures
+        # and the index silently moved - so the KIND's tier was read
+        # before the finish's and a smooth iron read as the iron's
+        # spread and not the smooth one's.
+        for tier in (
+            METAL_SPREAD_TIERS[METAL_SPREAD_FINISH_TIER],
+            *(
+                tier
+                for i, tier in enumerate(METAL_SPREAD_TIERS)
+                if i != METAL_SPREAD_FINISH_TIER
+            ),
+        ):
             metal_words = [word for word in tier if word in words]
             if not metal_words:
                 continue

@@ -860,15 +860,29 @@ def write_procedural_base_color(
 
         base = _np.array(stone_dark_rgb, dtype=numpy.float32).reshape(1, 1, 3)
         mask = _np.clip(_np.asarray(fibre, dtype=numpy.float32), 0.0, 1.0)
-        # The mask's own reach, so the darkening is a fraction of the
-        # base and not an absolute - a dark surface's lines are
-        # darker by less than a pale one's, which is what the truth
-        # does.
-        luma = _luma_of(stone_dark_rgb)
-        if line_contrast is None:
-            line_contrast = LINE_CONTRAST
-        darkening = 0.0 if luma <= 0.0 else min(1.0, line_contrast / luma)
-        colour = base * (1.0 - darkening * (1.0 - mask)[:, :, _np.newaxis])
+        # And the mask is a SIGNED variation and not a darkening, and
+        # the surface is drawn BOTH lighter and darker than the base.
+        #
+        # The darkening was one-sided - the base everywhere the mask
+        # was one and the line colour everywhere else - so a
+        # composited surface came out as a flat sheet with a stain on
+        # it, and the stone's own variation was nowhere.
+        #
+        # The truth's own wood has its p5 at 0.604 and its p95 at
+        # 0.690 and its mean at 0.649: the base colour is the MEDIAN
+        # and the surface is drawn on both sides of it.
+        signed = mask * 2.0 - 1.0
+        light = base * (1.0 + LINE_LIGHT_FRACTION)
+        lines = tuple(max(0.0, channel * 0.7) for channel in stone_dark_rgb)
+        colour = (
+            base
+            + signed[:, :, _np.newaxis]
+            * (
+                _np.array(light, dtype=numpy.float32).reshape(1, 1, 3)
+                - _np.array(lines, dtype=numpy.float32).reshape(1, 1, 3)
+            )
+            * 0.5
+        )
         if target_spread is not None:
             colour = _scale_to_spread(colour, target_spread)
         if target_value is not None:
@@ -924,7 +938,8 @@ def write_procedural_base_color(
             #
             # So the veins go into the FIBRE's slot, and the base is
             # the envelope's flat field.
-            edge, fibre = _np.ones_like(fibre) * 0.5, fibre
+            flat_base = _np.ones_like(fibre) * 0.5
+            edge, fibre = flat_base, fibre
         return _write_line_pattern(
             output_path,
             edge=edge,
