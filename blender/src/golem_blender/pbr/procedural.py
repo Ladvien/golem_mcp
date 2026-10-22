@@ -327,6 +327,22 @@ MATRIX_SHADOW_SHARE = 0.55
 # a truth's 0.172, and the stone-to-matrix contrast read 0.372
 # against a truth's 0.430.
 MATRIX_TONE_BASE = 0.20
+# How much of the MATRIX's own grit the surface's mottle carries.
+#
+# The truth's own ground's matrix carries a spread of 0.0824 - two
+# thirds of the whole surface's - and the lane's carried 0.0183, so
+# the gaps between the stones were a smooth sheet where the truth's
+# is packed dirt.
+MATRIX_GRIT_SHARE = 0.35
+# How high the MATRIX's own ramp reaches, as a share of the palette's
+# dark end.
+#
+# The truth's own ground's matrix runs from 0.12 to 0.29 - a width of
+# 0.17 - and a narrow ramp cannot carry the grit in it: the
+# correlation at a four-pixel lag was 0.226 where the truth's is
+# 0.466, and at a sixteen-pixel lag 0.191 where the truth's is
+# 0.135 - so the lane's ground was all coarse structure and no fine.
+MATRIX_TONE_CEILING = 1.0
 # How much of a surface's cells carry the MOSS, and how strongly the
 # others do.
 #
@@ -1265,6 +1281,15 @@ def write_procedural_base_color(
     mortar = numpy.array(mortar_rgb, dtype=numpy.float32).reshape(1, 1, 3)
     joint = joint[:, :, numpy.newaxis]
     if kind == "scattered":
+        # The MATRIX's own grit, and it is the surface's own mottle.
+        #
+        # The truth's own ground's matrix carries a spread of 0.0824
+        # - two thirds of the whole surface's - and the lane's carried
+        # 0.0183, so the gaps between the stones were a smooth brown
+        # sheet where the truth's is packed dirt.
+        matrix_grit = pattern.surface_texture(resolution, cells)
+        matrix_grit = matrix_grit - float(matrix_grit.min())
+        matrix_grit = matrix_grit / max(1e-6, float(matrix_grit.max()))
         # A SCATTER's joint is the MATRIX, and the matrix is the
         # surface's own slow variation and not a flat colour.
         #
@@ -1311,13 +1336,27 @@ def write_procedural_base_color(
         # the shadow's own share - and the matrix's tone rides at the
         # bottom of it, with the slow variation for the patches.
         matrix_tone = _np.clip(MATRIX_TONE_BASE + MATRIX_TONE_RANGE * slow, 0.0, 1.0)
+        # And the MATRIX's own GRIT, and the matrix between the
+        # stones is DIRT and not a flat sheet.
+        #
+        # The truth's own ground's matrix carries a spread of 0.0824
+        # - two thirds of the whole surface's - and the lane's carried
+        # 0.0183, so the gaps between the stones were a smooth brown
+        # sheet and the truth's is packed dirt.
+        matrix_tone = _np.clip(matrix_tone + matrix_grit * MATRIX_GRIT_SHARE, 0.0, 1.0)
         matrix_colour = numpy.empty_like(stone)
         for channel in range(3):
             # The matrix's own ramp is EXTENDED below the palette's
             # dark end, so the shadow in the gaps has somewhere to go
             # that is darker than the stones' own darkest.
+            # The matrix's own ramp is WIDE, and the shadow's share
+            # is its floor and not its ceiling: the truth's own ground's
+            # matrix runs from 0.12 to 0.29 and a narrow ramp cannot
+            # carry the grit in it.
             dark = stone_dark_rgb[channel] * MATRIX_SHADOW_SHARE
-            ramp = _np.linspace(dark, stone_dark_rgb[channel], 256)
+            ramp = _np.linspace(
+                dark, stone_dark_rgb[channel] * MATRIX_TONE_CEILING, 256
+            )
             matrix_colour[:, :, channel] = ramp[
                 _np.clip((matrix_tone * 255).astype(_np.int32), 0, 255)
             ]

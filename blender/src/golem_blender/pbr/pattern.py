@@ -655,7 +655,7 @@ STONE_PEBBLE_JITTER = 0.35
 # ground read as a field of pebbles where the truth's is a grit.
 #
 # So the size is a TWO-THOUSANDTH of the surface.
-STONE_SCATTER_SIZE = 0.0020
+STONE_SCATTER_SIZE = 0.0120
 # How many stones the surface carries.
 #
 # The count follows the SIZE and not the cell count, because a stone
@@ -678,7 +678,7 @@ STONE_SCATTER_SIZE = 0.0020
 # floors at 0.000 - the truth's own - with its first percentile at
 # 0.113 against the truth's 0.119, and its tenth at 0.213 against the
 # truth's 0.212.
-STONE_SCATTER_DENSITY = 350000.0
+STONE_SCATTER_DENSITY = 12000.0
 # How much the stones' sizes vary, as a fraction of their own size.
 #
 # The truth's gravel is a mix: mostly small chips and a few big
@@ -689,6 +689,14 @@ STONE_SCATTER_SIZE_JITTER = 0.8
 STONE_SCATTER_EDGES = 3
 # The seed the stones' places and cuts come from.
 STONE_SCATTER_SEED = 7
+# How much of the RAMP a stone's own tone spreads over, and it is
+# WIDE.
+#
+# A gravel is a mix of stone types: the truth's own ground's
+# seventeen biggest stones run from 0.431 to 0.710 - a spread of
+# 0.0752 - and the lane's stones were all the slow field's own
+# value, so the ground came out as a uniform tan bed.
+STONE_TONE_SPREAD = 0.9
 # The PEBBLES' warp: how far the lattice is displaced, the step the
 # slope is measured over, and how many steps are taken.
 #
@@ -3210,10 +3218,22 @@ def scattered_field(
         # the ramp and the matrix -0.08 of it, so the ramp is the
         # stone-to-matrix contrast and not a variation within one
         # population.
-        # The stone's tone is the slow field's own value, plus a
-        # little of the stone's own hash so two stones in the same
-        # patch are not identical.
-        tone = 0.50 + 0.50 * slow_here
+        # The stone's own TONE, and it is the stone's own: a gravel
+        # is a mix of stone types, and the truth's own ground has
+        # stones from 0.431 to 0.710 - a spread of 0.0752 over its
+        # seventeen biggest.
+        #
+        # The tone was the slow field's own value and a little of the
+        # stone's hash, so every stone in a patch was the same tone
+        # and the ground came out as a uniform tan bed where the
+        # truth's is a mix of white and black stones.
+        #
+        # So the tone is the slow field's value AND the stone's own
+        # hash, and the hash's own share is wide.
+        hash_value = float(
+            numpy.random.default_rng(STONE_SCATTER_SEED + index * 13).random()
+        )
+        tone = 0.50 + 0.50 * slow_here + (hash_value - 0.5) * STONE_TONE_SPREAD
 
         # The stone's own EDGES, and they are cut by a set of
         # half-planes whose angles and offsets come from the stone's
