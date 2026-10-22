@@ -64,7 +64,9 @@ def _quintic(t: np.ndarray) -> np.ndarray:
     return t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
 
 
-def perlin_2d(sample_x, sample_y, period: int, seed: int = 0) -> np.ndarray:
+def perlin_2d(
+    sample_x, sample_y, period: int, seed: int = 0, period_y: int | None = None
+) -> np.ndarray:
     """Perlin noise at the sample points, periodic with `period` lattice cells.
 
     Sample coordinates are in lattice units: one unit is one gradient cell.
@@ -72,21 +74,28 @@ def perlin_2d(sample_x, sample_y, period: int, seed: int = 0) -> np.ndarray:
     value(x, y) == value(x, y + period) exactly, because every lattice index
     is taken modulo `period`. Zero at every lattice point; roughly in [-1, 1].
 
+    `period_y` is the period along Y, and it defaults to `period`. A
+    RECTANGULAR period makes the field's features long in one axis and
+    flat in the other - a wood's envelope is that, because the truth's
+    own wood has its figure horizontal.
+
     Args:
         sample_x: x coordinates in lattice units (any broadcastable shape).
         sample_y: y coordinates in lattice units, broadcastable with sample_x.
-        period: positive integer lattice period along both axes.
+        period: positive integer lattice period along X.
         seed: seed for the gradient table; the same seed gives the same field.
+        period_y: positive integer lattice period along Y; defaults to `period`.
 
     Returns:
         Noise values with the broadcast shape of sample_x and sample_y.
     """
     p = _check_period(period)
+    p_y = _check_period(period_y if period_y is not None else period)
     x, y = np.broadcast_arrays(
         np.asarray(sample_x, dtype=np.float64),
         np.asarray(sample_y, dtype=np.float64),
     )
-    angles = np.random.default_rng(seed).uniform(0.0, 2.0 * np.pi, size=(p, p))
+    angles = np.random.default_rng(seed).uniform(0.0, 2.0 * np.pi, size=(p_y, p))
     grads = np.stack((np.cos(angles), np.sin(angles)), axis=-1)
 
     x0 = np.floor(x).astype(np.int64)
@@ -96,7 +105,7 @@ def perlin_2d(sample_x, sample_y, period: int, seed: int = 0) -> np.ndarray:
 
     def corner(dx: int, dy: int) -> np.ndarray:
         """Dot product of the corner's gradient with the offset from that corner."""
-        g = grads[(y0 + dy) % p, (x0 + dx) % p]
+        g = grads[(y0 + dy) % p_y, (x0 + dx) % p]
         return g[..., 0] * (fx - dx) + g[..., 1] * (fy - dy)
 
     u = _quintic(fx)

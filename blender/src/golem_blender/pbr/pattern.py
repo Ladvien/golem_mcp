@@ -195,8 +195,19 @@ ENVELOPE_WEIGHT = 1.0
 # diagonally - the lattice's own geometry is square, so a mild
 # compression leaves the patches as squares with a diagonal long
 # axis - and the truth's fibre is along the board.
+#
+# It is a DIVISOR and not a multiplier, and it was read as a
+# multiplier: at two the streaks came out as short dashes, and every
+# value of it gave the identical picture, because the stretch was
+# applied to the lattice's PERIOD and not to the SAMPLE. The two
+# samples are in their own base lattice units, so the y sample has to
+# be scaled by the STRETCHED count.
+#
+# Measured on the truth's own woods: their high-frequency structure
+# is horizontal in every one of them - a down period of two to eight
+# pixels against an across period of four to a hundred and fifty-two.
 FIBRE_STRETCH = 0.0625
-FIBRE_OCTAVES = 3
+FIBRE_OCTAVES = 4
 FIBRE_PERSISTENCE = 0.5
 # The FIBRE's orientation and carrier, for the Gabor that draws it.
 #
@@ -277,9 +288,6 @@ FIBRE_CELLS_PER_RING = 1.0
 # features and its rings are two and a half, and the truth's own
 # Wood092 measures 37.9 and its rings are sixteen.
 GRAIN_CELLS_PER_FEATURE = 2.3
-FIBRE_STRETCH = 0.0625
-FIBRE_OCTAVES = 4
-FIBRE_FOLDS = 1
 # The percentile the line's steepness is measured against. The
 # steepness is normalised by a HIGH PERCENTILE and not by its
 # maximum: one pixel's slope can be ten times its neighbours', and
@@ -334,7 +342,29 @@ FIBRE_BAND = 0.22
 # A smooth value noise is soft waves, and a fibre is a line with a
 # crease in it. Material-maker's `fbm4` folds the noise the same
 # way, and the fold is what turns the wave into a line.
+#
+# And the line is the RIDGE's own CREST and not its slope: a fold's
+# crest is a LINE, a continuous stroke, and the slope is two lines,
+# one on each side of it - so the slope made the grain a field of
+# DOTS.
+#
+# How many times the noise is RIDGED, per octave.
+#
+# A smooth value noise is soft waves, and a fibre is a line with a
+# crease in it. Material-maker's `fbm4` folds the noise the same
+# way, and the fold is what turns the wave into a line.
+#
+# And the line is the RIDGE's own CREST and not its slope: a fold's
+# crest is a LINE, a continuous stroke, and the slope is two lines,
+# one on each side of it - so the slope made the grain a field of
+# DOTS.
 FIBRE_FOLDS = 1
+# The GRAIN's ENVELOPE's stretch: how much longer the envelope's
+# features are along the board than across it.
+#
+# The truth's own wood's figure is horizontal, and an isotropic
+# envelope gave the wood blobs where the truth has bands.
+GRAIN_ENVELOPE_STRETCH = 4.0
 # How many fibre lines the image carries across, per 1024 pixels.
 #
 # The truth's wood has its lines 7.4 pixels apart in a 1024 row, so
@@ -1921,10 +1951,26 @@ def grain_field(
     from golem_blender.pbr import noise_perlin
 
     envelope_lattice = max(2, cells)
+    # And the envelope's lattice is RECTANGULAR.
+    #
+    # The truth's own wood's figure is HORIZONTAL - its low-frequency
+    # structure runs along the board and not across it, and every one
+    # of the truth's own woods says the same - and the envelope was an
+    # isotropic Perlin, so the wood came out with blobs where the
+    # truth has bands.
+    #
+    # The y period is SMALLER than the x one, so the features are long
+    # along x and flat across y. And it has to be an INTEGER, because
+    # the wrap takes the lattice index modulo the period and a
+    # fractional period would not wrap at all.
+    envelope_period_y = max(
+        1, round(envelope_lattice / max(1.0, GRAIN_ENVELOPE_STRETCH))
+    )
     envelope_field = noise_perlin.perlin_2d(
         sample_x * envelope_lattice,
-        sample_y * envelope_lattice,
+        sample_y * envelope_period_y,
         period=envelope_lattice,
+        period_y=envelope_period_y,
         seed=3,
     )
     envelope_reach = max(1e-6, float(envelope_field.max() - envelope_field.min()))
