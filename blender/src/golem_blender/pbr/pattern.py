@@ -872,7 +872,17 @@ def fractal_stones(
     # own count, times a handful of pixels each.
     pebble_side = max(cells, round(cells * pebble_factor))
     coarse_side = max(4, min(resolution, max(512, pebble_side * STONE_PEBBLE_PIXELS)))
-    axis = (numpy.arange(coarse_side) + 0.5) / coarse_side
+    # The coarse grid covers the field's period AND ONE STEP MORE, so
+    # that its last entry is the field's own first entry repeated.
+    #
+    # It was `coarse_side` entries over the period, so the last entry
+    # was the field at one step BEFORE the wrap - and the bilinear
+    # then interpolated from there to the first entry, across the
+    # whole period. The wrap joined two unrelated places.
+    #
+    # So the grid's step is the field's period over `coarse_side - 1`
+    # steps, and its last entry lands exactly on the wrap.
+    axis = numpy.arange(coarse_side) / (coarse_side - 1)
     grid_x, grid_y = numpy.meshgrid(axis, axis, indexing="xy")
     # The JOINT is the PEBBLES' gaps, and the pebbles are the fine
     # lattice's cells - so the joint's distance comes from the fine
@@ -1037,14 +1047,16 @@ def fractal_stones(
     # Measured: the rock's distance field had a seam of 0.032 and
     # the rock's seam read 2.54x the truth's.
     # The upsample's index into the coarse field, and the coarse
-    # field's entry `i` was sampled at the domain `(i + 0.5) /
-    # coarse_side` - so the fine pixel `j` reads the coarse field at
-    # the index `j * coarse_side / resolution - 0.5`.
+    # field's entry `i` was sampled at the domain `i / (coarse_side
+    # - 1)` - so the fine pixel `j` reads the coarse field at the
+    # index `j * (coarse_side - 1) / resolution`.
     #
-    # The half cell matters: without it every sample is half a cell
-    # off and the wrap joins two places the field had never been.
+    # The coarse grid covers the field's period and one step more,
+    # and its last entry is the field's own first entry - so the
+    # bilinear's wrap reads the right pair and the field's seam is
+    # exactly zero.
     coarse_axis = (
-        numpy.arange(resolution, dtype=numpy.float64) * coarse_side / resolution - 0.5
+        numpy.arange(resolution, dtype=numpy.float64) * coarse_side / resolution
     )
     rows = coarse_axis
     columns = coarse_axis
