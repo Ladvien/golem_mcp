@@ -860,6 +860,48 @@ METAL_COATING_WORDS = frozenset(
 METAL_SCRATCH_WORDS = frozenset({"scratch", "scratches", "scratched", "abrasion"})
 METAL_SCRATCH_DARKENING = 0.8
 
+# The words that name the WEATHERING on a metal's sheet - the rust
+# and the grime - and not the sheet's own colour.
+#
+# They are PATCHES on the metal and not its colour, and the truth's
+# own aged plate says so: a steel plate described as "aged, black,
+# brown, dark, fine, glossy, industrial, metal, oxidized, polished,
+# rust, rusty, smooth, steel" measures a luma of 0.429, and the mean
+# of its own "steel" and its own "black" would be 0.343.
+#
+# So the weathering words are left out of the mean, and the sheet's
+# own colour decides.
+METAL_WEATHERING_WORDS = frozenset(
+    {
+        "rust",
+        "rusty",
+        "rusted",
+        "oxidized",
+        "oxidised",
+        "aged",
+        "weathered",
+        "dirty",
+        "grime",
+        "grimy",
+        "tarnished",
+        "corroded",
+        "worn",
+    }
+)
+
+# The colour words that name a weathering's own darkness, and not the
+# sheet's colour.
+METAL_WEATHERING_COLOURS = frozenset({"black", "brown"})
+
+# How much darker a coated metal is than the bare surface under it.
+#
+# The truth's own two powder-coated steels measure 0.179 and 0.129 -
+# a mean of 0.154 - against the bare black metal's 0.246 and the
+# general black extreme's 0.211. A powder coat is a matte paint and
+# a paint is a flat dielectric surface, and a dielectric black is
+# darker than a reflective one.
+METAL_COAT_DARKENING = 0.73
+
 METAL_COLOURS: dict[str, float] = {
     "black": 0.2463,
     "gold": 0.8916,
@@ -1404,7 +1446,12 @@ def value_for_description(description: str) -> float:
                 EXTREME_VALUES[word] for word in EXTREME_LIGHT_WORDS if word in words
             ]
             if extreme:
-                return min(extreme)
+                # And a COAT is DARKER than the bare surface it
+                # covers: a powder coat is a matte paint and a paint
+                # is a flat dielectric, and the truth's own two
+                # powder-coated steels measure 0.179 and 0.129
+                # against the bare black metal's 0.246.
+                return min(extreme) * METAL_COAT_DARKENING
             tone = METAL_COLOUR_TIERS[1]
             for word in tone:
                 if word in words:
@@ -1422,7 +1469,26 @@ def value_for_description(description: str) -> float:
         # Measured over the truth's own twenty metals: the mean
         # relative error is 0.076 against the tier's first-match,
         # and the worst is 0.39 against 0.53.
-        named = [METAL_COLOURS[word] for word in words if word in METAL_COLOURS]
+        # And a weathered metal's DARK colour words are the
+        # weathering's own - a rusted plate's "black" is the rust.
+        #
+        # The truth's own aged plate is "aged, black, brown, dark,
+        # fine, glossy, industrial, metal, oxidized, polished, rust,
+        # rusty, smooth, steel" at a luma of 0.429, and the mean of
+        # its "steel" and its "black" would be 0.343 - so the
+        # weathering's own dark words are left out with it.
+        weathering = bool(words & METAL_WEATHERING_WORDS)
+        named = [
+            METAL_COLOURS[word]
+            for word in words
+            if word in METAL_COLOURS
+            and not weathering
+            or (
+                word in METAL_COLOURS
+                and word not in METAL_WEATHERING_COLOURS
+                and weathering
+            )
+        ]
         if named:
             value = sum(named) / len(named)
             # And a SCRATCHED sheet is DARKER: the scratches catch

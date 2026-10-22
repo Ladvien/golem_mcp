@@ -151,14 +151,41 @@ def test_a_coated_metal_wears_the_coat_not_the_metal():
 
     So a coated metal reads its TONE, and the coat is read as a flat
     painted SURFACE - by the extreme words - and not as a metal.
+
+    And a coat is DARKER than the bare surface it covers: a powder
+    coat is a matte paint and a paint is a flat dielectric, and a
+    dielectric black is darker than a reflective one. The truth's own
+    two coated steels average 0.154, and that is the value.
     """
     from golem_blender.pbr.palette import value_for_description
 
     coated = "black, covered, metal, painted, powder, steel"
-    assert value_for_description(coated) == pytest.approx(0.211, abs=0.01)
+    assert value_for_description(coated) == pytest.approx(0.154, abs=0.01)
     # And the UNCOATED black metal is a different thing entirely.
     assert value_for_description("black, dark, dirty, metal") == pytest.approx(
         0.2463, abs=0.01
+    )
+
+
+def test_a_metal_measures_the_mean_of_the_colours_it_names():
+    """A metal names SEVERAL of its own colours, and they are MEANED.
+
+    The truth's own Metal009, Metal011 and Metal007 are all "silver,
+    steel", and they measure 0.582, 0.627 and 0.611. The colour tier
+    read "steel" first, which is 0.439 - a third of the truth's.
+
+    So the metal's value is the mean of the colour words it names,
+    and a SCRATCHED sheet is darker: the truth's own Metal038 - a
+    "metal, scratched, steel" at 0.381 - is darker than its own
+    "steel" of 0.439.
+    """
+    from golem_blender.pbr.palette import value_for_description
+
+    silver_steel = "brushed, bumpy, metal, scratches, silver, steel"
+    assert value_for_description(silver_steel) == pytest.approx(0.569, abs=0.01)
+    # And the SAME words without the scratches are brighter.
+    assert value_for_description("metal, silver, steel") == pytest.approx(
+        0.711, abs=0.01
     )
 
 
