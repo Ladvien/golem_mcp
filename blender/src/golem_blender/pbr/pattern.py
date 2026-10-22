@@ -105,6 +105,10 @@ SURFACE_PATCHES_PER_CELL = 12
 # nothing there at all, because the sheet's fine texture was
 # computed and thrown away.
 FLAT_TOOTH_LATTICE_FACTOR = 32
+# How many octaves a flat sheet's two layers carry. One octave of a
+# value noise shows its own lattice as soft squares.
+FLAT_SHEET_OCTAVES = 4
+FLAT_TOOTH_OCTAVES = 3
 # How much of the STONE's colour variation is the surface's mottle,
 # against the cell's own colour.
 #
@@ -2219,11 +2223,19 @@ def flat_field(
     # A plaster is a smooth sheet with a tooth on it, and the tooth
     # is the fine layer and not the envelope.
     lattice = max(2, cells)
+    # Both layers are an fBm of SEVERAL octaves, and not one.
+    #
+    # One octave of a value noise is a set of soft squares on the
+    # lattice - the noise interpolates between random values at the
+    # lattice's corners - and the close sheet showed the concretes as
+    # a CHECKER: thirteen soft squares across Concrete030 and a pixel
+    # mosaic in Concrete042A's crop. The finer octaves fall between
+    # the coarse one's corners, and the lattice stops showing.
     sheet = noise.fbm_2d_value(
         sample_x * lattice,
         sample_y * lattice,
         size=lattice,
-        octaves=1,
+        octaves=FLAT_SHEET_OCTAVES,
         seed=4,
     )
 
@@ -2261,10 +2273,11 @@ def flat_field(
         fine_lattice //= 2
     while fine_lattice > 1 and fine_lattice * 4 > resolution:
         fine_lattice //= 2
-    fine = noise.value_noise_2d(
+    fine = noise.fbm_2d_value(
         sample_x * fine_lattice,
         sample_y * fine_lattice,
         size=fine_lattice,
+        octaves=FLAT_TOOTH_OCTAVES,
         seed=11,
     )
     reach = max(1e-6, float(fine.max() - fine.min()))
