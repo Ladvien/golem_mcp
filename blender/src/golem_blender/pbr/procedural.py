@@ -82,6 +82,15 @@ DEFAULT_PROCEDURAL_SCALE = 5.0
 MAXIMUM_PATTERN_RESOLUTION = 1024
 # The mortar's colour, and how wide it is.
 DEFAULT_MORTAR_RGB = (0.38, 0.36, 0.33)
+# A ROAD MARKING's own colour, and it is not the road's: the truth's
+# own Road007 is a pale white line and Road008A a yellow one.
+DEFAULT_PAINT_RGB = (0.80, 0.80, 0.78)
+# A ROAD MARKING's own spread, and it is NOT the road's.
+#
+# Measured on the truth's own Road007: the map's spread is 0.071
+# where the road's own texture carries 0.0301 - so the painted line
+# IS the surface's variation and the asphalt is the quiet part.
+MARKINGS_SPREAD = 0.071
 # How wide the JOINT is, as a fraction of the distance to the nearest
 # edge.
 #
@@ -174,6 +183,7 @@ PROCEDURAL_COLOUR_KINDS = (
     "carpet",
     "leather",
     "wallpaper",
+    "markings",
 )
 # How wide a LINE is, as a fraction of the distance to the nearest
 # line. A grain's rings and a metal's grain are soft, and the truth's
@@ -308,6 +318,7 @@ def write_procedural_base_color(
     stone_dark_rgb: tuple[float, float, float] = DEFAULT_STONE_DARK_RGB,
     stone_light_rgb: tuple[float, float, float] = DEFAULT_STONE_LIGHT_RGB,
     mortar_rgb: tuple[float, float, float] = DEFAULT_MORTAR_RGB,
+    paint_rgb: tuple[float, float, float] | None = None,
     mortar_width: float = DEFAULT_MORTAR_WIDTH,
     variation: float = DEFAULT_VARIATION,
     line_width: float = DEFAULT_LINE_WIDTH,
@@ -427,6 +438,14 @@ def write_procedural_base_color(
             resolution,
             cells,
             aspect=brick_aspect if brick_aspect is not None else pattern.PARQUET_ASPECT,
+        )
+    elif kind == "markings":
+        # A ROAD MARKING is painted GEOMETRY on a surface, and the
+        # surface's own texture goes on underneath it.
+        cell, edge, grid, fibre = pattern.markings_field(
+            resolution,
+            cells,
+            lines_per_cell=lines_per_cell,
         )
     elif kind == "carpet":
         cell, edge, grid, fibre = pattern.carpet_field(
@@ -592,6 +611,17 @@ def write_procedural_base_color(
         median_edge = float(numpy.median(edge))
         reach = median_edge if median_edge > 0 else 1.0
         joint = numpy.clip(edge / reach, 0.0, 1.0)
+    elif kind == "markings":
+        # The MARKINGS are their own mask and not a joint: the paint
+        # is a stripe of a colour and it is either there or it is
+        # not, and there is no falloff at its edge.
+        #
+        # The joint's normalisation divides the field by its
+        # maximum, and the markings' field is one on the road and
+        # zero on the paint - so the normalisation would have made
+        # every road pixel a full joint and every painted pixel
+        # nothing, and the road would have been all paint.
+        joint = numpy.clip(edge, 0.0, 1.0)
     else:
         joint = numpy.clip(edge / max(1e-6, float(edge.max())), 0.0, 1.0)
     # The joint is where the distance to the edge is SMALL.
@@ -633,7 +663,17 @@ def write_procedural_base_color(
         # gradient, and the soft falloff made the ground a field of
         # glowing blobs.
         joint = numpy.where(joint > SCATTER_JOINT_EDGE, joint, 1.0)
-    joint = numpy.clip(1.0 - joint / max(width, 1e-6), 0.0, 1.0)
+    if kind != "markings":
+        # The joint's FALLOFF, and the MARKINGS' mask is not one.
+        #
+        # The falloff turns a distance into a joint - one at the
+        # edge and zero at the distance's width - and the markings'
+        # field is a MASK and not a distance: one on the road and
+        # zero on the paint.
+        #
+        # So the falloff inverted the markings, and the road came
+        # out white with the paint dark.
+        joint = numpy.clip(1.0 - joint / max(width, 1e-6), 0.0, 1.0)
 
     # The stones' colours, from each cell's own random value.
     #
@@ -884,6 +924,42 @@ def write_procedural_base_color(
         image_luma = (colour * weights).sum(axis=2)
         image_hue = colour / _np.maximum(image_luma[:, :, _np.newaxis], 1e-6)
         colour = _np.clip(colour + image_hue * drift[:, :, _np.newaxis], 0.0, 1.0)
+    elif kind == "markings":
+        # A ROAD MARKING is painted GEOMETRY, and it is drawn OVER
+        # the road - in the paint's own colour, which is not the
+        # road's.
+        #
+        # The lane had no kind for a road with markings on it, and
+        # the wide set has four: they came out as a field of asphalt
+        # with the lines missing.
+        #
+        # So the markings are drawn over the road's own colour, and
+        # the road keeps its texture underneath.
+        # The ROAD's own colour is the palette's BASE and not a
+        # cell's hash: a road is one surface and the markings are on
+        # it, so there are no cells to hash. The road's own texture
+        # is the markings' slow field.
+        base = numpy.array(stone_dark_rgb, dtype=numpy.float32).reshape(1, 1, 3)
+        road = fibre if fibre is not None else numpy.zeros_like(colour[:, :, 0])
+        road_reach = max(1e-6, float(road.max() - road.min()))
+        road = (road - float(road.min())) / road_reach
+        # The road's own TEXTURE, and it is the road's spread: the
+        # truth's own asphalt carries 0.0301 and the painted line is
+        # the rest of the map's contrast.
+        texture = (road - 0.5) * (target_spread or 0.03)
+        colour = base + texture[:, :, numpy.newaxis]
+        paint = numpy.array(
+            paint_rgb if paint_rgb is not None else DEFAULT_PAINT_RGB,
+            dtype=numpy.float32,
+        ).reshape(1, 1, 3)
+        # The markings' own field is a DARKNESS - one on a stripe and
+        # zero on the road - and the writer's joint is the road's own
+        # distance to its edge, so the paint is drawn with the
+        # markings' own mask.
+        # The joint is already a column of three, so the paint's mask
+        # is one minus it and the road is under it.
+        marked = 1.0 - joint
+        colour = colour * (1.0 - marked) + paint * marked
     else:
         colour = colour * (1.0 - joint) + mortar * joint
     colour = numpy.clip(colour, 0.0, 1.0)
@@ -891,7 +967,26 @@ def write_procedural_base_color(
     # description's - a pattern's contrast depends on its SHAPE and
     # not only on its numbers, and only measuring says how much of
     # the spread this one carries.
-    colour = _scale_to_spread(colour, target_spread)
+    if kind == "markings":
+        # The MARKINGS' contrast is NOT the surface's spread, and the
+        # image is not scaled to it.
+        #
+        # A painted line is a hard edge and it is a BIG contrast: the
+        # truth's own Road007 is a white line on a luma of 0.309 and
+        # its spread is 0.071 - and the road's own spread is 0.0301.
+        #
+        # The image was scaled to that spread, and the scaling is
+        # about the image's own mean - so the road, which was dark,
+        # was lifted to white and the paint came out grey. The
+        # scaling moves the variation and the MEAN with it, and here
+        # the mean IS the picture.
+        #
+        # So the road's own texture is scaled to the road's spread
+        # and the paint keeps its own colour, and the map's contrast
+        # is the paint's.
+        pass
+    else:
+        colour = _scale_to_spread(colour, target_spread)
     # And the image's MEAN is the description's own VALUE.
     #
     # The spread is scaled about the image's mean and the mean is
@@ -906,7 +1001,7 @@ def write_procedural_base_color(
     #
     # So the image is shifted to the description's value, along its
     # own hue so the shift does not change the colour.
-    if target_value is not None:
+    if target_value is not None and kind != "markings":
         colour = _shift_to_value(colour, target_value)
 
     # The image is written at the resolution the pattern was computed

@@ -102,6 +102,10 @@ _COURSE_PATTERNS = (
     ("wall paper", "wallpaper"),
     ("printed", "wallpaper"),
     ("patterned", "wallpaper"),
+    ("markings", "markings"),
+    ("lane", "markings"),
+    ("dashed", "markings"),
+    ("striped", "markings"),
 )
 
 _MATERIAL_PATTERNS = (

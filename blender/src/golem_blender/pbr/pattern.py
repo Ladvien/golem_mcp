@@ -335,6 +335,25 @@ PARQUET_BLOCKS_ACROSS = 10
 # not a swirl. Measured, the floor came out as a field of blobs.
 PARQUET_GRAIN_LATTICE = 64
 PARQUET_GRAIN_OCTAVES = 2
+# The ROAD MARKINGS' own lattice; the width of the paint; and the
+# dash's own pattern.
+#
+# Measured on the truth's own roads: a road carries THREE markings
+# across - two solid edge lines and a dashed centre line - and they
+# are nine to fourteen pixels wide in a thousand and twenty-four, so
+# the paint is about a fiftieth of the surface.
+#
+# The lattice is the number of markings' PLACES across the surface,
+# and the stripes sit at a third of them: a road has three markings
+# and they are not side by side, they are spread across the road.
+#
+# The dash is HALF the pitch: the truth's own Road008A's centre line
+# runs ninety pixels on and a hundred off, so the dash is half of
+# the pitch and not a third of it.
+MARKINGS_PLACES = 3
+MARKINGS_WIDTH = 0.05
+MARKINGS_DASHES = 1.0
+MARKINGS_SEED = 21
 # A CARPET's pile, as a multiple of the surface's own feature count.
 #
 # The truth's own carpet is almost flat - a spread of 0.029 over
@@ -1892,6 +1911,116 @@ def parquet_field(
     grain = _bilinear(coarse, grid_row, grid_column)
     fibre = numpy.abs(grain - 0.5) * 2.0
     return cell, edge, (across, courses), fibre
+
+
+def markings_field(
+    resolution: int,
+    cells: int,
+    octaves=DEFAULT_LINE_OCTAVES,
+    lines_per_cell: int = 1,
+):
+    """ROAD MARKINGS: painted stripes on a surface.
+
+    A lane marking is GEOMETRY and not noise: a painted line is a
+    straight stripe of a colour that is nothing like the surface's,
+    and the surface's own texture goes on underneath it.
+
+    The wide set has three kinds of road in it and the lane had none
+    of them: a road with a dashed centre line, a road with a solid
+    edge line, and a road with yellow markings.
+
+    Measured on the truth's own: the dashed centre line of Road007
+    is five pixels wide in a thousand and twenty-four and its dashes
+    run every fifty-odd pixels, and the solid edge line is five
+    pixels wide too.
+
+    So the markings are a set of VERTICAL STRIPES at a pitch, and
+    each stripe is either solid or dashed - and the pitch is the
+    stripe's own, so the map tiles.
+
+    The field is the markings' own DARKNESS: one on a stripe and
+    zero on the road, and the writer draws it over the road.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
+
+    # The markings' own lattice, and it is a POWER OF TWO that
+    # divides the resolution, so the stripes land on whole pixels
+    # and the wrap joins two whole stripes.
+    #
+    # The lattice is the number of the road's PLACES and the
+    # stripes sit at ONE of them - the truth's own road has three
+    # markings across it and they are spread out, and a lattice of
+    # two put them a quarter and three quarters of the way across.
+    lattice = _power_of_two_at_least(max(2, MARKINGS_PLACES))
+    while lattice > 1 and resolution % lattice != 0:
+        lattice //= 2
+    while lattice > 1 and lattice * 4 > resolution:
+        lattice //= 2
+
+    # The stripe's own place in the lattice, and the stripe's WIDTH
+    # as a fraction of the lattice's cell.
+    column = numpy.floor(sample_x * lattice)
+    within = sample_x * lattice - column
+
+    # A SOLID stripe or a DASHED one, and the choice is the stripe's
+    # own hash: the truth's own road has a solid edge line and a
+    # dashed centre line side by side.
+    generator = numpy.random.default_rng(MARKINGS_SEED)
+    solid = generator.random(lattice) > 0.5
+    # The dash's own phase, so the dashes of two neighbouring stripes
+    # are not in step - and it is the STRIPE's own phase, taken at
+    # the stripe's own column.
+    phase = generator.random(lattice)
+
+    # The dash's own pattern, and it is measured in the lattice's own
+    # rows: the dash is HALF the pitch, and the truth's own centre
+    # line runs ninety pixels on and a hundred off.
+    dash_rows = numpy.floor(sample_y * lattice * MARKINGS_DASHES)
+    stripe_column = numpy.mod(column, lattice).astype(numpy.int64)
+    dashed = numpy.where(
+        solid[stripe_column],
+        True,
+        numpy.mod(dash_rows + phase[stripe_column], 2.0) < 1.0,
+    )
+
+    # The stripe's own mask: a band at the CELL'S CENTRE, and the
+    # band's width is the width of the paint.
+    #
+    # The paint's WIDTH is a fraction of the CELL and not of the
+    # surface: a stripe thirteen pixels wide in a thousand and
+    # twenty-four is a fiftieth of a quarter of the surface.
+    #
+    # It was a fraction of the surface, so the stripe was under a
+    # pixel wide and the road came out with no markings on it at
+    # all.
+    centre = numpy.full_like(within, 0.5)
+    distance = numpy.abs(within - centre)
+    painted = (distance < MARKINGS_WIDTH * 0.5) & dashed
+
+    # The road's own SURFACE, and it is the surface's slow
+    # variation: a road is a sheet and its markings are on it.
+    road = noise.fbm_2d_value(
+        sample_x * lattice,
+        sample_y * lattice,
+        size=lattice,
+        octaves=1,
+        seed=4,
+    )
+    road_reach = max(1e-6, float(road.max() - road.min()))
+    road = (road - float(road.min())) / road_reach
+
+    edge = 1.0 - painted.astype(numpy.float64)
+    return (
+        numpy.zeros((resolution, resolution), dtype=numpy.int32),
+        edge,
+        (lattice, lattice),
+        road,
+    )
 
 
 def carpet_field(
