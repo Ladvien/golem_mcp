@@ -133,19 +133,11 @@ SCATTER_MATRIX_WIDTH = 2.0
 # truth's fifty-three when the drift was on the stone's own tone,
 # and the drift's own share is what moved it.
 SCATTER_DRIFT_SHARE = 0.55
-# How much a STONE's hue varies from the surface's own, as a
-# fraction of the hue's spread.
+# How much a STONE's hue varies from the surface's own.
 #
-# Measured on the truth's own gravel: the stones' red share runs
-# from 0.351 to 0.393 and their blue share from 0.296 to 0.334, so
-# the variation is about a twentieth of the hue itself.
-#
-# The stone's own hue offset is a UNIFORM value in minus one to one,
-# so its standard deviation is a third of the range - and the
-# measured spread of the stones' red share came out at 0.0066
-# against the truth's 0.0153. So the fraction is a tenth and not a
-# fiftieth.
-SCATTER_HUE_VARIATION = 0.10
+# The DEFAULT is in the palette - `hue_variation_for_description` -
+# because a leaf mat is a patchwork of many colours and a gravel is
+# a family, and the description says which.
 # How much of the surface's spread a PARQUET's block grain carries.
 #
 # A parquet is a wood floor, and a wood's fibre is most of its
@@ -324,6 +316,7 @@ def write_procedural_base_color(
     stone_light_rgb: tuple[float, float, float] = DEFAULT_STONE_LIGHT_RGB,
     mortar_rgb: tuple[float, float, float] = DEFAULT_MORTAR_RGB,
     paint_rgb: tuple[float, float, float] | None = None,
+    hue_variation: float | None = None,
     mortar_width: float = DEFAULT_MORTAR_WIDTH,
     variation: float = DEFAULT_VARIATION,
     line_width: float = DEFAULT_LINE_WIDTH,
@@ -913,11 +906,25 @@ def write_procedural_base_color(
             # Measured, the truth's stones' red share varies by
             # 0.0153 and their blue by 0.0186 and their green by
             # 0.0060 - so the green is a third of the red.
+            # The hue's own variation, and it is a fraction of the
+            # surface's SPREAD: a surface whose colour varies a lot
+            # has stones that vary a lot in hue too.
+            #
+            # The truth's own gravel carries stones whose red share
+            # varies by 0.0153 and its spread is 0.124, and the
+            # truth's fallen leaves vary by 0.0223 and their spread
+            # is 0.0812. So the leaves vary MORE in hue on a
+            # SMALLER spread - a mat of many colours and not one
+            # colour in many shades.
+            #
+            # So the hue's variation is its own number and the
+            # spread does not decide it.
+            variation = hue_variation if hue_variation is not None else 0.10
             offsets = numpy.stack(
                 (
-                    stone_hue * SCATTER_HUE_VARIATION,
-                    -stone_hue * 0.4 * SCATTER_HUE_VARIATION,
-                    -stone_hue * 1.2 * SCATTER_HUE_VARIATION,
+                    stone_hue * variation,
+                    -stone_hue * 0.4 * variation,
+                    -stone_hue * 1.2 * variation,
                 ),
                 axis=2,
             )

@@ -757,6 +757,43 @@ SPREAD_TIERS = (
 )
 
 
+# The HUE's own variation, and it is a MATERIAL's word.
+#
+# A field of stones is not one colour: the truth's own gravel carries
+# stones whose red share varies by 0.0153, and its fallen leaves
+# vary by 0.0223 - a mat of MANY colours and not one colour in many
+# shades.
+#
+# So the variation is the material's word: a leaf mat is a patchwork
+# and a gravel is a family.
+# The DEFAULT hue's variation, and it is the gravel's own.
+#
+# Measured on the truth's own gravel: the stones' red share runs
+# from 0.351 to 0.393, so the variation is a fiftieth of the hue.
+SCATTER_HUE_VARIATION = 0.10
+HUE_VARIATION_TIERS = (("leaves", "fallen", "autumn", "foliage"),)
+
+
+def hue_variation_for_description(description: str) -> float:
+    """How much a stone's HUE varies from the surface's own.
+
+    The default is the gravel's own - 0.0153 in the red share - and a
+    material that is a PATCHWORK of colours varies more.
+
+    And only a LEAF MAT is a patchwork: a "forest" is where the
+    leaves are and not a mat of them, and the truth's own Ground106
+    says "forest" and carries stones whose red share varies by
+    0.0119 - LESS than the gravel's - against the fallen leaves'
+    0.0223.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    for tier in HUE_VARIATION_TIERS:
+        for word in tier:
+            if word in words:
+                return SCATTER_HUE_VARIATION * 1.5
+    return SCATTER_HUE_VARIATION
+
+
 def _paint_colour(description: str) -> tuple[float, float, float]:
     """The colour a ROAD MARKING is painted in.
 
@@ -1134,6 +1171,8 @@ def palette_for_description(
         # truth's own Road007 is a pale line on a luma of 0.309 and
         # Road008A is a yellow one.
         "paint_rgb": _paint_colour(description),
+        # And how much a STONE's hue varies from the surface's own.
+        "hue_variation": hue_variation_for_description(description),
         "target_spread": spread,
         "target_value": value,
         "pebble_factor": pebble_factor_for_description(description),
