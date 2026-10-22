@@ -16,7 +16,7 @@ ground, rock, fabric, concrete, plaster, gravel, sand, asphalt,
 leather, carpet, roof, wallpaper - eight of each kind, the popular
 list's order breaking the ties.
 
-## What the lane picks
+## What the lane had, and what it guesses
 
 | the lane's pattern | the materials |
 |---|---|
@@ -27,12 +27,12 @@ list's order breaking the ties.
 | `metal` | 8 |
 | `flat` | 4 |
 
-Twenty-four of the seventy go to `voronoi`, and `voronoi` is the
+Twenty-four of the seventy went to `voronoi`, and `voronoi` is the
 **guess** - what a surface that matches nothing is assumed to be.
 
-## What it guesses wrong
+## What it guessed wrong
 
-The wide set has kinds the lane has **no pattern for**:
+The wide set has kinds the lane had **no pattern for**:
 
 - **leather** - a pebbled hide; the truth's cells are a fine, even
   grain and not stones.
@@ -47,6 +47,8 @@ The wide set has kinds the lane has **no pattern for**:
   dense mat of overlapping shapes.
 - **road markings** - a painted line on a surface; the truth's is
   geometry and not noise at all.
+- **a woven cloth** - a crosshatch of two thread fields; the truth's
+  is hundreds of features across.
 
 And a *wood* floor is a wood floor, and the lane's `grain` is a
 plank's grain and not a parquet's blocks.
@@ -61,19 +63,24 @@ plank's grain and not a parquet's blocks.
   direction and not a set of cells.
 - the woods are `grain`, and the truth's is a board's fibre.
 
+## The kinds that are now there
+
+| the kind | what it is | what the truth's measures |
+|---|---|---|
+| `parquet` | long staggered blocks, each with its own tone and its own grain | a row-to-column change ratio of 0.24 - the most horizontal surface in the sample |
+| `carpet` | a fine isotropic fuzz with a slight direction | a period of nine pixels in a thousand and twenty-four, a ratio of 1.20, a spread of 0.0301 |
+| `leather` | a fine even pebbled hide | the loose ground's primitive at a much finer scale and a much tighter packing |
+| `wallpaper` | a flat sheet with a printed design on it | the flat sheet with the tile's structure on it |
+| `markings` | painted geometry over a surface | three markings across a road, nine to fourteen pixels wide, the dash half the pitch |
+| `woven` | a crosshatch of two thread fields | Fabric030: four hundred and twelve features across and forty-four down |
+
 ## The next kinds to add
 
 In the order the wide set says they are worth having:
 
-1. **leather** - a fine even pebbled grain, at a much finer scale
-   than a gravel's.
-2. **carpet** - a directional pile, which is the wood's fibre with
-   a different direction and a much softer line.
-3. **parquet** - blocks in a pattern, which is the brick's courses
-   with a wood's tone.
-4. **wallpaper** - a flat sheet with a printed design, which is the
-   `flat` kind with a pattern on it.
-
-The first two are the same primitive at two scales, and the third is
-the brick's primitive with a different palette. None of them needs a
-new field.
+1. **roof** - courses of shingles, which are the brick's courses with
+   a per-shingle tone.
+2. **a rough cloth** - a fabric whose threads are coarse and whose
+   weave is irregular.
+3. **a printed cloth** - a fabric with a printed design on it, which
+   is the wallpaper's structure on a fabric's palette.

@@ -375,6 +375,16 @@ WOVEN_OCTAVES = 3
 # and it is HELD across the octaves so the cloth's broad bands do
 # not come back.
 WOVEN_COARSE_PERIOD = 8
+# A ROOF's shingle is about as wide as it is tall, and its courses
+# and its shingles are at the same scale.
+#
+# Measured on the truth's own RoofingTiles013A: the courses come every
+# a hundred and seventy-seven pixels and the shingles every a hundred
+# and eighty-five.
+ROOF_ASPECT = 1.0
+# A HERRINGBONE floor's own aspect, and a board is as wide as it is
+# long.
+HERRINGBONE_ASPECT = 1.0
 # A CARPET's pile, as a multiple of the surface's own feature count.
 #
 # The truth's own carpet is almost flat - a spread of 0.029 over
@@ -1932,6 +1942,122 @@ def parquet_field(
     grain = _bilinear(coarse, grid_row, grid_column)
     fibre = numpy.abs(grain - 0.5) * 2.0
     return cell, edge, (across, courses), fibre
+
+
+def herringbone_field(
+    resolution: int,
+    cells: int,
+    aspect: float = HERRINGBONE_ASPECT,
+):
+    """A HERRINGBONE floor: boards laid in a basketweave.
+
+    The truth's own parquet - WoodFloor070 - is a basketweave and
+    not a staggered course, and the measure reads it as ten features
+    across and eleven down with a row-to-column change ratio of
+    1.00.
+
+    A herringbone is a set of BOARDS at ninety degrees to each other,
+    in PAIRS: two boards make an L, and the Ls tile the floor.
+
+    So the floor is divided into SQUARES - an L's own square - and
+    each square holds one board across and one down. The board's own
+    direction alternates with the square's, and that is the whole of
+    the pattern.
+    """
+    import numpy
+
+    # The L's own squares, and the count is a power of two so the
+    # floor's wrap joins two whole squares.
+    squares = _power_of_two_nearest(cells)
+    while squares > 1 and resolution % squares != 0:
+        squares //= 2
+
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
+
+    # The square's own coordinates.
+    square_x = numpy.floor(sample_x * squares)
+    square_y = numpy.floor(sample_y * squares)
+    within_x = sample_x * squares - square_x
+    within_y = sample_y * squares - square_y
+
+    # The square's own PARITY, and it decides which way the boards
+    # run: an even square is one way and an odd square the other.
+    parity = numpy.mod(square_x + square_y, 2.0)
+
+    # A board is a band: it runs the length of the square, and its
+    # width is the square's own.
+    across = numpy.where(parity > 0.5, within_y, within_x)
+    # The board's own edge: the joint is at the square's border, and
+    # the board's own width is the square's half.
+    distance = numpy.minimum(across, 1.0 - across)
+    edge = numpy.clip(distance * squares, 0.0, 1.0)
+
+    # The cell is a LINEAR index, and it is the BOARD's own and not
+    # the square's: two boards in one square are two boards.
+    cell = (
+        square_y.astype(numpy.int32) * squares * 2
+        + square_x.astype(numpy.int32) * 2
+        + numpy.where(parity > 0.5, 1, 0).astype(numpy.int32)
+    ).astype(numpy.int32)
+    return cell, edge, (squares * 2, squares), None
+
+
+def roof_field(
+    resolution: int,
+    cells: int,
+    aspect: float = ROOF_ASPECT,
+):
+    """A ROOF: courses of overlapping shingles.
+
+    A roof is the BRICK's primitive with a square shingle and a
+    per-shingle tone - and the shingles OVERLAP, so each course
+    covers the one below it.
+
+    Measured on the truth's own: RoofingTiles013A's courses come
+    every a hundred and seventy-seven pixels and its shingles every a
+    hundred and eighty-five, so a shingle is about as wide as it is
+    tall and the courses and the shingles are at the same scale.
+
+    And a shingle's tone is its OWN: a roof is a patchwork of
+    weathered tiles and the patchwork is what the eye reads.
+    """
+    import numpy
+
+    # The courses, and the count is a power of two so the roof's own
+    # wrap joins two whole courses.
+    courses = _power_of_two_nearest(cells)
+    while courses > 1 and resolution % courses != 0:
+        courses //= 2
+    across = max(1, round(courses * aspect))
+    while across > 1 and resolution % across != 0:
+        across //= 2
+
+    samples = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
+
+    # The shingle's own place, and the courses are offset by HALF a
+    # shingle - the same offset a brick wall has.
+    row = numpy.floor(sample_y * courses)
+    offset = numpy.mod(row, 2.0) * 0.5
+    column = numpy.floor((sample_x + offset / across) * across)
+
+    # The cell is a LINEAR index, and that is the encoding the
+    # colour's hash decodes.
+    cell = (row.astype(numpy.int32) * across + column.astype(numpy.int32)).astype(
+        numpy.int32
+    )
+
+    # The JOINT is the line between the shingles, and it is a THIN
+    # line and not a mortar trench: a shingle lies on the one below
+    # and the line between them is a shadow.
+    within_x = (sample_x + offset / across) * across - column
+    within_y = sample_y * courses - row
+    distance = numpy.minimum(
+        numpy.minimum(within_x, 1.0 - within_x), numpy.minimum(within_y, 1.0 - within_y)
+    )
+    edge = numpy.clip(distance * min(across, courses), 0.0, 1.0)
+    return cell, edge, (across, courses), None
 
 
 def woven_field(

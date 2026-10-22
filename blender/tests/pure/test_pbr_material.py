@@ -126,6 +126,10 @@ def test_a_metal_s_colour_comes_from_the_sheet_not_the_rust():
 
     Measured, the steel plate reads a luma of 0.429 - a mid grey-blue
     - and the words "black" and "brown" would have said 0.06.
+
+    The steel's own value is the mean over the materials that name
+    it - the aged plate at 0.429 and the corrugated one at 0.508 - so
+    it is 0.4686 and not the single plate's own.
     """
     from golem_blender.pbr.palette import value_for_description
 
@@ -133,7 +137,7 @@ def test_a_metal_s_colour_comes_from_the_sheet_not_the_rust():
         "aged, black, brown, dark, fine, glossy, industrial, metal, "
         "oxidized, polished, rust, rusty, smooth, steel"
     )
-    assert value_for_description(description) == pytest.approx(0.43, abs=0.02)
+    assert value_for_description(description) == pytest.approx(0.4686, abs=0.02)
 
 
 def test_a_clean_silver_metal_is_bright():
@@ -191,17 +195,17 @@ def test_the_value_follows_the_material_s_kind():
     assert value_for_description("blue, fabric, fur, microfiber, soft") == (
         pytest.approx(0.5266, abs=0.01)
     )
-    # The orange one: the colour says 0.4306 and the kind 0.5240.
+    # The orange one: the colour says 0.4118 and the kind 0.5240.
     assert value_for_description("fabric, orange, red, wool") == (
-        pytest.approx(0.4306, abs=0.01)
+        pytest.approx(0.4118, abs=0.01)
     )
-    # The bricks: their kind says 0.4546 and their colour 0.4790.
+    # The bricks: their kind says 0.4604 and their colour 0.4790.
     assert value_for_description("bricks, bricks113a, natural, stone") == (
-        pytest.approx(0.4546, abs=0.01)
+        pytest.approx(0.4604, abs=0.01)
     )
-    # The wood: its kind says 0.4696 and its colour 0.4217.
+    # The wood: its kind says 0.5091 and its colour 0.4217.
     assert value_for_description("brown, smooth, wood, wooden") == (
-        pytest.approx(0.4696, abs=0.01)
+        pytest.approx(0.5091, abs=0.01)
     )
 
 
@@ -262,8 +266,8 @@ def test_a_description_s_word_order_does_not_decide_the_spread():
 
     fabric = "blue, fabric, fur, microfiber, soft"
     rock = "forest, gray, green, irregular, moss, mossy, natural, old, rock, rough, stacked, stone"
-    assert spread_for_description(fabric) == pytest.approx(0.0196, abs=0.002)
-    assert spread_for_description(rock) == pytest.approx(0.0991, abs=0.004)
+    assert spread_for_description(fabric) == pytest.approx(0.0160, abs=0.002)
+    assert spread_for_description(rock) == pytest.approx(0.0969, abs=0.004)
 
 
 def test_the_spreads_are_the_truths_own():
@@ -277,10 +281,10 @@ def test_the_spreads_are_the_truths_own():
     from golem_blender.pbr.palette import spread_for_description
 
     cases = {
-        "fabric, orange, red, wool": 0.0403,
-        "asphalt, charcoal, dark, granular, gray, industrial, matte, pavement, road, rough, urban": 0.0368,
-        "concrete, grey, light, plaster, smooth": 0.0326,
-        "brown, debris, dirt, gravel, gray, ground, river, riverbed, rocky, rough, rubble, scattered, uneven": 0.1145,
+        "fabric, orange, red, wool": 0.0437,
+        "asphalt, charcoal, dark, granular, gray, industrial, matte, pavement, road, rough, urban": 0.0344,
+        "concrete, grey, light, plaster, smooth": 0.0310,
+        "brown, debris, dirt, gravel, gray, ground, river, riverbed, rocky, rough, rubble, scattered, uneven": 0.1203,
     }
     for description, expected in cases.items():
         assert spread_for_description(description) == pytest.approx(expected, abs=0.004)

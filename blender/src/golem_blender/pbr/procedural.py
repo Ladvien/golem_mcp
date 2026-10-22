@@ -193,6 +193,8 @@ PROCEDURAL_COLOUR_KINDS = (
     "wallpaper",
     "markings",
     "woven",
+    "roof",
+    "herringbone",
 )
 # How wide a LINE is, as a fraction of the distance to the nearest
 # line. A grain's rings and a metal's grain are soft, and the truth's
@@ -448,6 +450,24 @@ def write_procedural_base_color(
             resolution,
             cells,
             aspect=brick_aspect if brick_aspect is not None else pattern.PARQUET_ASPECT,
+        )
+    elif kind == "roof":
+        # A ROOF is courses of overlapping shingles, and each shingle
+        # carries its own tone: a roof is a patchwork of weathered
+        # tiles and the patchwork is what the eye reads.
+        cell, edge, grid, _fibre = pattern.roof_field(
+            resolution,
+            cells,
+            aspect=pattern.ROOF_ASPECT,
+        )
+    elif kind == "herringbone":
+        # A HERRINGBONE floor is BOARDS at ninety degrees to each
+        # other, in pairs, and the truth's own parquet is a
+        # basketweave and not a staggered course.
+        cell, edge, grid, _fibre = pattern.herringbone_field(
+            resolution,
+            cells,
+            aspect=pattern.HERRINGBONE_ASPECT,
         )
     elif kind == "woven":
         # A WOVEN cloth is a CROSSHATCH, and the lane's answer for a

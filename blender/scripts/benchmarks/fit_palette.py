@@ -91,6 +91,23 @@ MATERIAL_WORDS = (
     "scattered",
 )
 
+# The words that name a METAL, and a metal's value is read from the
+# NAMED_COLOURS table and not from the colour words' one.
+METAL_WORDS = (
+    "silver",
+    "steel",
+    "iron",
+    "chrome",
+    "aluminium",
+    "aluminum",
+    "brass",
+    "bronze",
+    "copper",
+    "gold",
+    "cobalt",
+    "rust",
+)
+
 # The words that name a COLOUR.
 COLOUR_WORDS = (
     "white",
@@ -138,13 +155,23 @@ def _mean(values) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
-def fit(root: pathlib.Path) -> dict:
-    """The tables, fitted from the truth set."""
-    manifest = {
-        entry["asset_id"]: entry
-        for entry in json.loads((root / "manifest.json").read_text())
-    }
-    statistics = json.loads((root / "truth_statistics.json").read_text())
+def fit(root: pathlib.Path, extra_roots=()) -> dict:
+    """The tables, fitted from the truth set.
+
+    The extra roots are read too: the wide set has four metals and
+    the narrow one has four more, and a metal's value fitted on four
+    materials is a fit on four materials.
+    """
+    manifest = {}
+    statistics = []
+    for one in (root, *extra_roots):
+        manifest.update(
+            {
+                entry["asset_id"]: entry
+                for entry in json.loads((one / "manifest.json").read_text())
+            }
+        )
+        statistics.extend(json.loads((one / "truth_statistics.json").read_text()))
 
     spreads: dict[str, list[float]] = collections.defaultdict(list)
     values: dict[str, list[float]] = collections.defaultdict(list)
@@ -195,6 +222,19 @@ def fit(root: pathlib.Path) -> dict:
         return {word: source[word] for word in sorted(source) if source[word]}
 
     return {
+        # The METAL words' values, and they are read from the
+        # NAMED_COLOURS table and not from the colour words' one -
+        # a metal's colour words name the RUST and the WEATHERING on
+        # it, and the sheet's own colour comes first.
+        #
+        # So the metals are fitted on their own: the truth's own gold
+        # measures 0.893 and the table said 0.70, and its iron
+        # measures 0.745 where the table said 0.42.
+        "named_colours": {
+            word: round(_mean(values_list), 4)
+            for word, values_list in measured(values).items()
+            if word in METAL_WORDS
+        },
         "spreads": {
             word: round(_mean(values_list), 4)
             for word, values_list in table(spreads).items()
@@ -245,13 +285,20 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=pathlib.Path, default=DEFAULT_ROOT)
     parser.add_argument(
+        "--also",
+        type=pathlib.Path,
+        action="append",
+        default=[],
+        help="another truth set to read as well",
+    )
+    parser.add_argument(
         "--write",
         action="store_true",
         help="write the fitted tables into the palette",
     )
     arguments = parser.parse_args()
 
-    tables = fit(arguments.root)
+    tables = fit(arguments.root, arguments.also)
     print(f"fitted on {arguments.root}")
     for name, table in tables.items():
         print(f"  {name}: {len(table)} words")
@@ -319,9 +366,20 @@ def _merge_table(source: str, name: str, table: dict) -> str:
     for word, line in existing.items():
         if word not in table:
             lines.append(line)
+    # The table's own type, and it is not the generic one: the
+    # palette's tables are typed so a wrong value is a type error and
+    # not a wrong pixel.
+    annotation = {
+        "SPREADS": "dict[str, float]",
+        "NAMED_COLOURS": "dict[str, float]",
+        "MATERIAL_VALUES": "dict[str, float]",
+        "COLOUR_VALUES": "dict[str, float]",
+        "HUES": "dict[str, tuple[float, float, float]]",
+        "MATERIAL_HUES": "dict[str, tuple[float, float, float]]",
+    }.get(name.upper(), "dict[str, float]")
     return (
         source[:start]
-        + f"{name.upper()}: dict[str, object] = {{"
+        + f"{name.upper()}: {annotation} = {{"
         + "\n"
         + "\n".join(lines)
         + "\n}"
