@@ -1981,7 +1981,14 @@ def parquet_field(
     # The JOINT is the line between the blocks, and it is a THIN
     # line: a parquet's blocks meet at a seam and not at a mortar
     # trench.
-    within_x = (sample_x + offset / across) * across - column
+    # The distance to the shingle's own border, and the column is
+    # WRAPPED: the shingle at the edge of the image is the same
+    # shingle as the one at the start, and the distance to its border
+    # has to be measured in the wrapped frame.
+    #
+    # It was not, and the distance went out of range at the wrap -
+    # and the joint was drawn there and nowhere else.
+    within_x = sample_x * across + offset - numpy.mod(column, across)
     within_y = sample_y * courses - row
     distance = numpy.minimum(
         numpy.minimum(within_x, 1.0 - within_x), numpy.minimum(within_y, 1.0 - within_y)
@@ -2113,10 +2120,19 @@ def roof_field(
     hundred and eighty-five, so a shingle is about as wide as it is
     tall and the courses and the shingles are at the same scale.
 
-    And a shingle's tone is its OWN: a roof is a patchwork of
-    weathered tiles and the patchwork is what the eye reads.
+    And the shingle's tone is a SMOOTH field over the whole roof and
+    not a per-shingle hash.
+
+    The half-shingle stagger means the wrap joins a shingle to one a
+    whole row away, and a per-shingle hash makes that a colour step.
+    Measured, the roof's seam read 12.4x the truth's - and the truth's
+    own eight-by-eight blocks of shingles measure between 0.165 and
+    0.214, so the variation is a seventh of the surface's own mean
+    and a smooth field carries it.
     """
     import numpy
+
+    from golem_blender.pbr import noise
 
     # The courses' PITCH, in pixels, and it divides the resolution.
     #
@@ -2125,17 +2141,13 @@ def roof_field(
     # four of each and the roof came out with 256-pixel shingles
     # where the truth's are 185.
     #
-    # And a COUNT cannot fix it: the resolution is a power of two and
-    # so every divisor of it is a power of two.
+    # And a COUNT cannot be a divisor of the resolution and be five
+    # and a half: the resolution is a power of two and so every
+    # divisor of it is a power of two.
     #
     # So the PITCH is what divides the resolution - the pitch is the
     # truth's own, rounded to the nearest divisor - and the count is
     # the resolution over the pitch.
-    #
-    # The count was the truth's own with the index taken modulo it,
-    # and the map did not tile: the last course was a fraction
-    # shorter and the wrap joined two different widths. Measured, the
-    # roof's seam read 11.9x the truth's.
     course_pitch = _nearest_divisor(
         resolution, max(1, round(resolution / max(1, cells)))
     )
@@ -2151,30 +2163,53 @@ def roof_field(
 
     # The shingle's own place, and the courses are offset by HALF a
     # shingle - the same offset a brick wall has.
+    #
+    # The offset shifts the INDEX and not the sample: a half-shingle
+    # shift on a sample is a shift of a fraction of a cell, and the
+    # columns sat at half-cell positions and the wrap joined a
+    # column at a half to a column at a whole.
     row = numpy.floor(sample_y * courses)
-    offset = numpy.mod(row, 2.0) * 0.5
-    column = numpy.floor((sample_x + offset / across) * across)
+    wrapped_row = numpy.mod(row, courses)
+    offset = numpy.mod(numpy.floor(wrapped_row / 2.0), 2.0) * 2.0
+    column = numpy.floor(sample_x * across + offset).astype(numpy.int32)
 
     # The cell is a LINEAR index, and that is the encoding the
     # colour's hash decodes.
-    # And the indices WRAP: the count is the truth's own and it is
-    # not a divisor of the resolution, so the last course is a
-    # fraction shorter and the wrap joins the first.
     cell = (
-        numpy.mod(row, courses).astype(numpy.int32) * across
+        wrapped_row.astype(numpy.int32) * across
         + numpy.mod(column, across).astype(numpy.int32)
     ).astype(numpy.int32)
 
     # The JOINT is the line between the shingles, and it is a THIN
     # line and not a mortar trench: a shingle lies on the one below
     # and the line between them is a shadow.
-    within_x = (sample_x + offset / across) * across - column
+    #
+    # The column is WRAPPED: the shingle at the edge of the image is
+    # the same shingle as the one at the start, and the distance to
+    # its border has to be measured in the wrapped frame.
+    within_x = sample_x * across + offset - numpy.mod(column, across)
     within_y = sample_y * courses - row
     distance = numpy.minimum(
         numpy.minimum(within_x, 1.0 - within_x), numpy.minimum(within_y, 1.0 - within_y)
     )
     edge = numpy.clip(distance * min(across, courses), 0.0, 1.0)
-    return cell, edge, (across, courses), None
+
+    # The roof's own TONE, and it is a SMOOTH field over the whole
+    # roof - and not a per-shingle hash.
+    #
+    # The half-shingle stagger means the wrap joins a shingle to one
+    # a whole row away, and a per-shingle hash makes that a colour
+    # step. Measured, the roof's seam read 12.4x the truth's.
+    tone = noise.fbm_2d_value(
+        sample_x * courses,
+        sample_y * courses,
+        size=courses,
+        octaves=1,
+        seed=9,
+    )
+    tone_reach = max(1e-6, float(tone.max() - tone.min()))
+    tone = (tone - float(tone.min())) / tone_reach
+    return cell, edge, (across, courses), tone
 
 
 def woven_field(

@@ -502,7 +502,7 @@ def write_procedural_base_color(
         # A ROOF is courses of overlapping shingles, and each shingle
         # carries its own tone: a roof is a patchwork of weathered
         # tiles and the patchwork is what the eye reads.
-        cell, edge, grid, _fibre = pattern.roof_field(
+        cell, edge, grid, fibre = pattern.roof_field(
             resolution,
             cells,
             aspect=pattern.ROOF_ASPECT,
@@ -779,7 +779,11 @@ def write_procedural_base_color(
     if kind == "roof":
         # A ROOF's joint is a THIN SHADOW and not a bevel: the
         # shingle above casts a line on the one below.
-        joint = numpy.where(joint > 0.94, 1.0, 0.0)
+        #
+        # And it is a SHADOW and not a hard step: a hard step at the
+        # wrap joins two shingles of a different tone and the seam
+        # read 12.4x the truth's.
+        joint = numpy.clip((joint - 0.90) / 0.10, 0.0, 1.0)
         # And the shadow is DARK and not the pale mortar: a roof's
         # shadow is a shadow.
         joint = joint * 0.45
@@ -1117,8 +1121,8 @@ def write_procedural_base_color(
         image_hue = colour / _np.maximum(image_luma[:, :, _np.newaxis], 1e-6)
         colour = _np.clip(colour + image_hue * drift[:, :, _np.newaxis], 0.0, 1.0)
     elif kind == "roof":
-        # A ROOF's shingles are a MOSAIC of flat tiles, each with its
-        # own tone, and the line between them is a SHADOW.
+        # A ROOF's shingles are a MOSAIC of flat tiles, and the line
+        # between them is a SHADOW.
         #
         # The joint blended with the pale mortar, and the roof came
         # out as a light brickwork with a bright outline around every
@@ -1133,11 +1137,29 @@ def write_procedural_base_color(
         # The hash spans the whole ramp, so the roof came out with a
         # threefold spread of shingles and a contrast of 3.55x the
         # truth's.
+        #
+        # And the shingle's tone is a SMOOTH field and not a per
+        # shingle hash, and that is what tiles: the half-shingle
+        # stagger means the wrap joins a shingle to one a whole row
+        # away, and a per-shingle hash makes that a colour step.
+        # Measured, the roof's seam read 12.4x the truth's.
         middle = (
             numpy.array(stone_dark_rgb, dtype=numpy.float32)
             + numpy.array(stone_light_rgb, dtype=numpy.float32)
         ) * 0.5
-        colour = middle + (colour - middle) * ROOF_SHINGLE_TONE
+        # And the shingle's tone is the roof's own SMOOTH field, and
+        # not a per-shingle hash: the half-shingle stagger means the
+        # wrap joins a shingle to one a whole row away, and a hash
+        # makes that a colour step. Measured, the roof's seam read
+        # 12.4x the truth's.
+        if fibre is not None:
+            tone = numpy.clip(fibre, 0.0, 1.0)
+            reach = numpy.array(stone_light_rgb, dtype=numpy.float32) - numpy.array(
+                stone_dark_rgb, dtype=numpy.float32
+            )
+            colour = middle + (tone - 0.5)[:, :, numpy.newaxis] * (
+                ROOF_SHINGLE_TONE * reach
+            )
         colour = colour * (1.0 - joint) + mortar * joint
     elif kind == "woven":
         # A WOVEN cloth is a CROSSHATCH of two thread fields, and it
