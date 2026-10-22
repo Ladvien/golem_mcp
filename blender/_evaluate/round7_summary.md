@@ -10,12 +10,12 @@ give, and look at every picture.
 
 | | start | end |
 |---|---|---|
-| **the twenty hand-picked sets** - brightness / contrast / scale | 0.95x / 1.03x / 1.57x | 0.97x / 1.14x / 0.96x |
+| **the twenty hand-picked sets** - brightness / contrast / scale | 0.95x / 1.03x / 1.57x | 0.97x / 1.02x / 1.06x |
 | **twenty sets - seam** | **3.87x** | **0.51x** (truth 0.60x) |
-| **the eighty-seven wide sets** - brightness / contrast / scale | 1.07x / 1.60x / 1.23x | 1.07x / 1.30x / 1.26x |
-| **eighty-seven sets - seam** | **2.39x** | **0.30x** (truth 0.54x) |
+| **the eighty-seven wide sets** - brightness / contrast / scale | 1.07x / 1.60x / 1.23x | 1.07x / 1.16x / 1.33x |
+| **eighty-seven sets - seam** | **2.39x** | **0.31x** (truth 0.54x) |
 | **the value's word-fit** (87 materials) | 0.0790 | **0.0594** |
-| **the spread's word-fit** (87 materials) | 0.0151 | **0.0124** |
+| **the spread's word-fit** (87 materials) | 0.0151 | **0.0115** |
 
 The wide set's numbers are *worse* than the twenty's - correctly,
 because the twenty were hand-picked. The seventeen materials the
@@ -47,28 +47,40 @@ carpets, parquets, planks) are the ones that found the rules below.
   nearly the whole map's, and its blur profile decays from 0.0682 to
   0.0087: the face has structure at EVERY scale. The truth's own
   Tiles141 carries a drift of 0.0349 at a hundred-and-twenty-eight
-  blur - a fifth of the map's variance - with a period of a hundred
-  and ninety-two pixels. A tile STAINS; a brick is a mosaic of
-  worked stones.
+  blur - a fifth of the map's variance.
+- **A FABRIC is a WEAVE** - the truth's own Fabric085 is a twill and
+  its neighbours Fabric061 and Fabric066 are a mesh and a
+  herringbone, and a Voronoi is a set of cells with joints between
+  them.
+- **A GROUND is a PACKED bed of grit** - the truth's own Ground110
+  measures the bright stones' widths at 1, 2, 3, 4, 5, 7 and 8
+  pixels in the counts 1071, 541, 30, 8, 2, 2 and 1, and its darkest
+  thousandth is 0.000. The count is what puts the shadow in.
+- **A wood's RINGS are not its features** - at four rings the lane
+  reads 9.2 features and at eight it reads 19.3, so the features are
+  two and a third times the rings.
 
-## The three rules the eighty-seven taught
+## The rules the eighty-seven taught
 
 1. **The EXTREME words are the value, and the kind is not.**
    "tiles" names eight materials whose lumas run from 0.211 to
    0.972 - the kind says nothing about how light it is. But "black",
    "white", "dark" and "light" are about the lightness and about
-   nothing else. The truth's own Rock035 is a "black, cave, cliff,
-   grey, rock, stone" at 0.094 and the material's word said 0.362.
-   Mean error 0.0790 -> 0.0594, worst 0.4035 -> 0.2224.
+   nothing else. Mean error 0.0790 -> 0.0594, worst 0.4035 -> 0.2224.
 
 2. **The SPREAD is the most specific word, and the material's own
    wins.** "roof" names three and says 0.0192; "tiles" names eleven
    at a mean of 0.0494, and the truth's own RoofingTiles012A is
-   0.0149. Mean error 0.0151 -> 0.0124, median 0.0090 -> 0.0055.
+   0.0149. Mean error 0.0151 -> 0.0115, median 0.0090 -> 0.0055.
 
 3. **The SPECIFIC kind is read before the generic one.** The truth's
    own Tiles141 is tagged with BOTH "stone" and "tiles", and
    "stone" is the generic one.
+
+4. **A word that names FEW materials can still disagree with
+   itself.** "granular" names two and the two disagree by 0.0678, so
+   it says nothing about either, and the "asphalt" beside it says
+   0.0178.
 
 ## New capabilities
 
@@ -79,7 +91,7 @@ Material Maker's `smooth_curvature2` and `scratches2` are now
 **wired in** - a rock's facets are its curvature, a worn sheet's
 abrasion is its scratches. The brick's face is a **domain-warped**
 field, per brick, so a wall of them reads as a wall of worked
-stones.
+stones. A fabric is a **weave** and its threads are all the cloth.
 
 ## What's left, honestly
 
@@ -90,5 +102,9 @@ stones.
 - The palette's value can't be refitted honestly: a leave-one-out
   refit of the material table is *worse* (0.0870 against 0.0716), so
   the table stands and the word simply cannot pin the value.
+- The WOOD's structure is a board with straight seams and knots, and
+  the lane's is a field of swirls. The wood's feature scale now
+  reads 0.82x the truth's where it read 1.74x, but the *shape* is
+  still wrong.
 
 That and the rest is in `description_limits.md`.
