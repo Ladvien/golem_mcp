@@ -38,6 +38,16 @@ import re
 # worms over the sheet, where the truth's own Metal038 is a smooth
 # grey plate.
 GRAPH_LAYER_AMOUNT = 0.15
+# And how much a patch of MOSS darkens the stone under it.
+GRAPH_MOSS_AMOUNT = 0.35
+# And how soft a patch of MOSS is, in pixels of the tile.
+#
+# A patch of moss is a patch of COLOUR and it has a soft edge, and a
+# soft edge is a tone and not a texture. The splatter's droplets have
+# hard edges, and multiplied in they put hard-edged structure into
+# the surface: the ground's feature scale read 3.84x the truth's
+# where the single-pattern path read 0.83x.
+GRAPH_MOSS_BLUR = 24.0
 
 
 def _words(description: str) -> set[str]:
@@ -79,6 +89,15 @@ def graph_for_description(
         "leather": "leather",
         "voronoi": "voronoi",
         "brick": "brick",
+        "scattered": "scattered",
+        "flat": "flat",
+        "carpet": "carpet",
+        "parquet": "parquet",
+        "woven": "woven",
+        "wallpaper": "wallpaper",
+        "markings": "markings",
+        "roof": "roof",
+        "herringbone": "herringbone",
     }.get(kind, "voronoi")
     nodes.append(
         {
@@ -130,19 +149,46 @@ def graph_for_description(
     # have moss in their joints, and both are PATCHES of a different
     # colour and not a texture of their own.
     if words & {"moss", "mossy", "lichen"}:
+        # And the moss's own SIZE follows the surface's own scale: a
+        # patch of moss is a small part of a stone, and twelve blobs
+        # at a sixteenth of the tile wrecked the ground's feature
+        # scale - it read 4.15x the truth's.
         nodes.append(
             {
                 "name": "moss",
                 "type": "splatter",
-                "params": {"count": 12, "radius": 0.16, "seed": 7},
+                "params": {
+                    "count": 18,
+                    "radius": 0.18 / max(4.0, count),
+                    "seed": 7,
+                },
+            }
+        )
+        # And the moss is a TONE over the base and not a texture of
+        # its own.
+        #
+        # The moss was blended in as a layer, and a layer is a
+        # TEXTURE - so the ground's feature scale read 4.73x the
+        # truth's where the single path read 0.83x. A patch of moss
+        # is a patch of COLOUR on the stone, and it changes the
+        # surface's tone and not its structure.
+        #
+        # So the moss is a mask and the base is darkened under it -
+        # and the base's own structure is untouched.
+        nodes.append(
+            {
+                "name": "soft_moss",
+                "type": "blur",
+                "params": {"radius": GRAPH_MOSS_BLUR},
+                "inputs": {"source": "moss"},
             }
         )
         nodes.append(
             {
                 "name": "mossed",
-                "type": "blend",
-                "params": {"mode": "multiply", "amount": GRAPH_LAYER_AMOUNT},
-                "inputs": {"a": "moss", "b": output},
+                "type": "math",
+                "params": {"op": "multiply", "scale": 1.0 - GRAPH_MOSS_AMOUNT},
+                "inputs": {"a": output, "b": "soft_moss"},
             }
         )
         output = "mossed"

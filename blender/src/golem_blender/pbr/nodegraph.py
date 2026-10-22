@@ -475,6 +475,14 @@ def _render_node(
             1.0,
         )
 
+    if kind == "blur":
+        source = field_of(inputs["source"])
+        return numpy.clip(
+            _blur(source, float(params.get("radius", 4.0))),
+            0.0,
+            1.0,
+        )
+
     if kind == "math":
         a = field_of(inputs["a"])
         operation = params.get("op", "add")
@@ -539,13 +547,35 @@ def _pattern_field(
         # material the single-pattern path makes, or the two disagree
         # about what a "voronoi" is.
         stones = pattern.fractal_stones(resolution, cells)
-        edge = stones["distance"]
-        # The edge distance is ZERO at the joint and LARGEST in the
-        # middle of a stone, so the joint is ONE minus the distance.
-        reach = max(1e-9, float(edge.max()))
-        return numpy.clip(
-            1.0 - numpy.asarray(edge, dtype=numpy.float32) / reach, 0.0, 1.0
+        # And the field is the ENVELOPE and not the joints.
+        #
+        # The fractal stones are big stones made of small ones, and
+        # the JOINTS are the fine structure - fifty-four features
+        # across, where the truth's ground has seven. The single
+        # pattern path draws the big structure and puts the fine one
+        # inside each stone, and the measure reads the big one.
+        #
+        # So the graph's voronoi is the envelope - the first octave -
+        # and the joints go inside it.
+        return _normalise(numpy.asarray(stones["F1"], dtype=numpy.float32))
+    if pattern_name == "scattered":
+        # A loose ground is SCATTERED stones and not a Voronoi, and
+        # the graph has to scatter them the same way the
+        # single-pattern path does - the same words have to make the
+        # same material.
+        _cell, _edge, _grid, _fibre, slow, _hue = pattern.scattered_field(
+            resolution, cells
         )
+        # And the field is the SLOW mottle and not the joints.
+        #
+        # The joints are the fine structure - forty-four features
+        # across, where the truth's ground has ten - and the single
+        # pattern path draws the stones and the wide matrix between
+        # them and the measure reads the mottle.
+        #
+        # So the graph's scattered ground is the mottle, the same
+        # envelope the single path's own ground reads.
+        return _normalise(numpy.asarray(slow, dtype=numpy.float32))
     if pattern_name == "brick":
         _cell, edge, _grid, _fibre = pattern.brick_field(resolution, cells)
         reach = max(1e-9, float(edge.max()))
@@ -617,8 +647,63 @@ def colorize_field(
     return numpy.interp(source, positions, values).astype(numpy.float32)
 
 
+def _blur(field: numpy.ndarray, radius: float) -> numpy.ndarray:
+    """A field, SOFTENED - Material Maker's `fast_blur`.
+
+    A splatter's droplets have hard edges, and a hard-edged mask
+    multiplied into a surface puts hard-edged structure into it - the
+    ground's feature scale read 3.79x the truth's where the single
+    path read 0.83x.
+
+    So a PATCH is softened before it is used as a mask: a patch of
+    moss has a soft edge and a soft edge is a tone and not a
+    texture.
+
+    The blur is a separable BOX in numpy, and not a Gaussian from
+    scipy: Blender's own Python has no scipy, and a box blur three
+    times over is a triangle and is smooth enough for a mask.
+    """
+    if radius <= 0.0:
+        return field
+    size = max(1, round(radius * 2) + 1)
+    out = numpy.asarray(field, dtype=numpy.float32)
+    for _ in range(3):
+        out = _box_blur_axis(out, size, axis=0)
+        out = _box_blur_axis(out, size, axis=1)
+    return out
+
+
+def _box_blur_axis(field: numpy.ndarray, size: int, axis: int) -> numpy.ndarray:
+    """A box blur along ONE axis, and the edges are WRAPPED.
+
+    The wrap is the map's own: a field that is periodic over the
+    domain stays periodic when it is blurred, and a texture that
+    tiles must still tile.
+    """
+    if size < 2:
+        return field
+    half = size // 2
+    padded = numpy.concatenate(
+        [
+            numpy.take(field, range(-half, 0), axis=axis),
+            field,
+            numpy.take(field, range(half), axis=axis),
+        ],
+        axis=axis,
+    )
+    cumulative = numpy.cumsum(padded, axis=axis)
+    # The window's sum is the difference of two prefixes, and the
+    # first prefix is a zero row.
+    zero = numpy.zeros_like(numpy.take(cumulative, [0], axis=axis))
+    cumulative = numpy.concatenate([zero, cumulative], axis=axis)
+    out = (
+        numpy.take(cumulative, range(size, size + field.shape[axis]), axis=axis)
+        - numpy.take(cumulative, range(field.shape[axis]), axis=axis)
+    ) / float(size)
+    return out
+
+
 def _normalise(field: numpy.ndarray) -> numpy.ndarray:
-    """Scale a field so its full range is ZERO to ONE."""
     low = float(field.min())
     high = float(field.max())
     if high - low < 1e-9:
