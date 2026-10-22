@@ -961,6 +961,36 @@ SPREAD_SPECIFICITY: dict[str, int] = {
 }
 
 SPREAD_TIERS = (
+    # The MATERIAL's own word, and it is its own tier and it comes
+    # FIRST.
+    #
+    # A material's own word says more about how much it varies than
+    # the general words do: a "clean" thing can be a leather at 0.0031
+    # of spread or a checkered cloth at 0.1888 - a sixtyfold range -
+    # and the leather's own word says 0.0238.
+    #
+    # So the material's word is read first, and the general words -
+    # "clean", "smooth", "fine" - are the fallback.
+    (
+        "leather",
+        "hide",
+        "carpet",
+        "rug",
+        "parquet",
+        "wallpaper",
+        "woodchip",
+        "woven",
+        "weave",
+        "textile",
+        "cloth",
+        "concrete",
+        "asphalt",
+        "pavement",
+        "bricks",
+        "tiles",
+        "planks",
+        "plank",
+    ),
     # The ROOF, and it is its own tier: a roof's own word says more
     # about how much it varies than the "tiles" it is made of.
     #
