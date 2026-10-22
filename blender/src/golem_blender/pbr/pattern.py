@@ -1917,17 +1917,26 @@ def parquet_field(
     """
     import numpy
 
-    # The blocks are the BRICK's own courses, and the count is a
-    # power of two so the floor's own wrap joins two whole blocks.
-    courses = _power_of_two_nearest(cells)
-    while courses > 1 and resolution % courses != 0:
-        courses //= 2
-    # The bricks ACROSS a course, and the floor's blocks are WIDE:
+    # The courses, and the count DIVIDES the resolution - and it is
+    # not a power of two.
+    #
+    # A power of two rounds DOWN, and the truth's own parquet
+    # measures ten blocks across and six courses down - so a power of
+    # two gave four and two, and the floor came out with 512-pixel
+    # blocks where the truth's are a hundred.
+    #
+    # And a COUNT cannot be a divisor of the resolution and be ten:
+    # the resolution is a power of two and so every divisor of it is
+    # a power of two.
+    #
+    # So the count is the truth's own and the map WRAPS on it: the
+    # block's index is taken modulo the count, so the last block is a
+    # fraction narrower and the wrap joins the first.
+    courses = max(1, round(cells))
+    # The blocks ACROSS a course, and the floor's blocks are WIDE:
     # the truth's own parquet carries ten joint lines across a
     # thousand and twenty-four.
     across = max(1, PARQUET_BLOCKS_ACROSS)
-    while across > 1 and resolution % across != 0:
-        across //= 2
 
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
@@ -1946,9 +1955,13 @@ def parquet_field(
     # It was `row * 100003 + column`, and the hash splits the index by
     # the row's width - so every block got the same colour and the
     # floor came out as one flat sheet.
-    cell = (row.astype(numpy.int32) * across + column.astype(numpy.int32)).astype(
-        numpy.int32
-    )
+    # And the indices WRAP: the count is the truth's own and it is
+    # not a divisor of the resolution, so the last block is a
+    # fraction narrower and the wrap joins the first.
+    cell = (
+        numpy.mod(row, courses).astype(numpy.int32) * across
+        + numpy.mod(column, across).astype(numpy.int32)
+    ).astype(numpy.int32)
 
     # The JOINT is the line between the blocks, and it is a THIN
     # line: a parquet's blocks meet at a seam and not at a mortar
