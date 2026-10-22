@@ -1023,8 +1023,31 @@ def fractal_stones(
     # within its region and not a different colour. The truth's
     # ground is a gravel: the stones are all much the same tone and
     # the ENVELOPE's variation is what a viewer sees.
-    rows = numpy.linspace(0.0, coarse_side - 1.0, resolution)
-    columns = numpy.linspace(0.0, coarse_side - 1.0, resolution)
+    # The upsample's grid is PERIODIC and it reads the coarse field
+    # where the coarse field was SAMPLED.
+    #
+    # The coarse field's own samples are at the cell CENTRES -
+    # `(i + 0.5) / coarse_side` - and the upsample's grid was the
+    # cell EDGES, so every sample was half a cell off and the wrap
+    # joined two places the field had never been.
+    #
+    # The grid is the coarse field's own sample positions, scaled to
+    # the fine resolution, and it is EXCLUSIVE at the end.
+    #
+    # Measured: the rock's distance field had a seam of 0.032 and
+    # the rock's seam read 2.54x the truth's.
+    # The upsample's index into the coarse field, and the coarse
+    # field's entry `i` was sampled at the domain `(i + 0.5) /
+    # coarse_side` - so the fine pixel `j` reads the coarse field at
+    # the index `j * coarse_side / resolution - 0.5`.
+    #
+    # The half cell matters: without it every sample is half a cell
+    # off and the wrap joins two places the field had never been.
+    coarse_axis = (
+        numpy.arange(resolution, dtype=numpy.float64) * coarse_side / resolution - 0.5
+    )
+    rows = coarse_axis
+    columns = coarse_axis
     grid_row, grid_column = numpy.meshgrid(rows, columns, indexing="ij")
     # The cell is DISCRETE - it is an index, and the hash reads it -
     # and an INTERPOLATED cell is a continuous value, so the hash

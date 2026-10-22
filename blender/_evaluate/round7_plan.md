@@ -6,14 +6,25 @@ ambientcg sets; the wide sample is in `coverage_audit.md` and it is
 the honest baseline, and `description_limits.md` records what the
 WORDS can and cannot say.
 
-## The twenty-set score, before and after
+## The score, before and after
 
 | | start of round 7 | now |
 |---|---|---|
-| mean brightness ratio | 0.95x | 0.99x |
-| mean contrast ratio | 1.03x | 1.04x |
-| mean scale ratio | 1.57x | 0.97x |
-| **mean seam** | **3.87x** | **0.41x** |
+| **the twenty sets** | | |
+| mean brightness ratio | 0.95x | 0.93x |
+| mean contrast ratio | 1.03x | 1.15x |
+| mean scale ratio | 1.57x | 1.05x |
+| mean seam | 3.87x | 0.43x (the truth's 0.60x) |
+| **the eighty-seven wide sets** | | |
+| mean brightness ratio | 1.07x | 1.10x |
+| mean contrast ratio | 1.60x | 1.31x |
+| mean scale ratio | 1.23x | 1.34x |
+| mean seam | 2.39x | 0.71x (the truth's 0.54x) |
+
+The wide set's numbers are WORSE than the twenty's and that is the
+point: the twenty were chosen by hand and they are the easy ones.
+The wide set has the kinds the lane had no pattern for, and their
+scores are in it.
 
 ## The picture: the defects the score could not see
 
@@ -88,7 +99,19 @@ truth's are 185.
 So the count is the truth's own and the map WRAPS on it - and the
 PITCH is what divides the resolution.
 
-### 7. TWO SCALES, NOT ONE
+### 7. A STAGGERED PATTERN'S WRAP IS A COLOUR STEP
+
+The half-cell stagger means the wrap joins a cell to one a whole row
+away. So three things have to change together: the offset shifts
+the INDEX and not the sample, the offset's PARITY has to be the same
+at the top and the bottom, and anything PER-CELL that carries
+colour becomes a step.
+
+Measured: the roof's seam read 12.4x the truth's and the parquet's
+3.5x to 7x - and both are under 2x now, with a SMOOTH field
+carrying the per-cell variation instead of a hash.
+
+### 8. TWO SCALES, NOT ONE
 
 A leather is a coarse envelope and a fine grain on it, and the fine
 carries most of the spread. A wallpaper's design is the same. And a
@@ -116,7 +139,7 @@ by `scripts/benchmarks/fit_palette.py`, and the tables are MERGED and
 not replaced - a word the truth set does not measure keeps the value
 the word's own sense gives it.
 
-And four rules the fitting exposed:
+And five rules the fitting exposed:
 
 - a colour's value is fitted where the colour is the **only** word
   about it: "blue" names three materials in the wide set and their
@@ -130,6 +153,8 @@ And four rules the fitting exposed:
 - a metal's own word is the **specific** one, and it says how much
   the sheet varies: "gold" names one material and its spread is
   0.0064 - the truth's own Metal048A to within a thousandth.
+- the **darkest** colour named wins, and not the first: a "blue,
+  dark" thing is a dark blue, and the truth's own Carpet012 is 0.229.
 
 ## The Material Maker ports
 
@@ -146,11 +171,13 @@ And four rules the fitting exposed:
 
 ## The next round
 
-1. The wide eighty-seven-set run, and what it says.
-2. The two-scale structure in the GROUND: the truth's gravel has a
-   fine scale (the stones) and a coarse one (the drift), and the
-   drift is what the feature measure reads.
-3. The road markings' paint: the truth's wear is a measurement and
-   the lane's is a guess.
-4. The per-stone hue: the truth's stones vary by 1.5% in their red
-   and blue shares, and ours are all one tan.
+1. The leathers: their word-fits span a twentyfold range and the
+   words cannot say which is which. The *structure* is right and the
+   contrast is not.
+2. The rocks: the truth's are a sharp faceted surface and the
+   lane's are a smooth blob field.
+3. The roads' paint: the truth's wear is a measurement and the
+   lane's is a guess from the words.
+4. The ground's two scales: the truth's gravel has a fine scale (the
+   stones) and a coarse one (the drift), and the drift is what the
+   feature measure reads.
