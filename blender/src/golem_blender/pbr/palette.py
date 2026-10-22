@@ -1626,16 +1626,30 @@ BRICK_FACE_STRENGTHS: dict[str, float] = {
 DRIFT_STRENGTHS: dict[str, float] = {
     # The SPECIFIC kinds first, and the generic ones after - the same
     # rule the pattern's own routing uses.
-    "tiles": 0.85,
-    "tile": 0.85,
-    "ceramic": 0.85,
-    "porcelain": 0.85,
-    "plaster": 0.65,
-    "concrete": 0.5,
-    "bricks": 0.10,
-    "brick": 0.10,
-    "stone": 0.25,
-    "rock": 0.15,
+    #
+    # And the tile's drift is 0.20, and not the 0.85 it was: the
+    # drift is the stain, and the stain's SHARE of the surface's
+    # variation is what the measure reads.
+    #
+    # At 0.85 the tile's autocorrelation stayed at +0.88 at a
+    # thirty-two-pixel lag and +0.45 at a two-hundred-and-fifty-six
+    # one, and the feature measure read 4.8 features across against
+    # the truth's 9.8 - because the drift is a SLOW field and it
+    # swamped the grid.
+    #
+    # The truth's own Tiles141 reads +0.192 at a thirty-two-pixel
+    # lag and crosses zero at a hundred and twenty-eight, and it
+    # measures 9.8 features across. At 0.20 the lane reads 9.0.
+    "tiles": 0.20,
+    "tile": 0.20,
+    "ceramic": 0.20,
+    "porcelain": 0.20,
+    "plaster": 0.30,
+    "concrete": 0.25,
+    "bricks": 0.05,
+    "brick": 0.05,
+    "stone": 0.12,
+    "rock": 0.08,
 }
 
 

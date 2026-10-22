@@ -337,8 +337,8 @@ BRICK_FACE_TOOTH = 4
 # The face's own DRIFT, and the drift's own cells: the truth's own
 # Tiles141's drift has a period of a hundred and ninety-two pixels,
 # so five features across a thousand and twenty-four.
-BRICK_FACE_DRIFT = 0.35
-BRICK_FACE_DRIFT_CELLS = 5
+BRICK_FACE_DRIFT = 0.18
+BRICK_FACE_DRIFT_CELLS = 8
 # A PARQUET's block is much wider than it is tall: a parquet floor is
 # laid in long boards.
 #
