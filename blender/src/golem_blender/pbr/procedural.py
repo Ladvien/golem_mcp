@@ -151,7 +151,7 @@ SCATTER_DRIFT_SHARE = 0.12
 # variation: the truth's own wood carries 0.51 of its spread in the
 # fibre and 0.49 in the envelope. So the block's grain is the same
 # share.
-PARQUET_FIBRE_STRENGTH = 0.5
+PARQUET_FIBRE_STRENGTH = 0.87
 # How deep a WOVEN cloth's threads are, as a fraction of the cloth's
 # own colour.
 #
@@ -487,6 +487,7 @@ def write_procedural_base_color(
     stone_tone_fraction: float = 1.0,
     graph: dict | None = None,
     checkered: bool = False,
+    courses: int | None = None,
 ) -> Path:
     # `pebble_factor` is how many PEBBLES a cell holds: a loose
     # ground's four, and a solid surface's one.
@@ -628,6 +629,7 @@ def write_procedural_base_color(
             resolution,
             cells,
             aspect=brick_aspect if brick_aspect is not None else pattern.PARQUET_ASPECT,
+            courses=courses,
         )
     elif kind == "herringbone":
         # A HERRINGBONE floor is BOARDS at ninety degrees to each
@@ -1387,7 +1389,16 @@ def write_procedural_base_color(
         # not.
         surface = numpy.clip(fibre, 0.0, 1.0)
         surface = surface / max(1e-6, float(surface.max())) * 2.0 - 1.0
-        wear = surface * PARQUET_FIBRE_STRENGTH * ramp_spread * 0.25
+        # And the grain's strength is the DESCRIPTION's own spread,
+        # and not the palette's ramp.
+        #
+        # The ramp is the palette's light-to-dark difference - 0.104
+        # for a wood - and the grain came out at 0.013 of the base,
+        # which is invisible: the truth's own parquet carries 0.87
+        # of its spread in the fine grain and 0.13 in the blocks, and
+        # the close crop showed a blank board where the truth has
+        # thirty-five strong lines.
+        wear = surface * PARQUET_FIBRE_STRENGTH * float(target_spread or 0.0)
     else:
         surface = pattern.surface_texture(resolution, cells)
         surface_amplitude = float(surface.max() - surface.min())

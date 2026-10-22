@@ -96,6 +96,20 @@ def pattern_for(tags, features_across, features_down=0.0):
     return kind, scale, scale
 
 
+def courses_for(tags, features_down):
+    """The COURSES a surface has, and it is the truth's own DOWN count.
+
+    A parquet is a set of LONG BOARDS: many blocks across and few
+    courses down. The truth's own WoodFloor051 measures 7.1 features
+    across and ONE down, and the floor's courses came from the
+    across count - so it came out as a grid of squares where the
+    truth has long boards.
+    """
+    if features_down <= 0.0:
+        return None
+    return max(1, round(features_down))
+
+
 def main():
     cube = bpy.data.objects.get("Cube")
     if cube:
@@ -138,6 +152,9 @@ def main():
             width_px=pbr_paths.SET_RESOLUTION_PX,
             height_px=pbr_paths.SET_RESOLUTION_PX,
             checkered=is_checkered(description),
+            courses=courses_for(
+                entry["tags"], truth[asset_id]["albedo"].get("features_down", 0.0)
+            ),
             **palette,
         )
         elapsed = time.time() - started

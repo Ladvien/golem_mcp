@@ -2248,6 +2248,7 @@ def parquet_field(
     resolution: int,
     cells: int,
     aspect: float = PARQUET_ASPECT,
+    courses: int | None = None,
 ):
     """A wood floor: long BLOCKS, staggered, each with its own tone.
 
@@ -2288,8 +2289,17 @@ def parquet_field(
     # and the map did not tile: the last block was a fraction
     # narrower and the wrap joined two different widths. Measured, the
     # parquet's seam read 44.2x the truth's.
+    # And the COURSES, and they are the truth's own DOWN count and
+    # not the across count.
+    #
+    # A parquet is a set of LONG BOARDS: many blocks across and few
+    # courses down. The truth's own WoodFloor051 measures 7.1
+    # features across and ONE down, and the courses were the across
+    # count - so the floor came out as a grid of squares, seven
+    # across and seven down, where the truth has long boards.
     course_pitch = _nearest_divisor(
-        resolution, max(1, round(resolution / max(1, cells)))
+        resolution,
+        max(1, round(resolution / max(1, courses if courses else cells))),
     )
     courses = max(1, resolution // course_pitch)
     # The blocks ACROSS a course, and the floor's blocks are WIDE:
@@ -2382,14 +2392,27 @@ def parquet_field(
     # along x - so the ridges ran ACROSS the board and the floor
     # came out with its grain the wrong way and with no grain at all
     # where the measure could see it.
+    # And the grain's lines run ACROSS the board and not along it.
+    #
+    # The truth's own WoodFloor051 is a set of wide horizontal boards
+    # and the grain inside each one is a set of HORIZONTAL lines -
+    # thirty-five strong edges over five hundred and twelve pixels,
+    # so a line every fifteen. And the grain was the other way round:
+    # the x sample was in the x lattice and the y sample was the
+    # domain, so the field varied ALONG x and was constant along y -
+    # and the ridges it folded into ran down the board.
+    #
+    # So the x sample is the DOMAIN and the y sample is the y
+    # lattice: the field is constant along x and varies along y, and
+    # the ridges are horizontal.
     coarse = noise.fbm_2d_value(
-        sample_x * lattice_x,
-        sample_y,
-        size=lattice_x,
+        sample_x,
+        sample_y * lattice_x,
+        size=1,
         octaves=PARQUET_GRAIN_OCTAVES,
         seed=0,
         folds=1,
-        size_y=1,
+        size_y=lattice_x,
     )
     from golem_blender.pbr.noise_worley_fbm import _bilinear
 
