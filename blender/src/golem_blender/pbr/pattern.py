@@ -394,20 +394,6 @@ PARQUET_BLOCKS_ACROSS = 10
 # boards across is about eighteen courses down - and the courses are
 # STAGGERED, so the joints do not line up.
 PARQUET_COURSES_PER_ACROSS = 3.0
-# The GRAIN's own lattice, how many octaves it has, and how strong it
-# is.
-#
-# The lattice is the number of cells ACROSS the surface, and the
-# lines are the noise's ridges - so a lattice of sixty-four gives a
-# line every sixteen pixels of a thousand and twenty-four, and the
-# truth's own parquet carries fine lines at about that spacing.
-#
-# The grain was the WOOD's own fibre field, and that is a CATHEDRAL
-# SWIRL - the wood's rings and its cathedral figure - and a parquet's
-# boards are cut flat, so their grain is a set of straight lines and
-# not a swirl. Measured, the floor came out as a field of blobs.
-PARQUET_GRAIN_LATTICE = 64
-PARQUET_GRAIN_OCTAVES = 2
 # The ROAD MARKINGS' own lattice; the width of the paint; and the
 # dash's own pattern.
 #
@@ -2384,20 +2370,23 @@ def parquet_field(
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
 
-    # The block's own coordinates, and the courses are offset by HALF
-    # a block - so the vertical joints do not line up, and the floor
-    # reads as laid boards and not as a grid.
-    # The offset shifts the INDEX and not the sample: a half-block
-    # shift on a sample is a shift of a fraction of a cell, and the
-    # columns sat at half-cell positions and the wrap joined a column
-    # at a half to a column at a whole.
+    # Each course is offset by its OWN fraction of a block, so the
+    # joints do not line up and the floor reads as laid boards.
     #
-    # And the offset's PARITY has to be the same at the top and the
-    # bottom of the image, or the wrap joins a course at a half to a
-    # course at a whole.
+    # The offset was two WHOLE blocks every other pair of courses - and
+    # a whole block does not move a joint off the block lattice, so
+    # every course's joints sat on the same columns and a straight
+    # joint ran down the image's own edge. It was whole because a
+    # fractional one broke the wrap, and THAT was the position in the
+    # board being read against the wrapped column; with the position
+    # taken as the staggered coordinate's own fraction (below), a
+    # fractional offset wraps exactly.
+    #
+    # The fraction is the golden ratio of the WRAPPED course, so the
+    # course at the image's top and the one it wraps to share it.
     row = numpy.floor(sample_y * courses)
     wrapped_row = numpy.mod(row, courses)
-    offset = numpy.mod(numpy.floor(wrapped_row / 2.0), 2.0) * 2.0
+    offset = numpy.mod(wrapped_row * 0.6180339887, 1.0)
     column = numpy.floor(sample_x * across + offset).astype(numpy.int32)
 
     # The cell is a LINEAR index - the course times the row's width
@@ -2425,7 +2414,18 @@ def parquet_field(
     #
     # It was not, and the distance went out of range at the wrap -
     # and the joint was drawn there and nowhere else.
-    within_x = sample_x * across + offset - numpy.mod(column, across)
+    # The position INSIDE the board is the fractional part of the
+    # staggered coordinate, and not the coordinate less the WRAPPED
+    # column.
+    #
+    # The stagger adds two blocks to the column and the column wraps,
+    # so in the last two blocks of every staggered course the
+    # coordinate less the wrapped column was about twenty - and the
+    # distance to the board's edge went negative and clipped to solid
+    # joint. A dark strip ran down the image's edge, and the floor's
+    # seam read 16.46x against the truth's 0.4.
+    staggered = sample_x * across + offset
+    within_x = staggered - numpy.floor(staggered)
     within_y = sample_y * courses - row
     distance = numpy.minimum(
         numpy.minimum(within_x, 1.0 - within_x), numpy.minimum(within_y, 1.0 - within_y)
@@ -2446,52 +2446,17 @@ def parquet_field(
     #
     # The lattice's y period is ONE, so the field's features are as
     # tall as the whole domain - and the lines run across it.
-    from golem_blender.pbr import noise
-
-    lattice_x = max(4, PARQUET_GRAIN_LATTICE)
-    while lattice_x > 1 and resolution % lattice_x != 0:
-        lattice_x //= 2
-    # The lattice's x period is MANY and its y period is ONE: the
-    # field varies along x and is CONSTANT along y - so the ridges
-    # it folds into run ALONG the board.
+    # The board's own GRAIN is the wood's own growth rings, and every
+    # board shows a different stretch of them.
     #
-    # The x sample is in the x lattice's units, so it is the domain
-    # times the x lattice; and the y sample is in the y lattice's
-    # units, and the y lattice is ONE cell, so the y sample is the
-    # domain itself.
-    #
-    # The two were the other way round, and the field was constant
-    # along x - so the ridges ran ACROSS the board and the floor
-    # came out with its grain the wrong way and with no grain at all
-    # where the measure could see it.
-    # And the grain's lines run ACROSS the board and not along it.
-    #
-    # The truth's own WoodFloor051 is a set of wide horizontal boards
-    # and the grain inside each one is a set of HORIZONTAL lines -
-    # thirty-five strong edges over five hundred and twelve pixels,
-    # so a line every fifteen. And the grain was the other way round:
-    # the x sample was in the x lattice and the y sample was the
-    # domain, so the field varied ALONG x and was constant along y -
-    # and the ridges it folded into ran down the board.
-    #
-    # So the x sample is the DOMAIN and the y sample is the y
-    # lattice: the field is constant along x and varies along y, and
-    # the ridges are horizontal.
-    coarse = noise.fbm_2d_value(
-        sample_x,
-        sample_y * lattice_x,
-        size=1,
-        octaves=PARQUET_GRAIN_OCTAVES,
-        seed=0,
-        folds=1,
-        size_y=lattice_x,
-    )
-    from golem_blender.pbr.noise_worley_fbm import _bilinear
-
-    grid_axis = numpy.linspace(0.0, resolution, resolution, endpoint=False)
-    grid_row, grid_column = numpy.meshgrid(grid_axis, grid_axis, indexing="ij")
-    grain = _bilinear(coarse, grid_row, grid_column)
-    fibre = numpy.abs(grain - 0.5) * 2.0
+    # It was a single noise of one cell along the board, stretched
+    # across all of them, so the floor came out as broad blurred
+    # stripes with the SAME grain running through neighbouring boards.
+    # A board is cut from its own log; its offset into the rings is its
+    # own, from the golden ratio of its index, and the board that wraps
+    # across the image's edge keeps one index and so one offset.
+    board_offset = numpy.mod(cell.astype(numpy.float64) * 0.6180339887, 1.0)
+    fibre = 1.0 - wood_ring_lightness(sample_y + board_offset, sample_x)
     return cell, edge, (across, courses), fibre
 
 
