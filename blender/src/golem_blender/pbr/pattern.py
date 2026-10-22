@@ -464,12 +464,16 @@ ROOF_ASPECT = 1.0
 # eight per cent of the surface and their correlation is +0.280 at an
 # eight-pixel lag and -0.004 at a hundred and twenty-eight, so they
 # are a fine network.
-MARBLE_WARP = 0.08
+MARBLE_WARP = 0.25
 MARBLE_WARP_STEP = 0.1
 MARBLE_VEIN_WIDTH = 0.14
-# How many vein BANDS the warped field carries, and it is the number
-# of contours the field crosses.
-MARBLE_VEIN_FREQUENCY = 12.0
+# How much FINER the BED is than the vein's own spacing, and the
+# contour has to wander over many of the bed's own features to be a
+# line and not a blob.
+#
+# The vein's own period is the LATTICE's cell - the surface's own
+# feature scale - and the bed is the finer field it is cut from.
+MARBLE_BED_FINENESS = 2
 # A HERRINGBONE floor's own aspect, and a board is as wide as it is
 # long.
 HERRINGBONE_ASPECT = 1.0
@@ -1573,7 +1577,7 @@ def brick_field(resolution: int, cells: int, aspect: float = BRICK_ASPECT):
     # And the sample's position is the BRICK'S OWN, so each brick's
     # swirl is its own and a wall of them reads as a wall of worked
     # stones and not as one field.
-    from golem_blender.pbr import noise_perlin, warp
+    from golem_blender.pbr import noise_perlin
 
     # The sample's own position WITHIN its brick, in the brick's
     # units - and it is a full grid, because the two axes have their
@@ -2468,9 +2472,9 @@ def marble_field(
     # The WARP, and it is the veins' own bed: a low-frequency field
     # that the veins ride, so they wander.
     bed = noise_perlin.perlin_2d(
-        sample_x * max(2, lattice // 8),
-        sample_y * max(2, lattice // 8),
-        period=max(2, lattice // 8),
+        sample_x * max(2, lattice // 2),
+        sample_y * max(2, lattice // 2),
+        period=max(2, lattice // 2),
         seed=17,
     )
     bed_reach = max(1e-6, float(bed.max() - bed.min()))
@@ -2496,13 +2500,34 @@ def marble_field(
     # So the vein is the sine of the warped field - the classic
     # marble, where the bands are the field's own contours and the
     # warp is what makes them wander.
+    #
+    # And the BED is FINER than the vein's own spacing, or the
+    # contour is a BLOB and not a line: the truth's own Marble012's
+    # veins are six pixels across and a hundred and forty-four
+    # apart, so the contour has to wander over many of the bed's own
+    # features.
+    bed_lattice = lattice * MARBLE_BED_FINENESS
+    while bed_lattice > 1 and resolution % bed_lattice != 0:
+        bed_lattice //= 2
     bed = noise_perlin.perlin_2d(
-        warped_x * lattice,
-        warped_y * lattice,
-        period=lattice,
+        warped_x * bed_lattice,
+        warped_y * bed_lattice,
+        period=bed_lattice,
         seed=23,
     )
-    veins = numpy.abs(numpy.sin(bed * MARBLE_VEIN_FREQUENCY * numpy.pi))
+    # And the vein's own FREQUENCY, and it is the BED's own fineness
+    # over the LATTICE: the vein's period is the lattice's cell, and
+    # the bed is the finer field it is cut from.
+    #
+    # The sine of a value that spans the whole range has half as many
+    # bands as its argument's factor, so the factor that puts one vein
+    # in every lattice cell is two over the bed's fineness.
+    #
+    # A fixed frequency was tried and it does not work: the bed is
+    # eight times finer than the lattice, so a fixed frequency made
+    # the veins four times finer than the material's own scale, and
+    # the marble's feature scale read 6.55x the truth's.
+    veins = numpy.abs(numpy.sin(bed * (2.0 / MARBLE_BED_FINENESS) * numpy.pi))
     # And the vein's own WIDTH, and it is a LINE and not a band: the
     # truth's own Marble012's veins are six pixels across.
     veins = numpy.clip(1.0 - numpy.abs(veins - 1.0) / MARBLE_VEIN_WIDTH, 0.0, 1.0)
