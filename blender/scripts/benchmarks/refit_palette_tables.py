@@ -2,9 +2,9 @@
 
 The palette's tables - a word's value, its spread, its hue and how
 many materials name it - are FITS, and a fit is only as good as the
-materials it was made on. There are now three truth sets (the twenty
-hand-picked, the eighty-seven wide, and the forty-seven from
-ambientcg's popular list) and the popular list has kinds the first
+materials it was made on. There are now four truth sets (the twenty
+hand-picked, the eighty-seven wide, the forty-seven from
+ambientcg's popular list, and the site's own sixty most-downloaded) and the popular list has kinds the first
 two never reach.
 
 So this rewrites the four tables in `src/golem_blender/pbr/palette.py`
@@ -29,7 +29,7 @@ BENCH = pathlib.Path(
         "/Users/ladvien/mnt/codex_fs/game_assets/benchmarks",
     )
 )
-SET_NAMES = ("ambientcg", "ambientcg_wide", "ambientcg_popular")
+SET_NAMES = ("ambientcg", "ambientcg_wide", "ambientcg_popular", "ambientcg_top")
 SOURCE = (
     pathlib.Path(__file__).resolve().parents[2] / "src/golem_blender/pbr/palette.py"
 )
@@ -142,6 +142,24 @@ def main():
         )
     )
     source = replace_table(source, "HUES", "\n" + hues)
+
+    # The MATERIAL words' hues, refitted for the words the table already
+    # names: the table was fitted on the wide set alone, where the only
+    # grassy material is an olive mossy ground, and every grass and
+    # moss on the popular list came out khaki.
+    material_words = re.findall(
+        r'^    "([a-z]+)": \(',
+        re.search(r"MATERIAL_HUES: dict\[.*?\] = \{(.*?)\n\}", source, re.DOTALL).group(1),
+        re.MULTILINE,
+    )
+    material_hues = "\n".join(
+        f'    "{word}": ({round(sum(item[0] for item in grouped_hue[word]) / len(grouped_hue[word]), 3)}, '
+        f"{round(sum(item[1] for item in grouped_hue[word]) / len(grouped_hue[word]), 3)}, "
+        f"{round(sum(item[2] for item in grouped_hue[word]) / len(grouped_hue[word]), 3)}),"
+        for word in material_words
+        if grouped_hue.get(word)
+    )
+    source = replace_table(source, "MATERIAL_HUES", "\n" + material_hues)
 
     SOURCE.write_text(source)
     print(f"FIT the tables in {SOURCE} are rewritten")

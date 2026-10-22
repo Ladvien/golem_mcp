@@ -105,6 +105,31 @@ SURFACE_PATCHES_PER_CELL = 12
 # nothing there at all, because the sheet's fine texture was
 # computed and thrown away.
 FLAT_TOOTH_LATTICE_FACTOR = 32
+# A ROCK face's layers: the fine grain's lattice and how much of the
+# face each layer carries. The truth's own rock faces are mostly fine
+# grain with a gentle body and thin pale scribbles.
+ROCK_GRAIN_LATTICE = 128
+ROCK_BODY_SHARE = 0.3
+ROCK_GRAIN_SHARE = 0.5
+ROCK_SCRIBBLE_SHARE = 0.4
+# A MOSS's speckle lattice.
+MOSS_SPECKLE_LATTICE = 256
+# A GRASS's blades: how many across a blade's direction and along it
+# (a blade about sixteen pixels long and three wide at 1024), and the
+# integer directions they lie in - every vector is whole, so a blade
+# turned along it still repeats on the tile.
+GRASS_BLADE_ACROSS = 320
+GRASS_BLADE_ALONG = 64
+GRASS_BLADE_DIRECTIONS = (
+    (0, 1),
+    (1, 1),
+    (1, -1),
+    (1, 2),
+    (2, 1),
+    (1, -2),
+    (2, -1),
+    (1, 0),
+)
 # How many octaves a flat sheet's two layers carry. One octave of a
 # value noise shows its own lattice as soft squares.
 FLAT_SHEET_OCTAVES = 4
@@ -2290,6 +2315,152 @@ def flat_field(
     edge = 1.0 - sheet
     fine_edge = fine
     return 0, edge, (cells, cells), fine_edge
+
+
+def _unit(field):
+
+    low = float(field.min())
+    return (field - low) / max(1e-9, float(field.max()) - low)
+
+
+def rock_field(resolution: int, cells: int):
+    """A ROCK face: a fine fractal mottle with thin pale scribbles in it.
+
+    A rock was a Voronoi, and the close sheet showed every rock as flat
+    polygon facets - a camouflage of plates - where the truth's own
+    Rock020, Rock030 and Rock035 are a fine grainy surface with no
+    pieces in it at all, and pale lichen scribbles across it.
+
+    So the rock is a many-octave fBm at the surface's own scale, a fine
+    grain over it, and the crests of a ridged noise as the scribbles.
+    Every period is a whole number, so the face tiles.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    axis = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+    lattice = max(2, int(cells))
+    body = noise.fbm_2d_value(
+        sample_x * lattice,
+        sample_y * lattice,
+        size=lattice,
+        octaves=7,
+        persistence=0.6,
+        seed=3,
+    )
+    ridge = noise.fbm_2d_value(
+        sample_x * lattice * 4,
+        sample_y * lattice * 4,
+        size=lattice * 4,
+        octaves=4,
+        persistence=0.5,
+        seed=7,
+        folds=1,
+    )
+    scribble = numpy.clip((_unit(1.0 - ridge) - 0.82) / 0.18, 0.0, 1.0) ** 2
+    grain = noise.fbm_2d_value(
+        sample_x * ROCK_GRAIN_LATTICE,
+        sample_y * ROCK_GRAIN_LATTICE,
+        size=ROCK_GRAIN_LATTICE,
+        octaves=4,
+        persistence=0.6,
+        seed=9,
+    )
+    field = (
+        ROCK_BODY_SHARE * _unit(body)
+        + ROCK_GRAIN_SHARE * _unit(grain)
+        + ROCK_SCRIBBLE_SHARE * scribble
+    )
+    return 0, _unit(field), (lattice, lattice), None
+
+
+def moss_field(resolution: int, cells: int):
+    """A MOSS: a fine speckle over soft clumps.
+
+    A moss was a Voronoi too, and came out as olive polygon facets
+    where the truth's own Moss002 is a fine bright speckle with soft
+    darker clumps through it.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    axis = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+    lattice = max(2, int(cells))
+    fine = noise.fbm_2d_value(
+        sample_x * MOSS_SPECKLE_LATTICE,
+        sample_y * MOSS_SPECKLE_LATTICE,
+        size=MOSS_SPECKLE_LATTICE,
+        octaves=2,
+        persistence=0.6,
+        seed=4,
+    )
+    clump = noise.fbm_2d_value(
+        sample_x * lattice * 2,
+        sample_y * lattice * 2,
+        size=lattice * 2,
+        octaves=4,
+        seed=8,
+    )
+    field = 0.6 * _unit(fine) + 0.4 * _unit(clump)
+    return 0, _unit(field), (lattice, lattice), None
+
+
+def grass_field(resolution: int, cells: int):
+    """A GRASS: short blades lying every way, over a soft ground.
+
+    A lawn was a field of scattered STONES, and came out as camouflage
+    blotches where the truth's own Grass001 and Grass004 are dense short
+    blades.
+
+    A blade is a value noise FINE across a direction and COARSE along
+    it, folded so its crest is a line. The direction is an INTEGER
+    vector, so the turned noise still repeats on the tile; several
+    directions each fill their own patches, so the blades lie every
+    way. The crest is sharpened so a blade is a bright leaf over darker
+    gaps.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    axis = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+    lattice = max(2, int(cells))
+    total = numpy.zeros_like(sample_x)
+    weight = numpy.zeros_like(sample_x)
+    for index, (along_x, along_y) in enumerate(GRASS_BLADE_DIRECTIONS):
+        along = along_x * sample_x + along_y * sample_y
+        across = -along_y * sample_x + along_x * sample_y
+        blade = noise.fbm_2d_value(
+            across * GRASS_BLADE_ACROSS,
+            along * GRASS_BLADE_ALONG,
+            size=GRASS_BLADE_ACROSS,
+            size_y=GRASS_BLADE_ALONG,
+            octaves=1,
+            seed=20 + index,
+            folds=1,
+        )
+        patch = noise.fbm_2d_value(
+            sample_x * 6, sample_y * 6, size=6, octaves=2, seed=40 + index
+        )
+        share = numpy.clip((patch - 0.45) * 6.0, 0.0, 1.0)
+        total = total + share * blade
+        weight = weight + share
+    blades = total / numpy.maximum(weight, 1e-6)
+    leaves = numpy.clip((_unit(1.0 - blades) - 0.55) / 0.45, 0.0, 1.0)
+    ground = noise.fbm_2d_value(
+        sample_x * lattice * 2,
+        sample_y * lattice * 2,
+        size=lattice * 2,
+        octaves=4,
+        seed=6,
+    )
+    field = 0.8 * leaves + 0.2 * _unit(ground)
+    return 0, _unit(field), (lattice, lattice), None
 
 
 def parquet_field(

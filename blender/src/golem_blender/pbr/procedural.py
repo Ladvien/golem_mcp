@@ -238,6 +238,9 @@ PROCEDURAL_COLOUR_KINDS = (
     "woven",
     "roof",
     "herringbone",
+    "rock",
+    "moss",
+    "grass",
     "graph",
 )
 # How wide a LINE is, as a fraction of the distance to the nearest
@@ -772,6 +775,12 @@ def write_procedural_base_color(
             scratch_strength=scratch_strength,
             envelope_factor=metal_envelope_factor,
         )
+    elif kind == "rock":
+        cell, edge, grid, fibre = pattern.rock_field(resolution, cells)
+    elif kind == "moss":
+        cell, edge, grid, fibre = pattern.moss_field(resolution, cells)
+    elif kind == "grass":
+        cell, edge, grid, fibre = pattern.grass_field(resolution, cells)
     else:
         # A FLAT sheet: a plaster, a paint, a wallpaper, a smooth
         # concrete. It has no cells at all - it is one surface - and
@@ -788,7 +797,7 @@ def write_procedural_base_color(
         )
     cell_width, cell_height = grid
 
-    if kind in ("flat", "wallpaper"):
+    if kind in ("flat", "wallpaper", "rock", "moss", "grass"):
         # A FLAT sheet is a SOFT variation about its base, and not a
         # set of lines.
         #

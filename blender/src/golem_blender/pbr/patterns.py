@@ -135,6 +135,11 @@ _FLAT_PATTERNS = (
 # A "parquet" is a parquet and not a plank, and a "corrugated steel"
 # is a pressed metal sheet and not a road with markings on it.
 _SPECIFIC_KINDS = (
+    # A GRASS is blades, whatever ground it grows on: the truth's own
+    # Grass001, Grass004 and the overgrown Ground037 all say "ground"
+    # too, and a ground is a field of stones.
+    ("grass", "grass"),
+    ("lawn", "grass"),
     ("parquet", "parquet"),
     ("carpet", "carpet"),
     ("leather", "leather"),
@@ -220,8 +225,15 @@ _MATERIAL_PATTERNS = (
     ("rubble", "scattered"),
     ("debris", "scattered"),
     ("scattered", "scattered"),
+    # A ROCK face is a fine fractal surface and not a set of pieces:
+    # as a Voronoi every rock came out as flat polygon facets. It is
+    # read before "stone", which a cliff's description often adds.
+    # And a MOSS is a speckle; a mossy rock is a rock, so the moss is
+    # read after it.
+    ("rock", "rock"),
+    ("cliff", "rock"),
+    ("moss", "moss"),
     ("stone", "voronoi"),
-    ("rock", "voronoi"),
     ("asphalt", "voronoi"),
     ("concrete", "voronoi"),
     # A FABRIC is a WEAVE and not a Voronoi.
