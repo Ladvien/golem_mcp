@@ -3021,7 +3021,25 @@ def scattered_field(
     # the measure read the stones' own count. Measured: the ground's
     # feature scale read 0.77x the truth's on one and 1.97x on the
     # other - the same material and the same words.
-    count = max(8, round(STONE_SCATTER_DENSITY))
+    # The count follows the SIZE and the surface's own SCALE.
+    #
+    # A ground with a wide spread has a DEEP shadow between its
+    # stones, and a ground with a narrow spread does not: the
+    # truth's own Ground110 has a spread of 0.1243 and its tenth
+    # percentile is 0.212, and the truth's own Ground109 has a
+    # spread of 0.0649 and its tenth percentile is 0.355.
+    #
+    # And the surface's scale is the count of its features, which is
+    # what the caller passes: a ground with twenty features across
+    # has stones a twentieth of the surface apart and a ground with
+    # eight has them an eighth apart, so the count goes with the
+    # square of the feature count.
+    #
+    # Measured on the truth's own: the ground's feature scale read
+    # 0.85x the truth's at twenty features and 1.43x at twenty-nine,
+    # with a constant count.
+    scale = max(1.0, float(cells))
+    count = max(8, round(STONE_SCATTER_DENSITY * (scale / 20.0) ** 2))
     field, places = splatter.splatter_field(
         resolution,
         count=count,
