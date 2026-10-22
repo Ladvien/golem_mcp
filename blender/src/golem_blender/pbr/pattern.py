@@ -402,12 +402,21 @@ CARPET_FIBRE_FACTOR = 8.0
 # much: the truth's carpet reads 1.20 times more change along a row
 # than down a column.
 CARPET_FIBRE_STRETCH = 2.0
-# A LEATHER's cells, as a multiple of the surface's own feature
-# count, and how far a cell's own point may move from its centre.
+# A LEATHER's cells, and how far a cell's own point may move from its
+# centre.
 #
 # A hide is a fine even grain: the cells are tight and even, and not
 # the loose ground's scattered stones.
-LEATHER_CELL_FACTOR = 6.0
+#
+# Measured on the truth's own: the pebbles of the six leathers come
+# five to seven pixels apart in a thousand and twenty-four - a fine
+# and even grain whatever the leather's own scale is, from the
+# almost-flat one at 0.0032 of spread to the contrasty one at 0.063.
+#
+# So the cell count is a FIXED grain and not the surface's own
+# feature count: the surface's count is what the measure reads and
+# the grain is what the eye reads, and they are different numbers.
+LEATHER_CELL_COUNT = 170
 LEATHER_CELL_JITTER = 0.7
 # A WALLPAPER's motif, as a multiple of the surface's own feature
 # count: a wallpaper's design is a thing you see from across a room.
@@ -1698,7 +1707,7 @@ def grain_field(
         # sixteen times too coarse.
         lattice = max(
             4,
-            int(round(fibre_cells))
+            round(fibre_cells)
             if fibre_cells is not None
             else round(cells * FIBRE_CELLS_PER_RING),
         )
@@ -2452,7 +2461,7 @@ def leather_field(
     # The cells are the SURFACE's own count and not a loose ground's:
     # a hide is a fine crackle, so the lattice is a power of two that
     # divides the resolution.
-    lattice = _power_of_two_nearest(max(4, round(cells * LEATHER_CELL_FACTOR)))
+    lattice = _power_of_two_nearest(max(4, LEATHER_CELL_COUNT))
     while lattice > 1 and resolution % lattice != 0:
         lattice //= 2
     while lattice > 1 and lattice * 4 > resolution:

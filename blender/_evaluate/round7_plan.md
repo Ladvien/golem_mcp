@@ -2,10 +2,10 @@
 
 The score says how close a recreation is. The sheet says whether it
 *is* the material. Both were run against the twenty hand-picked
-ambientcg sets; the wide seventy-set sample is in `coverage_audit.md`
-and it is the honest baseline.
+ambientcg sets; the wide sample is in `coverage_audit.md` and it is
+the honest baseline.
 
-## The score, before and after
+## The twenty-set score, before and after
 
 | | start of round 7 | now |
 |---|---|---|
@@ -14,7 +14,7 @@ and it is the honest baseline.
 | mean scale ratio | 1.57x | 0.97x |
 | **mean seam** | **3.87x** | **0.41x** |
 
-## The picture: five defects the score could not see
+## The picture: the defects the score could not see
 
 ### 1. The scattered ground's stones were a plate of cracked mud
 
@@ -76,28 +76,37 @@ sixteen cells got two hundred and fifty-six.
 
 ## The kinds the lane had no pattern for
 
-The coverage audit found twenty-four of the seventy wide-set
-materials falling through to the guess, and named the kinds:
+| the kind | what it is | what the truth's measures |
+|---|---|---|
+| `parquet` | long staggered blocks, each with its own tone and grain | a row-to-column change ratio of 0.24 - the most horizontal surface in the sample |
+| `carpet` | a fine isotropic fuzz with a slight direction | a period of nine pixels in a thousand and twenty-four, a ratio of 1.20, a spread of 0.0301 |
+| `leather` | a fine even pebbled hide | the loose ground's primitive at a much finer scale |
+| `wallpaper` | a flat sheet with a faint printed design | a spread of 0.0032 - a design is a whisper |
+| `markings` | painted geometry over a surface | three markings across a road, nine to fourteen pixels wide, the dash half the pitch |
+| `woven` | a crosshatch of two thread fields | Fabric030: four hundred and twelve features across and forty-four down |
+| `roof` | courses of overlapping shingles | a course every 177 pixels, a shingle every 185 |
+| `herringbone` | boards at ninety degrees, in pairs | the truth's own parquet is a basketweave |
 
-- **parquet** - a wood floor laid in blocks. The truth's own parquet
-  measures a row-to-column change ratio of 0.24 and it is the most
-  horizontal surface in the sample.
-- **carpet** - a pile of fibres: a spread of 0.029 over twenty-seven
-  thousand specks.
-- **leather** - a fine even pebbled hide, the loose ground's
-  primitive at a much finer scale.
-- **wallpaper** - a flat sheet with a printed design on it.
+## The palette
 
-## And the palette
-
-It was fitted on twenty materials. It is fitted on seventy now, by
-`scripts/benchmarks/fit_palette.py`, and the tables are MERGED and
+It was fitted on twenty materials. It is fitted on eighty-seven now,
+by `scripts/benchmarks/fit_palette.py`, and the tables are MERGED and
 not replaced - a word the truth set does not measure keeps the value
 the word's own sense gives it.
 
-## The Material Maker ports
+And three rules the fitting exposed:
 
-The report's ranked list, and where each stands:
+- a colour's value is fitted where the colour is the **only** word
+  about it: "blue" names three materials in the wide set and their
+  mean is no material's colour.
+- a colour word's **specificity** decides: "beige" names fourteen
+  materials and "espresso" names one, and the one is the specific
+  one.
+- the **most specific material** decides, and a generic one lets the
+  colour: a carpet is a carpet and not a fabric, and a wood's
+  brightness is its colour's and not its kind's.
+
+## The Material Maker ports
 
 | item | state |
 |---|---|
@@ -106,17 +115,17 @@ The report's ranked list, and where each stands:
 | `splatter` | ported, and the wrap was missing - now nine copies |
 | `smooth_curvature2` | **ported** (`pbr/curvature.py`) |
 | `scratches2` | **ported** (`pbr/curvature.py`) |
-| the exact bisector border | not ported - the F2-F1 distance is close enough and the FBM-Worley already uses a bisector distance |
+| the exact bisector border | not ported - the FBM-Worley already uses a bisector distance |
 | `crystal`, `beehive`, `shard_fbm`, `sdf3d_fbm2` | not useful for the benchmark's kinds |
 | the exporter's ORM packing | already matches golem's |
 
 ## The next round
 
-1. The wide seventy-set run, and what it says.
+1. The wide eighty-seven-set run, and what it says.
 2. The two-scale structure: the truth's ground has a fine scale (the
    stones) and a coarse one (the drift), and the drift is what the
    feature measure reads.
-3. The road markings - a painted line on a surface is GEOMETRY and
-   not noise, and the lane has no kind for it.
-4. The per-stone hue: the truth's stones vary by 1.5% in their red
+3. The per-stone hue: the truth's stones vary by 1.5% in their red
    and blue shares, and ours are all one tan.
+4. The leather's own scale: the six leathers range from five
+   features across to five hundred and twelve.

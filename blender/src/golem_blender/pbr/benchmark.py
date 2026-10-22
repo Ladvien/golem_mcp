@@ -173,7 +173,9 @@ def albedo_statistics(path: Path) -> dict:
     columns = luma - luma.mean(axis=0, keepdims=True)
     down_correlation = numpy.zeros(height)
     for column in columns[:: max(1, width // 64)]:
-        down_correlation += numpy.correlate(column, column, mode="full")[height - 1 :]
+        down_correlation += numpy.correlate(column, column, mode="full")[
+            height - 1 : height - 1 + height
+        ]
     if down_correlation[0]:
         down_correlation = down_correlation / down_correlation[0]
     down_below = numpy.where(down_correlation < 0.0)[0]

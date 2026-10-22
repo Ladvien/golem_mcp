@@ -89,6 +89,17 @@ MATERIAL_WORDS = (
     "planks",
     "carpet",
     "scattered",
+    "roof",
+    "roofing",
+    "shingle",
+    "wallpaper",
+    "woodchip",
+    "herringbone",
+    "basketweave",
+    "woven",
+    "weave",
+    "textile",
+    "cloth",
 )
 
 # The words that name a METAL, and a metal's value is read from the
