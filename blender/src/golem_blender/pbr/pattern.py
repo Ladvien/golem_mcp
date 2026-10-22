@@ -457,8 +457,23 @@ STONE_PEBBLE_JITTER = 0.35
 #
 # The size is a sixteenth of the domain, because the truth's own
 # stones are sixteen pixels across in a thousand and twenty-four.
-STONE_SCATTER_SIZE = 0.016
-STONE_SCATTER_PER_CELL = 1.5
+# The stone's RADIUS, and not its diameter.
+#
+# The truth's own stones are eighteen pixels across in a thousand and
+# twenty-four, so nine pixels of radius, and about thirty-two of them
+# along a row - so a thirty-two pixel period and about a thousand
+# stones in the whole image.
+STONE_SCATTER_SIZE = 0.0130
+# How many stones the surface carries.
+#
+# The truth's own ground is a gravel: fifty-six bright stones along
+# a row of a thousand and twenty-four, and they are sixteen pixels
+# across - so about sixty of them across and three thousand six
+# hundred in the whole image.
+# The truth's own ground: fifty-six bright stones along a row of a
+# thousand and twenty-four, eighteen pixels across, so a thirty-two
+# pixel period and about a thousand stones in the whole image.
+STONE_SCATTER_DENSITY = 700.0
 STONE_SCATTER_SIZE_JITTER = 0.6
 STONE_SCATTER_EDGES = 3
 STONE_SCATTER_SEED = 7
@@ -1684,7 +1699,19 @@ def scattered_field(
     # a stone is sixteen pixels across in a thousand and twenty-four,
     # and there are about sixty of them along a row.
     size = max(2.0 / resolution, STONE_SCATTER_SIZE)
-    count = max(8, round(cells * cells * STONE_SCATTER_PER_CELL))
+    # The stones' COUNT follows their SIZE and not the cell count.
+    #
+    # The truth's own stones are sixteen pixels across, and they are
+    # sixteen pixels across whatever the surface's feature count is -
+    # so the count is fixed by the size and not by the cells.
+    #
+    # The count followed the cells, and so it followed the feature
+    # count: the ground with twenty features had six hundred stones
+    # and the one with sixteen had three hundred and eighty-four, and
+    # the measure read the stones' own count. Measured: the ground's
+    # feature scale read 0.77x the truth's on one and 1.97x on the
+    # other - the same material and the same words.
+    count = max(8, round(STONE_SCATTER_DENSITY))
     field, places = splatter.splatter_field(
         resolution,
         count=count,
@@ -1706,44 +1733,147 @@ def scattered_field(
         # The stone's own cut lines, and they are relative to the
         # stone's own centre and its own size - so a cut is the
         # stone's own edge and not a cut across the whole surface.
-        delta_x = sample_x - centre_x
-        delta_y = sample_y - centre_y
+        #
+        # The cut is applied in the stone's OWN BOX, for the same
+        # reason the splat is: the whole surface is a million pixels
+        # and there are three thousand six hundred stones.
+        radius = int(numpy.ceil(this_size * 1.6 * resolution))
+        if radius < 1:
+            continue
+        centre_px = int(centre_x * resolution)
+        centre_py = int(centre_y * resolution)
+        lo_x = max(0, centre_px - radius)
+        hi_x = min(resolution, centre_px + radius + 1)
+        lo_y = max(0, centre_py - radius)
+        hi_y = min(resolution, centre_py + radius + 1)
+        if hi_x <= lo_x or hi_y <= lo_y:
+            continue
+        rows = (numpy.arange(lo_y, hi_y) + 0.5) / resolution - centre_y
+        columns = (numpy.arange(lo_x, hi_x) + 0.5) / resolution - centre_x
+        delta_y, delta_x = numpy.meshgrid(rows, columns, indexing="ij")
         delta_x -= numpy.round(delta_x)
         delta_y -= numpy.round(delta_y)
+        reach = numpy.hypot(delta_x, delta_y) / max(1e-6, this_size)
+        outside = numpy.clip(reach - 1.0, 0.0, 1.0)
+        # The stone's own shape, and the cut CLIPS it.
+        dome = (reach < 1.0).astype(numpy.float64)
         for _ in range(STONE_SCATTER_EDGES):
             angle = generator.random() * numpy.pi
             offset = 0.4 + generator.random() * 0.45
             gradient = numpy.cos(angle) * delta_x + numpy.sin(angle) * delta_y
-            # The cut is measured in the stone's own radii, so it is
-            # the stone's own edge - and it is applied only where
-            # the stone is, because a cut taken as a plain minimum
-            # takes the whole surface with it.
-            reach = numpy.hypot(delta_x, delta_y) / max(1e-6, this_size)
-            outside = numpy.clip(reach - 1.0, 0.0, 1.0)
-            cut = numpy.clip((offset - gradient / max(1e-6, this_size)) * 1.6, 0.0, 1.0)
-            # The cut is applied to the DOME and not to the field, so
-            # the stone is a solid piece with a straight edge and not a
-            # hollow ring: taking a minimum of the field and the cut
-            # left the stone's own centre standing and cut away
-            # everything around it.
-            solid = numpy.minimum(field, numpy.maximum(cut, outside))
-            field = numpy.minimum(field, solid)
+            # The stone's shape is the DOME CLIPPED by the plane, and
+            # not a minimum of the two.
+            #
+            # A minimum of the dome and the cut leaves a crescent: the
+            # dome's round edge and the plane's straight edge, and the
+            # truth's stones are solid pieces with straight edges all
+            # the way round.
+            #
+            # So the plane CLIPS the dome: the stone is the dome where
+            # the plane allows it, and nothing at all outside the
+            # stone's own radius.
+            # The stone is the SET of points inside it and on the
+            # plane's side, and it is SOLID.
+            #
+            # The cut was a ramp and a ramp makes a ring: the plane's
+            # value goes to zero at the plane, so the stone's middle
+            # is hollow. The truth's stones are solid pieces.
+            #
+            # So the cut is a MASK and not a ramp, and the stone is the
+            # dome times the mask.
+            side = (offset - gradient / max(1e-6, this_size)) > 0.0
+            clipped = numpy.where(side, dome, 0.0)
+            window = field[lo_y:hi_y, lo_x:hi_x]
+            numpy.maximum(window, clipped, out=window)
 
-    # The TONE is the scatter's own dome - one at a stone's centre
-    # and zero at its edge - so a stone is a rounded piece.
+    # The TONE is the scatter's own field - one at a stone's centre
+    # and zero at its edge - so a stone is a solid piece.
     #
     # The matrix's mottle was the tone, and the mottle is at a fine
     # scale: the ground's feature scale read 10.00x the truth's with
     # it, where the scattered stones alone read 0.93x.
     matrix = numpy.clip(field, 0.0, 1.0)
-
-    # The EDGE is the distance to a stone's own border, and it is
-    # what the shared path draws the joint from: the joint is dark
-    # where the edge is small.
+    # And the surface's SLOW variation rides on the stones.
     #
-    # The scatter's field is the DOME - one at a stone's centre and
-    # zero at its edge - so the edge is its complement.
-    edge = numpy.clip(1.0 - field, 0.0, 1.0)
+    # The truth's own ground measures nineteen features across and it
+    # has fifty-six stones across, so the measure finds the surface's
+    # slow variation and not the stones - and the stones' own tones
+    # are all much the same.
+    #
+    # So the slow variation is a smooth field at the SURFACE's scale,
+    # and it varies the stones' tones together - which is what a worn
+    # patch of ground does.
+    slow = surface_texture(resolution, max(2, cells))
+    slow_reach = max(1e-6, float(slow.max() - slow.min()))
+    slow = (slow - float(slow.min())) / slow_reach
+    # The stone's own TONE is a per-stone CONSTANT, and not the dome.
+    #
+    # The truth's stones are all much the same grey - the variation
+    # is in the matrix and in the stones' EDGES, and not in the
+    # stones' tones - and a dome's gradient makes every stone a
+    # bright blob in a dark field, and the measure finds the blobs.
+    #
+    # So the tone is flat within a stone, and the stones' own edges
+    # carry the contrast.
+    for index, (centre_x, centre_y, this_size, _, _, _) in enumerate(places):
+        radius = int(numpy.ceil(this_size * 1.6 * resolution))
+        if radius < 1:
+            continue
+        centre_px = int(centre_x * resolution)
+        centre_py = int(centre_y * resolution)
+        lo_x = max(0, centre_px - radius)
+        hi_x = min(resolution, centre_px + radius + 1)
+        lo_y = max(0, centre_py - radius)
+        hi_y = min(resolution, centre_py + radius + 1)
+        if hi_x <= lo_x or hi_y <= lo_y:
+            continue
+        rows = (numpy.arange(lo_y, hi_y) + 0.5) / resolution - centre_y
+        columns = (numpy.arange(lo_x, hi_x) + 0.5) / resolution - centre_x
+        delta_y, delta_x = numpy.meshgrid(rows, columns, indexing="ij")
+        delta_x -= numpy.round(delta_x)
+        delta_y -= numpy.round(delta_y)
+        reach = numpy.hypot(delta_x, delta_y) / max(1e-6, this_size)
+        # The stone is SOLID: its tone is flat inside it and it has a
+        # hard edge.
+        #
+        # The tone was a DOME - a gradient from the stone's centre to
+        # its edge - and a dome makes a glowing blob and not a stone.
+        # The truth's stones are flat pieces with a hard edge.
+        inside = (reach < 1.0).astype(numpy.float64)
+        # The stone's own tone, and the stones are all MUCH THE SAME.
+        #
+        # The truth's own gravel is a field of stones that are all one
+        # grey, and the variation is in the MATRIX and in the stones'
+        # EDGES. So the stones' tones vary by a tenth and not by
+        # half: with a wide variation the measure reads the stones
+        # and not the surface, and the ground's feature scale read
+        # 1.46x the truth's.
+        #
+        # And the SLOW variation rides on them: the stone's tone is
+        # its own hash, scaled by the slow field where the stone
+        # sits, so a worn patch of ground is a patch of paler stones.
+        slow_here = float(
+            slow[
+                min(resolution - 1, max(0, centre_py)),
+                min(resolution - 1, max(0, centre_px)),
+            ]
+        )
+        tone = (
+            0.55
+            + 0.18
+            * float(numpy.random.default_rng(STONE_SCATTER_SEED + index).random())
+        ) * (0.7 + 0.6 * slow_here)
+        window = matrix[lo_y:hi_y, lo_x:hi_x]
+        numpy.maximum(window, inside * tone, out=window)
+
+    # The EDGE is what the shared path draws the joint from, and the
+    # joint is dark where the edge is small.
+    #
+    # So the edge is the scatter's own field: one at a stone's centre
+    # and zero in the matrix. It was the field's COMPLEMENT, and the
+    # joint was then drawn at the stones' CENTRES - and the ground
+    # came out as a field of bright rings.
+    edge = numpy.clip(field, 0.0, 1.0)
     # The CELL is a constant: a scatter has no cells to hash.
     return numpy.zeros_like(edge, dtype=numpy.int32), edge, (cells, cells), matrix
 

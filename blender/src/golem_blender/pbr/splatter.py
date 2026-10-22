@@ -24,12 +24,11 @@ import numpy as np
 
 # How many splats a surface carries.
 #
-# A gravel's stones are dense: the truth's own ground carries
-# fifty-six bright stones along a row of a thousand and twenty-four,
-# which is about sixty across the width, and a thousand and twenty-four
-# by a thousand and twenty-four is about six hundred in the whole
-# image.
-DEFAULT_SPLATTER_COUNT = 600
+# A gravel's stones are dense: the truth's own ground carries about
+# sixty stones along a row of a thousand and twenty-four, and they
+# are sixteen pixels across - so about three thousand six hundred in
+# the whole image.
+DEFAULT_SPLATTER_COUNT = 3600
 
 # The splat's size, as a fraction of the domain.
 #
@@ -41,6 +40,10 @@ DEFAULT_SPLATTER_SIZE = 0.016
 DEFAULT_SPLATTER_SIZE_JITTER = 0.6
 DEFAULT_SPLATTER_ROTATE = 180.0
 
+# How many splats' worth of area the domain holds, per splat's own
+# area. It is the DENSITY, and the count follows it and the size.
+DEFAULT_SPLATTER_DENSITY = 3600.0
+
 
 def splatter_field(
     resolution: int,
@@ -49,7 +52,7 @@ def splatter_field(
     size_jitter: float = DEFAULT_SPLATTER_SIZE_JITTER,
     rotate: float = DEFAULT_SPLATTER_ROTATE,
     seed: int = 0,
-) -> np.ndarray:
+):
     """A field of scattered splats, each one a soft dome.
 
     The value is one at a splat's centre and falls to zero at its
@@ -59,10 +62,12 @@ def splatter_field(
     The splats WRAP: one that leaves the domain comes back on the
     other side, so the map tiles exactly. Material Maker's own
     splatter does not, and it cannot.
-    """
-    axis = (np.arange(resolution) + 0.5) / resolution
-    sample_x, sample_y = np.meshgrid(axis, axis, indexing="ij")
 
+    And each splat is drawn into its OWN BOX and not into the whole
+    surface: the whole surface is a million pixels and there are
+    three thousand six hundred splats, so the whole-surface form cost
+    three billion operations.
+    """
     generator = np.random.default_rng(seed)
     field = np.zeros((resolution, resolution), dtype=np.float64)
     # The splats' own places and shapes, so a caller can cut them.
@@ -76,11 +81,24 @@ def splatter_field(
         angle = (generator.random() * 2.0 - 1.0) * np.radians(rotate)
         cosine = np.cos(angle)
         sine = np.sin(angle)
+        places.append((centre_x, centre_y, this_size, angle, cosine, sine))
 
-        # The distance to the splat's centre, with the splat's own
-        # axes - so it is an ellipse and not a circle.
-        delta_x = sample_x - centre_x
-        delta_y = sample_y - centre_y
+        # The splat is drawn into its own box, and the box is the
+        # splat's own radius.
+        radius = int(np.ceil(this_size * 1.6 * resolution))
+        if radius < 1:
+            continue
+        centre_px = int(centre_x * resolution)
+        centre_py = int(centre_y * resolution)
+        lo_x = max(0, centre_px - radius)
+        hi_x = min(resolution, centre_px + radius + 1)
+        lo_y = max(0, centre_py - radius)
+        hi_y = min(resolution, centre_py + radius + 1)
+        if hi_x <= lo_x or hi_y <= lo_y:
+            continue
+        rows = (np.arange(lo_y, hi_y) + 0.5) / resolution - centre_y
+        columns = (np.arange(lo_x, hi_x) + 0.5) / resolution - centre_x
+        delta_y, delta_x = np.meshgrid(rows, columns, indexing="ij")
         # The WRAP: the closest copy of the centre, on either side.
         delta_x -= np.round(delta_x)
         delta_y -= np.round(delta_y)
@@ -90,14 +108,16 @@ def splatter_field(
 
         # The splat is a DOME: one at its centre and zero at its edge.
         dome = np.clip(1.0 - distance, 0.0, 1.0)
-        field = np.maximum(field, dome * dome * (3.0 - 2.0 * dome))
-        places.append((centre_x, centre_y, this_size, angle, cosine, sine))
+        dome = dome * dome * (3.0 - 2.0 * dome)
+        window = field[lo_y:hi_y, lo_x:hi_x]
+        np.maximum(window, dome, out=window)
 
     return field, places
 
 
 __all__ = (
     "DEFAULT_SPLATTER_COUNT",
+    "DEFAULT_SPLATTER_DENSITY",
     "DEFAULT_SPLATTER_ROTATE",
     "DEFAULT_SPLATTER_SIZE",
     "DEFAULT_SPLATTER_SIZE_JITTER",

@@ -113,6 +113,10 @@ LINE_LIGHT_FRACTION = 0.18
 # with a matrix twelve pixels wide between stones that are sixteen
 # pixels across.
 SCATTER_MATRIX_WIDTH = 2.0
+# Where a stone's joint becomes hard. A stone's edge is an edge and
+# not a gradient, and the soft falloff made the ground a field of
+# glowing blobs.
+SCATTER_JOINT_EDGE = 0.5
 # How much of the full width a SOLID surface's joint gets. A loose
 # ground's matrix between its stones is a sixth of the surface, and a
 # concrete's or a tile's joint is a hairline.
@@ -537,16 +541,19 @@ def write_procedural_base_color(
     else:
         width = mortar_width * JOINT_SOLID_FRACTION
     if kind == "scattered":
-        # A SCATTER's joint is the MATRIX between its stones, and
-        # the matrix is WIDE: the truth's own ground is a gravel with
-        # a matrix twelve pixels wide between stones that are sixteen
-        # pixels across.
+        # A SCATTER's joint is the MATRIX between its stones, and the
+        # matrix is WIDE: the truth's own ground is a gravel with a
+        # matrix twelve pixels wide between stones that are sixteen
+        # pixels across, and the matrix is SEVENTY PER CENT of the
+        # surface.
         #
         # So the joint's width is a large fraction of the stone's own
-        # size, and not the hairline a cell's joint is. Measured with
-        # the hairline: the ground's feature scale read 10.00x the
-        # truth's.
+        # size, and not the hairline a cell's joint is.
         width = mortar_width * SCATTER_MATRIX_WIDTH
+        # And the joint is HARD: a stone's edge is an edge and not a
+        # gradient, and the soft falloff made the ground a field of
+        # glowing blobs.
+        joint = numpy.where(joint > SCATTER_JOINT_EDGE, joint, 1.0)
     joint = numpy.clip(1.0 - joint / max(width, 1e-6), 0.0, 1.0)
 
     # The stones' colours, from each cell's own random value.
