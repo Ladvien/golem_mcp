@@ -242,8 +242,7 @@ def fit(root: pathlib.Path, extra_roots=()) -> dict:
         """The words with enough materials behind them.
 
         A word with ONE material behind it is a single reading and
-        not a fit - for the SPREAD, which is noisy, one material is
-        not enough.
+        not a fit - where a fit is wanted.
         """
         return {
             word: source[word]
@@ -279,7 +278,7 @@ def fit(root: pathlib.Path, extra_roots=()) -> dict:
         },
         "spreads": {
             word: round(_mean(values_list), 4)
-            for word, values_list in table(spreads).items()
+            for word, values_list in measured(spreads).items()
         },
         # The METAL words' spreads, and they are SPECIFIC: "gold"
         # names one material in the wide set and its spread measures
