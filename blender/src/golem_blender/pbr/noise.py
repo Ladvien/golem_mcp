@@ -225,7 +225,38 @@ def fbm_2d_value(
     return value / numpy.maximum(norm, 1e-9)
 
 
+def gaussian_grain(resolution: int, scale_px: float, seed: int = 0):
+    """An ISOTROPIC grain, in 0..1: white noise smoothed by a Gaussian.
+
+    `scale_px` is the Gaussian's sigma in pixels at a 1024 map, so the
+    grain is the same size on the surface at any resolution.
+
+    A value noise's cells are SQUARES: its corners sit on a lattice and
+    it interpolates along the axes, so at a cell of a few pixels - or
+    raised to a power to make a sparse field - its shapes line up with
+    the axes. The close sheet showed it as camouflage squares on a
+    metal's mottle and as pixel blocks on a rock's grain. A Gaussian has
+    no axis, and the smoothing is done in the FFT's own CIRCULAR domain,
+    so the grain is exactly periodic and the map tiles.
+    """
+    import numpy
+
+    white = numpy.random.default_rng(seed).standard_normal((resolution, resolution))
+    sigma = max(1e-6, float(scale_px) * resolution / 1024.0)
+    frequencies = numpy.fft.fftfreq(resolution)
+    fx, fy = numpy.meshgrid(frequencies, frequencies, indexing="ij")
+    kernel = numpy.exp(-2.0 * (numpy.pi * sigma) ** 2 * (fx * fx + fy * fy))
+    grain = numpy.real(numpy.fft.ifft2(numpy.fft.fft2(white) * kernel))
+    # Mapped by its PERCENTILES and not its extremes: a Gaussian's
+    # extremes are rare, and a range taken from them bunches the grain
+    # in the middle - a rock's grain then carried too little of the
+    # face and its body's clouds took over.
+    low, high = numpy.percentile(grain, (0.5, 99.5))
+    return numpy.clip((grain - low) / max(1e-12, float(high - low)), 0.0, 1.0)
+
+
 __all__ = (
     "fbm_2d_value",
+    "gaussian_grain",
     "value_noise_2d",
 )

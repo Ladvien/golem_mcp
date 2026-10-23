@@ -105,15 +105,16 @@ SURFACE_PATCHES_PER_CELL = 12
 # nothing there at all, because the sheet's fine texture was
 # computed and thrown away.
 FLAT_TOOTH_LATTICE_FACTOR = 32
-# A ROCK face's layers: the fine grain's lattice and how much of the
+# A ROCK face's layers: the fine grain's sigma (pixels at 1024) and how
+# much of the
 # face each layer carries. The truth's own rock faces are mostly fine
 # grain with a gentle body and thin pale scribbles.
-ROCK_GRAIN_LATTICE = 128
+ROCK_GRAIN_PX = 1.0
 ROCK_BODY_SHARE = 0.3
 ROCK_GRAIN_SHARE = 0.5
 ROCK_SCRIBBLE_SHARE = 0.4
-# A MOSS's speckle lattice.
-MOSS_SPECKLE_LATTICE = 256
+# A MOSS's speckle: its Gaussian grain's sigma, in pixels at 1024.
+MOSS_SPECKLE_PX = 0.8
 # A GRASS's blades: how many cross the lawn per feature of the
 # surface's own count, how much longer a blade is than it is wide, and
 # the
@@ -291,9 +292,9 @@ METAL_GRAIN_LATTICE = 16
 METAL_BRUSH_ALONG_PX = 24.0
 METAL_BRUSH_ACROSS_PX = 1.5
 METAL_BRUSH_SHARPNESS = 6.0
-# A mottled sheet's fine variation: its value noise's cell, in pixels at
-# 1024 across.
-METAL_MOTTLE_PX = 16.0
+# A mottled sheet's fine variation: its Gaussian grain's sigma, in pixels
+# at 1024 across.
+METAL_MOTTLE_PX = 2.0
 # How much COARSER the metal's envelope's lattice is than its cell
 # count. A Perlin's value oscillates faster than its lattice, and the
 # measure reads the value.
@@ -2375,14 +2376,10 @@ def rock_field(resolution: int, cells: int):
         folds=1,
     )
     scribble = numpy.clip((_unit(1.0 - ridge) - 0.82) / 0.18, 0.0, 1.0) ** 2
-    grain = noise.fbm_2d_value(
-        sample_x * ROCK_GRAIN_LATTICE,
-        sample_y * ROCK_GRAIN_LATTICE,
-        size=ROCK_GRAIN_LATTICE,
-        octaves=4,
-        persistence=0.6,
-        seed=9,
-    )
+    # The fine grain is a Gaussian grain: a value noise's 8-pixel cells
+    # showed as pixel blocks on the close sheet, where the truths' own
+    # rock faces decorrelate within 2-4 pixels.
+    grain = noise.gaussian_grain(resolution, ROCK_GRAIN_PX, seed=9)
     field = (
         ROCK_BODY_SHARE * _unit(body)
         + ROCK_GRAIN_SHARE * _unit(grain)
@@ -2405,14 +2402,7 @@ def moss_field(resolution: int, cells: int):
     axis = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
     lattice = max(2, int(cells))
-    fine = noise.fbm_2d_value(
-        sample_x * MOSS_SPECKLE_LATTICE,
-        sample_y * MOSS_SPECKLE_LATTICE,
-        size=MOSS_SPECKLE_LATTICE,
-        octaves=2,
-        persistence=0.6,
-        seed=4,
-    )
+    fine = noise.gaussian_grain(resolution, MOSS_SPECKLE_PX, seed=4)
     clump = noise.fbm_2d_value(
         sample_x * lattice,
         sample_y * lattice,
@@ -4488,16 +4478,11 @@ def metal_field(
         # expects, and its scratches show on it.
         from golem_blender.pbr import noise
 
-        mottle_lattice = max(2, round(1024 / METAL_MOTTLE_PX))
-        mottle = noise.fbm_2d_value(
-            sample_x * mottle_lattice,
-            sample_y * mottle_lattice,
-            size=mottle_lattice,
-            octaves=3,
-            seed=17,
-        )
-        low, high = float(mottle.min()), float(mottle.max())
-        fine_edge = ((mottle - low) / max(1e-9, high - low)) ** METAL_BRUSH_SHARPNESS
+        # The mottle is a Gaussian grain and not a value noise: a value
+        # noise raised to a power shows its lattice as camouflage
+        # squares (Metal007, 029, 038 and 046B on the close sheet).
+        mottle = noise.gaussian_grain(resolution, METAL_MOTTLE_PX, seed=17)
+        fine_edge = mottle**METAL_BRUSH_SHARPNESS
     if brushed:
         # A BRUSHED sheet is STREAKS, not ribs: a value noise stretched
         # along the brushing, a few cells along the image and hundreds
