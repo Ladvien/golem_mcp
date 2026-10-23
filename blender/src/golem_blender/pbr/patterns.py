@@ -25,6 +25,10 @@ so the STRUCTURE is read first and the material second.
 
 from __future__ import annotations
 
+# The words that say a metal is under a COAT, and so is the coat's flat
+# sheet and not a metal's own surface.
+COATING_WORDS = frozenset(("powder", "coated", "painted", "enamel", "lacquered"))
+
 # The structure words, and the pattern each calls for. Read first: a
 # "wood floor" is a wood floor, and a "stone tile" is a stone tile.
 #
@@ -281,6 +285,14 @@ def pattern_for_description(description: str) -> str:
     # They were a substring test, and "corrugated" contains "rug" -
     # so the truth's own corrugated steel came out as a CARPET.
     words = set(description.lower().replace(",", " ").split())
+    # A COATED metal is its coat: a powder-coated or painted steel is a
+    # flat sheet of paint, and the truth's own Metal027 and Metal029 are
+    # a uniform dark navy. As a metal sheet they took a metal's mottle
+    # and envelope, and their contrast read 1.90x and 1.52x the truth's.
+    from golem_blender.pbr.material import is_metal
+
+    if is_metal(description) and words & COATING_WORDS:
+        return "flat"
     # The SPECIFIC kinds are read first: a "parquet floor" is a
     # parquet and not a plank, and a "carpet" is a carpet and not a
     # fabric.

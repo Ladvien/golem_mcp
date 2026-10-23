@@ -63,3 +63,21 @@ def test_the_structure_is_read_before_the_material():
     """
     assert pattern_for_description("wood, floor, tiles") == "grain"
     assert pattern_for_description("stone, tile") == "brick"
+
+
+def test_a_coated_metal_is_its_coat_and_a_bare_one_is_a_sheet():
+    """A powder-coated steel is a flat sheet of paint; a scratched one is a
+    metal sheet. As a metal, the coated truths took a metal's mottle and
+    their contrast read 1.90x and 1.52x the truth's."""
+    assert (
+        pattern_for_description("black, covered, metal, painted, powder, steel")
+        == "flat"
+    )
+    assert pattern_for_description("metal, scratched, steel") == "metal"
+    assert pattern_for_description("dark, painted, wood") == "grain"
+
+
+def test_bare_rust_and_dust_are_films_and_a_rusty_steel_is_a_sheet():
+    assert pattern_for_description("rust, rusty, orange brown") == "flat"
+    assert pattern_for_description("pale grey dust") == "flat"
+    assert pattern_for_description("aged, rusty, steel") == "metal"
