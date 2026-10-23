@@ -21,7 +21,8 @@ Every material is tileable and every mask is periodic, so the set
 tiles. A JOINTED material's height (a brick wall, a paving, a parquet, a
 roof) is its pattern's own joint field, so a layer laid in the joints
 lands in the joints whatever each piece's tone; every other
-material's height is its albedo's smoothed luma.
+material's height is its own relief, related to its colour and skewed as
+its kind's truths are (_relief_height).
 """
 
 from __future__ import annotations
@@ -31,6 +32,35 @@ from pathlib import Path
 
 # How much a material's luma is smoothed before it is read as height.
 HEIGHT_BLUR_PX = 2
+# A non-jointed kind's HEIGHT: its correlation with the albedo's luma and
+# its skew, the medians of the kind's truths over the four sets (kinds
+# with three or more): the truths' displacement is nearly independent of
+# their colour.
+KIND_HEIGHT = {
+    "flat": (-0.06, -0.31),
+    # A grain's and a marble's height FOLLOW their lines - the truths' own
+    # median |r| is 0.58 and 0.65 - but which way splits (ten woods' dark
+    # lines stand proud and eight's are sunk); the median r of -0.13 drew a
+    # relief unrelated to the grain (Wood048, looked at). So the majority's
+    # sign at the median strength.
+    "grain": (-0.58, -0.08),
+    "metal": (0.04, -0.02),
+    "scattered": (0.20, 0.41),
+    "woven": (0.23, 0.11),
+    "asphalt": (0.01, -1.30),
+    "rock": (-0.03, -0.51),
+    "leather": (-0.10, -0.52),
+    "marble": (0.65, -1.49),
+    "carpet": (0.72, -0.16),
+    "markings": (0.71, 2.47),
+    "grass": (0.21, 0.51),
+}
+DEFAULT_HEIGHT = (0.0, -0.3)
+# The independent relief: a feature spans this many sigmas of its broad
+# grain, and the broad grain's share of the relief (the rest a quarter of
+# its size).
+RELIEF_FEATURE_SIGMAS = 3.3
+RELIEF_BROAD_SHARE = 0.7
 # How dark the deepest cavity is in the AO channel.
 AO_STRENGTH = 0.6
 # A kind's SURFACE, measured on the truths' own maps across the four
@@ -263,15 +293,17 @@ def _material_maps(
             + distance * JOINT_DOME
         )
     else:
-        # Every other kind's height is its luma: a grain's lines, a
-        # rock's pits and a flat sheet's mottle are darker than what is
-        # around them.
         luma = (
             0.2126 * albedo[:, :, 0]
             + 0.7152 * albedo[:, :, 1]
             + 0.0722 * albedo[:, :, 2]
         )
-        height = layers._normalised(layers._wrapped_box_blur(luma, HEIGHT_BLUR_PX))
+        height = _relief_height(
+            layers._wrapped_box_blur(luma, HEIGHT_BLUR_PX),
+            chosen_kind,
+            scale_cells,
+            resolution,
+        )
     return (
         layers.MaterialMaps(
             albedo=albedo,
@@ -283,6 +315,64 @@ def _material_maps(
         ),
         chosen_kind,
     )
+
+
+def _relief_height(luma, kind: str, scale_cells: float, resolution: int):
+    """A non-jointed kind's height: its own relief, as related to its colour
+    and as skewed as the kind's truths are, 0 the lowest.
+
+    It was the albedo's smoothed luma, so its correlation with the colour
+    was 0.75-0.94 for every kind, where the truths' displacements are
+    nearly independent of their colour (medians: a flat sheet -0.06, a
+    grain -0.13, a metal 0.04, a rock -0.03) - the normal map repeated the
+    colour, and the score's height-luma error was 0.67. So the height is
+    the luma at the kind's measured correlation and an independent relief
+    for the rest, at the surface's own scale, and an exponential bend
+    gives it the kind's measured skew (an asphalt's pits skew it low, a
+    gravel's stones high).
+    """
+    import math
+
+    import numpy
+
+    from golem_blender.pbr import layers
+    from golem_blender.pbr.noise import gaussian_grain
+
+    correlation, skew = KIND_HEIGHT.get(kind, DEFAULT_HEIGHT)
+
+    def standardised(field):
+        deviation = float(field.std())
+        return (field - float(field.mean())) / max(1e-12, deviation)
+
+    sigma = 1024.0 / (max(2.0, float(scale_cells)) * RELIEF_FEATURE_SIGMAS)
+    relief = standardised(
+        RELIEF_BROAD_SHARE**0.5
+        * standardised(gaussian_grain(resolution, sigma, seed=61))
+        + (1.0 - RELIEF_BROAD_SHARE) ** 0.5
+        * standardised(gaussian_grain(resolution, sigma / 4.0, seed=62))
+    )
+    height = (
+        correlation * standardised(luma)
+        + math.sqrt(max(0.0, 1.0 - correlation * correlation)) * relief
+    )
+
+    def skew_of(field):
+        z = standardised(field)
+        return float((z**3).mean())
+
+    def bent(rate):
+        if abs(rate) < 1e-6:
+            return height
+        return numpy.expm1(rate * height) / rate
+
+    low, high = -3.0, 3.0
+    for _ in range(40):
+        middle = 0.5 * (low + high)
+        if skew_of(bent(middle)) < skew:
+            low = middle
+        else:
+            high = middle
+    return layers._normalised(bent(0.5 * (low + high)))
 
 
 def surface_of(description: str, kind: str) -> tuple[float, float, float, float]:

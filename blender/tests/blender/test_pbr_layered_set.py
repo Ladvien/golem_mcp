@@ -274,3 +274,29 @@ def test_a_brick_wall_s_height_map_sets_its_joints_low(tmp_path):
     height = _pixels(written["paths"]["height"])[:, :, 0]
     standard = (height - height.mean()) / height.std()
     assert float((standard**3).mean()) < -0.5
+
+
+def _height_and_luma(tmp_path: Path, description: str):
+    written = write_layered_texture_set(
+        tmp_path, "Set", {"description": description}, [], 12.0, RESOLUTION
+    )
+    height = _pixels(written["paths"]["height"])[:, :, 0]
+    albedo = _pixels(written["paths"]["base_color"])
+    luma = albedo @ numpy.array([0.2126, 0.7152, 0.0722])
+    return height, luma
+
+
+def test_a_plaster_s_relief_is_not_its_colour(tmp_path):
+    """The height was the albedo's luma (r 0.75-0.94 for every kind) where
+    the truths' displacement is nearly independent of the colour - a flat
+    sheet's median r is -0.06 - so the normal map repeated the colour."""
+    height, luma = _height_and_luma(tmp_path, "clean, plaster, white")
+    assert abs(float(numpy.corrcoef(height.ravel(), luma.ravel())[0, 1])) < 0.4
+
+
+def test_an_asphalt_s_relief_skews_low(tmp_path):
+    """An asphalt's surface is a plane with pits in it: the truths' skew is
+    -1.30, and the luma's skew was about nothing."""
+    height, _luma = _height_and_luma(tmp_path, "asphalt, gray, road")
+    standard = (height - height.mean()) / height.std()
+    assert float((standard**3).mean()) < -0.8
