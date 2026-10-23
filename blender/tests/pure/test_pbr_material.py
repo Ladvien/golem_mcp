@@ -564,3 +564,17 @@ def test_the_joint_is_as_dark_as_the_surface_varies():
     # fabric's red channel is 0.24 while its luma is 0.33.
     value = (luma(palette["stone_dark_rgb"]) + luma(palette["stone_light_rgb"])) / 2.0
     assert luma(palette["mortar_rgb"]) == pytest.approx(value - spread, abs=1e-6)
+
+
+def test_a_wood_named_warmer_than_wood_takes_that_colour():
+    """An orange wood is orange; a black wood is still a wood's warm brown.
+
+    The truth's own Wood052, an "orange, plain, smooth, wood", measures
+    0.511, 0.304, 0.185; as the generic wood its hue error read 0.125.
+    """
+    from golem_blender.pbr.palette import HUES, MATERIAL_HUES, hue_for_description
+
+    assert hue_for_description("orange, plain, smooth, wood") == HUES["orange"]
+    assert (
+        hue_for_description("black, brown, dark, smooth, wood") == MATERIAL_HUES["wood"]
+    )

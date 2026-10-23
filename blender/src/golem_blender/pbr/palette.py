@@ -3310,7 +3310,27 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     # So a wood's hue is its own material's hue, and the colour word
     # is the fallback.
     if "wood" in words or "wooden" in words:
-        return MATERIAL_HUES["wood"]
+        # Unless the colour named is WARMER than a wood: a warm colour
+        # word on a wood is the wood's own colour, and the rule above is
+        # about the cool and dark words that are not. The truth's own
+        # Wood052, an "orange, plain, smooth, wood", measures 0.511,
+        # 0.304, 0.185 - the orange's own - and as the generic wood its
+        # error read 0.125; it reads 0.031 with the orange. Across the
+        # 28 woods, 0.1036 -> 0.0990 (only orange, gold and tan are
+        # warmer than a wood).
+        wood = MATERIAL_HUES["wood"]
+        warm = [
+            word.strip(".,")
+            for word in words
+            if word.strip(".,") in HUE_COLOUR_WORDS
+            and HUES.get(word.strip(".,")) is not None
+            and HUES[word.strip(".,")][0] - HUES[word.strip(".,")][2]
+            > wood[0] - wood[2]
+        ]
+        if warm:
+            warm.sort(key=lambda word: (MATERIAL_WORD_COUNTS.get(word, 99), word))
+            return HUES[warm[0]]
+        return wood
     # And a COLOURED METAL is its metal's own colour.
     #
     # A gold or a copper sheet IS that colour; a steel or a silver one
