@@ -510,6 +510,12 @@ MARBLE_WARP_LIMIT_CELLS = 0.4
 # fading in over this much of it.
 MARBLE_VEIN_PRESENCE = 0.35
 MARBLE_VEIN_PRESENCE_SOFTNESS = 0.2
+# The presence field's lattice as a share of the surface's count. Scored
+# with the benchmark's own scale on seven marble truths (bold 0.4/0.8 x
+# presence 0.5/1.0): mean |log| 0.279 / 0.183 / 0.350 / 0.241 - at half
+# the count the network's coarse patches set the scale, and Marble016
+# and Marble021 read 0.54 and 0.53.
+MARBLE_PRESENCE_FACTOR = 1.0
 # A marble's two vein families, neither finer than the surface's own
 # count: a fine web of one-pixel veins once read 93 features against the
 # truth's 14, because a web finer than the surface sets the
@@ -2876,7 +2882,7 @@ def marble_field(
         ),
         MARBLE_FINE_SHARE * level_veins(period, MARBLE_FINE_VEIN_PX, 3),
     )
-    presence_lattice = max(2, period // 2)
+    presence_lattice = max(2, round(period * MARBLE_PRESENCE_FACTOR))
     presence = value_noise.fbm_2d_value(
         sample_x * presence_lattice,
         sample_y * presence_lattice,

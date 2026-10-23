@@ -100,6 +100,10 @@ transcript; the four sets re-run after each batch.
 | camouflage squares, pixel blocks | a value noise's lattice (powered for the metal mottle; 8 px cells for rock grain) | `noise.gaussian_grain` (FFT-smoothed white noise, periodic); Metal007 8/8 vs 9/10 | 09d30bb |
 | powder-coated metal mottled | a coat routed to the metal sheet | coating words + a metal route to the flat sheet | 6658f51 |
 | marble: polygon net, dashed loops, no veins on black | a Worley crackle over everything, a contour band breaking on steep slopes, F2-F1 widths; the fibre was the stone and saturated; the writer draws high fibre towards the light | level-set veins of a warped fBm at a fixed pixel width, two families, a presence mask; the fibre is the veins; a pale marble's line mirrored; envelope 0.4 -> 0.05... 0.2 (fine/slow err 0.94 -> 0.22) | c779b44 |
+| Wood052 orange as tan | the wood rule ignored every colour word | a colour warmer than the wood decides (woods 0.1044 -> 0.0952) | 3af878f |
+| moss/rock/wood hues diluted | material hues fitted over descriptions where the word was one material of several | fitted first where it is the only material (LOO 0.0784 -> 0.0779, median 0.0511 -> 0.0462) | 55df6a3 |
+| Fabric085 grey, Leather038 brown | with only generic materials named the first word with a hue decided ("fabric" before "orange") | a dyed material (fabric, wool, leather, carpet) takes its colour word; 0.0613 -> 0.0588 | b7698d9 |
+| marble scale 0.54 | the presence mask at half the count set the scale | presence at the count (seven marbles' scale error 0.279 -> 0.183) | (presence) |
 
 Measured but NOT taken (lost on the holdout or in-sample): colour-word-first hue (41 better / 56 worse);
 a one-colour-word hue (28/58); dropping lightness words from the spread outright (holdout 0.4323);
