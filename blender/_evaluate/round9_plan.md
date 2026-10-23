@@ -104,7 +104,7 @@ transcript; the four sets re-run after each batch.
 | moss/rock/wood hues diluted | material hues fitted over descriptions where the word was one material of several | fitted first where it is the only material (LOO 0.0784 -> 0.0779, median 0.0511 -> 0.0462) | 55df6a3 |
 | Fabric085 grey, Leather038 brown | with only generic materials named the first word with a hue decided ("fabric" before "orange") | a dyed material (fabric, wool, leather, carpet) takes its colour word; 0.0613 -> 0.0588 | b7698d9 |
 | marble scale 0.54 | the presence mask at half the count set the scale | presence at the count (seven marbles' scale error 0.279 -> 0.183) | 0245750 |
-| B10 Road007 five lines | markings at random places of a lattice of four (the constant's own comment said three) | the measured layout: solid edges at 7.5%/92.5%, a dashed centre, four dashes; an asphalt grain; the road's spread is what the paint leaves | (road) |
+| B10 Road007 five lines | markings at random places of a lattice of four (the constant's own comment said three) | the measured layout: solid edges at 7.5%/92.5%, a dashed centre, four dashes; an asphalt grain; the road's spread is what the paint leaves | eddec6e |
 
 Measured but NOT taken (lost on the holdout or in-sample): colour-word-first hue (41 better / 56 worse);
 a one-colour-word hue (28/58); dropping lightness words from the spread outright (holdout 0.4323);
@@ -119,10 +119,30 @@ words (mean 0.0620 -> 0.0595 but median 0.0375 -> 0.0387, 9 better / 6 worse).
 - Moss002 too pale (value 0.466 vs 0.353) and unsaturated; Concrete031 olive (its words say
   "green" and its pixels are grey: a description limit); dark woods too light (Wood067 1.71x,
   Wood026 1.54x): the truths are saturated red-brown, and the words do not carry it.
-- Fabric036's slubs and Fabric019's knit are not drawn; Metal007's gold is lemon against an orange-tan truth.
+- Fabric036's slubs and Fabric019's knit are not drawn (no slub or knit kind); Fabric085's boucle is a
+  coarse basket weave.
 - Marble014's beige (the specificity rule picks marble's neutral; numerically closer to the truth).
-- Tiles107's glazed white face gets the terrazzo tooth; Wood052's 'orange' is ignored (the wood rule);
-  Carpet016 is peach; WoodFloor040/041 are vertical planks (orientation is not in the words).
-- Ground037 is a forest floor (moss and dirt patches with twigs): a layered set, not one field.
+- Tiles107's face tooth is right in amount (0.032 against the truth's 0.025 fine std) but coarser
+  than the truth's; WoodFloor040/041 are vertical planks (orientation is not in the words).
+- Ground037 is a forest floor (moss and dirt patches with twigs): a layered set, not one field. Built
+  with generate_layered_texture_set (dirt + moss patches + grass patches) it carries the truth's
+  patchwork; the single-material benchmark cannot. Its moss is olive: even 'green' is fitted olive on
+  mossy rocks and grounds, and Moss002's vivid green is the corpus's one pure moss.
+- Ground048 (dark crumbly soil, 73 features) renders as pale scattered blobs: 'soil' has a fitted value
+  (0.377, more specific than 'dirt') that the value rule's tiers never read, and the scattered kind
+  draws stones where the truth is fine crumbs.
+- Metal034's gold reads lemon (contrast 5.24x on a near-uniform truth); Wood092 salmon against amber.
 - Tile counts vary against the truths (Tiles107 ours smaller, Tiles040 larger): the count is the
   feature measure's.
+
+## Benchmark across the round's last four runs (mean |log| ratio over 159 materials; colour error)
+
+| run | brightness | contrast | scale | colour |
+|---|---|---|---|---|
+| after cb01ddf | 0.165 | 0.257 | 0.329 | 0.1352 |
+| after e616af3 | 0.165 | 0.256 | 0.320 | 0.1339 |
+| after 55df6a3 | 0.165 | 0.255 | 0.328 | 0.1327 |
+| after eddec6e | 0.166 | 0.254 | 0.321 | 0.1313 |
+
+The seam rose (top 0.13 -> 0.19, truth 0.44) as the maps gained truth-like fine texture; every
+wrap step ranks inside its own map's interior steps (0.09-0.74), so none is a seam.
