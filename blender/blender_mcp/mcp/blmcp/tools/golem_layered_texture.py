@@ -80,7 +80,10 @@ def register(mcp: FastMCP) -> None:
         patches", "a concrete floor with dust on it". A single material
         is generate_procedural_base_color.
 
-        `layers_json` is a JSON list, bottom to top. Each layer:
+        `layers_json` is a JSON list, bottom to top; an EMPTY list composes
+        the layers from the base's own words (a "mossy rock" is a rock with
+        moss in its hollows, a "rusted iron" a metal with rust patches).
+        Each layer:
 
             {"description": "dark green moss", "amount": 1.0,
              "thickness": 0.15,

@@ -200,3 +200,20 @@ def test_an_ashlar_wall_lays_blocks_of_unequal_length_and_still_tiles():
     step = float(numpy.abs(numpy.diff(edge, axis=1)).max())
     assert float(numpy.abs(edge[:, 0] - edge[:, -1]).max()) <= step + 1e-9
     assert float(numpy.abs(edge[0] - edge[-1]).max()) <= step + 1e-9
+
+
+def test_a_rusted_iron_with_no_layers_composes_its_rust(tmp_path):
+    """With no layers given, the base's own words compose them: a rusted
+    iron comes out with rust on it, where one pattern drew a grey sheet."""
+    written = write_layered_texture_set(
+        tmp_path,
+        "Set",
+        {"description": "damaged, iron, metal, old, rusted"},
+        [],
+        8.0,
+        RESOLUTION,
+    )
+    albedo = _pixels(written["paths"]["base_color"])
+    rusty = (albedo[:, :, 0] - albedo[:, :, 2]) > 0.12
+    assert float(rusty.mean()) > 0.2
+    assert "metal" in written["kinds"] and len(written["kinds"]) == 2

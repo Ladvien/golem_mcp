@@ -333,7 +333,10 @@ EXPECTED_TOOLS = [
         'patches", "a concrete floor with dust on it". A single material\n'
         "is generate_procedural_base_color.\n"
         "\n"
-        "`layers_json` is a JSON list, bottom to top. Each layer:\n"
+        "`layers_json` is a JSON list, bottom to top; an EMPTY list composes\n"
+        'the layers from the base\'s own words (a "mossy rock" is a rock with\n'
+        'moss in its hollows, a "rusted iron" a metal with rust patches).\n'
+        "Each layer:\n"
         "\n"
         '    {"description": "dark green moss", "amount": 1.0,\n'
         '     "thickness": 0.15,\n'

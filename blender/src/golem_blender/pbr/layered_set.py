@@ -108,6 +108,90 @@ MASK_SOURCES = ("height", "noise", "cavity")
 MASK_COMBINE_MODES = ("multiply", "max")
 
 
+# OVERLAYS a description can name on a base material, and how each is laid.
+#
+# The truths' own mossy rocks (Rock063, Rock064) are grey rock with moss in
+# its hollows and joints, and their rusted metals (Metal053C, Metal063) are
+# a sheet with rust in patches - and one pattern for the whole description
+# drew a uniform olive rock ("green" tinted every stone) and a grey metal
+# with white blobs. So the overlay's words leave the base's description
+# (with the colour they bring) and become a layer of their own.
+#
+# Moss lies LOW, within broad patches; rust lies in patches with hard
+# edges, heavy only where the words say the metal is RUSTED or DAMAGED -
+# the truth's own Metal063 says "rust, rusty" of a polished steel with
+# faint stains.
+MOSS_WORDS = frozenset(("moss", "mossy", "lichen", "overgrown"))
+MOSS_COLOUR_WORDS = frozenset(("green",))
+RUST_WORDS = frozenset(("rust", "rusty", "rusted", "corroded", "oxidized"))
+HEAVY_RUST_WORDS = frozenset(("rusted", "damaged", "corroded", "weathered"))
+MOSS_LAYER = {
+    "description": "green moss, mossy",
+    "mask": {
+        "height": {"level": 0.55, "below": True, "softness": 0.3},
+        "noise": {"cells": 5, "coverage": 0.7, "softness": 0.25, "seed": 3},
+        "combine": "multiply",
+    },
+    "amount": 0.9,
+    "thickness": 0.08,
+}
+# Rust in patches with hard edges, a dozen across. Heavy rust takes about
+# half the sheet; light rust is faint stains. (Cut by the metal's own
+# cavities the patches became a worm maze, and "bright" moss turned beige -
+# looked at.)
+RUST_HEAVY = {"coverage": 0.45, "amount": 1.0}
+RUST_LIGHT = {"coverage": 0.12, "amount": 0.4}
+
+
+def compose_from_description(base: dict) -> tuple[dict, list[dict]]:
+    """The base and the layers a description's own words call for.
+
+    A base that names no overlay - or whose overlay IS the material (a
+    moss, a grass), or rust on something that is not a metal - is itself
+    and no layers.
+    """
+    from golem_blender.pbr.material import is_metal
+    from golem_blender.pbr.patterns import pattern_for_description
+
+    description = str(base.get("description", ""))
+    words = [word.strip(".,") for word in description.lower().replace(",", " ").split()]
+    present = set(words)
+    layers: list[dict] = []
+    strip: set[str] = set()
+    if present & MOSS_WORDS:
+        rest = [word for word in words if word not in MOSS_WORDS | MOSS_COLOUR_WORDS]
+        if rest and pattern_for_description(", ".join(rest)) not in ("moss", "grass"):
+            strip |= MOSS_WORDS | MOSS_COLOUR_WORDS
+            layers.append(dict(MOSS_LAYER))
+    if present & RUST_WORDS:
+        rest = [word for word in words if word not in RUST_WORDS]
+        if rest and is_metal(", ".join(rest)):
+            strip |= RUST_WORDS
+            weight = RUST_HEAVY if present & HEAVY_RUST_WORDS else RUST_LIGHT
+            layers.append(
+                {
+                    "description": "dark orange brown rust, rusty, rough",
+                    "mask": {
+                        "noise": {
+                            "cells": 12,
+                            "coverage": weight["coverage"],
+                            "softness": 0.05,
+                            "seed": 5,
+                        }
+                    },
+                    "amount": weight["amount"],
+                    "thickness": 0.04,
+                }
+            )
+    if not layers:
+        return base, []
+    composed = dict(base)
+    composed["description"] = ", ".join(word for word in words if word not in strip)
+    if not base.get("kind"):
+        composed["kind"] = pattern_for_description(composed["description"])
+    return composed, layers
+
+
 class LayerSpecError(ValueError):
     """A layer's specification cannot be built; the message names the field."""
 
@@ -346,6 +430,10 @@ def write_layered_texture_set(
     "mask" (see the module's docstring), an "amount" (0..1, default 1)
     and a "thickness" (how much it raises the surface, default 0.1).
 
+    With no layers, the base's own words compose them: a "mossy rock" is
+    a rock with moss in its hollows, a "rusted iron" a metal with rust in
+    patches (compose_from_description).
+
     Returns the written paths and the kinds the descriptions chose.
     """
     import numpy
@@ -358,6 +446,8 @@ def write_layered_texture_set(
     scratch_dir = directory / f".{texture_name}_layers"
     scratch_dir.mkdir(parents=True, exist_ok=True)
 
+    if not layer_specs:
+        base, layer_specs = compose_from_description(base)
     try:
         composed, kinds, normal_deg = _compose(
             base, layer_specs, scale_cells, resolution, scratch_dir
