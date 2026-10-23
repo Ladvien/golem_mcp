@@ -158,10 +158,16 @@ def main():
     # fit fell back to all of them, and a gold-looking "gold, silver,
     # steel" made silver tan.
     #
+    # ALONE: and first on the descriptions where the word is the ONLY
+    # material - a "moss" on a mossy rock is a few patches on the rock,
+    # and the truth's own Moss002, a "green, moss, mossy", is a saturated
+    # green where the mossy rocks and the forest floor made "moss" olive.
+    #
     # Leave-one-out over the 159 distinct materials: hue error 0.0818
-    # -> 0.0790, median 0.0559 -> 0.0514, 36 better and 19 worse; the
-    # brushed silver steels 0.087 -> 0.013 and 0.094 -> 0.020. A word no
-    # such description names keeps the fit over all of them.
+    # -> 0.0790 (no other colour), -> 0.0779 (alone first), median 0.0559
+    # -> 0.0514 -> 0.0462; the brushed silver steels 0.087 -> 0.013 and
+    # 0.094 -> 0.020. A word no such description names falls back to the
+    # descriptions with no other colour, and then to all of them.
     import sys
 
     sys.path.insert(0, str(SOURCE.parents[2]))
@@ -178,11 +184,21 @@ def main():
 
     def material_hue(word):
         others = colour_words - {word}
-        items = [
-            material["hue"]
+        other_materials = set(material_words) - {word}
+        coloured_alone = [
+            material
             for material in materials
             if word in material["tags"] and not set(material["tags"]) & others
-        ] or grouped_hue[word]
+        ]
+        items = (
+            [
+                material["hue"]
+                for material in coloured_alone
+                if not set(material["tags"]) & other_materials
+            ]
+            or [material["hue"] for material in coloured_alone]
+            or grouped_hue[word]
+        )
         return tuple(
             round(sum(item[k] for item in items) / len(items), 3) for k in range(3)
         )

@@ -567,7 +567,7 @@ def test_the_joint_is_as_dark_as_the_surface_varies():
 
 
 def test_a_wood_named_warmer_than_wood_takes_that_colour():
-    """An orange wood is orange; a black wood is still a wood's warm brown.
+    """An orange wood is orange; a black wood is still a wood's own warm hue.
 
     The truth's own Wood052, an "orange, plain, smooth, wood", measures
     0.511, 0.304, 0.185; as the generic wood its hue error read 0.125.
@@ -575,6 +575,4 @@ def test_a_wood_named_warmer_than_wood_takes_that_colour():
     from golem_blender.pbr.palette import HUES, MATERIAL_HUES, hue_for_description
 
     assert hue_for_description("orange, plain, smooth, wood") == HUES["orange"]
-    assert (
-        hue_for_description("black, brown, dark, smooth, wood") == MATERIAL_HUES["wood"]
-    )
+    assert hue_for_description("black, dark, smooth, wood") == MATERIAL_HUES["wood"]

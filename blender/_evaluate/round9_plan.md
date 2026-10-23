@@ -99,14 +99,15 @@ transcript; the four sets re-run after each batch.
 | B7 fabric speckle | the crosshatch's two axes were the SAME isotropic noise: no thread anywhere | Material Maker's weave; threaded regime where the features resolve threads, fine wandering threads under a light mottle where they do not; Fabric030 fine/slow 0.63 -> >2.5 (truth 10.5) | 387b337 |
 | camouflage squares, pixel blocks | a value noise's lattice (powered for the metal mottle; 8 px cells for rock grain) | `noise.gaussian_grain` (FFT-smoothed white noise, periodic); Metal007 8/8 vs 9/10 | 09d30bb |
 | powder-coated metal mottled | a coat routed to the metal sheet | coating words + a metal route to the flat sheet | 6658f51 |
-| marble: polygon net, dashed loops, no veins on black | a Worley crackle over everything, a contour band breaking on steep slopes, F2-F1 widths; the fibre was the stone and saturated; the writer draws high fibre towards the light | level-set veins of a warped fBm at a fixed pixel width, two families, a presence mask; the fibre is the veins; a pale marble's line mirrored; envelope 0.4 -> 0.05... 0.2 (fine/slow err 0.94 -> 0.22) | (marble) |
+| marble: polygon net, dashed loops, no veins on black | a Worley crackle over everything, a contour band breaking on steep slopes, F2-F1 widths; the fibre was the stone and saturated; the writer draws high fibre towards the light | level-set veins of a warped fBm at a fixed pixel width, two families, a presence mask; the fibre is the veins; a pale marble's line mirrored; envelope 0.4 -> 0.05... 0.2 (fine/slow err 0.94 -> 0.22) | c779b44 |
 
 Measured but NOT taken (lost on the holdout or in-sample): colour-word-first hue (41 better / 56 worse);
 a one-colour-word hue (28/58); dropping lightness words from the spread outright (holdout 0.4323);
 refusing words fitted on one material (holdout 0.5384); a wood's warmth fitted on its predicted
 value (the truths' darker woods ARE warmer, -0.49 with their own luma, but only -0.23 with the
 value the words predict; leave-one-out hue 0.1110 -> 0.1166, 13/13); fitting each material once
-instead of once per set (leave-one-out 65 better / 66 worse).
+instead of once per set (leave-one-out 65 better / 66 worse); averaging the hues of several named colour
+words (mean 0.0620 -> 0.0595 but median 0.0375 -> 0.0387, 9 better / 6 worse).
 
 ## Still open
 
