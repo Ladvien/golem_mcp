@@ -226,3 +226,30 @@ def test_a_moss_layer_does_not_raise_its_rock_s_relief(tmp_path):
     _orm, mossy = _set_channels(tmp_path / "mossy", "gray, mossy, rock, rough")
     _orm, bare = _set_channels(tmp_path / "bare", "gray, rock, rough")
     assert float(mossy.mean()) < 1.15 * float(bare.mean())
+
+
+def test_an_ashlar_wall_tiles_in_its_colour_too(tmp_path):
+    """The brick face's grit was laid on the unshifted brick grid, so in an
+    ashlar block it changed mid-block - and at the wrap: the wall's step
+    across the wrap read 8.26 against its interior columns' 99th
+    percentile of 5.91 (at 1024)."""
+    size = 1024
+    description = "bricks, natural, stone"
+    path = procedural.write_procedural_base_color(
+        tmp_path / "ashlar.png",
+        kind="brick",
+        scale_cells=10.0,
+        width_px=size,
+        height_px=size,
+        **palette_for_description(description, path="brick"),
+    )
+    image = bpy.data.images.load(str(path), check_existing=False)
+    try:
+        values = numpy.empty(len(image.pixels), dtype=numpy.float32)
+        image.pixels.foreach_get(values)
+    finally:
+        bpy.data.images.remove(image)
+    luma = values.reshape((size, size, 4))[:, :, :3].mean(axis=2)
+    wrap = float(numpy.abs(luma[:, 0] - luma[:, -1]).mean())
+    columns = numpy.abs(numpy.diff(luma, axis=1)).mean(axis=0)
+    assert wrap <= float(numpy.percentile(columns, 99))

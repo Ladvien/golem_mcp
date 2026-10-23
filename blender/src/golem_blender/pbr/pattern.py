@@ -1736,54 +1736,25 @@ def brick_field(
     # stones and not as one field.
     from golem_blender.pbr import noise_perlin
 
-    # The sample's own position WITHIN its brick, in the brick's
-    # units - and it is a full grid, because the two axes have their
-    # own scales: the course is one brick tall and the brick is
-    # `aspect` units wide.
+    # The sample's own position WITHIN ITS BRICK - the brick it is
+    # actually in, after the course's offset and an ashlar's moved
+    # joints - and the brick's and the course's own indices, so each
+    # brick's grit is its own.
     #
-    # The brick's index and the position within it, across the
-    # image, and the course's down it - and each is TILED to the
-    # full grid.
-    # The face is a full (resolution, resolution) grid, because the
-    # writer's image is square.
+    # The position was taken on the UNSHIFTED grid: the grit changed at
+    # every un-offset brick boundary, which in an ashlar block (or an
+    # offset course) falls mid-brick with no joint to hide it - and the
+    # ashlar wall's wrap read a step of 8.26 against its interior columns'
+    # 99th percentile of 5.91, a seam.
     #
-    # The brick's own position WITHIN the brick, in brick units, is
-    # what the grain follows - and it is the image's own pixel
-    # divided by the brick's own size, so it is a full grid.
-    pixel_axis = numpy.arange(resolution, dtype=numpy.float64)
-    within_x = ((pixel_axis + 0.5) * row_width / resolution - 0.5) - numpy.floor(
-        (pixel_axis + 0.5) * row_width / resolution - 0.5
-    )
-    within_y = ((pixel_axis + 0.5) * courses / resolution - 0.5) - numpy.floor(
-        (pixel_axis + 0.5) * courses / resolution - 0.5
-    )
-    within_x = numpy.tile(within_x.reshape(1, -1), (resolution, 1))
-    within_y = numpy.tile(within_y.reshape(-1, 1), (1, resolution))
-    # And the BRICK's and the COURSE's own indices, so each brick's
-    # swirl is its own.
-    brick_of = numpy.tile(
-        numpy.floor((pixel_axis + 0.5) * row_width / resolution - 0.5)
-        .astype(numpy.int32)
-        .reshape(1, -1),
-        (resolution, 1),
-    )
-    # The course's own index is REDUCED into the course count, so
-    # the last course and the first are the same course.
-    #
-    # The face's grain rides the course's own offset, and the offset
-    # was the course's index - and the index at the last course is
-    # not the index at the first, so the wrap joined two courses
-    # with different grain: the brick's horizontal seam read 1.875x,
-    # as big as the biggest feature.
-    course_of = numpy.tile(
-        numpy.mod(
-            numpy.floor((pixel_axis + 0.5) * courses / resolution - 0.5).astype(
-                numpy.int32
-            ),
-            courses,
-        ).reshape(-1, 1),
-        (1, resolution),
-    )
+    # The course's own index is REDUCED into the course count, so the
+    # last course and the first are the same course: the index at the
+    # last course is not the index at the first, and the wrap joined two
+    # courses with different grain (the horizontal seam read 1.875x).
+    within_x = within_brick
+    within_y = within_course
+    brick_of = shifted % row_width
+    course_of = course_down % courses
 
     # The face's own GRIT, and it is a FINE field and not a swirl.
     #
