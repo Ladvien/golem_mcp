@@ -133,6 +133,21 @@ ASPHALT_CRACK_PX = 1.6
 ASPHALT_CRACK_PRESENCE = 0.45
 ASPHALT_CRACK_LIGHT = 5.0
 ASPHALT_CRACK_GRID = 1024
+# A BANDED stone's layers: the multiples of the band count each sine runs
+# at, its amplitude and its phase; how far the warp moves a band (in image
+# heights) and over how many cells; and the grain's share.
+# The truths' bands carry many FINE layers within the broad ones (three
+# sines drew plain stripes, looked at).
+BANDED_LAYERS = (
+    (1, 1.0, 0.0),
+    (2, 0.5, 0.31),
+    (5, 0.3, 0.67),
+    (11, 0.2, 0.13),
+    (23, 0.14, 0.47),
+)
+BANDED_WARP = 0.2
+BANDED_WARP_LATTICE = 2
+BANDED_GRAIN = 0.25
 # A ROCK face's layers: the fine grain's sigma (pixels at 1024) and how
 # much of the
 # face each layer carries. The truth's own rock faces are mostly fine
@@ -2561,6 +2576,41 @@ def _asphalt_cracks(resolution: int):
         sample_x * 4, sample_y * 4, size=4, octaves=3, seed=34
     )
     return line * numpy.clip((presence - ASPHALT_CRACK_PRESENCE) / 0.06, 0.0, 1.0)
+
+
+def banded_field(resolution: int, cells: int):
+    """A BANDED stone - an onyx, a travertine: layers laid down one on the
+    next, wandering, with a fine grain in them.
+
+    They were marbles, and the truths' own Onyx015 and Travertine009 are
+    not veined at all: the onyx is flowing grey bands on white and the
+    travertine thin beige layers across it (looked at). Each layer is a
+    sine at a whole multiple of the band count and the warp is periodic,
+    so the stone tiles.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    axis = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+    bands = max(2, int(cells))
+    warp = noise.fbm_2d_value(
+        sample_x * BANDED_WARP_LATTICE,
+        sample_y * BANDED_WARP_LATTICE,
+        size=BANDED_WARP_LATTICE,
+        octaves=4,
+        seed=81,
+    )
+    phase = sample_x + BANDED_WARP * (warp - 0.5)
+    field = numpy.zeros_like(sample_x)
+    for multiple, amplitude, offset in BANDED_LAYERS:
+        field = field + amplitude * numpy.sin(
+            2.0 * numpy.pi * (phase * bands * multiple + offset)
+        )
+    grain = noise.gaussian_grain(resolution, 1.0, seed=82)
+    field = _unit(field) + BANDED_GRAIN * (grain - 0.5)
+    return 0, _unit(field), (bands, bands), None
 
 
 def moss_field(resolution: int, cells: int):

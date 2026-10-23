@@ -56,9 +56,12 @@ _STRUCTURE_PATTERNS = (
     # Voronoi - so the marble has to be read before it.
     #
     # And "veined" says the same thing without naming the stone.
+    # An ONYX and a TRAVERTINE are BANDED - layers, not veins: the
+    # truths' own Onyx015 and Travertine009 also say "marble" and as
+    # marbles they came out veined (looked at). Read before "marble".
+    ("onyx", "banded"),
+    ("travertine", "banded"),
     ("marble", "marble"),
-    ("onyx", "marble"),
-    ("travertine", "marble"),
     ("veined", "marble"),
 )
 

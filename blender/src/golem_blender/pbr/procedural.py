@@ -223,6 +223,7 @@ PROCEDURAL_COLOUR_KINDS = (
     "wallpaper",
     "markings",
     "asphalt",
+    "banded",
     "woven",
     "roof",
     "herringbone",
@@ -836,6 +837,8 @@ def write_procedural_base_color(
         )
     elif kind == "rock":
         cell, edge, grid, fibre = pattern.rock_field(resolution, cells)
+    elif kind == "banded":
+        cell, edge, grid, fibre = pattern.banded_field(resolution, cells)
     elif kind == "asphalt":
         cell, edge, grid, fibre = pattern.asphalt_field(
             resolution, cells, worn=asphalt_worn, cracked=cracked
@@ -871,7 +874,17 @@ def write_procedural_base_color(
     # cells - the crackle's cells hashed for colour against the envelope's
     # grid drew stripes, and its envelope reached the image only as mortar.
     if (
-        kind in ("flat", "wallpaper", "rock", "moss", "grass", "asphalt", "leather")
+        kind
+        in (
+            "flat",
+            "wallpaper",
+            "rock",
+            "moss",
+            "grass",
+            "asphalt",
+            "leather",
+            "banded",
+        )
         or pressed_metal
     ):
         # A FLAT sheet is a SOFT variation about its base, and not a

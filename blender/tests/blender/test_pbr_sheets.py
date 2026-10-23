@@ -126,3 +126,12 @@ def test_planks_are_long_boards_and_a_parquet_is_blocks():
 
     assert aspect(True) >= 6.0
     assert 2.5 <= aspect(False) <= 4.5
+
+
+def test_an_onyx_is_banded_layers_and_not_veins(tmp_path):
+    """The truths' onyx and travertine are layers across the stone; as
+    marbles they were veins on a mottle, and the profile down the image
+    carried almost none of the picture."""
+    luma = _luma(tmp_path, "marble, onyx, polished, smooth, stone, white", 8.0)
+    profile = luma.mean(axis=1) - luma.mean()
+    assert float(profile.std()) > 0.5 * float(luma.std())

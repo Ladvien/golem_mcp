@@ -61,6 +61,8 @@ KIND_SURFACE: dict[str, tuple[float, float, float, float]] = {
     "parquet": (2.6, 0.026, -0.21, -0.49),
     "herringbone": (2.6, 0.026, -0.21, -0.49),
     "marble": (0.4, 0.018, -0.17, -0.27),
+    # A banded stone is polished like a marble.
+    "banded": (0.4, 0.018, -0.17, -0.27),
     "leather": (4.4, 0.050, 0.17, -0.86),
     "carpet": (19.2, 0.041, -0.49, -0.89),
     "grass": (20.7, 0.076, 0.06, 0.48),
