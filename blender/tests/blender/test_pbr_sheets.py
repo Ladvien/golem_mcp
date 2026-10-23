@@ -223,3 +223,47 @@ def test_a_plain_metal_sheet_is_not_a_two_tone_camouflage(tmp_path):
     skew = float((standard**3).mean())
     kurtosis = float((standard**4).mean())
     assert (skew * skew + 1.0) / kurtosis < 0.5
+
+
+def test_a_brick_wall_s_mortar_is_a_band_and_not_a_cushion(tmp_path):
+    """The joint's falloff was a ramp across the mortar's whole width -
+    darkest on the joint's line and fading into the face - so every block
+    shaded into its rim like a cushion. A wall's mortar is a BAND: flat
+    across its inner part, its edge soft only where it meets the stone."""
+    description = "brick, bricks, natural, stone, wall"
+    kind = pattern_for_description(description)
+    joint = {}
+    path = write_procedural_base_color(
+        tmp_path / "wall.png",
+        kind=kind,
+        scale_cells=8.0,
+        width_px=RESOLUTION,
+        height_px=RESOLUTION,
+        joint_height_out=joint,
+        **palette_for_description(description, path=kind),
+    )
+    image = bpy.data.images.load(str(path), check_existing=False)
+    try:
+        values = numpy.empty(len(image.pixels), dtype=numpy.float32)
+        image.pixels.foreach_get(values)
+    finally:
+        bpy.data.images.remove(image)
+    rgb = values.reshape((RESOLUTION, RESOLUTION, 4))[:, :, :3].astype(float)
+    luma = (rgb @ numpy.array([0.2126, 0.7152, 0.0722])).ravel()
+    distance = joint["height"].ravel()
+    edges = numpy.linspace(0.0, 0.5, 51)
+    which = numpy.digitize(distance, edges) - 1
+    profile = numpy.array(
+        [
+            luma[which == i].mean() if (which == i).any() else numpy.nan
+            for i in range(50)
+        ]
+    )
+    face = float(numpy.nanmedian(profile[25:]))
+    mortar = float(profile[0])
+    contrast = abs(face - mortar)
+    # Where the mortar ends: the first distance whose luma is within a
+    # tenth of the contrast of the face's.
+    end = int(numpy.argmax(numpy.abs(profile - face) < 0.1 * contrast))
+    inner = profile[: max(2, end // 2)]
+    assert float(numpy.nanmax(inner) - numpy.nanmin(inner)) < 0.25 * contrast

@@ -193,6 +193,15 @@ JOINT_SOLID_FRACTION = 0.12
 FAN_JOINT_FRACTION = 0.35
 # How much wider a MORTARED wall's joint is than a solid surface's.
 MORTARED_JOINT_FACTOR = 2.0
+# A WALL's mortar band: full within this share of the joint's width, and
+# gone beyond the reach - a band with a soft edge, not a ramp.
+BRICK_MORTAR_FLAT = 0.4
+BRICK_MORTAR_REACH = 0.7
+# How much of the ramp a wall's per-block tone spans, and the mortar's own
+# sandy grain: its sigma at 1024 and its depth as a fraction of its colour.
+BRICK_TONE_FRACTION = 0.55
+MORTAR_GRAIN_PX = 1.6
+MORTAR_GRAIN = 0.04
 # How much the noise varies a stone within itself, as a fraction of
 # the stone's colour.
 DEFAULT_VARIATION = 0.15
@@ -1240,6 +1249,21 @@ def write_procedural_base_color(
         # So the falloff inverted the markings, and the road came
         # out white with the paint dark.
         joint = numpy.clip(1.0 - joint / max(width, 1e-6), 0.0, 1.0)
+        if kind == "brick" and brick_staggered:
+            # A wall's MORTAR is a band: flat across its width, with a
+            # soft edge only where it meets the stone. The falloff above
+            # is a ramp across the whole width - darkest on the joint's
+            # line and fading into the face - so every block shaded into
+            # its rim like a cushion (looked at: Bricks106A-113A, 060,
+            # 076A, 089, 097). The band keeps the ramp's coverage: full
+            # inside BRICK_MORTAR_FLAT of the width, gone by
+            # BRICK_MORTAR_REACH.
+            joint = numpy.clip(
+                (joint - (1.0 - BRICK_MORTAR_REACH))
+                / (BRICK_MORTAR_REACH - BRICK_MORTAR_FLAT),
+                0.0,
+                1.0,
+            )
     if kind == "brick" and not brick_staggered:
         # A TILE's grout is a HAIRLINE a fixed number of pixels wide,
         # and not a fraction of the tile: the truths' own grout
@@ -1278,6 +1302,12 @@ def write_procedural_base_color(
     import numpy as _np
 
     hashed = _cell_hash(cell, cell_width, cell_height)
+    if kind == "brick" and brick_staggered:
+        # A wall's blocks each carry a tone, but a NARROW one: drawn
+        # uniformly across the whole ramp the darkest were black and the
+        # palest white (Bricks089, 097, 060, looked at), and the face's own
+        # stain now carries the rest of the variation within each block.
+        hashed = 0.5 + (hashed - 0.5) * BRICK_TONE_FRACTION
     stone = _np.empty(cell.shape + (3,), dtype=numpy.float32)
     for channel in range(3):
         ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
@@ -1942,6 +1972,14 @@ def write_procedural_base_color(
         colour = base + texture[:, :, numpy.newaxis]
         colour = colour * (1.0 - marked) + paint * marked
     else:
+        if kind == "brick" and brick_staggered:
+            # A wall's MORTAR is sand and lime, and it has a grain: as one
+            # flat colour it read as a painted grid between the blocks.
+            from golem_blender.pbr import noise as _noise
+
+            sand = _noise.gaussian_grain(resolution, MORTAR_GRAIN_PX, seed=47)
+            sand = (sand - float(sand.mean())) / max(1e-9, float(sand.std()))
+            mortar = mortar * (1.0 + MORTAR_GRAIN * sand[:, :, numpy.newaxis])
         colour = colour * (1.0 - joint) + mortar * joint
     colour = numpy.clip(colour, 0.0, 1.0)
     # The image's variation is scaled so its spread IS the

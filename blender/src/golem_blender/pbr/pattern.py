@@ -441,28 +441,22 @@ BRICK_ASPECT = 1.34
 # as strips of mortar (looked at).
 ASHLAR_JOINT_JITTER = 0.25
 ASHLAR_SEED = 29
-# A BRICK's own FACE: the lattice of its grain, how far the warp
-# displaces it, the grain's own frequency, and the finer tooth.
+# A BRICK's own FACE: a stain the size of a block, a mid grain and a fine
+# tooth - their variance shares, the stain's sigma as a fraction of a
+# course's height, the grain's and the tooth's sigmas at 1024, and the
+# seed of the hash that mixes each block's two stains.
 #
 # The truth's own Bricks113A measures a spread of 0.0716 on the face
 # alone - nearly the whole map's - and its blur profile decays from
 # 0.068 at a two-pixel blur to 0.0087 at a hundred-and-twenty-eight.
 # So the face has structure at EVERY scale, and a flat face has none.
-BRICK_FACE_LATTICE = 8
-# How much of the face's PIXEL-level grain the field carries.
-#
-# A Perlin is smooth between its own lattice's corners however fine
-# the lattice is, and the truth's own brick face is SAND and not a
-# smooth field.
-#
-# A per-pixel random field was tried instead and it changed nothing:
-# the face's correlation at a one-pixel lag stayed at 0.223, so the
-# sand is not what the measure reads.
-BRICK_FACE_GRAIN_NOISE = 0.55
-BRICK_FACE_WARP = 0.06
-BRICK_FACE_WARP_STEP = 0.1
-BRICK_FACE_FREQUENCY = 3.0
-BRICK_FACE_TOOTH = 4
+BRICK_FACE_STAIN_SHARE = 0.45
+BRICK_FACE_GRAIN_SHARE = 0.30
+BRICK_FACE_TOOTH_SHARE = 0.25
+BRICK_FACE_STAIN_FRACTION = 0.3
+BRICK_FACE_GRAIN_PX = 2.5
+BRICK_FACE_TOOTH_PX = 0.8
+BRICK_FACE_SEED = 43
 # The face's own DRIFT, and the drift's own cells: the truth's own
 # Tiles141's drift has a period of a hundred and ninety-two pixels,
 # so five features across a thousand and twenty-four.
@@ -1744,7 +1738,6 @@ def brick_field(
     # And the sample's position is the BRICK'S OWN, so each brick's
     # swirl is its own and a wall of them reads as a wall of worked
     # stones and not as one field.
-    from golem_blender.pbr import noise_perlin
 
     # The sample's own position WITHIN ITS BRICK - the brick it is
     # actually in, after the course's offset and an ashlar's moved
@@ -1766,51 +1759,40 @@ def brick_field(
     brick_of = shifted % row_width
     course_of = course_down % courses
 
-    # The face's own GRIT, and it is a FINE field and not a swirl.
+    # The face is STONE at three scales: a stain the size of a block, a
+    # mid grain and a fine tooth. The truth's own Bricks113A carries its
+    # face's spread at every scale (its blur profile decays from 0.068 at
+    # two pixels to 0.0087 at a hundred and twenty-eight), and its blocks
+    # are layered and stained within themselves (looked at). The face was
+    # a Perlin at a fine lattice and a per-pixel Perlin - a uniform
+    # sandpaper, the same on every block.
     #
-    # The face was a DOMAIN-WARPED field - a perlin over the
-    # brick's own position, warped - and a warp has a DIRECTION, so
-    # every brick carried the same diagonal herringbone and the wall
-    # came out as a field of chevrons.
-    #
-    # The truth's own brick face is GRIT: its correlation falls
-    # steadily from +0.391 at a one-pixel lag to +0.086 at a
-    # thirty-two, with no dominant scale and no direction.
-    #
-    # So the face is the surface's own mottle at a fine scale, with
-    # the brick's own hash for the patch-to-patch difference.
-    grit = noise_perlin.perlin_2d(
-        within_x * BRICK_FACE_LATTICE * 4 + brick_of * 0.41,
-        within_y * BRICK_FACE_LATTICE * 4 + course_of * 0.37,
-        period=BRICK_FACE_LATTICE * 4,
-        seed=13,
+    # Each block mixes two periodic stains by its own hash, so no two
+    # blocks share a stain and the wall still tiles: the hash is keyed on
+    # the block and the course reduced into their counts.
+    from golem_blender.pbr import noise
+    from golem_blender.pbr.noise import _hash01
+
+    def standardised(field):
+        deviation = float(field.std())
+        return (field - float(field.mean())) / max(1e-9, deviation)
+
+    course_px = 1024.0 / max(1, courses)
+    stain_sigma = course_px * BRICK_FACE_STAIN_FRACTION
+    stain_a = standardised(noise.gaussian_grain(resolution, stain_sigma, seed=13))
+    stain_b = standardised(noise.gaussian_grain(resolution, stain_sigma, seed=14))
+    weight = _hash01(brick_of, course_of, row_width, courses, BRICK_FACE_SEED)
+    stain = (weight * stain_a + (1.0 - weight) * stain_b) / numpy.sqrt(
+        weight * weight + (1.0 - weight) * (1.0 - weight)
     )
-    # And the grit's own PIXEL-level noise, because the truth's face
-    # is sand and not a smooth field.
-    #
-    # The truth's own brick face has a correlation of +0.391 at a
-    # one-pixel lag and the lane's had +0.183 - and a perlin is SMOOTH
-    # inside its own cell whatever the cell's size, so the lattice
-    # could not bring it.
-    #
-    # So the face carries a per-pixel field as well, and the two
-    # together are the sand.
-    grit = grit + BRICK_FACE_GRAIN_NOISE * (
-        noise_perlin.perlin_2d(
-            within_x * resolution + brick_of * 0.41,
-            within_y * resolution + course_of * 0.37,
-            period=resolution,
-            seed=17,
-        )
+    grain = standardised(noise.gaussian_grain(resolution, BRICK_FACE_GRAIN_PX, seed=15))
+    tooth = standardised(noise.gaussian_grain(resolution, BRICK_FACE_TOOTH_PX, seed=16))
+    face = (
+        BRICK_FACE_STAIN_SHARE**0.5 * stain
+        + BRICK_FACE_GRAIN_SHARE**0.5 * grain
+        + BRICK_FACE_TOOTH_SHARE**0.5 * tooth
     )
-    grain_reach = max(1e-6, float(grit.max() - grit.min()))
-    grain = (grit - float(grit.min())) / grain_reach
-    # And the face's own TOOTH, at a finer scale than the grain: a
-    # worked stone is smooth and pitted at once.
-    tooth = surface_texture(resolution, BRICK_FACE_LATTICE * BRICK_FACE_TOOTH)
-    tooth_reach = max(1e-6, float(tooth.max() - tooth.min()))
-    tooth = (tooth - float(tooth.min())) / tooth_reach
-    face = 0.65 * grain + 0.35 * tooth
+    face = (face - float(face.min())) / max(1e-9, float(face.max() - face.min()))
     # And the face's own DRIFT, at the SURFACE's scale.
     #
     # The truth's own Tiles141 carries a spread of 0.0349 at a
