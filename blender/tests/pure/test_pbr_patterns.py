@@ -42,6 +42,10 @@ from golem_blender.pbr.patterns import DEFAULT_PATTERN, pattern_for_description
         # Stacked stone is a dry wall of blocks, so a mossy one's moss can
         # lie in its joints (Rock064).
         ("forest, gray, irregular, natural, old, rock, rough, stacked, stone", "brick"),
+        # A wool is knitted (Fabric085, Fabric019), but a wool carpet is a pile.
+        ("fabric, orange, red, wool", "knit"),
+        ("cloth, fabric, weave, white, wool, woven", "knit"),
+        ("beige, carpet, fabric, floor, soft, white, wool", "carpet"),
         # Plank floors are boards whatever wood they are (Planks037A).
         ("floor, planks, wood", "parquet"),
         # Rubble is loose pieces whatever it was broken from (Ground107).
@@ -76,12 +80,12 @@ from golem_blender.pbr.patterns import DEFAULT_PATTERN, pattern_for_description
         # pixels wide between them, and the stones' sizes varying by
         # eight times.
         ("brown, dirt, dry, gravel, ground, rocky, scattered", "scattered"),
-        # A FABRIC is a WEAVE and not a Voronoi: the truth's own
-        # Fabric085 is a "fabric, orange, red, wool" and it is a
-        # TWILL - threads crossing - and its neighbours Fabric061 and
-        # Fabric066 are a mesh and a herringbone. A Voronoi is a set of
-        # cells with joints between them.
-        ("fabric, orange, red, wool", "woven"),
+        # A FABRIC is a WEAVE and not a Voronoi: the truths' own Fabric061
+        # and Fabric066 are a mesh and a herringbone, threads crossing. (This
+        # row was Fabric085, "fabric, orange, red, wool", read as a twill;
+        # looked at closely it is a KNIT of chunky loops, and a wool now
+        # routes to the knit - pinned below.)
+        ("fabric, rough", "woven"),
         # Nothing that says: pieces, which is the commonest surface.
         ("something entirely unfamiliar", DEFAULT_PATTERN),
     ),

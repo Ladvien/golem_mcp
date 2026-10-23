@@ -195,6 +195,10 @@ IRREGULAR_WORDS = frozenset(("random", "castle", "irregular"))
 MASONRY_WORDS = frozenset(("brick", "bricks", "tile", "tiles", "wall"))
 ROAD_WORDS = frozenset(("road", "street", "asphalt", "highway"))
 FAN_WORDS = frozenset(("arch", "arches", "arched", "fan", "fanned", "segmental"))
+# A KNIT, and the wool that is knitted unless it is a floor's.
+KNIT_WORDS = frozenset(("knit", "knitted", "knitwear", "sweater", "jumper", "cardigan"))
+KNIT_EXCLUDED_WORDS = frozenset(("carpet", "rug", "felt", "felted"))
+PLAID_WORDS = frozenset(("plaid", "tartan"))
 PAVING_WORDS = frozenset(
     (
         "cobble",
@@ -395,6 +399,13 @@ def pattern_for_description(description: str) -> str:
     # face with no joint for its moss to lie in.
     if "stacked" in words and words & {"stone", "stones", "rock"}:
         return "brick"
+    # A WOOL is KNITTED, and a knit is not a weave: the truths' own
+    # Fabric085 ("fabric, orange, red, wool") is rows of chunky loops and
+    # Fabric019 ("cloth, fabric, weave, white, wool, woven") columns of V
+    # stitches, and as a weave of crossing threads both came out as a
+    # check (looked at). A wool CARPET is a pile, read below.
+    if (words & KNIT_WORDS or "wool" in words) and not words & KNIT_EXCLUDED_WORDS:
+        return "knit"
     for word, pattern in _SPECIFIC_KINDS:
         if word in words:
             return pattern
@@ -461,6 +472,12 @@ def is_pebbled(description: str) -> bool:
     # dirty tile floor is a tile floor and not a ground.
     words = set(description.lower().replace(",", " ").split())
     return any(word in words for word in _PEBBLED_WORDS)
+
+
+def is_plaid(description: str) -> bool:
+    """Whether a woven cloth is a PLAID: stripes crossing on the warp and the weft."""
+    words = set(description.lower().replace(",", " ").split())
+    return bool(words & PLAID_WORDS)
 
 
 def is_checkered(description: str) -> bool:
@@ -553,6 +570,7 @@ __all__ = (
     "is_cracked",
     "is_mortared_wall",
     "is_pebbled",
+    "is_plaid",
     "pattern_for_description",
     "stone_density_for_description",
 )

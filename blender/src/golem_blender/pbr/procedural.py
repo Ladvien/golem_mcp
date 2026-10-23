@@ -238,6 +238,7 @@ PROCEDURAL_COLOUR_KINDS = (
     "banded",
     "fan",
     "bark",
+    "knit",
     "woven",
     "roof",
     "herringbone",
@@ -409,6 +410,12 @@ MATRIX_TONE_RANGE = 0.80
 # luma, in the tile's own hue.
 TILE_GROUT_LUMA = 0.45
 TILE_GROUT_PULL = 0.6
+# How much of the ramp a fan's per-sett tone spans.
+FAN_TONE_FRACTION = 0.45
+# A wood floor's joint between boards, in pixels at 1024 across.
+PARQUET_JOINT_PX = 1.5
+# How dark a wood floor's seam is, as a share of its darkest board colour.
+PARQUET_JOINT_SHADE = 0.55
 TILE_GROUT_PX = 2.0
 # A glazed tile face's fine tooth: its lattice's cell in pixels at the
 # map's own resolution, and its share of the ramp. Swept against the
@@ -569,6 +576,7 @@ def write_procedural_base_color(
     stone_tone_fraction: float = 1.0,
     graph: dict | None = None,
     checkered: bool = False,
+    plaid: bool = False,
     mortared: bool = False,
     asphalt_worn: bool = False,
     cracked: bool = False,
@@ -757,6 +765,7 @@ def write_procedural_base_color(
             cells,
             lines_per_cell=lines_per_cell,
             checkered=checkered,
+            plaid=plaid,
         )
     elif kind == "marble":
         # A MARBLE is a fine network of VEINS, and the veins are a
@@ -867,6 +876,8 @@ def write_procedural_base_color(
         cell, edge, grid, fibre = pattern.rock_field(resolution, cells)
     elif kind == "bark":
         cell, edge, grid, fibre = pattern.bark_field(resolution, cells)
+    elif kind == "knit":
+        cell, edge, grid, fibre = pattern.knit_field(resolution, cells)
     elif kind == "fan":
         cell, edge, grid, fibre = pattern.fan_field(resolution, cells)
     elif kind == "banded":
@@ -917,6 +928,7 @@ def write_procedural_base_color(
             "leather",
             "banded",
             "bark",
+            "knit",
         )
         or pressed_metal
     ):
@@ -1282,6 +1294,18 @@ def write_procedural_base_color(
         # different tile lies within half the grout's width, along
         # either axis - with the rolls WRAPPED, so the grout tiles.
         joint = _tile_grout(cell, TILE_GROUT_PX * resolution / 1024)
+    if kind == "parquet":
+        # A wood floor's boards butt together: its joint is a HAIRLINE where
+        # one board meets the next. The falloff drew each board's end as a
+        # soft dark band some thirty pixels wide (WoodFloor007, 043,
+        # Planks037A, looked at) - so the joint is a hairline a fixed number
+        # of pixels from the joint's own line. It is read from the pattern's
+        # distance (2x the distance in course heights) and not from the
+        # boards' ids: a long-board course is one board wrapping round the
+        # image, so both sides of its end are the same board.
+        line_px = PARQUET_JOINT_PX * resolution / 1024
+        course_px = resolution / max(1, cell_height)
+        joint = numpy.clip(1.0 - edge * course_px / line_px, 0.0, 1.0)
 
     if kind == "carpet":
         # A CARPET has no joints. Its field is the pile's complement and
@@ -1306,6 +1330,11 @@ def write_procedural_base_color(
     import numpy as _np
 
     hashed = _cell_hash(cell, cell_width, cell_height)
+    if kind == "fan":
+        # A FAN's setts each carry a tone, but a narrow one: across the whole
+        # ramp they were a salt-and-pepper of setts that hid the arches at
+        # the whole map's scale (PavingStones150, 151, looked at).
+        hashed = 0.5 + (hashed - 0.5) * FAN_TONE_FRACTION
     if kind == "brick" and brick_staggered:
         # A wall's blocks each carry a tone, but a NARROW one: drawn
         # uniformly across the whole ramp the darkest were black and the
@@ -1701,6 +1730,13 @@ def write_procedural_base_color(
 
     # The joint replaces the stone where the joint is.
     mortar = numpy.array(mortar_rgb, dtype=numpy.float32).reshape(1, 1, 3)
+    if kind == "parquet":
+        # A wood floor's seam is a SHADOW between two boards: drawn in the
+        # palette's mortar - a wood's own colour - the hairline vanished
+        # (looked at), where the truths' boards are parted by dark lines.
+        mortar = (
+            numpy.array(stone_dark_rgb, dtype=numpy.float32) * PARQUET_JOINT_SHADE
+        ).reshape(1, 1, 3)
     if kind == "brick" and not brick_staggered:
         # A TILE's grout is a MID tone, whatever the tile: the truths' light
         # tiles (faces 0.64-0.98: Tiles040, 107, 139, 141, 142, 143) show

@@ -30,6 +30,7 @@ from golem_blender.pbr.patterns import (
     is_checkered,
     is_cracked,
     is_mortared_wall,
+    is_plaid,
     stone_density_for_description,
 )
 
@@ -3997,6 +3998,7 @@ def palette_for_description(
         "metal_banded": metal_is_banded(description),
         "metal_brushed": metal_is_brushed(description),
         "checkered": is_checkered(description),
+        "plaid": is_plaid(description),
         "metal_envelope_factor": metal_envelope_factor_for_description(description),
         "mortared": mortared,
         "asphalt_worn": asphalt_is_worn(description),

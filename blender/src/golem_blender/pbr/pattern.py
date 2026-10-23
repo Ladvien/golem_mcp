@@ -3460,12 +3460,87 @@ def roof_field(
     return cell, edge, (across, courses), tone
 
 
+# A KNIT's stitch: how many of the surface's features a stitch column
+# carries (the truths' Fabric085 and Fabric019 read 114 and 341 features
+# over stitches 32 and 16 pixels wide), a stitch's width over its height,
+# the legs' slant (radians), their centres off the column's middle, their
+# half-width and half-length (of the stitch), and the yarn's fuzz.
+KNIT_FEATURES_PER_STITCH = 4.5
+KNIT_STITCH_ASPECT = 0.8
+KNIT_LEG_SLANT = 0.5
+KNIT_LEG_OFFSET = 0.22
+KNIT_LEG_WIDTH = 0.26
+KNIT_LEG_LENGTH = 0.62
+KNIT_FUZZ_PX = 0.7
+KNIT_FUZZ_SHARE = 0.15
+# A PLAID's sett: (width, tone on the ramp) stripes, a repeat per this many
+# of the surface's features (the truth's own Fabric080: 10.8 features over
+# two repeats), and the threads' own share of the cloth's variation.
+PLAID_SETT = (
+    (6.0, 0.55),
+    (1.0, 0.05),
+    (3.0, 1.0),
+    (1.0, 0.05),
+    (5.0, 0.3),
+    (2.0, 0.85),
+)
+PLAID_FEATURES_PER_REPEAT = 5.0
+PLAID_THREAD_SHARE = 0.3
+
+
+def knit_field(resolution: int, cells: int):
+    """A KNIT: columns of stitches, each a V of two slanted loops.
+
+    A knit is not a weave - its yarn loops through the row below, and a
+    stockinette's face is columns of Vs (the truth's own Fabric019) where
+    a weave's is threads crossing. Each stitch is two legs, ellipses
+    slanted toward the stitch's foot, raised as domes; a leg reaches into
+    the next row, so each pixel reads its own row and the rows either
+    side. The counts are whole numbers, so the knit tiles.
+    """
+    import math
+
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    columns = max(4, round(cells / KNIT_FEATURES_PER_STITCH))
+    rows = max(4, round(columns / KNIT_STITCH_ASPECT))
+    samples = _domain_samples(resolution)
+    # "ij": sample_x runs down the image, sample_y across it.
+    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
+    across = sample_y * columns
+    down = sample_x * rows
+    width = 1.0 / columns
+    height = 1.0 / rows
+    within_across = (across - numpy.floor(across)) * width
+    sine, cosine = math.sin(KNIT_LEG_SLANT), math.cos(KNIT_LEG_SLANT)
+    field = numpy.zeros_like(within_across)
+    for row_shift in (-1.0, 0.0, 1.0):
+        within_down = (down - numpy.floor(down) - row_shift) * height
+        for side in (-1.0, 1.0):
+            dx = within_across - (0.5 + side * KNIT_LEG_OFFSET) * width
+            dy = within_down - 0.5 * height
+            along = -side * dx * sine + dy * cosine
+            athwart = dx * cosine + side * dy * sine
+            reach = numpy.hypot(
+                athwart / (KNIT_LEG_WIDTH * width), along / (KNIT_LEG_LENGTH * height)
+            )
+            field = numpy.maximum(
+                field, numpy.sqrt(numpy.clip(1.0 - reach * reach, 0.0, 1.0))
+            )
+    fuzz = noise.gaussian_grain(resolution, KNIT_FUZZ_PX, seed=53)
+    field = (1.0 - KNIT_FUZZ_SHARE) * field + KNIT_FUZZ_SHARE * _unit(fuzz)
+    return 0, _unit(field), (columns, rows), None
+
+
 def woven_field(
     resolution: int,
     cells: int,
     octaves=DEFAULT_LINE_OCTAVES,
     lines_per_cell: int = 1,
     checkered: bool = False,
+    plaid: bool = False,
 ):
     """A WOVEN cloth: threads over and under one another, as a darkness.
 
@@ -3600,7 +3675,36 @@ def woven_field(
             resolution, WOVEN_SLUB_PX, seed=43, along_rows=WOVEN_SLUB_ALONG
         )
         edge = edge * (1.0 - slub_share) + slubs * slub_share
-    if checkered:
+    if plaid:
+        # A PLAID is stripes on the WARP and the same stripes on the WEFT,
+        # and where they cross the thread on top shows its own: Material
+        # Maker's `weave2` (MIT) gives the two thread masks for exactly
+        # this. The truth's own Fabric080 is a red, green, navy and white
+        # tartan; as a check of two squares it was a pink and brown board.
+        repeats = max(1, round(cells / PLAID_FEATURES_PER_REPEAT))
+        sett = numpy.array([width for width, _ in PLAID_SETT], dtype=numpy.float64)
+        tones = numpy.array([tone for _, tone in PLAID_SETT], dtype=numpy.float64)
+        bounds = numpy.cumsum(sett) / float(sett.sum())
+
+        def stripe(position):
+            place = numpy.mod(position * repeats, 1.0)
+            return tones[
+                numpy.minimum(
+                    numpy.searchsorted(bounds, place, side="right"), len(tones) - 1
+                )
+            ]
+
+        # The threads running DOWN take the stripe of where they are across,
+        # and the threads running across the stripe of where they are down.
+        tone = numpy.where(
+            column_threads >= row_threads, stripe(sample_y), stripe(sample_x)
+        )
+        edge = numpy.clip(
+            edge * PLAID_THREAD_SHARE + (1.0 - tone) * (1.0 - PLAID_THREAD_SHARE),
+            0.0,
+            1.0,
+        )
+    if checkered and not plaid:
         # A CHECKERED cloth is a CHEQUER of squares and not a
         # crosshatch of threads, and the two are different things.
         #

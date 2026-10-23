@@ -47,6 +47,7 @@ KIND_HEIGHT = {
     "metal": (0.04, -0.02),
     "scattered": (0.20, 0.41),
     "woven": (0.23, 0.11),
+    "knit": (0.23, 0.11),
     "asphalt": (0.01, -1.30),
     "rock": (-0.03, -0.51),
     "leather": (-0.10, -0.52),
@@ -87,6 +88,8 @@ KIND_SURFACE: dict[str, tuple[float, float, float, float]] = {
     "voronoi": (8.9, 0.059, 0.03, -0.24),
     "fan": (8.9, 0.059, 0.03, -0.24),
     # The truth's own Bark015.
+    # A knit's measured surface is a weave's (two knits, too few to fit).
+    "knit": (15.7, 0.032, 0.0, -0.44),
     "bark": (16.0, 0.044, -0.15, -0.58),
     "scattered": (13.0, 0.075, 0.10, -0.25),
     "woven": (15.7, 0.032, 0.0, -0.44),

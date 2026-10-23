@@ -570,7 +570,7 @@ EXPECTED_TOOLS = [
         'rock face), "moss", "grass", "woven" (cloth), "carpet",\n'
         '"leather", "wallpaper", "roof" (shingles), "markings" (road\n'
         'lines), "asphalt" (aggregate; worn and cracked from the words),\n'
-        '"banded" (onyx, travertine), "fan" (cobbles laid in arches), "bark".\n'
+        '"banded" (onyx, travertine), "fan" (cobbles laid in arches), "bark", "knit".\n'
         "`scale_cells` is how many features cross the image.\n"
         "\n"
         "`graph_json` COMPOSES the texture instead of choosing one\n"

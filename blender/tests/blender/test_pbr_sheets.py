@@ -292,3 +292,62 @@ def test_a_rock_face_is_broad_tone_and_not_a_speckle(tmp_path):
     luma = _luma(tmp_path, "cliff, grey, rock", 12.0)
     coarse = _gaussian(luma, 8.0 * RESOLUTION / 1024)
     assert float(coarse.var()) / float(luma.var()) > 0.25
+
+
+def test_a_wood_floor_s_seams_are_hairlines_and_not_bands(tmp_path):
+    """The joint's falloff drew each board's end and side as a soft dark
+    band some thirty pixels wide (WoodFloor043, Planks037A); the truths'
+    boards are parted by dark hairlines, and the face is the face right up
+    to them."""
+    description = "floor, parquet, planks, wood"
+    courses = 2
+    joint = {}
+    path = write_procedural_base_color(
+        tmp_path / "floor.png",
+        kind=pattern_for_description(description),
+        scale_cells=8.0,
+        width_px=RESOLUTION,
+        height_px=RESOLUTION,
+        courses=courses,
+        joint_height_out=joint,
+        **palette_for_description(description, path="parquet"),
+    )
+    image = bpy.data.images.load(str(path), check_existing=False)
+    try:
+        values = numpy.empty(len(image.pixels), dtype=numpy.float32)
+        image.pixels.foreach_get(values)
+    finally:
+        bpy.data.images.remove(image)
+    rgb = values.reshape((RESOLUTION, RESOLUTION, 4))[:, :, :3].astype(float)
+    luma = (rgb @ numpy.array([0.2126, 0.7152, 0.0722])).ravel()
+    # The distance is twice the distance in course heights.
+    pixels = joint["height"].ravel() * (RESOLUTION / courses) / 2.0
+    seam = float(luma[pixels < 0.5].mean())
+    face = float(numpy.median(luma[pixels > 12.0]))
+    near = float(luma[(pixels > 4.0) & (pixels < 10.0)].mean())
+    assert abs(face - near) < 0.2 * abs(face - seam)
+
+
+def test_a_knit_tiles():
+    from golem_blender.pbr import pattern
+
+    _cell, edge, _grid, _fibre = pattern.knit_field(RESOLUTION, 90)
+    for axis in (0, 1):
+        rows = numpy.moveaxis(edge, axis, 0)
+        seam = float(numpy.abs(rows[0] - rows[-1]).mean())
+        interior = numpy.abs(numpy.diff(rows, axis=0)).mean(axis=1)
+        assert seam <= float(interior.max())
+
+
+def test_a_plaid_is_stripes_and_not_a_two_tone_chequer(tmp_path):
+    """The truth's own Fabric080 is a tartan of several stripes crossing; as
+    a check of two squares its tones were two."""
+    luma = _luma(
+        tmp_path,
+        "checkered, clothing, cotton, fabric, pattern, plaid, red, woven",
+        10.0,
+    )
+    standard = (luma - luma.mean()) / luma.std()
+    skew = float((standard**3).mean())
+    kurtosis = float((standard**4).mean())
+    assert (skew * skew + 1.0) / kurtosis < 0.75
