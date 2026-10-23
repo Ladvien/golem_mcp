@@ -321,8 +321,13 @@ TILE_TONE_FRACTION = 0.05
 # A stain crosses the joints and does not step at them: the truth's
 # own Tiles141 carries a drift of 0.0349 and a period of a hundred
 # and ninety-two pixels, so five features cross a wall of tiles, and
-# a per-tile flat tone would step at every joint.
-BRICK_FACE_DRIFT_CONTINUITY = 0.7
+# a per-tile flat tone would step at every joint. (0.7 drew one soft
+# cloud across neighbouring tiles where the truths' tiles each keep their
+# own flat tone - looked at.)
+BRICK_FACE_DRIFT_CONTINUITY = 0.3
+# How much of a tile's own tone is its own (a hash of its place) and not the
+# stain's mean over it.
+TILE_HASH_SHARE = 0.5
 
 # The MATRIX's own SHADOW, and how far below the palette's dark end
 # the gaps go.
@@ -1411,17 +1416,17 @@ def write_procedural_base_color(
         # pixels across. A fine tooth carries the face's spread.
         from golem_blender.pbr import noise
 
-        axis = pattern._domain_samples(resolution)
-        sample_x, sample_y = _np.meshgrid(axis, axis, indexing="ij")
-        lattice = max(2, round(resolution / TILE_TOOTH_PX))
-        tooth = noise.fbm_2d_value(
-            sample_x * lattice,
-            sample_y * lattice,
-            size=lattice,
-            octaves=2,
-            seed=11,
-        )
-        tone = drift_at_cell + (drift - drift_at_cell) * BRICK_FACE_DRIFT_CONTINUITY
+        tooth = noise.gaussian_grain(resolution, TILE_TOOTH_PX / 3.0, seed=11)
+        # And each tile ALSO carries a tone of its own: as the drift's mean
+        # alone, neighbouring tiles shared one soft cloud across the floor
+        # where the truths' tiles (Tiles139, 142, 143) each sit at their own
+        # flat tone. The hash is of the tile's place in an ALIGNED grid, so
+        # it wraps; at a small share of the ramp it is the truth's 0.0336
+        # per-block spread and not the old full-ramp chequerboard.
+        tile_tone = (
+            1.0 - TILE_HASH_SHARE
+        ) * drift_at_cell + TILE_HASH_SHARE * _cell_hash(cell, cell_width, cell_height)
+        tone = tile_tone + (drift - drift_at_cell) * BRICK_FACE_DRIFT_CONTINUITY
         tone = 0.5 + (tone - 0.5) * TILE_TONE_FRACTION
         tone = tone + (tooth - 0.5) * TILE_TOOTH_STRENGTH
         for channel in range(3):
