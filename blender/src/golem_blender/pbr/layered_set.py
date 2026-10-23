@@ -56,6 +56,8 @@ KIND_SURFACE: dict[str, tuple[float, float, float, float]] = {
     "metal": (0.7, 0.031, -0.20, 0.0),
     "voronoi": (8.9, 0.059, 0.03, -0.24),
     "fan": (8.9, 0.059, 0.03, -0.24),
+    # The truth's own Bark015.
+    "bark": (16.0, 0.044, -0.15, -0.58),
     "scattered": (13.0, 0.075, 0.10, -0.25),
     "woven": (15.7, 0.032, 0.0, -0.44),
     "rock": (16.9, 0.065, 0.24, -0.35),

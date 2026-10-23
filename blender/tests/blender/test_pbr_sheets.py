@@ -189,3 +189,12 @@ def test_a_fan_paving_tiles():
     wrap = float(numpy.abs(edge[0] - edge[-1]).mean())
     inside = float(numpy.abs(edge[2 * fan] - edge[2 * fan - 1]).mean())
     assert abs(wrap - inside) <= 0.1 * inside
+
+
+def test_a_bark_s_fissures_run_down_the_trunk(tmp_path):
+    """The truth's own Bark015 is long vertical ridges and fissures; as a
+    board's grain it ran ACROSS the image."""
+    luma = _luma(tmp_path, "bark, brown, forest, rough, tree, wood", 12.0)
+    along_row = float(numpy.abs(numpy.diff(luma, axis=1)).mean())
+    down_column = float(numpy.abs(numpy.diff(luma, axis=0)).mean())
+    assert along_row > 1.3 * down_column

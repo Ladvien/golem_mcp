@@ -38,11 +38,13 @@ COATING_WORDS = frozenset(("powder", "coated", "painted", "enamel", "lacquered")
 # STRUCTURE (a grain) is more specific than one that names a layout
 # (tiles).
 _STRUCTURE_PATTERNS = (
+    # A BARK is fissured plates, not a board's grain (the truth's own
+    # Bark015, looked at) - read before "wood", which a bark also says.
+    ("bark", "bark"),
     ("grain", "grain"),
     ("plank", "grain"),
     ("timber", "grain"),
     ("wood", "grain"),
-    ("bark", "grain"),
     ("brushed", "metal"),
     ("corrugated", "metal"),
     ("metal", "metal"),

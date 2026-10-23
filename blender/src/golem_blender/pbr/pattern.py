@@ -156,6 +156,8 @@ FAN_SETTS_PER_SCALE = 10.0
 FAN_RINGS = 6
 FAN_RADIUS = 0.75
 FAN_SETTS_PER_RING = 64
+# How pale a bark's lichen is, in its field's own deviations.
+BARK_LICHEN = 2.5
 # A ROCK face's layers: the fine grain's sigma (pixels at 1024) and how
 # much of the
 # face each layer carries. The truth's own rock faces are mostly fine
@@ -2643,6 +2645,62 @@ def fan_field(resolution: int, cells: int):
         index.astype(numpy.int64), width
     )
     return cell.astype(numpy.int64), edge, (width, rows * scales * rings), None
+
+
+def bark_field(resolution: int, cells: int):
+    """A tree's BARK: gritty plates split by vertical fissures, lichen in
+    patches on them.
+
+    Bark was a wood GRAIN - the smooth bands inside a board - and the
+    truth's own Bark015 is a rough surface of long vertical ridges and
+    fissures with pale lichen in clusters (looked at). The ridges are a
+    Gaussian grain stretched along the rows and turned to run DOWN the
+    image; the fissures are where it is low; the grit is a fine grain also
+    stretched down; the lichen is pale specks only where a slow field
+    allows them. Every field is periodic, so the bark tiles.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    def standardised(field):
+        deviation = float(field.std())
+        return (
+            (field - float(field.mean())) / deviation
+            if deviation > 1e-12
+            else field * 0.0
+        )
+
+    count = max(2, int(cells))
+    ridges = standardised(
+        noise.gaussian_grain(
+            resolution, 1024.0 / (count * 10.0), seed=91, along_rows=10.0
+        ).T
+    )
+    grit = standardised(
+        noise.gaussian_grain(resolution, 0.8, seed=92, along_rows=2.5).T
+    )
+    plates = standardised(
+        noise.gaussian_grain(resolution, 1024.0 / (count * 2.0), seed=93)
+    )
+    fissure = numpy.clip((-ridges - 1.0) / 0.5, 0.0, 1.0)
+    presence = numpy.clip(
+        (standardised(noise.gaussian_grain(resolution, 40.0, seed=95)) - 0.6) / 0.4,
+        0.0,
+        1.0,
+    )
+    lichen = (
+        numpy.clip(
+            (standardised(noise.gaussian_grain(resolution, 3.0, seed=94)) - 0.9) / 0.3,
+            0.0,
+            1.0,
+        )
+        * presence
+    )
+    field = (
+        0.35 * ridges + 0.6 * grit + 0.3 * plates - 1.4 * fissure + BARK_LICHEN * lichen
+    )
+    return 0, _unit(field), (count, count), None
 
 
 def moss_field(resolution: int, cells: int):

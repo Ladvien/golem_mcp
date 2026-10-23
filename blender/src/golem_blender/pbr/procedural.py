@@ -228,6 +228,7 @@ PROCEDURAL_COLOUR_KINDS = (
     "asphalt",
     "banded",
     "fan",
+    "bark",
     "woven",
     "roof",
     "herringbone",
@@ -851,6 +852,8 @@ def write_procedural_base_color(
         )
     elif kind == "rock":
         cell, edge, grid, fibre = pattern.rock_field(resolution, cells)
+    elif kind == "bark":
+        cell, edge, grid, fibre = pattern.bark_field(resolution, cells)
     elif kind == "fan":
         cell, edge, grid, fibre = pattern.fan_field(resolution, cells)
     elif kind == "banded":
@@ -900,6 +903,7 @@ def write_procedural_base_color(
             "asphalt",
             "leather",
             "banded",
+            "bark",
         )
         or pressed_metal
     ):

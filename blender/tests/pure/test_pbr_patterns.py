@@ -57,6 +57,8 @@ from golem_blender.pbr.patterns import DEFAULT_PATTERN, pattern_for_description
         ("marble, onyx, polished, smooth, stone, white", "banded"),
         ("beige, light, marble, stone, travertine, white", "banded"),
         ("black, marble, polished, stone", "marble"),
+        # A bark is fissured plates though it says "wood" too (Bark015).
+        ("bark, brown, forest, rough, tree, wood", "bark"),
         # An asphalt is an aggregate surface (as a Voronoi every road was
         # a camouflage of plates), and a "striped" road is painted - but
         # "striped" alone is not paint (a corrugated steel says it).
