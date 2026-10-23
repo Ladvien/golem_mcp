@@ -3241,8 +3241,19 @@ MATERIAL_WORD_COUNTS: dict[str, int] = {
 }
 
 
-# The materials whose colour is a DYE, so the colour word says it.
-DYED_MATERIALS = frozenset(("fabric", "wool", "leather", "carpet"))
+# The materials whose colour is a DYE, so the colour word says it - and
+# a cloth, a textile, a weave and a rug are dyed as a fabric is: the
+# truth's own gray Fabric083 ("checkered, cloth, fabric, gray, ...,
+# textile, woven") took "textile"'s hue, fitted on one red plaid, and came
+# out pink.
+DYED_MATERIALS = frozenset(
+    ("fabric", "wool", "leather", "carpet", "cloth", "textile", "woven", "rug")
+)
+# The materials whose word says no HUE: a generic material (it names a
+# kind of thing, not its colour) and a TILE, which is made of anything -
+# the truths' eleven tiles run from a white glaze to a black stone, and
+# their mean is a terracotta that drew the dark gray stone Tiles140 rust.
+HUE_GENERIC_MATERIALS = GENERIC_MATERIALS | {"tile", "tiles"}
 
 
 def hue_for_description(description: str) -> tuple[float, float, float]:
@@ -3302,7 +3313,7 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
         word.strip(".,")
         for word in words
         if MATERIAL_HUES.get(word.strip(".,")) is not None
-        and word.strip(".,") not in GENERIC_MATERIALS
+        and word.strip(".,") not in HUE_GENERIC_MATERIALS
     ]
     # And a COLOUR word beats the material's word when it names
     # FEWER materials - the same specificity rule, read across the
@@ -3320,8 +3331,15 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     # Measured on the truth's own eighty-seven, the mean hue error
     # fell from 0.0552 to 0.0513, the median from 0.0365 to 0.0300,
     # and the worst from 0.3399 to 0.2763.
+    # The COLOUR words, and only those: HUES is fitted for every tag, and
+    # with every tag read as a colour a "cloth" (four materials) outranked
+    # the "beige" of a beige carpet (Fabric028), which came out a cloth's
+    # blue-grey.
     colours = [
-        word.strip(".,") for word in words if HUES.get(word.strip(".,")) is not None
+        word.strip(".,")
+        for word in words
+        if HUES.get(word.strip(".,")) is not None
+        and word.strip(".,") in HUE_COLOUR_WORDS
     ]
     # And a WOOD is never the colour word's hue.
     #
@@ -3384,6 +3402,15 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
         coloured = [word for word in COLOURED_METAL_WORDS if word in words_set]
         if coloured and HUES.get(coloured[0]) is not None:
             return HUES[coloured[0]]
+        # And a BARE metal with no coloured-metal word is its metal's own
+        # grey: its colour words are the weathering's. The truth's own
+        # platinum Metal062C ("damaged, dirty, metal, platinum") took the
+        # first tag's hue and came out yellow. A COATED metal wears its
+        # paint's colour and is read below.
+        if not words_set & METAL_COATING_WORDS:
+            for word in ("steel", "iron", "silver", "metal"):
+                if word in words_set and MATERIAL_HUES.get(word) is not None:
+                    return MATERIAL_HUES[word]
     # And a thing whose only COLOUR word is "white" is white.
     #
     # The descriptions are alphabetical, so the first word with a hue
@@ -3395,6 +3422,24 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     # the white-only materials from 0.118 to 0.037.
     if words_set & HUE_COLOUR_WORDS == {"white"}:
         return HUES["white"]
+    # A DYED material's colour is its colour word - the most specific one -
+    # whatever material word is beside it. In ambientCG's alphabetical tags
+    # "fabric" comes before "orange", so the truth's own Fabric085 ("fabric,
+    # orange, red, wool") came out a fabric's grey (hue error 0.388) and
+    # Leather038 ("brown, leather, orange") a leather's brown (0.266); with
+    # the most specific colour 0.176 and 0.093. And it is read BEFORE the
+    # specific materials: a "cloth" beside a fabric's "gray" drew it pink.
+    # Bricks and stones are not dyed, and their material's hue does matter.
+    # Leave-one-out over the 159 (every table refitted without the material
+    # read): mean hue error 0.0483 -> 0.0485 with the four changes here,
+    # median 0.0284 -> 0.0278; Tiles140 0.093 -> 0.045, Metal062C -0.039,
+    # Fabric083 -0.014, Fabric028 -0.011; the red plaid Fabric080 +0.066 (a
+    # plaid is three colours and no one hue).
+    if words_set & DYED_MATERIALS and colours:
+        dyed = sorted(
+            colours, key=lambda word: (MATERIAL_WORD_COUNTS.get(word, 99), word)
+        )
+        return HUES[dyed[0]]
     if colours and named:
         colour_counts = min(MATERIAL_WORD_COUNTS.get(word, 99) for word in colours)
         material_counts = min(MATERIAL_WORD_COUNTS.get(word, 99) for word in named)
@@ -3404,24 +3449,6 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     if named:
         named.sort(key=lambda word: (MATERIAL_WORD_COUNTS.get(word, 99), word))
         return MATERIAL_HUES[named[0]]
-    # A DYED material's colour is its colour word: with no specific
-    # material named, a fabric, wool, leather or carpet is the colour it
-    # was dyed, and the fallback below takes the FIRST word with a hue -
-    # in ambientCG's alphabetical tags "fabric" before "orange", so the
-    # truth's own Fabric085 ("fabric, orange, red, wool") came out a
-    # fabric's grey (hue error 0.388) and Leather038 ("brown, leather,
-    # orange") a leather's brown (0.266). With the most specific colour:
-    # 0.176 and 0.093. Bricks and stones are not dyed, and their
-    # material's hue does matter - the same change made three bricks
-    # worse.
-    dyed_colours = [
-        word
-        for word in colours
-        if word in HUE_COLOUR_WORDS and words_set & DYED_MATERIALS
-    ]
-    if dyed_colours:
-        dyed_colours.sort(key=lambda word: (MATERIAL_WORD_COUNTS.get(word, 99), word))
-        return HUES[dyed_colours[0]]
     for word in words:
         hue = HUES.get(word.strip(".,"))
         if hue is not None:

@@ -651,3 +651,46 @@ def test_a_coated_metal_named_by_a_plain_colour_takes_that_colour():
     assert value_for_description(
         "galvanized, gray, metal, sheet, steel"
     ) == pytest.approx(NAMED_COLOURS["gray"])
+
+
+def test_a_gray_fabric_is_grey_whatever_cloth_words_are_beside_it():
+    """The truth's own gray Fabric083 says "cloth" and "textile" too, and
+    "textile"'s hue - fitted on one red plaid - drew it pink."""
+    from golem_blender.pbr.palette import hue_for_description
+
+    red, green, _blue = hue_for_description(
+        "checkered, clean, cloth, fabric, gray, patterned, smooth, textile, woven"
+    )
+    assert red - green < 0.02
+
+
+def test_a_beige_carpet_is_warm():
+    """Read with every tag as a colour, "cloth" outranked "beige" and the
+    carpet came out a cloth's blue-grey (Fabric028)."""
+    from golem_blender.pbr.palette import hue_for_description
+
+    red, _green, blue = hue_for_description(
+        "beige, carpet, cloth, dirty, fabric, floor, smudge"
+    )
+    assert red - blue > 0.05
+
+
+def test_dark_gray_stone_tiles_are_not_terracotta():
+    """A tile is made of anything, and the tiles' mean hue drew the dark
+    gray stone Tiles140 rust."""
+    from golem_blender.pbr.palette import hue_for_description
+
+    red, _green, blue = hue_for_description(
+        "corroded, dark, gray, grid, industrial, old, rectangular, rough, "
+        "stained, stone, tiles, urban"
+    )
+    assert red - blue < 0.06
+
+
+def test_a_bare_platinum_sheet_is_grey():
+    """Metal062C ("damaged, dirty, metal, platinum") took its first tag's
+    hue and came out yellow."""
+    from golem_blender.pbr.palette import hue_for_description
+
+    red, _green, blue = hue_for_description("damaged, dirty, metal, platinum")
+    assert red - blue < 0.04
