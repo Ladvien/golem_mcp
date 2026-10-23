@@ -166,13 +166,6 @@ WOVEN_THREAD_DEPTH = 0.22
 # and its wallpaper's 0.0072 - so the design carries a twentieth of
 # what the sheet's own variation would.
 WALLPAPER_DESIGN_DEPTH = 0.05
-# How much of a LEATHER's spread its crackle carries.
-#
-# The truth's own leathers carry two thirds of their spread in the
-# fine and a third in the envelope, and the truth's own Leather037
-# measures five hundred and twelve features across - its envelope is
-# nearly flat and the crackle is everything.
-LEATHER_CRACKLE_STRENGTH = 0.7
 # How much of the ramp a ROOF's shingle tone covers.
 #
 # The truth's own RoofingTiles013A's eight-by-eight blocks of shingles
@@ -870,8 +863,11 @@ def write_procedural_base_color(
     # A PRESSED metal sheet is a soft field too - its ribs are shaded waves
     # and not lines (pattern.metal_field draws them).
     pressed_metal = kind == "metal" and metal_horizontal and not metal_brushed
+    # And a LEATHER: a hide's envelope with its fine crackle on it, and no
+    # cells - the crackle's cells hashed for colour against the envelope's
+    # grid drew stripes, and its envelope reached the image only as mortar.
     if (
-        kind in ("flat", "wallpaper", "rock", "moss", "grass", "asphalt")
+        kind in ("flat", "wallpaper", "rock", "moss", "grass", "asphalt", "leather")
         or pressed_metal
     ):
         # A FLAT sheet is a SOFT variation about its base, and not a
@@ -1505,29 +1501,7 @@ def write_procedural_base_color(
     # so the mottle is instead sampled at the pattern's own
     # coordinates and its lattice size is chosen to divide the
     # pattern's domain.
-    if kind == "leather":
-        # A LEATHER's wear is its own CRACKLE, and it is the fine
-        # texture on the hide.
-        #
-        # The truth's own leathers carry two thirds of their spread in
-        # the fine and a third in the envelope, and the generic
-        # mottle was the wear - so the crackle was a thin joint and
-        # the whole spread was in the mottle.
-        #
-        # And the truth's own Leather037 measures five hundred and
-        # twelve features across: its envelope is nearly flat and the
-        # crackle is everything.
-        if fibre is not None:
-            surface = numpy.clip(fibre, 0.0, 1.0)
-            surface = surface / max(1e-6, float(surface.max())) * 2.0 - 1.0
-            wear = surface * LEATHER_CRACKLE_STRENGTH * ramp_spread
-        else:
-            surface = pattern.surface_texture(resolution, cells)
-            surface_amplitude = float(surface.max() - surface.min())
-            if surface_amplitude > 0.0:
-                surface = surface / surface_amplitude * 2.0 - 1.0
-            wear = surface * min(variation, 1.0) * ramp_spread * SURFACE_SHARE
-    elif kind == "carpet":
+    if kind == "carpet":
         # A CARPET's wear is its own PILE, and it is a fine
         # directional mottle.
         #

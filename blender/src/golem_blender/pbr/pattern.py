@@ -615,7 +615,13 @@ CARPET_STREAK = 2.5
 # almost a smooth surface - and the crackle at a hundred and seventy
 # cells came out at nine pixels and read a spread of 0.0388 where
 # the truth's is 0.0032.
-LEATHER_CELL_COUNT = 512
+#
+# The crackle follows the surface's own count (below) - but never coarser
+# than this: at nineteen and thirty-four features (Leather038 "fine,
+# smooth", Leather026 "smooth") the crackle drew polygons a hundred pixels
+# across where the truths are smooth fine hides (looked at); their low
+# counts are the envelope's, not the grain's.
+LEATHER_MIN_CELLS = 128
 # How many CRACKLE cells a leather's surface feature carries.
 #
 # The truth's own six leathers measure nineteen to five hundred and
@@ -623,6 +629,9 @@ LEATHER_CELL_COUNT = 512
 # on four of them - so the crackle's own count follows the surface's.
 LEATHER_CELL_FACTOR = 1.0
 LEATHER_CELL_JITTER = 0.7
+# A hide's envelope is a Gaussian grain whose sigma is this fraction of a
+# feature (1024 / count px at 1024): a feature spans about three sigmas.
+LEATHER_ENVELOPE_FEATURE_SIGMAS = 4.0
 # A WALLPAPER's motif, as a multiple of the surface's own feature
 # count: a wallpaper's design is a thing you see from across a room.
 WALLPAPER_MOTIF_COUNT = 128
@@ -3594,7 +3603,9 @@ def leather_field(
     # hundred and twelve features across, and the crackle is what
     # the measure reads on four of them. A fixed count made every
     # leather a five-hundred-and-twelve feature surface.
-    cell_lattice = _power_of_two_nearest(max(8, round(cells * LEATHER_CELL_FACTOR)))
+    cell_lattice = _power_of_two_nearest(
+        max(LEATHER_MIN_CELLS, round(cells * LEATHER_CELL_FACTOR))
+    )
     while cell_lattice > 1 and resolution % cell_lattice != 0:
         cell_lattice //= 2
     while cell_lattice > 1 and cell_lattice * 2 > resolution:
@@ -3616,24 +3627,20 @@ def leather_field(
     fine = numpy.clip(distance * cell_lattice, 0.0, 1.0)
 
     # The ENVELOPE, and it is the surface's own slow variation: a
-    # hide's large-scale unevenness.
-    envelope = noise.fbm_2d_value(
-        sample_x * lattice,
-        sample_y * lattice,
-        size=lattice,
-        octaves=1,
-        seed=4,
+    # hide's large-scale unevenness - a Gaussian grain at the surface's
+    # own feature size, which has no lattice. A value noise at the count
+    # showed its lattice's squares across a smooth hide, at one octave and
+    # at three (Leather038, Leather039, looked at).
+    envelope = noise.gaussian_grain(
+        resolution, max(0.5, 1024.0 / (LEATHER_ENVELOPE_FEATURE_SIGMAS * cells)), seed=4
     )
-    envelope_reach = max(1e-6, float(envelope.max() - envelope.min()))
-    envelope = (envelope - float(envelope.min())) / envelope_reach
 
     # The edge is the ENVELOPE and the fibre is the CRACKLE, and the
-    # writer draws the crackle as the wear and the envelope as the
-    # joint.
-    #
-    # They were the other way round, and the joint is a THIN line -
-    # so the crackle was a thread on a smooth sheet, and the whole
-    # spread was in the envelope.
+    # writer draws the hide as a soft sheet: the envelope its variation
+    # and the crackle its tooth. (Drawn as cells, the crackle's cells were
+    # hashed for colour against the envelope's grid - stripes - and the
+    # envelope reached the image only through the joint falloff, as
+    # mortar patches.)
     #
     # Measured on the truth's own: the six leathers carry two thirds
     # of their spread in the fine and a third in the envelope, and
