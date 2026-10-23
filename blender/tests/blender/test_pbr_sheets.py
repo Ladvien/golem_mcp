@@ -135,3 +135,14 @@ def test_an_onyx_is_banded_layers_and_not_veins(tmp_path):
     luma = _luma(tmp_path, "marble, onyx, polished, smooth, stone, white", 8.0)
     profile = luma.mean(axis=1) - luma.mean()
     assert float(profile.std()) > 0.5 * float(luma.std())
+
+
+def test_a_roof_s_shingle_edges_are_shadows(tmp_path):
+    """The roof field is the distance to a shingle's edge, and the shadow
+    was laid where it was LARGE: every shingle's middle shaded and a bright
+    frame round each one."""
+    from golem_blender.pbr import pattern
+
+    luma = _luma(tmp_path, "clay, roof, roofing, tiles, tiling", 6.0)
+    _cell, edge, _grid, _tone = pattern.roof_field(RESOLUTION, 6)
+    assert float(luma[edge < 0.05].mean()) < float(luma[edge > 0.5].mean())

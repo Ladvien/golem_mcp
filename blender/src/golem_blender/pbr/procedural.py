@@ -333,6 +333,9 @@ BRICK_FACE_DRIFT_CONTINUITY = 0.7
 # palette's ramp has no room there. The truth's own ground reads a
 # matrix of 0.172 where the palette's ramp starts at 0.218.
 MATRIX_SHADOW_SHARE = 0.55
+# How far into a shingle its edge shadow reaches, in the roof field's units
+# (the distance to the edge, one in the shingle's middle).
+ROOF_SHADOW_EDGE = 0.15
 # A loose ground's grit: its Gaussian's sigma, in pixels at 1024.
 SCATTER_GRIT_PX = 0.8
 # How much of the ramp a loose ground's stones' own grit takes.
@@ -1195,7 +1198,12 @@ def write_procedural_base_color(
         # And it is a SHADOW and not a hard step: a hard step at the
         # wrap joins two shingles of a different tone and the seam
         # read 12.4x the truth's.
-        joint = numpy.clip((joint - 0.90) / 0.10, 0.0, 1.0)
+        #
+        # The field is the distance to the shingle's edge - zero there, one
+        # in its middle - so the shadow is where it is SMALL. Read where it
+        # was large, the shadow covered every shingle's middle and left a
+        # bright frame round each one (looked at; the scale read 2.9-3.0x).
+        joint = numpy.clip((ROOF_SHADOW_EDGE - joint) / ROOF_SHADOW_EDGE, 0.0, 1.0)
         # And the shadow is DARK and not the pale mortar: a roof's
         # shadow is a shadow.
         joint = joint * 0.45

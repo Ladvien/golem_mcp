@@ -3310,15 +3310,11 @@ def roof_field(
     # The half-shingle stagger means the wrap joins a shingle to one
     # a whole row away, and a per-shingle hash makes that a colour
     # step. Measured, the roof's seam read 12.4x the truth's.
-    tone = noise.fbm_2d_value(
-        sample_x * courses,
-        sample_y * courses,
-        size=courses,
-        octaves=1,
-        seed=9,
-    )
-    tone_reach = max(1e-6, float(tone.max() - tone.min()))
-    tone = (tone - float(tone.min())) / tone_reach
+    #
+    # A Gaussian grain at a third of a course, which has no lattice: one
+    # value-noise octave at the course count showed its squares across
+    # the roof once its shingles' frames were gone (looked at).
+    tone = _unit(noise.gaussian_grain(resolution, 1024.0 / (3.0 * courses), seed=9))
     return cell, edge, (across, courses), tone
 
 
