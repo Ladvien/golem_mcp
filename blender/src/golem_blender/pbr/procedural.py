@@ -118,10 +118,6 @@ DEFAULT_MORTAR_WIDTH = 0.95
 # The truth's own wood is drawn both ways about its median: its p5 is
 # 0.604 and its p95 is 0.690, around a mean of 0.649.
 LINE_LIGHT_FRACTION = 0.18
-# A SCATTER's MATRIX is wide: the truth's own ground is a gravel
-# with a matrix twelve pixels wide between stones that are sixteen
-# pixels across.
-SCATTER_MATRIX_WIDTH = 2.0
 # How much of the surface's spread the SLOW drift carries.
 #
 # The drift is the surface's own slow variation, and it is what the
@@ -195,10 +191,6 @@ WALLPAPER_DESIGN_SPREAD = 0.0072
 # The truth's own carpet measures a spread of 0.0301 and its pile IS
 # the variation - there is nothing else on a carpet but the pile.
 CARPET_FIBRE_STRENGTH = 1.0
-# Where a stone's joint becomes hard. A stone's edge is an edge and
-# not a gradient, and the soft falloff made the ground a field of
-# glowing blobs.
-SCATTER_JOINT_EDGE = 0.5
 # How much of the full width a SOLID surface's joint gets. A loose
 # ground's matrix between its stones is a sixth of the surface, and a
 # concrete's or a tile's joint is a hairline.
@@ -347,6 +339,10 @@ BRICK_FACE_DRIFT_CONTINUITY = 0.7
 # palette's ramp has no room there. The truth's own ground reads a
 # matrix of 0.172 where the palette's ramp starts at 0.218.
 MATRIX_SHADOW_SHARE = 0.55
+# A loose ground's grit: its Gaussian's sigma, in pixels at 1024.
+SCATTER_GRIT_PX = 0.8
+# How much of the ramp a loose ground's stones' own grit takes.
+SCATTER_STONE_GRIT = 0.25
 # And where the matrix's own tone RIDES on that extended ramp: at
 # the bottom, for the gaps, and up to the top of it for a worn patch.
 #
@@ -369,7 +365,7 @@ BRICK_HUE_SPREAD = 0.4
 # thirds of the whole surface's - and the lane's carried 0.0183, so
 # the gaps between the stones were a smooth sheet where the truth's
 # is packed dirt.
-MATRIX_GRIT_SHARE = 0.35
+MATRIX_GRIT_SHARE = 0.5
 # How high the MATRIX's own ramp reaches, as a share of the palette's
 # dark end.
 #
@@ -869,7 +865,13 @@ def write_procedural_base_color(
         low, high = float(joint.min()), float(joint.max())
         joint_height_out["height"] = (joint - low) / max(1e-9, high - low)
 
-    if kind in ("flat", "wallpaper", "rock", "moss", "grass", "asphalt"):
+    # A PRESSED metal sheet is a soft field too - its ribs are shaded waves
+    # and not lines (pattern.metal_field draws them).
+    pressed_metal = kind == "metal" and metal_horizontal and not metal_brushed
+    if (
+        kind in ("flat", "wallpaper", "rock", "moss", "grass", "asphalt")
+        or pressed_metal
+    ):
         # A FLAT sheet is a SOFT variation about its base, and not a
         # set of lines.
         #
@@ -1165,19 +1167,12 @@ def write_procedural_base_color(
         # surface.
         width *= MORTARED_JOINT_FACTOR
     if kind == "scattered":
-        # A SCATTER's joint is the MATRIX between its stones, and the
-        # matrix is WIDE: the truth's own ground is a gravel with a
-        # matrix twelve pixels wide between stones that are sixteen
-        # pixels across, and the matrix is SEVENTY PER CENT of the
-        # surface.
-        #
-        # So the joint's width is a large fraction of the stone's own
-        # size, and not the hairline a cell's joint is.
-        width = mortar_width * SCATTER_MATRIX_WIDTH
-        # And the joint is HARD: a stone's edge is an edge and not a
-        # gradient, and the soft falloff made the ground a field of
-        # glowing blobs.
-        joint = numpy.where(joint > SCATTER_JOINT_EDGE, joint, 1.0)
+        # A SCATTER's field is its stones' MASK - one on a stone, zero on
+        # the soil - and the joint is the SOIL: one minus the mask. It was
+        # read as a distance to a joint, so everything off the stones
+        # counted as their middle and every pixel came out half stone and
+        # half soil - a camouflage with the soil only on the stones' rims.
+        joint = 1.0 - joint
     if kind == "roof":
         # A ROOF's joint is a THIN SHADOW and not a bevel: the
         # shingle above casts a line on the one below.
@@ -1189,7 +1184,7 @@ def write_procedural_base_color(
         # And the shadow is DARK and not the pale mortar: a roof's
         # shadow is a shadow.
         joint = joint * 0.45
-    if kind not in ("markings", "roof"):
+    if kind not in ("markings", "roof", "scattered"):
         # The joint's FALLOFF, and the MARKINGS' mask is not one.
         #
         # The falloff turns a distance into a joint - one at the
@@ -1214,6 +1209,13 @@ def write_procedural_base_color(
         # different tile lies within half the grout's width, along
         # either axis - with the rolls WRAPPED, so the grout tiles.
         joint = _tile_grout(cell, TILE_GROUT_PX * resolution / 1024)
+
+    if kind == "carpet":
+        # A CARPET has no joints. Its field is the pile's complement and
+        # varies across the image only, and the joint falloff thresholded
+        # it into one hairline running the full height of the map - a seam
+        # down every carpet (Fabric028 at column 1262, looked at).
+        joint = numpy.zeros_like(joint)
 
     # The stones' colours, from each cell's own random value.
     #
@@ -1578,6 +1580,14 @@ def write_procedural_base_color(
         # the close crop showed a blank board where the truth has
         # thirty-five strong lines.
         wear = surface * PARQUET_FIBRE_STRENGTH * float(target_spread or 0.0)
+    elif kind == "scattered":
+        # A loose ground's stones are GRITTY, each one: the generic wear -
+        # a fifteenth of the ramp, normalised by its range - left them
+        # smooth pebbles, and the truths' stones are rough. The grit is in
+        # its own deviations and takes SCATTER_STONE_GRIT of the ramp.
+        grit = _scatter_grit(resolution, seed=71)
+        grit = (grit - float(grit.mean())) / max(1e-6, float(grit.std()))
+        wear = grit * SCATTER_STONE_GRIT * ramp_spread
     else:
         surface = pattern.surface_texture(resolution, cells)
         surface_amplitude = float(surface.max() - surface.min())
@@ -1642,9 +1652,14 @@ def write_procedural_base_color(
         # - two thirds of the whole surface's - and the lane's carried
         # 0.0183, so the gaps between the stones were a smooth brown
         # sheet where the truth's is packed dirt.
-        matrix_grit = pattern.surface_texture(resolution, cells)
-        matrix_grit = matrix_grit - float(matrix_grit.min())
-        matrix_grit = matrix_grit / max(1e-6, float(matrix_grit.max()))
+        # The grit is CENTRED and in its own deviations: normalised by its
+        # range it sat near one half, added on top of a tone near 0.6 it
+        # clipped at one, and the soil came out a smooth sheet (the grit
+        # moved its pixels by 8/255 at most).
+        matrix_grit = _scatter_grit(resolution, seed=73)
+        matrix_grit = (matrix_grit - float(matrix_grit.mean())) / max(
+            1e-6, float(matrix_grit.std())
+        )
         # A SCATTER's joint is the MATRIX, and the matrix is the
         # surface's own slow variation and not a flat colour.
         #
@@ -1952,6 +1967,16 @@ def write_procedural_base_color(
     # upscale shifts the pattern's periodicity and the map's seam
     # shows.
     return _write_image(output_path, resolution, width_px, height_px, colour)
+
+
+def _scatter_grit(resolution: int, seed: int):
+    """A loose ground's GRIT, on its stones and in its soil: a fine
+    isotropic grain. The Perlin mottle every other kind wears is zero at
+    each lattice point, and on a ground's flat soil its lattice showed as
+    a crosshatch (looked at)."""
+    from golem_blender.pbr.noise import gaussian_grain
+
+    return gaussian_grain(resolution, SCATTER_GRIT_PX, seed=seed)
 
 
 def _write_image(

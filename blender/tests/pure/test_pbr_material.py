@@ -641,3 +641,13 @@ def test_an_asphalt_is_its_own_grey_whatever_else_is_said():
         "paint_rgb"
     ]
     assert paint[0] - paint[2] > 0.3
+
+
+def test_a_coated_metal_named_by_a_plain_colour_takes_that_colour():
+    """The coat's tone word was looked up in the metals' table even when it
+    is a plain colour: "galvanized, gray, steel" raised KeyError('gray')."""
+    from golem_blender.pbr.palette import NAMED_COLOURS, value_for_description
+
+    assert value_for_description(
+        "galvanized, gray, metal, sheet, steel"
+    ) == pytest.approx(NAMED_COLOURS["gray"])

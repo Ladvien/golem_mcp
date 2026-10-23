@@ -677,10 +677,22 @@ METAL_PRESSED_WANDER_FRACTION = 0.004
 METAL_PRESSED_ENVELOPE_STRENGTH = 0.12
 METAL_PRESSED_RIB_DEPTH = 0.45
 # How many RIBS a pressed sheet's cell holds. The truth's corrugated
-# steel measures 5.89 features across at a period of 174 pixels and
-# its ribs are sixteen pixels apart, so the ribs are eleven times
-# finer than the envelope.
-METAL_PRESSED_RIB_FACTOR = 11
+# steel's profile has its strongest period at 68 px in 2048 - thirty ribs
+# - and its 5.89 features round to a lattice of eight, so four ribs a
+# cell. (Eleven drew sixty-four: the half-period highlights, each flank's,
+# were read as ribs.)
+METAL_PRESSED_RIB_FACTOR = 4
+# How much of a pressed sheet's field is its ribs' light, against its
+# weathering: the truth's corrugated steel carries most of its contrast in
+# the ribs (its rows' own spread 0.032 of the whole image's 0.076).
+METAL_PRESSED_RIB_SHARE = 0.8
+# How much of a PRESSED sheet's grain shows under its ribs. The line
+# writer saturates a fibre above an eighth of its peak, and the grain at
+# full share saturated nearly everywhere: the truth's own corrugated steel
+# has its ribs as the strongest period of its profile (deviation 17.5/255)
+# and ours had no rib period at all, only the envelope's blotches. Below
+# the saturation the grain is a faint texture and the ribs read.
+METAL_PRESSED_GRAIN_SHARE = 0.1
 # The smallest a cell may be, as a fraction of the largest cell's edge
 # distance. Below it the cell is treated as having no interior, so it
 # reads as stone rather than as a blotch of joint.
@@ -752,73 +764,56 @@ STONE_PEBBLE_JITTER = 0.35
 #
 # The SIZE is the truth's own, measured off the truth's own pixels.
 #
-# Measured on the truth's own ground: the bright stones' widths run
-# 1 px, 2 px, 3 px, 4 px, 5 px, 7 px, 8 px in the counts 1071, 541,
-# 30, 8, 2, 2 and 1 - so the median stone is TWO pixels across, the
-# ninetieth is two and a half, and only a handful reach four.
+# A loose ground's STONES, drawn by size octave on jittered grids.
 #
-# The size was 0.0060, which is three times the truth's: the stones
-# came out a median of 3.4 px across and a ninetieth of 10.8, and the
-# ground read as a field of pebbles where the truth's is a grit.
+# The close sheets showed every scattered ground as CAMOUFLAGE: some two
+# hundred thousand splats of six pixels on a 1024 map - twenty-seven
+# times its area - overlapping into flakes, each flake's tone the slow
+# drift's, and no soil between them. The truths (Ground108, Ground110,
+# Ground112, Gravel043) are distinct stones of many sizes - a few large
+# ones twenty to sixty pixels across, many small - light and dark, each
+# lit on one side and casting a short shadow, on a visible soil.
 #
-# So the size is a TWO-THOUSANDTH of the surface.
-STONE_SCATTER_SIZE = 0.00625
-# How many stones the surface carries.
-#
-# The count follows the SIZE and not the cell count, because a stone
-# is STONE_SCATTER_SIZE of the surface across.
-#
-# And the count is what makes the ground PACKED: the truth's own
-# ground is a bed of stones with a thin shadow between them, and the
-# shadow is a fifth of a per cent of the surface - the truth's own
-# darkest hundredth is 0.119 and its darkest thousandth is 0.000.
-#
-# So the count is large, and the stones' own size law decides how
-# much of the surface they cover: a stone's area goes with the square
-# of its size, so the size falling threefold needs nine times the
-# stones to cover the same ground.
-#
-# And the count is what puts the SHADOW in: at sixty thousand the
-# stones were islands in a wide lit matrix and the ground's luma
-# floored at 0.192; at three hundred and fifty thousand the stones
-# pack and the shadow appears between them, and the ground's luma
-# floors at 0.000 - the truth's own - with its first percentile at
-# 0.113 against the truth's 0.119, and its tenth at 0.213 against the
-# truth's 0.212.
-STONE_SCATTER_DENSITY = 120000
-# How much the stones' sizes vary, as a fraction of their own size.
-#
-# The truth's gravel is a mix: mostly small chips and a few big
-# stones, and the sizes vary by about eight times. So the jitter is
-# wide - the stone's own size is a MEAN and the spread is real.
-STONE_SCATTER_SIZE_JITTER = 0.8
-# How much of a stone's own size is a splat's own cell.
-#
-# A splat is drawn in its own cell, so the cell has to be the
-# splat's own size or the stones are clipped or lost. And the
-# truth's own ground carries eighty-five stones across at twelve
-# pixels each, so the cell is a little larger than the stone.
-STONE_SCATTER_COUNT_FACTOR = 0.35
-# How many straight edges cut each stone, and so how angular it is.
-STONE_SCATTER_EDGES = 3
-# The seed the stones' places and cuts come from.
-STONE_SCATTER_SEED = 7
-# How much of the RAMP a stone's own tone spreads over, and it is
-# WIDE.
-#
-# A gravel is a mix of stone types: the truth's own ground's
-# seventeen biggest stones run from 0.431 to 0.710 - a spread of
-# 0.0752 - and the lane's stones were all the slow field's own
-# value, so the ground came out as a uniform tan bed.
-STONE_TONE_SPREAD = 0.9
-# The SLOW field's own count, as a fraction of the surface's own
-# feature count.
-#
-# Measured on the truth's own: the truth's Ground110 measures twenty
-# and a half features across and its slow field is thirteen and a
-# third, and the truth's Ground106 measures six and a half and its
-# slow is four.
+# So each size octave is a grid of `base * 2**k` cells, a cell holding at
+# most one stone (with the octave's PRESENCE), the stone an ellipse cut by
+# a few straight edges, anywhere in its cell and reaching into the next -
+# so a pixel tests the 3 x 3 cells around its own, the grid wraps, and the
+# layer costs a few array passes per octave and not a Python loop per
+# stone. COARSER octaves lie over finer ones - a large
+# stone rests on the grit; the other way round the small dark stones
+# read as pits in the large ones (looked at).
+# The finest octave is SPARSE and there is none finer: a jittered grid
+# packed at a few pixels a cell keeps its rhythm, and the soil showed a
+# crosshatch of dots (looked at). The finest scale is the soil's grit.
+SCATTER_STONE_PRESENCE = (0.35, 0.5, 0.55, 0.4)
+# How much of the palette's hue variation a stone takes: distinct stones
+# show their hue whole, and at full share they were pastel salmon and teal
+# where the truths' stones are greys leaning warm or cool.
+SCATTER_STONE_HUE_SHARE = 0.5
+SCATTER_STONE_RADIUS = (0.2, 0.55)
+# The coarsest octave's cells, as a fraction of the surface's own feature
+# count: at the count itself the finer octaves above it put the ground's
+# features at twice the truths' (scale 1.19-3.18x, geometric mean ~2.0x
+# over the eleven grounds).
+SCATTER_STONE_BASE_FRACTION = 0.5
+SCATTER_STONE_ASPECT = (0.55, 1.0)
+SCATTER_STONE_CUTS = 3
+# A stone's light: brighter on the side facing the light, darker at its
+# rim; and its contact shadow on the soil, this many pixels (at 1024)
+# down-light and this deep.
+SCATTER_STONE_SHADE = 0.22
+SCATTER_STONE_RIM = 0.25
+SCATTER_SHADOW_PX = 2.0
+SCATTER_SHADOW_DEPTH = 0.5
+# The soil's slow drift: its lattice as a fraction of the surface's own
+# feature count (the truth's Ground110 measures 20.5 features across and
+# its slow field 13.3), its octaves and its weight about the middle. One
+# value-noise octave at full weight drew the lattice's crosses across the
+# whole map and held a third of the variance coarser than 32 px, where the
+# truths hold a tenth.
 SCATTER_SLOW_CELL_FRACTION = 0.5
+SCATTER_DRIFT_OCTAVES = 3
+SCATTER_DRIFT_WEIGHT = 0.6
 # The PEBBLES' warp: how far the lattice is displaced, the step the
 # slope is measured over, and how many steps are taken.
 #
@@ -3835,336 +3830,112 @@ def scattered_field(
     octaves=STONE_OCTAVES,
     lines_per_cell: int = 1,
 ):
-    """A field of SCATTERED stones in a matrix.
+    """A loose ground: distinct STONES of many sizes on a soil.
 
-    A ground is not a field of equal stones and it is not a Voronoi.
-    A Voronoi's cells TILE the plane: every point belongs to exactly
-    one cell, and the cells' boundaries are a network. A heap of loose
-    stones does not tile - the stones are separate, there is a matrix
-    between them, and the matrix's width varies.
-
-    The truth's own ground is a gravel: fifty-six bright stones along
-    a row of a thousand and twenty-four, a matrix twelve pixels wide
-    between them, and the stones' sizes varying by eight times.
-
-    So the stones are SCATTERED - Material Maker's `splatter` node,
-    MIT licensed, and ours wraps so the map tiles.
-
-    And the stones are ANGULAR, not round: the truth's are broken
-    pieces of rock, and a round blob is a bubble. So each stone is
-    cut by a few straight edges - a polygon - and the matrix is
-    filled with the surface's own mottle.
+    Returns the cell (unused, zeros), the stones' MASK (one on a stone,
+    zero on the soil, a pixel of rim), the grid, each pixel's stone TONE
+    (its own random tone, lit on one side, darker at the rim), the soil's
+    SLOW drift (darkened in the stones' contact shadows) and each stone's
+    HUE offset. Every grid and the drift wrap, so the ground tiles.
     """
     import numpy
 
-    from golem_blender.pbr import splatter
+    from golem_blender.pbr import noise
 
-    # The stones' own count and size, and they follow the truth's:
-    # a stone is sixteen pixels across in a thousand and twenty-four,
-    # and there are about sixty of them along a row.
-    size = max(2.0 / resolution, STONE_SCATTER_SIZE)
-    # The stones' COUNT follows their SIZE and not the cell count.
-    #
-    # The truth's own stones are sixteen pixels across, and they are
-    # sixteen pixels across whatever the surface's feature count is -
-    # so the count is fixed by the size and not by the cells.
-    #
-    # The count followed the cells, and so it followed the feature
-    # count: the ground with twenty features had six hundred stones
-    # and the one with sixteen had three hundred and eighty-four, and
-    # the measure read the stones' own count. Measured: the ground's
-    # feature scale read 0.77x the truth's on one and 1.97x on the
-    # other - the same material and the same words.
-    # The count follows the SIZE and the surface's own SCALE.
-    #
-    # A ground with a wide spread has a DEEP shadow between its
-    # stones, and a ground with a narrow spread does not: the
-    # truth's own Ground110 has a spread of 0.1243 and its tenth
-    # percentile is 0.212, and the truth's own Ground109 has a
-    # spread of 0.0649 and its tenth percentile is 0.355.
-    #
-    # And the surface's scale is the count of its features, which is
-    # what the caller passes: a ground with twenty features across
-    # has stones a twentieth of the surface apart and a ground with
-    # eight has them an eighth apart, so the count goes with the
-    # square of the feature count.
-    #
-    # Measured on the truth's own: the ground's feature scale read
-    # 0.85x the truth's at twenty features and 1.43x at twenty-nine,
-    # with a constant count.
-    scale = max(1.0, float(cells))
-    #
-    # The stones' COUNT follows their own SIZE and not the surface's
-    # feature count.
-    #
-    # The truth's own ground carries eighty-five stones across and
-    # its stones are twelve pixels across, so the count is the
-    # surface's own area divided by the stones' own area - and the
-    # surface's feature count (nine, twenty) has nothing to do with
-    # it.
-    #
-    # The count followed the feature count, and so it followed the
-    # square of it: the ground with twenty features had six hundred
-    # stones and the one with sixteen had three hundred and eighty-
-    # four, and the measure read the stones' own count.
-    count = max(8, round(STONE_SCATTER_DENSITY * (scale / 20.0) ** 2))
-    # And the splats' own LATTICE is the stones' size: a splat is
-    # drawn in its own cell, so the cell has to be the splat's own
-    # size or the stones are either clipped or lost.
-    count = max(8, round((1.0 / max(1e-6, size * STONE_SCATTER_COUNT_FACTOR)) ** 2))
-    field, places = splatter.splatter_field(
-        resolution,
-        count=count,
-        size=size,
-        size_jitter=STONE_SCATTER_SIZE_JITTER,
-        seed=STONE_SCATTER_SEED,
-    )
+    axis = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+    mask = numpy.zeros((resolution, resolution), dtype=numpy.float64)
+    tone = numpy.full((resolution, resolution), 0.5, dtype=numpy.float64)
+    hue = numpy.zeros((resolution, resolution), dtype=numpy.float64)
+    base = max(2, round(cells * SCATTER_STONE_BASE_FRACTION))
+    low_radius, high_radius = SCATTER_STONE_RADIUS
+    low_aspect, high_aspect = SCATTER_STONE_ASPECT
+    for octave in reversed(range(len(SCATTER_STONE_PRESENCE))):
+        presence = SCATTER_STONE_PRESENCE[octave]
+        period = base * 2**octave
+        grid_x = sample_x * period
+        grid_y = sample_y * period
+        cell_x = numpy.floor(grid_x).astype(numpy.int64)
+        cell_y = numpy.floor(grid_y).astype(numpy.int64)
+        # Each cell's draws, once per CELL (a table period x period) and
+        # gathered per pixel: hashed per pixel for nine neighbours, the
+        # layer cost hundreds of full-map hashes.
+        lattice = numpy.arange(period)
+        table_x, table_y = numpy.meshgrid(lattice, lattice, indexing="ij")
+        table = [
+            noise._hash01(table_x, table_y, period, period, 101 + 37 * octave + index)
+            for index in range(14)
+        ]
+        # A stone lies anywhere in its cell and may reach into the next, so
+        # a pixel reads the 3 x 3 cells around its own: kept inside its own
+        # cell, a stone could move a fifth of a cell at most and the fine
+        # ones sat in visible rows (looked at).
+        for step_x in (-1, 0, 1):
+            for step_y in (-1, 0, 1):
+                near_x = (cell_x + step_x) % period
+                near_y = (cell_y + step_y) % period
 
-    # The SLOW variation, and it is the SURFACE's scale and not the
-    # stones'.
-    #
-    # The truth's own ground measures nineteen features across and it
-    # has fifty-six stones across, so the measure finds the surface's
-    # slow variation and not the stones - and the stones' own tones
-    # are all much the same.
-    #
-    # So the slow variation is a smooth field at the SURFACE's scale,
-    # and it varies the stones' tones together - which is what a worn
-    # patch of ground does.
-    # The SLOW field is at the SURFACE's own scale, and it is a
-    # fraction of the surface's features and not the whole of them.
-    #
-    # Measured on the truth's own: the truth's Ground110 measures
-    # twenty and a half features across and its slow field is
-    # thirteen and a third - so the slow is at two thirds of the
-    # feature count. And the truth's Ground106 measures six and a
-    # half and its slow is four, and the truth's Ground103 measures
-    # twelve and a half and its slow is eight and a third.
-    #
-    # So the slow field is at two thirds of the count, and at the
-    # count it was too fine and the ground's feature scale read
-    # 1.50x the truth's where the truth's own slow field is at
-    # eighty-six pixels and the lane's was at seventy-nine.
-    slow = slow_variation(resolution, max(2, round(cells * SCATTER_SLOW_CELL_FRACTION)))
+                def draw(index, near_x=near_x, near_y=near_y, table=table):
+                    return table[index][near_x, near_y]
 
-    # The MATRIX is the DARK ground the stones sit in, and it is the
-    # surface's own slow variation.
-    #
-    # It was the whole slow field, so the matrix was as bright as the
-    # stones' own tones and the ground read as a pale field with
-    # slightly paler pebbles in it. Measured: the truth's matrix
-    # reads 0.242 where ours read 0.397.
-    #
-    # So the matrix is the slow field's own VARIATION at the BOTTOM of
-    # the ramp: it is the dark end of the range the stones are the
-    # light end of, and the slow field only moves it within that
-    # bottom.
-    #
-    # The STONES' own tone field, and it is ZERO everywhere but on a
-    # stone.
-    #
-    # It was the slow field with a floor under it, so the MATRIX
-    # carried the slow field's own variation and the tone field had
-    # the slow field's structure - the ground read as a smooth sheet
-    # with the stones' edges drawn on it, and not as stones in a
-    # matrix.
-    #
-    # Measured: the tone field's own blobs had a median diameter of
-    # 5.6 px, which is the slow field's scale, against the truth's
-    # 1.6 px.
-    #
-    # So the field is the stones alone: zero on the matrix, and the
-    # stone's own tone where the stone is. The matrix's own tone is
-    # the slow field, and the writer draws it from the complement.
-    stones_tone = numpy.zeros((resolution, resolution), dtype=numpy.float64)
-    # The stones' own HUE variation, and it is a per-stone constant.
-    #
-    # A field of stones is not one colour: the truth's own gravel
-    # carries stones whose red share runs from 0.351 to 0.393, so
-    # the variation is a fiftieth of the surface's hue.
-    #
-    # And the whole surface was one hue before, so a ground of grey
-    # stones came out as a ground of tan ones.
-    stones_hue = numpy.zeros((resolution, resolution), dtype=numpy.float64)
-
-    # The stones are ANGULAR: each is cut by a few straight edges.
-    #
-    # The truth's stones are broken pieces of rock, and a round blob
-    # is a bubble - the scattered field read well on the measure and
-    # looked like foam.
-    #
-    # So the dome is cut by a set of half-planes, and each plane's
-    # angle and offset come from the stone's own place.
-    generator = numpy.random.default_rng(STONE_SCATTER_SEED + 11)
-    for index, (centre_x, centre_y, this_size, _, _, _) in enumerate(places):
-        # The stone's own cut lines, and they are relative to the
-        # stone's own centre and its own size - so a cut is the
-        # stone's own edge and not a cut across the whole surface.
-        #
-        # The cut is applied in the stone's OWN BOX, for the same
-        # reason the splat is: the whole surface is a million pixels
-        # and there are three thousand six hundred stones.
-        radius = int(numpy.ceil(this_size * 1.6 * resolution))
-        if radius < 1:
-            continue
-        centre_px = int(centre_x * resolution)
-        centre_py = int(centre_y * resolution)
-
-        # The stone's own TONE, and it is the SLOW field sampled at
-        # the stone's own place.
-        #
-        # It was a per-stone HASH with the slow field's value
-        # multiplied in, and a hash is uncorrelated from stone to
-        # stone: so neighbouring stones had unrelated tones and the
-        # surface's autocorrelation fell to nothing in a few pixels.
-        #
-        # The truth's ground is a field whose correlation reaches
-        # fifty-three pixels while its stones are a pixel or two
-        # across - so the tone is a SMOOTH field and the stones are
-        # its samples. A worn patch of ground is a patch of paler
-        # stones, and the patch is bigger than a stone.
-        slow_here = float(
-            slow[
-                min(resolution - 1, max(0, centre_py)),
-                min(resolution - 1, max(0, centre_px)),
-            ]
-        )
-        # The tone is at the TOP of the ramp: the stone is the ramp's
-        # light end and the matrix is its dark end, and the two
-        # together ARE the surface's contrast.
-        #
-        # Measured on the truth's own ground: the stones read 1.10 of
-        # the ramp and the matrix -0.08 of it, so the ramp is the
-        # stone-to-matrix contrast and not a variation within one
-        # population.
-        # The stone's own TONE, and it is the stone's own: a gravel
-        # is a mix of stone types, and the truth's own ground has
-        # stones from 0.431 to 0.710 - a spread of 0.0752 over its
-        # seventeen biggest.
-        #
-        # The tone was the slow field's own value and a little of the
-        # stone's hash, so every stone in a patch was the same tone
-        # and the ground came out as a uniform tan bed where the
-        # truth's is a mix of white and black stones.
-        #
-        # So the tone is the slow field's value AND the stone's own
-        # hash, and the hash's own share is wide.
-        hash_value = float(
-            numpy.random.default_rng(STONE_SCATTER_SEED + index * 13).random()
-        )
-        tone = 0.50 + 0.50 * slow_here + (hash_value - 0.5) * STONE_TONE_SPREAD
-
-        # The stone's own EDGES, and they are cut by a set of
-        # half-planes whose angles and offsets come from the stone's
-        # own place.
-        #
-        # The cut is a MASK and not a ramp: a ramp's value goes to
-        # zero at the plane, so the stone's middle is hollow, and the
-        # truth's stones are solid pieces.
-        edges = []
-        for _ in range(STONE_SCATTER_EDGES):
-            angle = generator.random() * numpy.pi
-            offset = 0.4 + generator.random() * 0.45
-            edges.append((numpy.cos(angle), numpy.sin(angle), offset))
-
-        # The stone is drawn at EVERY WRAPPED COPY of its centre, and
-        # not only at the one it was placed at.
-        #
-        # A single copy is a stone cut in half at the edge, and the
-        # two halves are not the same shape - so the map does not
-        # tile. Measured: the ground's seam read 23.73x the truth's.
-        for offset_y in (-resolution, 0, resolution):
-            for offset_x in (-resolution, 0, resolution):
-                lo_x = max(0, centre_px - radius + offset_x)
-                hi_x = min(resolution, centre_px + radius + 1 + offset_x)
-                lo_y = max(0, centre_py - radius + offset_y)
-                hi_y = min(resolution, centre_py + radius + 1 + offset_y)
-                if hi_x <= lo_x or hi_y <= lo_y:
-                    continue
-                rows = (numpy.arange(lo_y, hi_y) + 0.5) / resolution - centre_y
-                columns = (numpy.arange(lo_x, hi_x) + 0.5) / resolution - centre_x
-                delta_y, delta_x = numpy.meshgrid(rows, columns, indexing="ij")
-                delta_x -= numpy.round(delta_x)
-                delta_y -= numpy.round(delta_y)
-                reach = numpy.hypot(delta_x, delta_y) / max(1e-6, this_size)
-                # The stone is SOLID: it is inside its own radius and
-                # it has a hard edge.
-                #
-                # The tone was a DOME - a gradient from the stone's
-                # centre to its edge - and a dome makes a glowing blob
-                # and not a stone. The truth's stones are flat pieces
-                # with a hard edge.
-                inside = (reach < 1.0).astype(numpy.float64)
-                for cosine, sine, edge_offset in edges:
-                    gradient = cosine * delta_x + sine * delta_y
-                    side = (edge_offset - gradient / max(1e-6, this_size)) > 0.0
-                    inside = numpy.where(side, inside, 0.0)
-                field_window = field[lo_y:hi_y, lo_x:hi_x]
-                numpy.maximum(field_window, inside, out=field_window)
-                # The stone's TONE is written where the stone is, and
-                # not MAXIMISED against what was there.
-                #
-                # It was a maximum, and the maximum was against the
-                # SLOW field the stone's tone rides on - and the slow
-                # field's own value was higher than any stone's tone,
-                # so the stone's tone never landed at all. The tone
-                # field stayed the slow field, and the ground read as
-                # a smooth sheet with the stones' EDGES drawn on it.
-                #
-                # Measured: the tone field's own blobs had a median
-                # diameter of 6.0 px, which is the slow field's scale
-                # and not a stone's.
-                tone_window = stones_tone[lo_y:hi_y, lo_x:hi_x]
-                tone_window[inside > 0.0] = tone
-                # The stone's own hue offset, and it is the stone's
-                # OWN hash - so two stones in the same patch differ
-                # and the patch does not.
-                hue_window = stones_hue[lo_y:hi_y, lo_x:hi_x]
-                hue_window[inside > 0.0] = (
-                    float(
-                        numpy.random.default_rng(
-                            STONE_SCATTER_SEED + index * 7
-                        ).random()
+                radius = low_radius + (high_radius - low_radius) * draw(1)
+                aspect = low_aspect + (high_aspect - low_aspect) * draw(2)
+                angle = numpy.pi * draw(3)
+                across = grid_x - (cell_x + step_x + draw(4))
+                down = grid_y - (cell_y + step_y + draw(5))
+                cosine, sine = numpy.cos(angle), numpy.sin(angle)
+                reach = numpy.hypot(
+                    (across * cosine + down * sine) / radius,
+                    (-across * sine + down * cosine) / (radius * aspect),
+                )
+                # The straight CUTS: a broken stone is angular, and each cut
+                # is a half-plane that bounds it like the ellipse does.
+                for cut in range(SCATTER_STONE_CUTS):
+                    theta = 2.0 * numpy.pi * draw(6 + cut)
+                    offset = 0.55 + 0.4 * draw(9 + cut)
+                    reach = numpy.maximum(
+                        reach,
+                        (across * numpy.cos(theta) + down * numpy.sin(theta))
+                        / (radius * offset),
                     )
-                    - 0.5
-                ) * 2.0
+                rim = 1.0 / numpy.maximum(1.0, radius * resolution / period)
+                inside = numpy.clip((1.0 - reach) / rim, 0.0, 1.0) * (
+                    draw(0) < presence
+                )
+                lit = -(across + down) / (radius * 2.0**0.5)
+                stone_tone = (
+                    draw(12)
+                    + SCATTER_STONE_SHADE * lit
+                    - SCATTER_STONE_RIM * numpy.clip(reach, 0, 1) ** 4
+                )
+                tone = tone * (1.0 - inside) + stone_tone * inside
+                hue = (
+                    hue * (1.0 - inside)
+                    + SCATTER_STONE_HUE_SHARE * (2.0 * draw(13) - 1.0) * inside
+                )
+                mask = numpy.maximum(mask, inside)
 
-    # The EDGE is what the shared path draws the joint from, and the
-    # joint is dark where the edge is small.
-    #
-    # So the edge is the scatter's own field: one at a stone's centre
-    # and zero in the matrix. It was the field's COMPLEMENT, and the
-    # joint was then drawn at the stones' CENTRES - and the ground
-    # came out as a field of bright rings.
-    edge = numpy.clip(field, 0.0, 1.0)
-    # The CELL is a constant: a scatter has no cells to hash.
-    #
-    # The FIBRE is the STONES' own tone field: zero on the matrix and
-    # the stone's own tone where the stone is. The writer draws the
-    # stone at the ramp's light end and the matrix at its dark end.
-    #
-    # And the SLOW field is returned with it, because the MATRIX's
-    # tone is the slow field and not the complement of the stones':
-    # a complement is a CONSTANT wherever there is no stone, and a
-    # constant matrix has no drift in it.
-    #
-    # That matters for the measure and not only for the eye: the
-    # truth's ground measures nineteen features across where its
-    # stones are a couple of pixels across, and the measure finds the
-    # surface's slow variation. Measured, the constant matrix put the
-    # period at sixteen pixels against the truth's fifty-three.
-    #
-    # And the STONES' own HUE variation: a field of stones is not one
-    # colour, and the truth's own gravel carries stones whose red
-    # share varies by a fiftieth. So each stone carries its own hue
-    # offset, and it is zero on the matrix.
+    # The stones' CONTACT SHADOW on the soil, down-light of each stone.
+    shift = max(1, round(SCATTER_SHADOW_PX * resolution / 1024))
+    shadow = numpy.roll(mask, (shift, shift), axis=(0, 1)) * (1.0 - mask)
+    lattice = max(2, round(cells * SCATTER_SLOW_CELL_FRACTION))
+    drift = noise.fbm_2d_value(
+        sample_x * lattice,
+        sample_y * lattice,
+        size=lattice,
+        octaves=SCATTER_DRIFT_OCTAVES,
+        persistence=0.5,
+        seed=4,
+    )
+    slow = 0.5 + SCATTER_DRIFT_WEIGHT * (_unit(drift) - 0.5)
+    slow = slow * (1.0 - SCATTER_SHADOW_DEPTH * shadow)
     return (
-        numpy.zeros_like(edge, dtype=numpy.int32),
-        edge,
+        numpy.zeros((resolution, resolution), dtype=numpy.int32),
+        mask,
         (cells, cells),
-        stones_tone,
+        numpy.clip(tone, 0.0, 1.0),
         slow,
-        stones_hue,
+        hue,
     )
 
 
@@ -4240,7 +4011,11 @@ def metal_field(
     #
     # So a pressed sheet's bands are rows: the row's own variation is
     # the slow one, and the ribs are across the row.
-    across, along = (sample_y, sample_x) if horizontal else (sample_x, sample_y)
+    # The samples are an "ij" grid: sample_x runs DOWN the image (the first
+    # axis) and sample_y across it. A horizontal sheet's ribs vary down the
+    # image, so they are bands of sample_x; read as bands of sample_y the
+    # truth's own corrugated steel came out with VERTICAL ribs (looked at).
+    across, along = (sample_x, sample_y)
     if horizontal:
         # A PRESSED sheet's ribs are STRAIGHT. The truth's own
         # corrugated steel is a pressed sheet of straight parallel
@@ -4477,26 +4252,17 @@ def metal_field(
         # the corrugated steel's seam read 6.52 against the truth's
         # 0.35.
         stretched = max(1, round(lattice * METAL_GRAIN_STRETCH))
-        if horizontal:
-            grain_field = noise.fbm_2d_value(
-                sample_x * lattice,
-                sample_y * stretched,
-                size=lattice,
-                size_y=stretched,
-                octaves=FIBRE_OCTAVES,
-                seed=1,
-                folds=FIBRE_FOLDS,
-            )
-        else:
-            grain_field = noise.fbm_2d_value(
-                sample_x * stretched,
-                sample_y * lattice,
-                size=stretched,
-                size_y=lattice,
-                octaves=FIBRE_OCTAVES,
-                seed=1,
-                folds=FIBRE_FOLDS,
-            )
+        # The grain runs ALONG the bands: more cells down the image than
+        # across it, so its features are long across - a horizontal grain.
+        grain_field = noise.fbm_2d_value(
+            sample_x * stretched,
+            sample_y * lattice,
+            size=stretched,
+            size_y=lattice,
+            octaves=FIBRE_OCTAVES,
+            seed=1,
+            folds=FIBRE_FOLDS,
+        )
         ridge = numpy.abs(grain_field - 0.5)
         #
         # And the slope is computed on the WRAPPED field.
@@ -4530,7 +4296,9 @@ def metal_field(
         # separated: the ribs are horizontal and the measure reads
         # along a row.
         if horizontal:
-            fine_edge = numpy.maximum(rib_darkness, fibre_dark)
+            fine_edge = numpy.maximum(
+                rib_darkness, METAL_PRESSED_GRAIN_SHARE * fibre_dark
+            )
         else:
             fine_edge = fibre_dark
 
@@ -4591,6 +4359,19 @@ def metal_field(
             size=band_lattice,
             octaves=3,
             seed=5,
+        )
+    if horizontal and not brushed:
+        # A PRESSED sheet's ribs are SHADED WAVES: one flank lit, the
+        # valley dark, every rib. As lines on a sheet the ribs came out as
+        # thin pale stripes over a maze of grain (looked at), where the
+        # truth's own corrugated steel is its ribs - the strongest period of
+        # its profile, a deviation of 17.5/255. So the sheet's field is the
+        # wave's light over its weathering, and the writer draws it as a
+        # soft field; the grain and the scratches are its faint tooth.
+        shade = 0.5 + 0.5 * numpy.sin(two_pi * bands)
+        envelope = band_field / band_reach * 0.5 + 0.5
+        edge = (
+            METAL_PRESSED_RIB_SHARE * shade + (1.0 - METAL_PRESSED_RIB_SHARE) * envelope
         )
     if scratch_strength > 0.0:
         # The sheet's SCRATCHES, and they are an ABRASION.

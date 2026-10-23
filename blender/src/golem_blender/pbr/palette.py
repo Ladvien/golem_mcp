@@ -1595,7 +1595,12 @@ def value_for_description(description: str) -> float:
             tone = METAL_COLOUR_TIERS[1]
             for word in tone:
                 if word in words:
-                    return NAMED_COLOURS.get(word, METAL_COLOURS[word])
+                    # The named colour if there is one, the metal's own
+                    # if not - and the fallback looked up only then: as a
+                    # default argument it was looked up first, and a
+                    # "galvanized, gray, steel" raised KeyError('gray').
+                    named = NAMED_COLOURS.get(word)
+                    return named if named is not None else METAL_COLOURS[word]
         # And a metal names SEVERAL of its own colours, and they are
         # MEANED and not taken in the tier's order.
         #
