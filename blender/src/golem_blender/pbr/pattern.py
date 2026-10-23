@@ -478,6 +478,13 @@ WOVEN_FINE_MOTTLE = 0.1
 WOVEN_WARP_THREADS = 0.5
 WOVEN_WARP_LATTICE = 8
 WOVEN_CROSSING_JITTER = 0.5
+# A fine cloth's slubs: the oriented grain's sigma across a row (pixels at
+# 1024), how much longer it runs along the row, and its most share.
+WOVEN_SLUB_PX = 1.5
+WOVEN_SLUB_ALONG = 12.0
+WOVEN_SLUB_SHARE = 0.5
+# Slubs fade in below this many features.
+WOVEN_SLUB_FEATURES = 40
 # A ROOF's shingle is about as wide as it is tall, and its courses
 # and its shingles are at the same scale.
 #
@@ -3189,6 +3196,21 @@ def woven_field(
     )
     mottle = (mottle - mottle.min()) / max(1e-9, float(mottle.max() - mottle.min()))
     edge = darkness * (1.0 - mottle_share) + mottle * mottle_share
+    slub_share = WOVEN_SLUB_SHARE * min(
+        1.0, max(0.0, (WOVEN_SLUB_FEATURES - cells) / WOVEN_SLUB_FEATURES)
+    )
+    if fine and slub_share > 0.0:
+        # A fine cloth's SLUBS: threads thicker for a stretch along the
+        # row. In the fine regime the feature count IS the cloth's slow
+        # structure, and long slubs read as few features: the truth's own
+        # Fabric036, a canvas of bright horizontal slubs, reads 17 and
+        # decorrelates within 12 pixels along a row against 3 down it,
+        # where the regular linen Fabric030 reads 45. Slubs on the linen
+        # streaked it (looked at), so they fade in below 40 features.
+        slubs = noise.gaussian_grain(
+            resolution, WOVEN_SLUB_PX, seed=43, along_rows=WOVEN_SLUB_ALONG
+        )
+        edge = edge * (1.0 - slub_share) + slubs * slub_share
     if checkered:
         # A CHECKERED cloth is a CHEQUER of squares and not a
         # crosshatch of threads, and the two are different things.

@@ -225,11 +225,18 @@ def fbm_2d_value(
     return value / numpy.maximum(norm, 1e-9)
 
 
-def gaussian_grain(resolution: int, scale_px: float, seed: int = 0):
-    """An ISOTROPIC grain, in 0..1: white noise smoothed by a Gaussian.
+def gaussian_grain(
+    resolution: int, scale_px: float, seed: int = 0, along_rows: float = 1.0
+):
+    """A grain, in 0..1: white noise smoothed by a Gaussian.
 
     `scale_px` is the Gaussian's sigma in pixels at a 1024 map, so the
     grain is the same size on the surface at any resolution.
+    `along_rows` stretches it along the image's rows (the second array
+    axis): a cloth's slubs are threads thicker for a stretch along the
+    row, and the truths' own fine cloths decorrelate two to four times
+    further along their rows than down them. An oriented Gaussian is
+    what a Gabor noise would give here, without its kernel sums.
 
     A value noise's cells are SQUARES: its corners sit on a lattice and
     it interpolates along the axes, so at a cell of a few pixels - or
@@ -243,9 +250,12 @@ def gaussian_grain(resolution: int, scale_px: float, seed: int = 0):
 
     white = numpy.random.default_rng(seed).standard_normal((resolution, resolution))
     sigma = max(1e-6, float(scale_px) * resolution / 1024.0)
+    sigma_along = sigma * max(1e-6, float(along_rows))
     frequencies = numpy.fft.fftfreq(resolution)
     fx, fy = numpy.meshgrid(frequencies, frequencies, indexing="ij")
-    kernel = numpy.exp(-2.0 * (numpy.pi * sigma) ** 2 * (fx * fx + fy * fy))
+    kernel = numpy.exp(
+        -2.0 * numpy.pi**2 * ((sigma * fx) ** 2 + (sigma_along * fy) ** 2)
+    )
     grain = numpy.real(numpy.fft.ifft2(numpy.fft.fft2(white) * kernel))
     # Mapped by its PERCENTILES and not its extremes: a Gaussian's
     # extremes are rare, and a range taken from them bunches the grain

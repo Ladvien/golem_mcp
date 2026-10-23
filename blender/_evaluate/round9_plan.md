@@ -105,6 +105,7 @@ transcript; the four sets re-run after each batch.
 | Fabric085 grey, Leather038 brown | with only generic materials named the first word with a hue decided ("fabric" before "orange") | a dyed material (fabric, wool, leather, carpet) takes its colour word; 0.0613 -> 0.0588 | b7698d9 |
 | marble scale 0.54 | the presence mask at half the count set the scale | presence at the count (seven marbles' scale error 0.279 -> 0.183) | 0245750 |
 | B10 Road007 five lines | markings at random places of a lattice of four (the constant's own comment said three) | the measured layout: solid edges at 7.5%/92.5%, a dashed centre, four dashes; an asphalt grain; the road's spread is what the paint leaves | eddec6e |
+| Fabric036 no slubs | a weave under an isotropic mottle reads the same both ways (9/9; truth 12/3) | an oriented Gaussian grain along the rows, fading in below 40 features (linen Fabric030 unstreaked); scale 1.43 -> 1.20 | (slubs) |
 
 Measured but NOT taken (lost on the holdout or in-sample): colour-word-first hue (41 better / 56 worse);
 a one-colour-word hue (28/58); dropping lightness words from the spread outright (holdout 0.4323);
@@ -119,8 +120,7 @@ words (mean 0.0620 -> 0.0595 but median 0.0375 -> 0.0387, 9 better / 6 worse).
 - Moss002 too pale (value 0.466 vs 0.353) and unsaturated; Concrete031 olive (its words say
   "green" and its pixels are grey: a description limit); dark woods too light (Wood067 1.71x,
   Wood026 1.54x): the truths are saturated red-brown, and the words do not carry it.
-- Fabric036's slubs and Fabric019's knit are not drawn (no slub or knit kind); Fabric085's boucle is a
-  coarse basket weave.
+- Fabric019's knit is not drawn (no knit kind); Fabric085's boucle is a coarse basket weave.
 - Marble014's beige (the specificity rule picks marble's neutral; numerically closer to the truth).
 - Tiles107's face tooth is right in amount (0.032 against the truth's 0.025 fine std) but coarser
   than the truth's; WoodFloor040/041 are vertical planks (orientation is not in the words).
@@ -128,9 +128,10 @@ words (mean 0.0620 -> 0.0595 but median 0.0375 -> 0.0387, 9 better / 6 worse).
   with generate_layered_texture_set (dirt + moss patches + grass patches) it carries the truth's
   patchwork; the single-material benchmark cannot. Its moss is olive: even 'green' is fitted olive on
   mossy rocks and grounds, and Moss002's vivid green is the corpus's one pure moss.
-- Ground048 (dark crumbly soil, 73 features) renders as pale scattered blobs: 'soil' has a fitted value
-  (0.377, more specific than 'dirt') that the value rule's tiers never read, and the scattered kind
-  draws stones where the truth is fine crumbs.
+- Ground048 (dark crumbly soil, 73 features) renders as pale scattered blobs - a description limit:
+  'soil' names four truths at 0.438, 0.392, 0.419 and Ground048's 0.259, and the other three are the
+  pebbly grounds whose words it shares. Concrete ('concrete, smooth' at 0.367-0.800) and Metal034
+  (a 'smooth gold metal' at 0.687 beside one at 0.893) are the same kind of limit.
 - Metal034's gold reads lemon (contrast 5.24x on a near-uniform truth); Wood092 salmon against amber.
 - Tile counts vary against the truths (Tiles107 ours smaller, Tiles040 larger): the count is the
   feature measure's.
@@ -146,3 +147,10 @@ words (mean 0.0620 -> 0.0595 but median 0.0375 -> 0.0387, 9 better / 6 worse).
 
 The seam rose (top 0.13 -> 0.19, truth 0.44) as the maps gained truth-like fine texture; every
 wrap step ranks inside its own map's interior steps (0.09-0.74), so none is a seam.
+
+## The reference list's primitives
+
+Ported only where a sheet defect needed them. None needed Poisson disk or curl noise. The one that
+called for a Gabor-like oriented noise - Fabric036's slubs - is an oriented Gaussian grain
+(`noise.gaussian_grain(..., along_rows=)`), the same FFT-smoothed white noise that replaced the
+value noise's squares: periodic, axis-free, no kernel sums.
