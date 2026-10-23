@@ -2956,10 +2956,16 @@ DRIFT_STRENGTHS: dict[str, float] = {
     # The truth's own Tiles141 reads +0.192 at a thirty-two-pixel
     # lag and crosses zero at a hundred and twenty-eight, and it
     # measures 9.8 features across. At 0.20 the lane reads 9.0.
-    "tiles": 0.20,
-    "tile": 0.20,
-    "ceramic": 0.20,
-    "porcelain": 0.20,
+    #
+    # And 0.08 once each tile carries a tone of its own: at 0.20 the
+    # drift, running continuously across the floor, was one soft cloud
+    # over the tiles where the truths' tiles are even (looked at). The
+    # eight tiled truths' scale |log| sums 3.29 -> 2.95 (Tiles107 0.39 ->
+    # 0.75, Tiles141 1.00 -> 1.21, Tiles138 0.29 -> 3.80).
+    "tiles": 0.08,
+    "tile": 0.08,
+    "ceramic": 0.08,
+    "porcelain": 0.08,
     "plaster": 0.30,
     "concrete": 0.25,
     "bricks": 0.05,
