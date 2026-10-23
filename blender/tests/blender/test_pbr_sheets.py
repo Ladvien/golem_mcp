@@ -173,3 +173,19 @@ def test_a_surface_s_slow_drift_shows_no_lattice():
     slope = numpy.abs(numpy.roll(drift, -1, axis=1) - numpy.roll(drift, 1, axis=1))
     columns = slope.mean(axis=0)
     assert float(columns.min()) > 0.4 * float(numpy.median(columns))
+
+
+def test_a_fan_paving_tiles():
+    """The fans are disks on a staggered lattice that divides the image, so
+    the step across the wrap is the step one fan further in - the same
+    place in the pattern."""
+    from golem_blender.pbr import pattern
+
+    _cell, edge, _grid, _fibre = pattern.fan_field(RESOLUTION, 80)
+    fan = RESOLUTION // 8
+    wrap = float(numpy.abs(edge[:, 0] - edge[:, -1]).mean())
+    inside = float(numpy.abs(edge[:, fan] - edge[:, fan - 1]).mean())
+    assert abs(wrap - inside) <= 0.1 * inside
+    wrap = float(numpy.abs(edge[0] - edge[-1]).mean())
+    inside = float(numpy.abs(edge[2 * fan] - edge[2 * fan - 1]).mean())
+    assert abs(wrap - inside) <= 0.1 * inside

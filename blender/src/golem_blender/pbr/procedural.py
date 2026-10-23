@@ -188,6 +188,9 @@ CARPET_FIBRE_STRENGTH = 1.0
 # ground's matrix between its stones is a sixth of the surface, and a
 # concrete's or a tile's joint is a hairline.
 JOINT_SOLID_FRACTION = 0.12
+# A fan paving's joint, as a fraction of the mortar width: a third of a
+# half-sett, the truths' gaps between their setts.
+FAN_JOINT_FRACTION = 0.35
 # How much wider a MORTARED wall's joint is than a solid surface's.
 MORTARED_JOINT_FACTOR = 2.0
 # How much the noise varies a stone within itself, as a fraction of
@@ -224,6 +227,7 @@ PROCEDURAL_COLOUR_KINDS = (
     "markings",
     "asphalt",
     "banded",
+    "fan",
     "woven",
     "roof",
     "herringbone",
@@ -508,7 +512,7 @@ def _pattern_resolution(limit: int, target: int, cells: int) -> int:
 # roof's are joint masks (3% and 6% of the surface at zero), and the
 # parquet's is a soft joint profile. A scattered ground, a rock, a grain
 # and a flat sheet have no joints in theirs.
-JOINT_HEIGHT_KINDS = ("voronoi", "brick", "parquet", "herringbone", "roof")
+JOINT_HEIGHT_KINDS = ("voronoi", "brick", "parquet", "herringbone", "roof", "fan")
 
 
 # A marble darker than this has pale veins; above it, dark ones.
@@ -847,6 +851,8 @@ def write_procedural_base_color(
         )
     elif kind == "rock":
         cell, edge, grid, fibre = pattern.rock_field(resolution, cells)
+    elif kind == "fan":
+        cell, edge, grid, fibre = pattern.fan_field(resolution, cells)
     elif kind == "banded":
         cell, edge, grid, fibre = pattern.banded_field(resolution, cells)
     elif kind == "asphalt":
@@ -1186,6 +1192,11 @@ def write_procedural_base_color(
         width = mortar_width
     else:
         width = mortar_width * JOINT_SOLID_FRACTION
+    if kind == "fan":
+        # A FAN's setts are set close: its joint is a narrow dark gap, and
+        # at a cobble's full pebble width each sett was a small bright star
+        # in a sea of joint (looked at).
+        width = mortar_width * FAN_JOINT_FRACTION
     if mortared:
         # A MORTARED wall's joint is a filled band wider than a brick's:
         # the truth's own random stone wall's joints are a fifth of its

@@ -110,7 +110,8 @@ def register(mcp: FastMCP) -> None:
         or rolled sheet), "flat" (plaster, paint, concrete), "rock" (a
         rock face), "moss", "grass", "woven" (cloth), "carpet",
         "leather", "wallpaper", "roof" (shingles), "markings" (road
-        lines), "asphalt" (aggregate; worn and cracked from the words).
+        lines), "asphalt" (aggregate; worn and cracked from the words),
+        "banded" (onyx, travertine), "fan" (cobbles laid in arches).
         `scale_cells` is how many features cross the image.
 
         `graph_json` COMPOSES the texture instead of choosing one

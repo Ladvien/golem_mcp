@@ -192,6 +192,18 @@ _SPECIFIC_KINDS = (
 IRREGULAR_WORDS = frozenset(("random", "castle", "irregular"))
 MASONRY_WORDS = frozenset(("brick", "bricks", "tile", "tiles", "wall"))
 ROAD_WORDS = frozenset(("road", "street", "asphalt", "highway"))
+FAN_WORDS = frozenset(("arch", "arches", "arched", "fan", "fanned", "segmental"))
+PAVING_WORDS = frozenset(
+    (
+        "cobble",
+        "cobblestone",
+        "cobblestones",
+        "paving",
+        "pavingstones",
+        "pavement",
+        "setts",
+    )
+)
 # An asphalt's WEAR and its CRACKS. Every worn truth road says "worn",
 # "old" or "damaged" and carries broad patches; the two plain asphalts
 # (Asphalt033, Asphalt031) say none of them and are aggregate alone.
@@ -370,6 +382,11 @@ def pattern_for_description(description: str) -> str:
     # So the two are read in two passes: the course kinds' SPECIFIC
     # words - the ones that name a kind outright - and then the
     # structures, and then the course kinds' general words.
+    # A paving laid in ARCHES is a fan of setts: the truths' own
+    # PavingStones150 and 151 say "arches" beside "cobblestone" - read
+    # before the specific kinds, which take "cobblestone" as set stones.
+    if words & FAN_WORDS and words & PAVING_WORDS:
+        return "fan"
     for word, pattern in _SPECIFIC_KINDS:
         if word in words:
             return pattern

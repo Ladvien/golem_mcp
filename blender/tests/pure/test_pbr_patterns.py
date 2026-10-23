@@ -35,7 +35,10 @@ from golem_blender.pbr.patterns import DEFAULT_PATTERN, pattern_for_description
         # printed design's word does not make it a wallpaper (the truth's
         # own PavingStones150 drew as flat grey).
         ("cobblestone, grey, pavement", "voronoi"),
-        ("arches, cobble, cobblestone, floor, gray, patterned", "voronoi"),
+        ("arches, cobble, cobblestone, floor, gray, patterned", "fan"),
+        # And a cobblestone laid in ARCHES is a fan of setts
+        # (PavingStones150, PavingStones151).
+        ("arch, cobblestone, european, gray, mosaic, paving", "fan"),
         # Plank floors are boards whatever wood they are (Planks037A).
         ("floor, planks, wood", "parquet"),
         # Rubble is loose pieces whatever it was broken from (Ground107).

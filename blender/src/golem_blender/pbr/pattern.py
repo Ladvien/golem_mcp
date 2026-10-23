@@ -148,6 +148,14 @@ BANDED_LAYERS = (
 BANDED_WARP = 0.2
 BANDED_WARP_LATTICE = 2
 BANDED_GRAIN = 0.25
+# A FAN paving's geometry: how many setts across a fan (the truths'
+# PavingStones151 measures 68 features across with about seven fans), the
+# rings of setts in a fan, the fan's radius in fan widths, and the most
+# setts a ring can hold (the colour hash's row width).
+FAN_SETTS_PER_SCALE = 10.0
+FAN_RINGS = 6
+FAN_RADIUS = 0.75
+FAN_SETTS_PER_RING = 64
 # A ROCK face's layers: the fine grain's sigma (pixels at 1024) and how
 # much of the
 # face each layer carries. The truth's own rock faces are mostly fine
@@ -2556,6 +2564,85 @@ def banded_field(resolution: int, cells: int):
     grain = noise.gaussian_grain(resolution, 1.0, seed=82)
     field = _unit(field) + BANDED_GRAIN * (grain - 0.5)
     return 0, _unit(field), (bands, bands), None
+
+
+def fan_field(resolution: int, cells: int):
+    """A FAN paving - setts laid in arches, the European cobble fan.
+
+    The truths' own PavingStones150 and PavingStones151 ("arches, ...,
+    cobblestone") are fans of small setts, and as a Voronoi or a wallpaper
+    they were polygons or a flat grey. The fans are a fish-scale tiling:
+    disks on a staggered lattice, each drawn over the row before it, and in
+    each disk concentric rings of setts cut along the ring into stones. The
+    lattice divides the image, so the paving tiles.
+
+    Returns the sett each pixel is in, the distance to its nearest joint
+    (ring, sett or the edge of the disk laid over it; one in the sett's
+    middle), and the grid the colour hash decodes the sett by.
+    """
+    import numpy
+
+    scales = max(2, round(cells / FAN_SETTS_PER_SCALE))
+    rows = 2 * scales
+    rings = FAN_RINGS
+    radius = FAN_RADIUS
+    axis = _domain_samples(resolution)
+    sample_y, sample_x = numpy.meshgrid(axis, axis, indexing="ij")
+    across = sample_x * scales
+    down = sample_y * rows
+    best = numpy.full(across.shape, -(10**9))
+    centre_x = numpy.zeros_like(across)
+    centre_y = numpy.zeros_like(across)
+    column_of = numpy.zeros(across.shape, dtype=numpy.int64)
+    row_of = numpy.zeros(across.shape, dtype=numpy.int64)
+    base_row = numpy.floor(down).astype(numpy.int64)
+    reaches = []
+    for step_row in (-1, 0, 1, 2):
+        row = base_row + step_row
+        shift = 0.5 * numpy.mod(row, 2)
+        base_column = numpy.floor(across - shift).astype(numpy.int64)
+        for step_column in (-1, 0, 1):
+            column = base_column + step_column
+            disk_x = column + shift + 0.5
+            disk_y = row.astype(numpy.float64)
+            reach = numpy.hypot(across - disk_x, (down - disk_y) / 2.0)
+            reaches.append((row, reach))
+            # A disk is laid over the rows before it: the visible disk is
+            # the LAST row whose disk holds the point.
+            inside = (reach < radius) & (row > best)
+            best = numpy.where(inside, row, best)
+            centre_x = numpy.where(inside, disk_x, centre_x)
+            centre_y = numpy.where(inside, disk_y, centre_y)
+            column_of = numpy.where(inside, column, column_of)
+            row_of = numpy.where(inside, row, row_of)
+    offset_x = across - centre_x
+    offset_y = (down - centre_y) / 2.0
+    distance = numpy.hypot(offset_x, offset_y)
+    sett = radius / rings
+    ring = numpy.floor(distance / sett)
+    along = numpy.arctan2(-offset_y, offset_x) * (ring + 0.5) * sett
+    index = numpy.floor(along / sett)
+    to_ring = numpy.minimum(distance - ring * sett, (ring + 1.0) * sett - distance)
+    fraction = along / sett - index
+    to_sett = numpy.minimum(fraction, 1.0 - fraction) * sett
+    to_cover = numpy.full(across.shape, numpy.inf)
+    for row, reach in reaches:
+        to_cover = numpy.where(
+            row > row_of,
+            numpy.minimum(to_cover, numpy.maximum(reach - radius, 0.0)),
+            to_cover,
+        )
+    to_rim = radius - distance
+    nearest = numpy.minimum(
+        numpy.minimum(to_ring, to_sett), numpy.minimum(to_cover, to_rim)
+    )
+    edge = numpy.clip(nearest / (sett / 2.0), 0.0, 1.0)
+    width = FAN_SETTS_PER_RING
+    disk = numpy.mod(row_of, rows) * scales + numpy.mod(column_of, scales)
+    cell = (disk * rings + ring.astype(numpy.int64)) * width + numpy.mod(
+        index.astype(numpy.int64), width
+    )
+    return cell.astype(numpy.int64), edge, (width, rows * scales * rings), None
 
 
 def moss_field(resolution: int, cells: int):
