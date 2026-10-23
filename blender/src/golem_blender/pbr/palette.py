@@ -25,6 +25,7 @@ from __future__ import annotations
 from golem_blender.pbr.material import is_metal
 from golem_blender.pbr.patterns import (
     asphalt_is_worn,
+    carpet_is_streaked,
     is_checkered,
     is_cracked,
     is_mortared_wall,
@@ -3965,6 +3966,7 @@ def palette_for_description(
         "mortared": mortared,
         "asphalt_worn": asphalt_is_worn(description),
         "cracked": is_cracked(description),
+        "carpet_streaked": carpet_is_streaked(description),
     }
 
 

@@ -552,6 +552,7 @@ def write_procedural_base_color(
     mortared: bool = False,
     asphalt_worn: bool = False,
     cracked: bool = False,
+    carpet_streaked: bool = False,
     courses: int | None = None,
     joint_height_out: dict | None = None,
 ) -> Path:
@@ -761,6 +762,7 @@ def write_procedural_base_color(
             resolution,
             cells,
             lines_per_cell=lines_per_cell,
+            streaked=carpet_streaked,
         )
     elif kind == "leather":
         # A LEATHER is a fine even pebbled hide, and it is the loose

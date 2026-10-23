@@ -55,3 +55,32 @@ def test_a_pressed_sheet_is_its_ribs(tmp_path):
     period = RESOLUTION / int(numpy.argmax(spectrum))
     assert period < RESOLUTION / 8
     assert float(profile.std()) > 0.5 * float(luma.std())
+
+
+def test_a_carpet_is_a_fine_pile_and_not_blobs(tmp_path):
+    """The truths' carpets hold 81-93% of their variance finer than a 4 px
+    blur; a Perlin at a lattice of two drew great blobs instead."""
+    from golem_blender.pbr.layers import _wrapped_box_blur
+
+    luma = _luma(tmp_path, "blue, carpet, dark, plain", 256.0)
+    fine = luma - _wrapped_box_blur(luma, 4)
+    assert float(fine.var()) / float(luma.var()) > 0.6
+
+
+def test_a_cloth_carpet_is_streaked_and_a_plain_one_is_not(tmp_path):
+    """The cloth carpets change half as fast along a row as down it (0.44,
+    0.56); the plain ones about as fast (0.99, 1.20)."""
+
+    def along_over_down(luma):
+        return float(numpy.abs(numpy.diff(luma, axis=1)).mean()) / float(
+            numpy.abs(numpy.diff(luma, axis=0)).mean()
+        )
+
+    cloth = along_over_down(
+        _luma(tmp_path / "cloth", "blue, carpet, cloth, fabric", 32.0)
+    )
+    plain = along_over_down(
+        _luma(tmp_path / "plain", "blue, carpet, dark, plain", 32.0)
+    )
+    assert cloth < 0.75
+    assert plain > 0.85

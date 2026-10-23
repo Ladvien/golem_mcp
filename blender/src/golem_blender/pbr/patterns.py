@@ -452,6 +452,13 @@ def is_checkered(description: str) -> bool:
     return bool(words & {"checkered", "chequered", "checkerboard", "gingham"})
 
 
+def carpet_is_streaked(description: str) -> bool:
+    """Whether a carpet is a CLOTH, its fibre lying along the rows."""
+    return bool(
+        set(description.lower().replace(",", " ").split()) & {"cloth", "fabric"}
+    )
+
+
 def is_mortared_wall(description: str) -> bool:
     """Whether the description is an IRREGULAR stone WALL laid in mortar.
 
@@ -467,6 +474,7 @@ def is_mortared_wall(description: str) -> bool:
 __all__ = (
     "DEFAULT_PATTERN",
     "asphalt_is_worn",
+    "carpet_is_streaked",
     "is_checkered",
     "is_cracked",
     "is_mortared_wall",
