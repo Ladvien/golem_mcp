@@ -389,6 +389,12 @@ def pattern_for_description(description: str) -> str:
     # before the specific kinds, which take "cobblestone" as set stones.
     if words & FAN_WORDS and words & PAVING_WORDS:
         return "fan"
+    # STACKED stone is a WALL of blocks laid dry - the truth's own Rock064
+    # ("irregular, ..., rock, stacked, stone") is courses of rough blocks
+    # with moss in their joints - and read as a rock it was one uneven
+    # face with no joint for its moss to lie in.
+    if "stacked" in words and words & {"stone", "stones", "rock"}:
+        return "brick"
     for word, pattern in _SPECIFIC_KINDS:
         if word in words:
             return pattern

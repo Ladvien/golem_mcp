@@ -39,6 +39,9 @@ from golem_blender.pbr.patterns import DEFAULT_PATTERN, pattern_for_description
         # And a cobblestone laid in ARCHES is a fan of setts
         # (PavingStones150, PavingStones151).
         ("arch, cobblestone, european, gray, mosaic, paving", "fan"),
+        # Stacked stone is a dry wall of blocks, so a mossy one's moss can
+        # lie in its joints (Rock064).
+        ("forest, gray, irregular, natural, old, rock, rough, stacked, stone", "brick"),
         # Plank floors are boards whatever wood they are (Planks037A).
         ("floor, planks, wood", "parquet"),
         # Rubble is loose pieces whatever it was broken from (Ground107).
