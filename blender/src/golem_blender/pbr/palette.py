@@ -3217,6 +3217,10 @@ MATERIAL_WORD_COUNTS: dict[str, int] = {
 }
 
 
+# The materials whose colour is a DYE, so the colour word says it.
+DYED_MATERIALS = frozenset(("fabric", "wool", "leather", "carpet"))
+
+
 def hue_for_description(description: str) -> tuple[float, float, float]:
     """The HUE the description's colour words carry, as channel shares.
 
@@ -3367,6 +3371,24 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     if named:
         named.sort(key=lambda word: (MATERIAL_WORD_COUNTS.get(word, 99), word))
         return MATERIAL_HUES[named[0]]
+    # A DYED material's colour is its colour word: with no specific
+    # material named, a fabric, wool, leather or carpet is the colour it
+    # was dyed, and the fallback below takes the FIRST word with a hue -
+    # in ambientCG's alphabetical tags "fabric" before "orange", so the
+    # truth's own Fabric085 ("fabric, orange, red, wool") came out a
+    # fabric's grey (hue error 0.388) and Leather038 ("brown, leather,
+    # orange") a leather's brown (0.266). With the most specific colour:
+    # 0.176 and 0.093. Bricks and stones are not dyed, and their
+    # material's hue does matter - the same change made three bricks
+    # worse.
+    dyed_colours = [
+        word
+        for word in colours
+        if word in HUE_COLOUR_WORDS and words_set & DYED_MATERIALS
+    ]
+    if dyed_colours:
+        dyed_colours.sort(key=lambda word: (MATERIAL_WORD_COUNTS.get(word, 99), word))
+        return HUES[dyed_colours[0]]
     for word in words:
         hue = HUES.get(word.strip(".,"))
         if hue is not None:

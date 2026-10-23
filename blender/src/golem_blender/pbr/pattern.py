@@ -454,15 +454,23 @@ MARKINGS_WIDTH = 0.05
 MARKINGS_DASHES = 1.0
 MARKINGS_SEED = 21
 # A WOVEN cloth's threads: how many of the measure's features one
-# thread is (the truths' own Fabric066 and Fabric061 show 2.4 and 3.2),
+# thread is,
 # the fewest threads that are the cloth's structure, the threads a fine
 # cloth gets when its features are its slubs and not its threads, the
 # thread's width in its cell, and how much of the field the mottle is
-# in each regime. The threaded regime is calibrated on the truths'
-# feature counts; the fine one by eye against Fabric030's and Fabric036's
-# crops (a heavier mottle met the measure as clouds).
+# in each regime. The threaded regime is calibrated with the benchmark's
+# own scale measure on eight fabric truths (features per thread 2.8/4.5 x
+# a threshold of 24/64 threads: mean |log| 0.418 / 0.549 / 0.150 /
+# 1.157). The measure prefers 4.5 per thread, but it counts a weave's
+# own over-under undulation as features: at 4.5 Fabric061's threads are
+# 22 pixels apart against its truth's 16 and its fine/slow variance
+# reads 1.85 against the truth's 9.6. So 2.8, the truths' visible pitch,
+# and the threshold of 24, which keeps a 114-feature wool threaded and
+# not a fine cloth reading 0.21x. The fine regime is by eye against
+# Fabric030's and Fabric036's crops (a heavier mottle met the measure as
+# clouds).
 WOVEN_FEATURES_PER_THREAD = 2.8
-WOVEN_MIN_THREADS = 64
+WOVEN_MIN_THREADS = 24
 WOVEN_FINE_THREADS = 256
 WOVEN_THREAD_WIDTH = 0.8
 WOVEN_THREADED_MOTTLE = 0.2

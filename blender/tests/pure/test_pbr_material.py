@@ -576,3 +576,17 @@ def test_a_wood_named_warmer_than_wood_takes_that_colour():
 
     assert hue_for_description("orange, plain, smooth, wood") == HUES["orange"]
     assert hue_for_description("black, dark, smooth, wood") == MATERIAL_HUES["wood"]
+
+
+def test_a_dyed_material_is_the_colour_it_was_dyed():
+    """A fabric, wool, leather or carpet is its colour word's colour.
+
+    With only generic materials named the hue fell to the FIRST word with
+    a hue, and in alphabetical tags "fabric" comes before "orange": the
+    truth's own Fabric085, an orange-red wool, came out a fabric's grey.
+    """
+    from golem_blender.pbr.palette import HUES, hue_for_description
+
+    red, _green, blue = hue_for_description("fabric, orange, red, wool")
+    assert red - blue > 0.15
+    assert hue_for_description("brown, fine, leather, orange, smooth") == HUES["orange"]

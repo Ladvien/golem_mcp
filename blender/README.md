@@ -49,8 +49,11 @@ src/golem_blender/
   analyze/       the mesh analyzer (the hard gate) + pair checks + metamorphic relations
   capture/       front/right/top/three-quarter renders, contact sheets, reference photos,
                  and the shader-accurate texture preview (EEVEE: Workbench cannot show a texture)
-  pbr/           the PBR texture lane: file names, the ORM channel packing, the codex path
-                 swap, and the procedure the `pbr_texture` prompt serves
+  pbr/           the PBR texture lane: a base colour computed from a material's description
+                 (the pattern and the palette, fitted on ambientCG truths), layered sets (a
+                 base with other materials laid over it under masks), file names, the ORM
+                 channel packing, the codex path swap, and the procedure the `pbr_texture`
+                 prompt serves
   run/           executor, retry loop, JSONL session log
   ingest/        GLB import + bounded cleanup (the generated-mesh lane)
   export/        glTF export with welded round-trip verification
