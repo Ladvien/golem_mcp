@@ -98,3 +98,18 @@ a fraction of today's weight, the stones' tone their own.
 | flat sheets (c30817e) | 0.162 | 0.212 | 0.312 | 0.1291 | 0.0896 | 0.400 | 0.446 |
 | drift, soil stones (82170ce) | 0.162 | 0.212 | 0.308 | 0.1291 | 0.0896 | 0.400 | 0.446 |
 
+## C2 - sources used this round (each for a measured defect)
+
+- The exact bisector distance to a Voronoi joint (Inigo Quilez's two-pass Voronoi, as in Material Maker's
+  `voronoi.mmg`, MIT; ours is `noise_worley_fbm._bisector_distance`) for the asphalt's block cracks: straight
+  runs meeting at angles, where a level set of a noise drew wiggly hairlines.
+- Gaussian grains (FFT-smoothed white noise) in place of value noise and Perlin wherever a lattice showed:
+  the flat sheets, the slow drift, the leather envelope, the roof tone, the tile tooth, the scattered grit
+  (a value noise's quintic slope is zero on every lattice column; a Perlin's value is zero on every lattice
+  point - squares and mazes).
+- Material Maker's `splatter` (ported in an earlier round) was replaced for loose grounds by a periodic
+  jittered-grid stone layer read through the 3x3 neighbour cells - the standard cellular trick - because
+  ~209k overlapping splats were camouflage and a Python loop per stone was the ground's whole cost.
+- Not needed: a Sobel normal (the normal map is the height's wrapped central difference, scaled per kind to
+  the truths' measured tilt) and a cavity-AO heuristic (layers.cavity_mask already serves the AO channel).
+
