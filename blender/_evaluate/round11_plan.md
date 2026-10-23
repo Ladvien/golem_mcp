@@ -37,3 +37,4 @@ called "bricks", Bricks076A stone called "bricks", Wood066 red-brown called "bro
 | round 10 end (26f83b3) | 0.162 | 0.212 | 0.306 | 0.1291 | 0.0896 | 0.400 | 0.423 | - | - |
 | height map, hues (378aaa8) | 0.162 | 0.213 | 0.306 | 0.1288 | 0.0896 | 0.400 | 0.423 | 0.067 / 0.844 | 0.666 / 1.132 |
 | metal sheets, wall mortar and faces (193a80d) | 0.162 | 0.212 | 0.310 | 0.1288 | 0.0896 | 0.400 | 0.420 | 0.067 / 0.844 | 0.672 / 1.129 |
+| composed albedo, stacked stone (c3f0b20) | 0.161 | 0.218 | 0.309 | 0.1284 | 0.0888 | 0.401 | 0.430 | 0.067 / 0.843 | 0.669 / 1.127 |
