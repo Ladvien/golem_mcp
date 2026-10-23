@@ -3125,7 +3125,7 @@ MATERIAL_HUES: dict[str, tuple[float, float, float]] = {
     "wallpaper": (0.335, 0.336, 0.329),
     "woodchip": (0.335, 0.336, 0.329),
     "marble": (0.339, 0.334, 0.327),
-    "silver": (0.357, 0.338, 0.305),
+    "silver": (0.331, 0.334, 0.335),
     "sand": (0.385, 0.343, 0.271),
 }
 
@@ -3686,6 +3686,19 @@ def metal_is_banded(description: str) -> bool:
     return bool(words & {"brushed", "rolled", "rolling", "satin", "hairline"})
 
 
+def metal_is_brushed(description: str) -> bool:
+    """Whether a metal sheet is BRUSHED - streaked along one direction.
+
+    A brushed sheet is not a pressed one: its direction is a field of
+    fine streaks, not a row of ribs. The truth's own brushed steel,
+    Metal009, decorrelates within 24 pixels along its rows and within
+    ONE across them, and the lane drew it as a pressed sheet's ribs
+    under a blotchy envelope - 86 and 81 pixels, no streak at all.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    return bool(words & {"brushed", "satin", "hairline"})
+
+
 def metal_direction_for_description(description: str) -> bool:
     """Whether a metal sheet's BANDS run as rows, and not as columns.
 
@@ -3846,6 +3859,7 @@ def palette_for_description(
         "brick_staggered": brick_staggered_for_description(description),
         "metal_horizontal": metal_direction_for_description(description),
         "metal_banded": metal_is_banded(description),
+        "metal_brushed": metal_is_brushed(description),
         "metal_envelope_factor": metal_envelope_factor_for_description(description),
     }
 
@@ -3878,6 +3892,7 @@ def line_palette_for_description(description: str, path: str = "grain"):
         "target_value": value,
         "metal_horizontal": metal_direction_for_description(description),
         "metal_banded": metal_is_banded(description),
+        "metal_brushed": metal_is_brushed(description),
         "metal_envelope_factor": metal_envelope_factor_for_description(description),
     }
 

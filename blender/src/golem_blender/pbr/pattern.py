@@ -286,6 +286,14 @@ METAL_ORIENTATION = math.pi / 2.0
 # fibre is - a Gabor's carrier is a regular set of stripes, and a
 # regular pattern's autocorrelation locks onto it.
 METAL_GRAIN_LATTICE = 16
+# A brushed sheet's streaks, in pixels at 1024 across: the truth's own
+# Metal009 decorrelates within 24 along its rows and 1 across them.
+METAL_BRUSH_ALONG_PX = 24.0
+METAL_BRUSH_ACROSS_PX = 1.5
+METAL_BRUSH_SHARPNESS = 6.0
+# A mottled sheet's fine variation: its value noise's cell, in pixels at
+# 1024 across.
+METAL_MOTTLE_PX = 16.0
 # How much COARSER the metal's envelope's lattice is than its cell
 # count. A Perlin's value oscillates faster than its lattice, and the
 # measure reads the value.
@@ -297,9 +305,9 @@ METAL_DEFAULT_ENVELOPE_FACTOR = 1.0
 # Material Maker's `scratches2` defaults are a length of 0.25, a
 # width of 0.5, four layers, a waviness of 0.5 and an angle of zero.
 METAL_SCRATCH_SIZE = 0.25
-METAL_SCRATCH_WIDTH = 0.5
+METAL_SCRATCH_WIDTH = 0.1
 METAL_SCRATCH_LAYERS = 4
-METAL_SCRATCH_WAVINESS = 0.5
+METAL_SCRATCH_WAVINESS = 0.15
 METAL_SCRATCH_ANGLE = 0.0
 METAL_SCRATCH_RANDOMNESS = 0.5
 METAL_GRAIN_STRETCH = 0.5
@@ -4111,6 +4119,7 @@ def metal_field(
     banded: bool = True,
     envelope_factor: float = METAL_DEFAULT_ENVELOPE_FACTOR,
     scratch_strength: float = 0.0,
+    brushed: bool = False,
 ):
     """A metal sheet: the cell each sample is in, and the distance to
     its grain.
@@ -4466,6 +4475,69 @@ def metal_field(
         else:
             fine_edge = fibre_dark
 
+    if not brushed and not horizontal:
+        # A sheet with neither a brushing nor a pressing is MOTTLED: a
+        # fine isotropic variation under its stains. Its fibre was the
+        # stretched grain's slope, and the line writer saturates
+        # anything above an eighth of its peak - 94% of Metal007's
+        # pixels - so the fibre was a constant and the sheet showed only
+        # its envelope's blobs (42 pixels across against the truth's 9).
+        # A value noise raised to a power is sparse, as the writer
+        # expects, and its scratches show on it.
+        from golem_blender.pbr import noise
+
+        mottle_lattice = max(2, round(1024 / METAL_MOTTLE_PX))
+        mottle = noise.fbm_2d_value(
+            sample_x * mottle_lattice,
+            sample_y * mottle_lattice,
+            size=mottle_lattice,
+            octaves=3,
+            seed=17,
+        )
+        low, high = float(mottle.min()), float(mottle.max())
+        fine_edge = ((mottle - low) / max(1e-9, high - low)) ** METAL_BRUSH_SHARPNESS
+    if brushed:
+        # A BRUSHED sheet is STREAKS, not ribs: a value noise stretched
+        # along the brushing, a few cells along the image and hundreds
+        # across it. The truth's own Metal009 decorrelates within 24
+        # pixels along its rows and within one across them; the ribs of
+        # a pressed sheet under a Perlin's blotches read 86 and 81.
+        #
+        # And the sheet's slow variation is a value noise and not the
+        # Perlin: a value noise's corners are random, so it has no
+        # lattice of zeros to show as a network of worms.
+        from golem_blender.pbr import noise
+
+        streak_along = max(2, round(1024 / METAL_BRUSH_ALONG_PX))
+        streak_across = max(2, round(1024 / METAL_BRUSH_ACROSS_PX))
+        # The sheet's own rows run along the image's COLUMNS axis - the
+        # samples are "ij"-indexed, so sample_y is the one that runs
+        # along a row - and a brushed sheet's streaks run along its
+        # rows: the truth's own Metal009 is smooth for 24 pixels along a
+        # row and changes within one down a column.
+        streaks = noise.fbm_2d_value(
+            sample_x * streak_across,
+            sample_y * streak_along,
+            size=streak_across,
+            size_y=streak_along,
+            octaves=2,
+            seed=13,
+        )
+        # The line writer reads its fine field as a DARKNESS that is
+        # near zero almost everywhere - a grain's lines - and saturates
+        # anything above an eighth of its peak. The streaks are a value
+        # noise centred on a half, so as they are every pixel saturated
+        # and the sheet came out a flat grey. Raised to a power, only
+        # the darkest streaks carry a line.
+        low, high = float(streaks.min()), float(streaks.max())
+        fine_edge = ((streaks - low) / max(1e-9, high - low)) ** METAL_BRUSH_SHARPNESS
+        edge = noise.fbm_2d_value(
+            sample_x * band_lattice,
+            sample_y * band_lattice,
+            size=band_lattice,
+            octaves=3,
+            seed=5,
+        )
     if scratch_strength > 0.0:
         # The sheet's SCRATCHES, and they are an ABRASION.
         #

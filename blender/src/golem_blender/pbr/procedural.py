@@ -540,6 +540,7 @@ def write_procedural_base_color(
     brick_staggered: bool = True,
     metal_horizontal: bool = False,
     metal_banded: bool = True,
+    metal_brushed: bool = False,
     metal_envelope_factor: float = 1.0,
     stone_tone_fraction: float = 1.0,
     graph: dict | None = None,
@@ -821,6 +822,7 @@ def write_procedural_base_color(
             lines_per_cell=lines_per_cell,
             horizontal=metal_horizontal,
             banded=metal_banded,
+            brushed=metal_brushed,
             scratch_strength=scratch_strength,
             envelope_factor=metal_envelope_factor,
         )
