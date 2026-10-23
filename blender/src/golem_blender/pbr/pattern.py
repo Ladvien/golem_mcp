@@ -348,9 +348,6 @@ METAL_GRAIN_LATTICE = 16
 METAL_BRUSH_ALONG_PX = 24.0
 METAL_BRUSH_ACROSS_PX = 1.5
 METAL_BRUSH_SHARPNESS = 6.0
-# A mottled sheet's fine variation: its Gaussian grain's sigma, in pixels
-# at 1024 across.
-METAL_MOTTLE_PX = 2.0
 # How much COARSER the metal's envelope's lattice is than its cell
 # count. A Perlin's value oscillates faster than its lattice, and the
 # measure reads the value.
@@ -4025,6 +4022,28 @@ def scattered_field(
     )
 
 
+# A plain metal sheet's SPECKS: their size in pixels at 1024, the slow
+# field that gathers them and the share of the sheet left clean.
+METAL_SPECK_PX = 1.6
+METAL_SPECK_PRESENCE_PX = 40.0
+METAL_SPECK_CLEAR_PERCENT = 60.0
+# And its faint STREAK down the sheet: the grain's sigma, its stretch and
+# its share of the sheet's slow variation.
+METAL_STREAK_PX = 3.0
+METAL_STREAK_STRETCH = 12.0
+METAL_STREAK_SHARE = 0.05
+# A plain sheet's variance shares at three scales (the truths' six plain
+# sheets: 0.41 above eight pixels, 0.20 from one and a half to eight,
+# 0.14 below), and the mid grain's and the tooth's sigmas at 1024.
+METAL_SHEET_CLOUD_SHARE = 0.55
+METAL_SHEET_GRAIN_SHARE = 0.25
+METAL_SHEET_TOOTH_SHARE = 0.15
+METAL_SHEET_GRAIN_PX = 3.0
+METAL_SHEET_TOOTH_PX = 0.8
+# How deep a speck darkens the sheet, as a share of its slow variation.
+METAL_SPECK_DEPTH = 0.6
+
+
 def metal_field(
     resolution: int,
     cells: int,
@@ -4399,11 +4418,61 @@ def metal_field(
         # expects, and its scratches show on it.
         from golem_blender.pbr import noise
 
-        # The mottle is a Gaussian grain and not a value noise: a value
-        # noise raised to a power shows its lattice as camouflage
-        # squares (Metal007, 029, 038 and 046B on the close sheet).
-        mottle = noise.gaussian_grain(resolution, METAL_MOTTLE_PX, seed=17)
-        fine_edge = mottle**METAL_BRUSH_SHARPNESS
+        # The mottle is SPARSE SPECKS IN CLUSTERS: the truths' own plain
+        # sheets (Metal052C, 055A, 062C, 007) are smooth with a few small
+        # dark specks gathered where the sheet is dirty, and nothing
+        # between. A mottle raised to a power everywhere was blobs ten to
+        # thirty pixels across over the whole sheet, and the writer drew
+        # them as patches - a camouflage on Metal007, 027, 029, 038, 046B,
+        # 052C, 055A and 062C (looked at). So the specks are small, and a
+        # slow field decides where they gather.
+        specks = noise.gaussian_grain(resolution, METAL_SPECK_PX, seed=17)
+        presence = noise.gaussian_grain(resolution, METAL_SPECK_PRESENCE_PX, seed=19)
+        presence = numpy.clip(
+            (presence - float(numpy.percentile(presence, METAL_SPECK_CLEAR_PERCENT)))
+            / max(1e-9, float(presence.max() - presence.min())),
+            0.0,
+            1.0,
+        )
+        speck = specks**METAL_BRUSH_SHARPNESS * presence
+        speck = speck / max(1e-9, float(speck.max()))
+        # And the sheet's own variation is at EVERY scale the truths' is.
+        # Their six plain sheets put a median 0.41 of their luma's variance
+        # above eight pixels, 0.20 between one and a half and eight and
+        # 0.14 below (Metal007, 038, 046B, 052C, 055A, 062C). A Perlin
+        # envelope alone was a net of worms (its value is zero on every
+        # lattice point), and a Gaussian cloud alone a blur - the writer
+        # scales whatever the field holds to the description's spread. So
+        # the sheet is a cloud, a mid grain and a fine tooth at those
+        # shares, a faint streak down it (the rolling), and the specks.
+        cloud = noise.gaussian_grain(
+            resolution, 1024.0 / (band_lattice * SLOW_FEATURE_SIGMAS), seed=5
+        )
+        grain = noise.gaussian_grain(resolution, METAL_SHEET_GRAIN_PX, seed=29)
+        tooth = noise.gaussian_grain(resolution, METAL_SHEET_TOOTH_PX, seed=31)
+        streak = noise.gaussian_grain(
+            resolution, METAL_STREAK_PX, seed=23, along_rows=METAL_STREAK_STRETCH
+        ).T
+
+        def standardised(field):
+            deviation = float(field.std())
+            return (field - float(field.mean())) / max(1e-9, deviation)
+
+        sheet = (
+            METAL_SHEET_CLOUD_SHARE**0.5 * standardised(cloud)
+            + METAL_SHEET_GRAIN_SHARE**0.5 * standardised(grain)
+            + METAL_SHEET_TOOTH_SHARE**0.5 * standardised(tooth)
+            + METAL_STREAK_SHARE**0.5 * standardised(streak)
+        )
+        low, high = float(sheet.min()), float(sheet.max())
+        sheet = (sheet - low) / max(1e-9, high - low)
+        # The specks DARKEN the sheet, so they are in its own variation
+        # (the line writer draws a metal's HIGH field dark): drawn as its
+        # fine layer, in the line's colour - which for a metal is LIGHTER
+        # - the dirt came out as white flecks (looked at). The fine layer
+        # is the scratches alone: a scratch catches the light.
+        edge = numpy.clip(sheet + METAL_SPECK_DEPTH * speck, 0.0, 1.0)
+        fine_edge = numpy.zeros_like(edge)
     if brushed:
         # A BRUSHED sheet is STREAKS, not ribs: a value noise stretched
         # along the brushing, a few cells along the image and hundreds

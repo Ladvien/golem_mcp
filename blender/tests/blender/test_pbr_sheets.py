@@ -198,3 +198,28 @@ def test_a_bark_s_fissures_run_down_the_trunk(tmp_path):
     along_row = float(numpy.abs(numpy.diff(luma, axis=1)).mean())
     down_column = float(numpy.abs(numpy.diff(luma, axis=0)).mean())
     assert along_row > 1.3 * down_column
+
+
+def _gaussian(field, sigma):
+    """A wrapped Gaussian blur through the FFT."""
+    size = field.shape[0]
+    frequency = numpy.fft.fftfreq(size)
+    kernel = numpy.exp(-2.0 * (numpy.pi * sigma) ** 2 * frequency**2)
+    return numpy.real(
+        numpy.fft.ifft2(numpy.fft.fft2(field) * kernel[:, None] * kernel[None, :])
+    )
+
+
+def test_a_plain_metal_sheet_is_not_a_two_tone_camouflage(tmp_path):
+    """A plain sheet's mottle raised to a power was two-tone blobs over the
+    whole sheet - a camouflage (looked at). Its middle scales' variation
+    measured a bimodality of 0.66 on every plain metal, where the truths'
+    plain sheets measure 0.20-0.42."""
+    luma = _luma(tmp_path, "metal, scratched, steel", 16.0)
+    band = _gaussian(luma, 1.5 * RESOLUTION / 1024) - _gaussian(
+        luma, 8.0 * RESOLUTION / 1024
+    )
+    standard = (band - band.mean()) / band.std()
+    skew = float((standard**3).mean())
+    kurtosis = float((standard**4).mean())
+    assert (skew * skew + 1.0) / kurtosis < 0.5

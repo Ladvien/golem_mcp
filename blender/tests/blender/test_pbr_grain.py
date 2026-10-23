@@ -28,10 +28,12 @@ def _axis_ratio(field) -> float:
 def test_a_plain_metal_sheet_s_mottle_has_no_axis():
     from golem_blender.pbr import pattern
 
-    _band, _edge, _grid, fine = pattern.metal_field(
+    # A plain sheet's variation - its cloud, grain, tooth and specks - is
+    # its envelope; its fine layer is the scratches alone.
+    _band, edge, _grid, _fine = pattern.metal_field(
         1024, 10, lines_per_cell=8, horizontal=False, banded=False
     )
-    assert _axis_ratio(fine) > AXIS_FREE
+    assert _axis_ratio(edge) > AXIS_FREE
 
 
 def test_the_grain_tiles():
