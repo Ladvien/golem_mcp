@@ -40,3 +40,25 @@ called "bricks", Bricks076A stone called "bricks", Wood066 red-brown called "bro
 | composed albedo, stacked stone (c3f0b20) | 0.161 | 0.218 | 0.309 | 0.1284 | 0.0888 | 0.401 | 0.430 | 0.067 / 0.843 | 0.669 / 1.127 |
 | tile grout, rock faces (df569ad) | 0.161 | 0.218 | 0.332 (Tiles107 0.74 -> 13.0 and Tiles138 3.8 -> 9.5 are 0.020 of the 0.023: the zero-crossing measure reads a hairline grid's grout) | 0.1283 | 0.0888 | 0.399 | 0.430 | 0.067 / 0.842 | 0.670 / 1.129 |
 | height relief by kind (c5edf97) | 0.161 | 0.218 | 0.331 | 0.1286 | 0.0885 | 0.398 | 0.427 | 0.067 / 0.800 | 0.318 / 0.902 |
+
+## Next, measured and designed but not applied
+
+- **AO by kind (F20).** Our AO is one less 0.6 of the cavity mask, so its spread is about 0.14 for every
+  kind; the truths' run from 0.030 (parquet) to 0.117 (roof), median 0.082, and their means from 0.789
+  (woven) and 0.814 (asphalt) to 0.983 (parquet), against our 0.91 everywhere. Design: standardise the
+  cavity field and place it at the kind's measured (mean, spread) - brick (0.857, 0.099), scattered
+  (0.858, 0.096), flat (0.930, 0.039), asphalt (0.814, 0.056), woven (0.789, 0.050), parquet (0.983,
+  0.030), rock (0.914, 0.073), roof (0.810, 0.117), others (0.882, 0.082). Expected to cut the AO spread
+  error (0.800) most.
+- **Leaf litter (F3, ScatteredLeaves009).** Prototyped and looked at: tapered lens-shaped leaves with a
+  dark midrib and a light rim, three size octaves on jittered grids (3x3 neighbours, wrapped), periods
+  3x the surface's feature count (the truth reads 20 features - its clumps - over leaves about 17 pixels
+  long); at that factor the leaves match the truth's size. Plan: a `leaf_litter` palette flag (leaf words)
+  swaps the scatter's stone field for a `leaves_field` returning the same six fields, so the scatter's
+  writer draws the leaves on their soil with the palette's warm hue. Needs a one-pixel soft rim.
+- **Still open from the list above:** the scatter's colour model (F3: pale stones on a dark matrix read
+  flat; the truths' stones are darker and lighter than a mid soil), Bricks089 as a rubble wall, moss
+  coverage and Metal053C's rust flecks (F5), leather close-up blur and stitching (F12), roof tiles' clouds
+  and shakes (F14), the fan's arches at whole-map scale (F11), a plaid's second and third hue (F10),
+  basketweave and "large" planks (F19), the moss colour refit (F18).
+
