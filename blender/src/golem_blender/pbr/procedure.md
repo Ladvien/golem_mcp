@@ -245,14 +245,17 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
    texture ON the asset, in the lighting of the scene.
 
 9. **Export the set.** `export_texture_set(texture_name="<Name>")`
-   copies the three maps and writes a `metadata.json` beside them.
+   copies the maps - the three, and a layered set's height map when it
+   has one - and writes a `metadata.json` beside them.
    Pass `extras=[...]` to copy the environment map and the reference
    photographs with it, so the export is reusable on its own.
 
 ## The conventions
 
 - The file names are `T_<Name>_BaseColor.png`, `T_<Name>_ORM.png` and
-  `T_<Name>_Normal.png`.
+  `T_<Name>_Normal.png`. A layered set also writes `T_<Name>_Height.png`:
+  the height its normal and its AO were made from, 0 the lowest and 1 the
+  highest, for a parallax or a displacement.
 - **A set's three maps are the same size.** They are all 2048, which is
   what every other set on codex_fs uses, and the generator and both
   bakes read that one number so a set cannot come out mismatched. It
