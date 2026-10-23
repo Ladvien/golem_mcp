@@ -106,7 +106,7 @@ transcript; the four sets re-run after each batch.
 | marble scale 0.54 | the presence mask at half the count set the scale | presence at the count (seven marbles' scale error 0.279 -> 0.183) | 0245750 |
 | B10 Road007 five lines | markings at random places of a lattice of four (the constant's own comment said three) | the measured layout: solid edges at 7.5%/92.5%, a dashed centre, four dashes; an asphalt grain; the road's spread is what the paint leaves | eddec6e |
 | Fabric036 no slubs | a weave under an isotropic mottle reads the same both ways (9/9; truth 12/3) | an oriented Gaussian grain along the rows, fading in below 40 features (linen Fabric030 unstreaked); scale 1.43 -> 1.20 | 063bafe |
-| checks: agent got none, 256 squares, flat plaid | `checkered` passed only by the benchmark script; a check per feature; a 'soft' tier before the pattern tier | `checkered` in the palette (agent, layered sets, benchmark alike); a check is 12 features; the pattern tier first. Fabric080 contrast 0.04 -> 0.90, scale 1.57 -> 0.83; Fabric083 looks right but its measure (the twill's 205 features) reads 2.00 -> 0.16 | (checks) |
+| checks: agent got none, 256 squares, flat plaid | `checkered` passed only by the benchmark script; a check per feature; a 'soft' tier before the pattern tier | `checkered` in the palette (agent, layered sets, benchmark alike); a check is 12 features; the pattern tier first. Fabric080 contrast 0.04 -> 0.90, scale 1.57 -> 0.83; Fabric083 looks right but its measure (the twill's 205 features) reads 2.00 -> 0.16 | 1be82b2 |
 
 Measured but NOT taken (lost on the holdout or in-sample): colour-word-first hue (41 better / 56 worse);
 a one-colour-word hue (28/58); dropping lightness words from the spread outright (holdout 0.4323);
@@ -145,6 +145,7 @@ words (mean 0.0620 -> 0.0595 but median 0.0375 -> 0.0387, 9 better / 6 worse).
 | after e616af3 | 0.165 | 0.256 | 0.320 | 0.1339 |
 | after 55df6a3 | 0.165 | 0.255 | 0.328 | 0.1327 |
 | after eddec6e | 0.166 | 0.254 | 0.321 | 0.1313 |
+| after 1be82b2 | 0.166 | 0.234 | 0.325 | 0.1313 |
 
 The seam rose (top 0.13 -> 0.19, truth 0.44) as the maps gained truth-like fine texture; every
 wrap step ranks inside its own map's interior steps (0.09-0.74), so none is a seam.
