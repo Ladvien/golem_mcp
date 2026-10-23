@@ -102,6 +102,7 @@ a fraction of today's weight, the stones' tone their own.
 | drift, soil stones (82170ce) | 0.162 | 0.212 | 0.308 | 0.1291 | 0.0896 | 0.400 | 0.446 |
 | tile tone and drift (7b707bf) | 0.162 | 0.212 | 0.307 | 0.1291 | 0.0896 | 0.400 | 0.446 |
 | smooth plastics, fans (59acb73) | 0.162 | 0.212 | 0.306 | 0.1291 | 0.0896 | 0.400 | 0.423 |
+| bark (26f83b3) | 0.162 | 0.212 | 0.306 | 0.1291 | 0.0896 | 0.400 | 0.423 |
 
 ## C2 - sources used this round (each for a measured defect)
 
