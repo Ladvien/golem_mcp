@@ -215,3 +215,50 @@ def test_an_unknown_colour_kind_is_refused(empty_scene, tmp_path):
         write_procedural_base_color(
             tmp_path / "T_Cobble_BaseColor.png", kind="voronoii"
         )
+
+
+def _wrapped_box_blur(field, radius: int):
+    import numpy
+
+    out = field
+    for axis in (0, 1):
+        total = numpy.zeros_like(out)
+        for step in range(-radius, radius + 1):
+            total += numpy.roll(out, step, axis=axis)
+        out = total / (2 * radius + 1)
+    return out
+
+
+@pytest.mark.parametrize(
+    ("description", "scale_cells"),
+    [("cloth, fabric, grey", 45.0), ("fabric, rough", 205.0)],
+)
+def test_a_cloth_s_variation_is_its_threads_and_not_clouds(
+    empty_scene, tmp_path, description, scale_cells
+):
+    """A woven cloth's variance is FINE: the truths' own fabrics carry 2.6
+    to 10.5 times more variance finer than six pixels than coarser. The
+    crosshatch of two isotropic noises it replaced made speckle and
+    clouds - Fabric030 at 0.63 and Fabric036 at 0.49."""
+    import numpy
+
+    from golem_blender.pbr.palette import palette_for_description
+    from golem_blender.pbr.procedural import write_procedural_base_color
+
+    path = write_procedural_base_color(
+        tmp_path / "T_Cloth_BaseColor.png",
+        kind="woven",
+        scale_cells=scale_cells,
+        width_px=1024,
+        height_px=1024,
+        **palette_for_description(description, path="woven"),
+    )
+    image = bpy.data.images.load(str(path))
+    pixels = numpy.empty(1024 * 1024 * 4, dtype=numpy.float32)
+    image.pixels.foreach_get(pixels)
+    luma = pixels.reshape((1024, 1024, 4))[:, :, :3].mean(axis=2).astype(numpy.float64)
+    slow = _wrapped_box_blur(luma, 6)
+    fine_over_slow = float((luma - slow).std()) / max(1e-9, float(slow.std()))
+    assert fine_over_slow > 2.5, (
+        f"the cloth's fine/slow variance is {fine_over_slow:.2f}"
+    )

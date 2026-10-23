@@ -91,6 +91,12 @@ transcript; the four sets re-run after each batch.
 | C compositing | no tool | `generate_layered_texture_set`: BaseColor/ORM/Normal from a described base + described layers under height/noise/cavity masks | 6716074 |
 | C moss on whole bricks | height read from the colour: a weathered wall's dark bricks are darker than its mortar (2.2x the moss) | a jointed kind's height is its own joint field (`joint_height_out`) | 6716074 |
 | C rust was a grey metal | "rust" a METAL word; its hue/roughness fitted on one grey glossy steel | rust is weathering when a metal is named and an orange rough crust when not; dust/grime/rust route flat | 6716074 |
+| tile grout 15-27 px, soft | grout a fraction of the tile's half-width (a tile is twice a brick's cell); truths 1-4 px | grout drawn from cell boundaries, 2 px at 1024, wrapped | 8e4b9b7 |
+| tile faces blotchy | hairline grout left the spread to the slow drift (31-51 px; truths 2-5) | fine tooth on a glazed face, swept to 0.3 | 8e4b9b7 |
+| rock greenish, silver tan | material hues fitted on every description, mossy rocks and a gold "silver" included | fitted where no OTHER colour is named; LOO hue 0.0818 -> 0.0790 | 8e4b9b7, e616af3 |
+| B2 brushed metal | "brushed" built as a pressed sheet's ribs; the fibre saturated the line writer (94%) | streaks for brushed (Metal009 86/81 -> 24/8 vs 24/1), sparse mottle for plain sheets | e616af3 |
+| scratches a grid of dashes, 80 s | frame wrapped per cell (every cell every scratch); each cell drawn 9x over the image | Material Maker's scratches2, one pass a layer (0.35 s) | e616af3 |
+| B7 fabric speckle | the crosshatch's two axes were the SAME isotropic noise: no thread anywhere | Material Maker's weave; threaded regime where the features resolve threads, fine wandering threads under a light mottle where they do not; Fabric030 fine/slow 0.63 -> >2.5 (truth 10.5) | (weave) |
 
 Measured but NOT taken (lost on the holdout or in-sample): colour-word-first hue (41 better / 56 worse);
 a one-colour-word hue (28/58); dropping lightness words from the spread outright (holdout 0.4323);
@@ -101,10 +107,11 @@ instead of once per set (leave-one-out 65 better / 66 worse).
 
 ## Still open
 
-- Moss002 too pale (value 0.466 vs 0.353) and unsaturated; Concrete031 olive; dark woods too
-  light (Wood067 1.71x, Wood026 1.54x): the truths are saturated red-brown.
-- B2 brushed metal shows no brushing; B7 fabric weave; B10 road lane count.
-- Marble012/014 hue; Rock hue slightly green (the "rock" hue includes mossy rocks; "grey cliff
-  rock" reads greenish through the tool).
+- Moss002 too pale (value 0.466 vs 0.353) and unsaturated; Concrete031 olive (its words say
+  "green" and its pixels are grey: a description limit); dark woods too light (Wood067 1.71x,
+  Wood026 1.54x): the truths are saturated red-brown, and the words do not carry it.
+- B10 road lane count; Fabric036's slubs and Fabric019's knit are not drawn; Metal007's gold is lemon against an orange-tan truth.
+- Marble012/014 hue.
 - Ground037 is a forest floor (moss and dirt patches with twigs): a layered set, not one field.
-- `curvature.scratches` is O(cells^2 x resolution^2): every cell draws over the whole image.
+- Tile counts vary against the truths (Tiles107 ours smaller, Tiles040 larger): the count is the
+  feature measure's.

@@ -452,39 +452,25 @@ MARKINGS_PLACES = 3
 MARKINGS_WIDTH = 0.05
 MARKINGS_DASHES = 1.0
 MARKINGS_SEED = 21
-# A WOVEN cloth's own octaves, and its threads are ridged: a thread
-# is a ridge and not a smooth wave.
-WOVEN_OCTAVES = 3
-# The COARSE axis' period, in cells, and it is SMALL.
-#
-# The coarse axis is the one the threads do NOT run along, and it
-# carries a SLOW variation: a cloth's threads lie in a direction and
-# the cloth's own unevenness is at a much larger scale.
-#
-# It was TWO cells, and a two-cell period over a thousand and
-# twenty-four pixels is a band five hundred pixels wide - so the
-# cloth came out as a plaid of broad bands and not a twill.
-#
-# And it was ONE cell, and a one-cell period makes the field
-# CONSTANT along that axis - so half the weave had no structure at
-# all.
-#
-# So the coarse period is a small but real number of cells - eight -
-# and it is HELD across the octaves so the cloth's broad bands do
-# not come back.
-#
-# And the coarse period is the LATTICE after all, and not a fraction
-# of it: the truth's own fabrics have almost NO slow variation - the
-# truth's Fabric061's forty-pixel blur carries one per cent of its
-# spread - so the cloth is all threads and the broad band was the
-# lane's own.
-#
-# At a coarse period of eight the fabric's feature scale read 12.5
-# features across against the truth's 204.8, whatever the thread
-# count was: the coarse band took over the autocorrelation. At the
-# lattice the scale reads 204.8 and the slow part carries two per
-# cent, against the truth's one.
-WOVEN_COARSE_PERIOD = 8
+# A WOVEN cloth's threads: how many of the measure's features one
+# thread is (the truths' own Fabric066 and Fabric061 show 2.4 and 3.2),
+# the fewest threads that are the cloth's structure, the threads a fine
+# cloth gets when its features are its slubs and not its threads, the
+# thread's width in its cell, and how much of the field the mottle is
+# in each regime. The threaded regime is calibrated on the truths'
+# feature counts; the fine one by eye against Fabric030's and Fabric036's
+# crops (a heavier mottle met the measure as clouds).
+WOVEN_FEATURES_PER_THREAD = 2.8
+WOVEN_MIN_THREADS = 64
+WOVEN_FINE_THREADS = 256
+WOVEN_THREAD_WIDTH = 0.8
+WOVEN_THREADED_MOTTLE = 0.2
+WOVEN_FINE_MOTTLE = 0.1
+# A fine cloth's threads wander by this many threads over a slow field
+# of this lattice, and each crossing's brightness varies by this share.
+WOVEN_WARP_THREADS = 0.5
+WOVEN_WARP_LATTICE = 8
+WOVEN_CROSSING_JITTER = 0.5
 # A ROOF's shingle is about as wide as it is tall, and its courses
 # and its shingles are at the same scale.
 #
@@ -3183,7 +3169,7 @@ def woven_field(
     lines_per_cell: int = 1,
     checkered: bool = False,
 ):
-    """A WOVEN cloth: a CROSSHATCH of two fine directional fields.
+    """A WOVEN cloth: threads over and under one another, as a darkness.
 
     A fabric is not a field of cells. It is a weave: threads running
     one way and threads running the other, and the eye reads the
@@ -3200,9 +3186,9 @@ def woven_field(
     cells are large flat pieces with hard borders - so a fabric came
     out as a field of pebbles.
 
-    So the weave is two fields: one that varies fast across and
-    slowly down, and one that varies fast down and slowly across,
-    and the sum is the cloth.
+    So the cloth is a WEAVE of threads - one where the gaps between
+    them are dark - under a mottle at the surface's own scale, and the
+    feature count decides which of the two is the structure.
     """
     import numpy
 
@@ -3210,78 +3196,94 @@ def woven_field(
 
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
-
-    # The weave's own scale, and it is FINE: the truth's own fabric
-    # measures hundreds of features across, and a cell two pixels
-    # wide is degenerate.
-    #
-    # The lattice is the surface's own feature count, and the feature
-    # measure counts the THREADS and not the weave's envelope.
-    #
-    # It was FOUR times the count, and the truth's own Fabric061
-    # measures two hundred and five features across with its threads
-    # every four pixels - so the lattice is the count itself and not
-    # four times it. At four times, the threads came every two
-    # pixels and the fabric's feature scale read 0.06x the truth's.
+    # The checkered squares' own lattice, as it was: a power of two that
+    # divides the resolution, so the chequer wraps.
     lattice = _power_of_two_nearest(max(4, cells))
     while lattice > 1 and resolution % lattice != 0:
         lattice //= 2
     while lattice > 1 and lattice * 2 > resolution:
         lattice //= 2
 
-    # The two THREADS, and each is a field that is fine in one
-    # direction and coarse in the other.
+    # A WEAVE, Material Maker's `weave` (MIT): threads along the rows
+    # and threads down the columns, each rising and falling as a sine
+    # and shifted by its neighbour's index, so the two go over and
+    # under one another; between them the gaps. The sum of two
+    # isotropic noises it replaced had no thread in it, and every
+    # fabric came out as speckle.
     #
-    # The lattice's x period is MANY and its y period is ONE for the
-    # first, and the other way round for the second - so the threads
-    # run across and down respectively.
-    # A thread that runs DOWN the image is a ridge at a fixed x, and
-    # a ridge comes from the field oscillating in x - so the field
-    # that makes the DOWN threads has MANY cells across and ONE
-    # along, and the field that makes the ACROSS threads is the other
-    # way round.
-    #
-    # The two were the other way round, and a field with a period of
-    # ONE cell along an axis is CONSTANT along it - so half of the
-    # weave had no structure at all and the cloth came out as a
-    # coarse haze.
-    # The COARSE axis' period, and it is a fixed count of the
-    # SURFACE's own features and not a fraction of the lattice.
-    #
-    # It was eight LATTICE cells, and the lattice is the thread
-    # count - so the coarse band grew with the threads, and the
-    # coarse field took over the autocorrelation: the fabric's
-    # feature scale read 12.5 features across for a truth of two
-    # hundred and five, whatever the thread count was.
-    #
-    # And the truth's own fabrics are a mesh and a twill and a
-    # herringbone, and their THREADS are the features - the coarse
-    # band is the cloth's own unevenness and it is at the surface's
-    # scale.
-    coarse = lattice
-    down = noise.fbm_2d_value(
-        sample_x * lattice,
-        sample_y * coarse,
-        size=lattice,
-        octaves=WOVEN_OCTAVES,
-        seed=0,
-        size_y=coarse,
-        size_y_grows=False,
+    # Two regimes, as the truths' own measures say. Where the feature
+    # count resolves threads, the threads ARE the cloth's structure
+    # (Fabric066: 341 features, about 140 threads). Where it does not,
+    # the features are the cloth's slubs and mottle over fine threads
+    # (Fabric030: 45 features over threads 3 pixels apart), and the
+    # mottle carries the measure.
+    threads = round(cells / WOVEN_FEATURES_PER_THREAD)
+    fine = threads < WOVEN_MIN_THREADS
+    if fine:
+        threads = WOVEN_FINE_THREADS
+        mottle_share = WOVEN_FINE_MOTTLE
+    else:
+        mottle_share = WOVEN_THREADED_MOTTLE
+    # An EVEN count: a thread's sine and its over-under shift both
+    # repeat every two threads, so an odd count would not wrap.
+    threads += threads % 2
+    # The samples are "ij"-indexed: sample_y runs along a row.
+    along = sample_y * threads
+    down = sample_x * threads
+    if fine:
+        # A FINE cloth's threads WANDER and differ, as a linen's do: a
+        # perfect fine grid reads as a fine grid - the truths' fine
+        # cloths decorrelate within their threads, and are ten times
+        # finer variance than slow (Fabric030's fine/slow 10.5). So the
+        # threads are displaced by half a thread over a slow field, and
+        # each crossing has its own brightness. A larger warp swirled
+        # the threads into marbling; a larger mottle was clouds.
+        warp_along = noise.fbm_2d_value(
+            sample_x * WOVEN_WARP_LATTICE,
+            sample_y * WOVEN_WARP_LATTICE,
+            size=WOVEN_WARP_LATTICE,
+            octaves=2,
+            seed=31,
+        )
+        warp_down = noise.fbm_2d_value(
+            sample_x * WOVEN_WARP_LATTICE,
+            sample_y * WOVEN_WARP_LATTICE,
+            size=WOVEN_WARP_LATTICE,
+            octaves=2,
+            seed=37,
+        )
+        along = along + (warp_along - 0.5) * 2.0 * WOVEN_WARP_THREADS
+        down = down + (warp_down - 0.5) * 2.0 * WOVEN_WARP_THREADS
+    half_width = WOVEN_THREAD_WIDTH / 2.0
+    row_threads = (numpy.sin(numpy.pi * (along + numpy.floor(down))) * 0.5 + 0.5) * (
+        numpy.abs(down - numpy.floor(down) - 0.5) < half_width
     )
-    across = noise.fbm_2d_value(
-        sample_x * coarse,
-        sample_y * lattice,
-        size=coarse,
-        octaves=WOVEN_OCTAVES,
-        seed=1,
-        size_y=lattice,
-        size_y_grows=False,
+    column_threads = (
+        numpy.sin(numpy.pi * (1.0 + down + numpy.floor(along))) * 0.5 + 0.5
+    ) * (numpy.abs(along - numpy.floor(along) - 0.5) < half_width)
+    crest = numpy.maximum(row_threads, column_threads)
+    if fine:
+        # Each crossing's own brightness, keyed on its WRAPPED index so
+        # the crossing at the edge is the crossing at the start.
+        index_along = numpy.mod(numpy.floor(along), threads).astype(numpy.int64)
+        index_down = numpy.mod(numpy.floor(down), threads).astype(numpy.int64)
+        crossing = numpy.random.default_rng(7).random((threads, threads))
+        crest = crest * (
+            1.0
+            - WOVEN_CROSSING_JITTER
+            + WOVEN_CROSSING_JITTER * crossing[index_down, index_along]
+        )
+    darkness = 1.0 - crest
+    mottle_lattice = max(2, int(cells))
+    mottle = noise.fbm_2d_value(
+        sample_x * mottle_lattice,
+        sample_y * mottle_lattice,
+        size=mottle_lattice,
+        octaves=3,
+        seed=21,
     )
-    # The weave is the two of them TOGETHER, and they are ridged: a
-    # thread is a ridge and not a smooth wave.
-    across = numpy.abs(across - 0.5) * 2.0
-    down = numpy.abs(down - 0.5) * 2.0
-    edge = numpy.clip(across * 0.5 + down * 0.5, 0.0, 1.0)
+    mottle = (mottle - mottle.min()) / max(1e-9, float(mottle.max() - mottle.min()))
+    edge = darkness * (1.0 - mottle_share) + mottle * mottle_share
     if checkered:
         # A CHECKERED cloth is a CHEQUER of squares and not a
         # crosshatch of threads, and the two are different things.
