@@ -511,8 +511,11 @@ def _compose(
         "base",
     )
     kinds = [base_kind]
-    # The set's normal strength is each material's own, weighted by how
-    # much of the surface it covers.
+    # The set's normal strength is its BASE's: a layer of moss or rust lies
+    # on the base's relief. Weighted by the layers' coverage it took the
+    # moss's own 29 degrees and the rust's 5.4 - the truths' mossy Rock063
+    # and Rock064 tilt 8.2 and 15.4 (a rock 16.9) and their rusted Metal053C
+    # 0.6 (a metal 0.4), and the weighting drew 22.8, 22.4 and 3.1.
     base_description = str(base.get("description", ""))
     normal_deg = surface_of(base_description, base_kind)[0]
     for index, spec in enumerate(layer_specs):
@@ -529,9 +532,6 @@ def _compose(
         )
         kinds.append(kind)
         mask = _mask(dict(spec["mask"]), composed.height, resolution, name)
-        cover = float((mask * float(spec.get("amount", 1.0))).mean())
-        layer_deg = surface_of(str(spec.get("description", "")), kind)[0]
-        normal_deg = normal_deg * (1.0 - cover) + layer_deg * cover
         composed = layers.composite(
             composed,
             [

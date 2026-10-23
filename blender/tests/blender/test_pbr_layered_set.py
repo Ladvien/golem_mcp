@@ -217,3 +217,12 @@ def test_a_rusted_iron_with_no_layers_composes_its_rust(tmp_path):
     rusty = (albedo[:, :, 0] - albedo[:, :, 2]) > 0.12
     assert float(rusty.mean()) > 0.2
     assert "metal" in written["kinds"] and len(written["kinds"]) == 2
+
+
+def test_a_moss_layer_does_not_raise_its_rock_s_relief(tmp_path):
+    """The truths' mossy rocks tilt as a rock does (Rock064 15.4 degrees,
+    a rock 16.9); weighting the set's strength by the moss's coverage drew
+    its own 29 degrees in - 22.4."""
+    _orm, mossy = _set_channels(tmp_path / "mossy", "gray, mossy, rock, rough")
+    _orm, bare = _set_channels(tmp_path / "bare", "gray, rock, rough")
+    assert float(mossy.mean()) < 1.15 * float(bare.mean())
