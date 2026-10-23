@@ -23,6 +23,7 @@ brought the fabric's spread to 1.13x the truth's and the asphalt's to
 from __future__ import annotations
 
 from golem_blender.pbr.material import is_metal
+from golem_blender.pbr.patterns import is_checkered
 
 # The named colours, and how light the surface is: a value from 0 for
 # the darkest to 1 for the lightest. The value is the middle of the
@@ -2012,11 +2013,15 @@ FABRIC_SPREADS: dict[str, float] = {
     "cotton": 0.1877,
 }
 
-# The tiers, and the ORDER matters: the specific finishes first.
+# The tiers, and the ORDER matters: the specific finishes first - and a
+# PATTERN before a softness: a checkered cloth's spread is its checks.
+# The truth's own Fabric080, a red plaid named "soft" as well as
+# "checkered", took a fur's spread of 0.009 against its own 0.19 (|log|
+# error 3.14 -> 0.10; no other material changes).
 FABRIC_SPREAD_TIERS = (
     ("printed", "plastisol"),
-    ("soft", "fur", "microfiber"),
     ("checkered", "chequered", "patterned", "cotton"),
+    ("soft", "fur", "microfiber"),
     ("rough", "dirty", "smudge"),
     ("clean", "smooth"),
     ("wool", "weave", "woven", "white"),
@@ -3902,6 +3907,7 @@ def palette_for_description(
         "metal_horizontal": metal_direction_for_description(description),
         "metal_banded": metal_is_banded(description),
         "metal_brushed": metal_is_brushed(description),
+        "checkered": is_checkered(description),
         "metal_envelope_factor": metal_envelope_factor_for_description(description),
     }
 
@@ -3935,6 +3941,7 @@ def line_palette_for_description(description: str, path: str = "grain"):
         "metal_horizontal": metal_direction_for_description(description),
         "metal_banded": metal_is_banded(description),
         "metal_brushed": metal_is_brushed(description),
+        "checkered": is_checkered(description),
         "metal_envelope_factor": metal_envelope_factor_for_description(description),
     }
 

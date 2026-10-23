@@ -36,3 +36,12 @@ def test_a_fine_linen_is_not_streaked():
     """The truth's own Fabric030, 45 features, is a regular linen: slubs
     on it streaked it like a brushed metal."""
     assert _anisotropy(45) < 1.5
+
+
+def test_a_check_is_many_features():
+    """The truth's own Fabric083 reads 205 features - its twill's threads -
+    over about sixteen checks across; a check per feature drew 256."""
+    from golem_blender.pbr import pattern
+
+    _cell, _field, grid, _fibre = pattern.woven_field(1024, 205, checkered=True)
+    assert 8 <= grid[0] <= 32

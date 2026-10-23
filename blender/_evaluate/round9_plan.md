@@ -105,7 +105,8 @@ transcript; the four sets re-run after each batch.
 | Fabric085 grey, Leather038 brown | with only generic materials named the first word with a hue decided ("fabric" before "orange") | a dyed material (fabric, wool, leather, carpet) takes its colour word; 0.0613 -> 0.0588 | b7698d9 |
 | marble scale 0.54 | the presence mask at half the count set the scale | presence at the count (seven marbles' scale error 0.279 -> 0.183) | 0245750 |
 | B10 Road007 five lines | markings at random places of a lattice of four (the constant's own comment said three) | the measured layout: solid edges at 7.5%/92.5%, a dashed centre, four dashes; an asphalt grain; the road's spread is what the paint leaves | eddec6e |
-| Fabric036 no slubs | a weave under an isotropic mottle reads the same both ways (9/9; truth 12/3) | an oriented Gaussian grain along the rows, fading in below 40 features (linen Fabric030 unstreaked); scale 1.43 -> 1.20 | (slubs) |
+| Fabric036 no slubs | a weave under an isotropic mottle reads the same both ways (9/9; truth 12/3) | an oriented Gaussian grain along the rows, fading in below 40 features (linen Fabric030 unstreaked); scale 1.43 -> 1.20 | 063bafe |
+| checks: agent got none, 256 squares, flat plaid | `checkered` passed only by the benchmark script; a check per feature; a 'soft' tier before the pattern tier | `checkered` in the palette (agent, layered sets, benchmark alike); a check is 12 features; the pattern tier first. Fabric080 contrast 0.04 -> 0.90, scale 1.57 -> 0.83; Fabric083 looks right but its measure (the twill's 205 features) reads 2.00 -> 0.16 | (checks) |
 
 Measured but NOT taken (lost on the holdout or in-sample): colour-word-first hue (41 better / 56 worse);
 a one-colour-word hue (28/58); dropping lightness words from the spread outright (holdout 0.4323);

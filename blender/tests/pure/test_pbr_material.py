@@ -590,3 +590,13 @@ def test_a_dyed_material_is_the_colour_it_was_dyed():
     red, _green, blue = hue_for_description("fabric, orange, red, wool")
     assert red - blue > 0.15
     assert hue_for_description("brown, fine, leather, orange, smooth") == HUES["orange"]
+
+
+def test_a_checkered_cloth_s_spread_is_its_checks_not_its_softness():
+    """The truth's own Fabric080, a red plaid also named "soft", took a
+    fur's spread of 0.009 against its own 0.19 and came out flat."""
+    from golem_blender.pbr.palette import palette_for_description
+
+    plaid = "checkered, cotton, fabric, plaid, red, smooth, soft, textile, woven"
+    assert palette_for_description(plaid, path="woven")["target_spread"] > 0.1
+    assert palette_for_description(plaid, path="woven")["checkered"]

@@ -485,6 +485,8 @@ WOVEN_SLUB_ALONG = 12.0
 WOVEN_SLUB_SHARE = 0.5
 # Slubs fade in below this many features.
 WOVEN_SLUB_FEATURES = 40
+# A checkered cloth's check, in features.
+WOVEN_FEATURES_PER_CHECK = 12
 # A ROOF's shingle is about as wide as it is tall, and its courses
 # and its shingles are at the same scale.
 #
@@ -3108,9 +3110,12 @@ def woven_field(
 
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
-    # The checkered squares' own lattice, as it was: a power of two that
-    # divides the resolution, so the chequer wraps.
-    lattice = _power_of_two_nearest(max(4, cells))
+    # The checkered squares' own lattice: a power of two that divides the
+    # resolution, so the chequer wraps - and a CHECK is many features: the
+    # truth's own Fabric083 reads 205 features (its twill's threads) over
+    # about sixteen checks across, and a check per feature drew 256 squares
+    # where the truth has sixteen.
+    lattice = _power_of_two_nearest(max(4, round(cells / WOVEN_FEATURES_PER_CHECK)))
     while lattice > 1 and resolution % lattice != 0:
         lattice //= 2
     while lattice > 1 and lattice * 2 > resolution:
