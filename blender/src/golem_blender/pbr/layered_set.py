@@ -99,6 +99,13 @@ KIND_SMOOTH_NORMAL: dict[str, tuple[float, float]] = {
 # CorrugatedSteel009 tilts 20.7 degrees where the smooth metals tilt 0.7.
 PRESSED_METAL_NORMAL_DEG = 20.7
 PRESSED_METAL_WORDS = frozenset(("corrugated", "ribbed", "ridged", "pipe"))
+# A SMOOTH PLASTIC is moulded glass-smooth: the truths' own smooth plastics
+# (Plastic010, Plastic006) tilt 0.5 and 0.7 degrees, where a smooth flat
+# sheet's median is 4.6 - and their textured plastics 4.4.
+PLASTIC_WORDS = frozenset(
+    ("plastic", "acrylic", "vinyl", "pvc", "melamine", "laminate")
+)
+SMOOTH_PLASTIC_NORMAL_DEG = 0.6
 # A jointed piece rises out of its joint over this share of its own
 # half-width, and keeps this much of a dome on its flat top.
 JOINT_BEVEL = 0.25
@@ -295,6 +302,8 @@ def surface_of(description: str, kind: str) -> tuple[float, float, float, float]
         normal_deg *= SMOOTH_NORMAL_RATIO
     if kind == "metal" and words & PRESSED_METAL_WORDS:
         normal_deg = PRESSED_METAL_NORMAL_DEG
+    if smooth and words & PLASTIC_WORDS:
+        normal_deg = SMOOTH_PLASTIC_NORMAL_DEG
     return normal_deg, spread, correlation, height_correlation
 
 

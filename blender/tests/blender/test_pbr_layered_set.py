@@ -253,3 +253,12 @@ def test_an_ashlar_wall_tiles_in_its_colour_too(tmp_path):
     wrap = float(numpy.abs(luma[:, 0] - luma[:, -1]).mean())
     columns = numpy.abs(numpy.diff(luma, axis=1)).mean(axis=0)
     assert wrap <= float(numpy.percentile(columns, 99))
+
+
+def test_a_smooth_plastic_is_far_flatter_than_a_plaster(tmp_path):
+    """The truths' smooth plastics tilt 0.5-0.7 degrees; as a smooth flat
+    sheet they took 4.6."""
+    _orm, plastic = _set_channels(tmp_path / "plastic", "plastic, smooth, white")
+    _orm, plaster = _set_channels(tmp_path / "plaster", "plaster, rough, white, wall")
+    assert float(plastic.mean()) < 1.5
+    assert float(plaster.mean()) > 3.0
