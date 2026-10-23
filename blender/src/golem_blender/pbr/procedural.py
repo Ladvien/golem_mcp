@@ -510,6 +510,10 @@ def _pattern_resolution(limit: int, target: int, cells: int) -> int:
 JOINT_HEIGHT_KINDS = ("voronoi", "brick", "parquet", "herringbone", "roof")
 
 
+# A marble darker than this has pale veins; above it, dark ones.
+MARBLE_DARK_BELOW = 0.35
+
+
 def write_procedural_base_color(
     output_path: Path,
     kind: str = "voronoi",
@@ -1011,6 +1015,21 @@ def write_procedural_base_color(
         line_rgb = tuple(
             max(0.0, channel * (1.0 - darkening)) for channel in stone_dark_rgb
         )
+        if kind == "marble" and base >= MARBLE_DARK_BELOW:
+            # The line writer draws a high fibre TOWARDS THE LIGHT when the
+            # line colour is darker than its light colour - so a marble's
+            # veins, the fibre, came out WHITE on a pale stone and dark on
+            # a black one, the wrong way round for both (looked at). The
+            # truths' own pale marbles carry grey veins and their black
+            # ones (Marble006 at a luma of 0.10, Marble016 at 0.24) pale
+            # veins. So a pale marble's line colour is MIRRORED about the
+            # light colour: the same reach, the other way.
+            light = tuple(
+                channel * (1.0 + LINE_LIGHT_FRACTION) for channel in stone_dark_rgb
+            )
+            line_rgb = tuple(
+                2.0 * lit - line for lit, line in zip(light, line_rgb, strict=True)
+            )
         if kind == "marble":
             # A MARBLE's veins are the FIBRE and its base is the
             # ENVELOPE, and the line pattern draws the envelope as a

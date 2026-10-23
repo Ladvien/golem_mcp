@@ -488,7 +488,6 @@ ROOF_ASPECT = 1.0
 # are a fine network.
 MARBLE_WARP = 0.25
 MARBLE_WARP_STEP = 0.1
-MARBLE_VEIN_WIDTH = 0.30
 # How much FINER the BED is than the vein's own spacing, and the
 # contour has to wander over many of the bed's own features to be a
 # line and not a blob.
@@ -499,56 +498,25 @@ MARBLE_BED_FINENESS = 1
 # How far the warp may carry the veins, as a fraction of the vein's
 # own period - and it is BOUNDED, because the slope is not.
 MARBLE_WARP_LIMIT_CELLS = 0.4
-MARBLE_VEIN_LEVEL = 0.5
-# And the marble's CRACKLE - the fine web of one-pixel veins over the
-# mottle - was measured and DROPPED.
+# Where a marble's vein network runs: above this level of a slow field,
+# fading in over this much of it.
+MARBLE_VEIN_PRESENCE = 0.35
+MARBLE_VEIN_PRESENCE_SOFTNESS = 0.2
+# A marble's two vein families, neither finer than the surface's own
+# count: a fine web of one-pixel veins once read 93 features against the
+# truth's 14, because a web finer than the surface sets the
+# autocorrelation's zero crossing whatever its weight.
 #
-# The truth's own Marble012's high-pass is a dense web of veins a
-# pixel across, and its raw correlation decays smoothly from +0.743
-# at a lag of one to zero at seventy-two - so the crackle is there
-# and it is WEAK, and a slow mottle carries the rest of the
-# variation.
-#
-# A crackle was added at half the weight and it cost the feature
-# scale: the marbles read 93 features against the truth's 14 at a
-# lattice of fifty-six, and every share and every lattice tried made
-# it worse - a fine web dominates the autocorrelation's zero
-# crossing whatever its weight, because a zero crossing is a COARSE
-# statistic.
-#
-# So the marble is the mottle alone, and the marble's feature scale
-# is 0.456 against the truth's own.
-#
-# The constants are kept so the measurement can be repeated.
-MARBLE_CRACKLE_LATTICE = 56
-MARBLE_CRACKLE_WIDTH = 0.04
-MARBLE_CRACKLE_SHARE = 0.0
-# And the crackle's own JITTER, and how narrow the vein's line is
-# about the cell's border.
-#
-# The truth's own Marble021's veins are six pixels across in a
-# thousand and twenty-four, and a marble's veins wander - so the
-# cells are jittered and not on a perfect lattice.
-MARBLE_CRACKLE_JITTER = 0.9
-MARBLE_CRACKLE_LINE_WIDTH = 0.06
-# How much finer the crackle's cells are than the surface's own
-# feature count.
-MARBLE_CRACKLE_FACTOR = 2.0
-# A MARBLE's vein's own width, in PIXELS.
-#
-# The truth's own Marble012's veins are six pixels across and a
-# hundred and forty-four apart, and its Marble021's are six pixels
-# across and thirty-six apart. So a vein is a fixed number of pixels
-# and not a fixed fraction of its cell.
-MARBLE_VEIN_PIXELS = 6.0
-# How wide the CONTOUR's own band is, as a fraction of the bed's
-# whole range.
-#
-# The vein's own band was three tenths of the range and it covered
-# most of the surface, so the crackle was swamped by it. The truth's
-# own Marble021's veins cover eight per cent of the surface and the
-# crackle is eight per cent of it.
-MARBLE_CONTOUR_WIDTH = 0.05
+# The bold veins' lattice as a share of
+# the surface's count and their width, the fine ones' width and how
+# strong they are; the veins' warp and octaves (looked at against
+# Marble016 and Marble012).
+MARBLE_BOLD_FACTOR = 0.4
+MARBLE_BOLD_VEIN_PX = 2.2
+MARBLE_FINE_VEIN_PX = 1.2
+MARBLE_FINE_SHARE = 0.8
+MARBLE_VEIN_WARP = 0.6
+MARBLE_VEIN_OCTAVES = 7
 # The marble's STONE mottle: how fine it is and how many octaves.
 #
 # The truth's own Marble021's stone is a fine even cloud and not a
@@ -2834,155 +2802,90 @@ def marble_field(
         period=bed_lattice,
         seed=23,
     )
-    # And the vein's own FREQUENCY, and it is the BED's own lattice
-    # over its FINENESS: the bed is cut at the vein's period times
-    # the fineness, and the sine's factor is what puts the veins in.
+    # The VEINS are the LEVEL SETS of a warped fBm, drawn at a fixed
+    # PIXEL width: the distance to the field's middle contour is
+    # |v - 1/2| over the field's own slope, so a band about it is a line
+    # of the same width wherever it runs. The veins wander, branch and
+    # stop, as the truths' own do.
     #
-    # The sine of a value that spans the whole range carries half as
-    # many bands as its argument's factor, so the factor that puts
-    # one vein in every bed cell is two - and the bed's cell is
-    # MARBLE_BED_FINENESS times finer than the vein's own period.
+    # They replaced a Worley crackle and a contour band. The crackle was
+    # a net of POLYGONS over the whole stone; the band - a fixed range of
+    # a field whose slope varies - broke into DASHES wherever the slope
+    # was steep; and F2 - F1, which the crackle was drawn from, is not a
+    # distance, so its veins came in every width. On the close sheet the
+    # marbles were clouds with a polygon net and dashed loops, and the
+    # dark ones' veins were not there at all.
     #
-    # A fixed frequency was tried and it does not work: the bed is
-    # eight times finer than the period, so a fixed frequency made
-    # the veins four times finer than the material's own scale, and
-    # the marble's feature scale read 6.55x the truth's.
-    # The vein is the SINE of the bed, and the sine's own argument
-    # puts the bands where they go.
-    #
-    # The vein is a LINE and not a blob, and the line is what the
-    # width's clip makes of the sine's PEAKS - so the peaks have to
-    # be LINES, and a peak is a line when the field it comes from
-    # varies slowly ALONG the peak.
-    # And the vein is a NARROW BAND about a LEVEL of the bed, and
-    # not the SINE of it.
-    #
-    # A vein is where the stone's bed changed, and a bed is a
-    # continuous field - so a vein is a LEVEL SET of it, and a level
-    # set of a smooth field is a LINE.
-    #
-    # The SINE was tried and it is not the same thing: the sine's
-    # peaks are BROAD - a sine spends most of its time near its
-    # extremes - and the peaks' TOPS are RINGS, so the vein came out
-    # as a set of closed loops and not as a network.
-    #
-    # So the vein is the band about the level, and the band's width
-    # IS the vein's width. Measured on the truth's own Marble012: the
-    # veins are six pixels across and cover a quarter of the
-    # surface, and a band of 0.05 about the level gives 5.8-pixel
-    # veins over 9.9 per cent of it.
-    veins = numpy.clip(
-        1.0 - numpy.abs(bed - MARBLE_VEIN_LEVEL) / MARBLE_VEIN_WIDTH, 0.0, 1.0
-    )
-    # And the fibre is the STONE and not the vein.
-    #
-    # The line pattern draws a HIGH fibre as a LIGHT line - a wood's
-    # grain lines are the light wood between the dark rings, and the
-    # wood reads right. A marble's veins are DARK, and the marble's
-    # fibre was the vein's COVERAGE - one at the vein - so the veins
-    # came out as LIGHT worms on a mid grey, where the truth's own
-    # Marble012 is a pale stone with a fine dark network.
-    #
-    # So the fibre is the stone: one where there is no vein.
-    veins = 1.0 - veins
-    # And the veins are a CRACKLE and not a set of CONTOURS.
-    #
-    # A contour of a smooth field is a CLOSED LOOP, and the marble
-    # came out as a handful of big rings on a pale stone - where the
-    # truth's own Marble021 is a fine network of veins that all join
-    # up.
-    #
-    # A crackle is the DISTANCE TO THE BORDERS of a set of cells, and
-    # that is a NETWORK by construction: every border is a piece of
-    # it and they all meet. So the crackle is a Worley field's own
-    # distance, at the surface's own feature count.
-    #
-    # The crackle is at the surface's own count and not a fixed one:
-    # the truth's own marbles measure ten to twenty-eight features
-    # across, and a fixed count made every marble the same.
-    from golem_blender.pbr import noise_worley_fbm
+    # Two families: bold veins at a few cells and fine ones at the
+    # surface's own count, each with a width that varies along it, and
+    # a slow field that says where the network runs strong.
+    from golem_blender.pbr import noise as value_noise
 
-    # The crackle's own lattice is FINER than the surface's feature
-    # count, because the crackle is a network of LINES and the
-    # surface's count is a count of the surface's own larger
-    # features: the truth's own Marble021 measures twenty-eight
-    # features across and its veins are six pixels across in a
-    # thousand and twenty-four, so the cells are a hundred or so.
-    crackle_lattice = _power_of_two_nearest(
-        max(8, round(period * MARBLE_CRACKLE_FACTOR))
+    pixels = resolution / 1024.0
+
+    def level_veins(lattice: int, width_px: float, seed: int):
+        warp_lattice = max(2, lattice // 2)
+        warp_x = value_noise.fbm_2d_value(
+            sample_x * warp_lattice,
+            sample_y * warp_lattice,
+            size=warp_lattice,
+            octaves=3,
+            seed=seed + 1,
+        )
+        warp_y = value_noise.fbm_2d_value(
+            sample_x * warp_lattice,
+            sample_y * warp_lattice,
+            size=warp_lattice,
+            octaves=3,
+            seed=seed + 2,
+        )
+        field = value_noise.fbm_2d_value(
+            sample_x * lattice + (warp_x - 0.5) * 4.0 * MARBLE_VEIN_WARP,
+            sample_y * lattice + (warp_y - 0.5) * 4.0 * MARBLE_VEIN_WARP,
+            size=lattice,
+            octaves=MARBLE_VEIN_OCTAVES,
+            persistence=0.62,
+            seed=seed,
+        )
+        slope = numpy.hypot(
+            (numpy.roll(field, -1, axis=1) - numpy.roll(field, 1, axis=1)) * 0.5,
+            (numpy.roll(field, -1, axis=0) - numpy.roll(field, 1, axis=0)) * 0.5,
+        )
+        distance_px = numpy.abs(field - 0.5) / numpy.maximum(slope, 1e-6)
+        width = value_noise.fbm_2d_value(
+            sample_x * lattice * 2,
+            sample_y * lattice * 2,
+            size=lattice * 2,
+            octaves=2,
+            seed=seed + 3,
+        )
+        width = width_px * pixels * (0.4 + 1.2 * width)
+        return numpy.clip(1.0 - distance_px / width, 0.0, 1.0)
+
+    vein_line = numpy.maximum(
+        level_veins(
+            max(3, round(period * MARBLE_BOLD_FACTOR)), MARBLE_BOLD_VEIN_PX, 11
+        ),
+        MARBLE_FINE_SHARE * level_veins(period, MARBLE_FINE_VEIN_PX, 3),
     )
-    while crackle_lattice > 1 and resolution % crackle_lattice != 0:
-        crackle_lattice //= 2
-    while crackle_lattice > 1 and crackle_lattice * 2 > resolution:
-        crackle_lattice //= 2
-    # And the crackle's cells are WARPED, so the veins wander.
-    #
-    # A Worley cell's border is a straight line between two points,
-    # and the marble came out as a POLYGON MESH - a net of straight
-    # edges - where the truth's own Marble012's veins wander.
-    #
-    # So the crackle's own coordinates ride on the bed, the same warp
-    # the contour's veins ride on, and the cells are irregular.
-    stones = noise_worley_fbm.worley_fbm_2d(
-        warped_x * crackle_lattice,
-        warped_y * crackle_lattice,
-        period=crackle_lattice,
-        octaves=1,
-        jitter=MARBLE_CRACKLE_JITTER,
-        seed=29,
+    presence_lattice = max(2, period // 2)
+    presence = value_noise.fbm_2d_value(
+        sample_x * presence_lattice,
+        sample_y * presence_lattice,
+        size=presence_lattice,
+        octaves=3,
+        seed=41,
     )
-    # And the vein is the GAP between the two nearest features, and
-    # not the distance to the nearest one.
-    #
-    # F2 minus F1 is ZERO exactly on the border between two cells -
-    # the bisector - and it grows away from it. So a narrow band
-    # about the gap is a LINE along every border, and the line is
-    # continuous where the borders meet.
-    #
-    # The distance to the NEAREST feature is not that: it is zero at
-    # every feature's own point, so a band about it is a set of
-    # DOTS at the cell's centres, and the network broke up into
-    # spots. Measured, a band about the distance gave a coverage of
-    # 1.9 per cent in isolated points, and a band about the gap
-    # gives the same coverage in a connected web.
-    #
-    # And the gap's width does not depend on the lattice: a band of
-    # four hundredths covers 4.9 per cent at a lattice of thirty-two
-    # and 4.9 per cent at a hundred and twenty-eight.
-    gap = stones["F2"] - stones["F1"]
-    #
-    # And the vein's width is the vein's own PIXEL width, and not a
-    # fixed fraction of the gap.
-    #
-    # The truth's own Marble012's veins are six pixels across and a
-    # hundred and forty-four apart - so a vein is a twentieth of its
-    # own cell - and the truth's Marble021's veins are six pixels
-    # across and thirty-six apart - a sixth.
-    #
-    # A fixed fraction of the gap gave the coarse marble a one-pixel
-    # vein and the fine one a vein too faint to see.
-    vein_width = max(1e-6, MARBLE_VEIN_PIXELS * crackle_lattice / float(resolution))
-    vein_line = numpy.clip(1.0 - gap / vein_width, 0.0, 1.0)
-    # And the CONTOURS ride on it, for the marble that has them: a
-    # marble's bed shows through the crackle as a broad mottle.
-    #
-    # The contour's own band is WIDE - it is three tenths of the
-    # bed's whole range - and it covered most of the surface, so the
-    # crackle was swamped by it and the marble came out as a few big
-    # rings on a pale stone with the crackle nowhere in it.
-    #
-    # So the vein is the crackle and the contour is the MOTTLE that
-    # rides on the stone: the contour's own narrow band about its
-    # level, and the crackle on top of it.
-    contour = numpy.clip(
-        1.0 - numpy.abs(bed - MARBLE_VEIN_LEVEL) / MARBLE_CONTOUR_WIDTH, 0.0, 1.0
+    vein_line = vein_line * numpy.clip(
+        (presence - MARBLE_VEIN_PRESENCE) / MARBLE_VEIN_PRESENCE_SOFTNESS, 0.0, 1.0
     )
-    #
-    # And the fibre is the STONE and not the vein: the writer draws a
-    # high fibre towards the LIGHT, so the stone is the high field and
-    # the veins are the low ones - and a marble's veins are dark on a
-    # pale stone.
-    veins = 1.0 - numpy.clip(numpy.maximum(vein_line, contour), 0.0, 1.0)
+    # The fibre is the VEINS: the line writer reads its fibre as a
+    # darkness that is near zero almost everywhere and saturates above an
+    # eighth of its peak, and draws it in the line's colour (dark on a
+    # pale marble, light on a dark one). As the stone - one everywhere
+    # but the veins - every pixel saturated, and only a vein's very core
+    # showed: the veins came out sparse and faint.
+    veins = vein_line
     #
     # And the ENVELOPE is the stone's own MOTTLE and the FIBRE is the
     # crackle.

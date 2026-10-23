@@ -262,3 +262,50 @@ def test_a_cloth_s_variation_is_its_threads_and_not_clouds(
     assert fine_over_slow > 2.5, (
         f"the cloth's fine/slow variance is {fine_over_slow:.2f}"
     )
+
+
+@pytest.mark.parametrize(
+    ("description", "veins_darker"),
+    [
+        ("bright, marble, reflective, shiny, white", True),
+        ("black, marble, reflective, shiny", False),
+    ],
+)
+def test_a_marble_s_veins_stand_out_the_right_way(
+    empty_scene, tmp_path, description, veins_darker
+):
+    """A pale marble's veins are darker than its stone and a black one's paler.
+
+    The line writer draws a high fibre towards the light, so the veins
+    came out white on the pale marbles and black on the black ones - the
+    truths' own are the other way round.
+    """
+    import numpy
+
+    from golem_blender.pbr import pattern
+    from golem_blender.pbr.palette import palette_for_description
+    from golem_blender.pbr.procedural import (
+        DEFAULT_LINES_PER_CELL,
+        write_procedural_base_color,
+    )
+
+    resolution, cells = 512, 12
+    path = write_procedural_base_color(
+        tmp_path / "T_Marble_BaseColor.png",
+        kind="marble",
+        scale_cells=float(cells),
+        width_px=resolution,
+        height_px=resolution,
+        **palette_for_description(description, path="marble"),
+    )
+    image = bpy.data.images.load(str(path))
+    pixels = numpy.empty(resolution * resolution * 4, dtype=numpy.float32)
+    image.pixels.foreach_get(pixels)
+    luma = pixels.reshape((resolution, resolution, 4))[:, :, :3].mean(axis=2)
+    _cell, _edge, _grid, veins = pattern.marble_field(
+        resolution, cells, lines_per_cell=DEFAULT_LINES_PER_CELL
+    )
+    vein, stone = veins > 0.5, veins < 0.01
+    assert vein.mean() > 0.002, "the marble carries no veins"
+    difference = float(luma[vein].mean() - luma[stone].mean())
+    assert (difference < 0) == veins_darker, difference
