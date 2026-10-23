@@ -84,3 +84,45 @@ def test_a_cloth_carpet_is_streaked_and_a_plain_one_is_not(tmp_path):
     )
     assert cloth < 0.75
     assert plain > 0.85
+
+
+def _runs(mask_line):
+    """The lengths of the True runs along a line."""
+    padded = numpy.concatenate(([False], mask_line, [False]))
+    changes = numpy.flatnonzero(numpy.diff(padded.astype(int)))
+    return changes[1::2] - changes[::2]
+
+
+def test_a_board_s_end_is_as_sharp_as_its_sides():
+    """The distance to a board's end was a fraction of its LENGTH, so the
+    joint falloff smeared every end over forty pixels while the sides
+    stayed sharp."""
+    from golem_blender.pbr import pattern
+
+    _cell, edge, (_across, courses), _fibre = pattern.parquet_field(512, 6)
+    course = 512 // courses
+    soft = edge < 0.5
+    end_widths = _runs(soft[course // 2])
+    side_widths = _runs(soft[:, 7])
+    assert float(numpy.median(end_widths)) <= 1.5 * float(numpy.median(side_widths))
+
+
+def test_planks_are_long_boards_and_a_parquet_is_blocks():
+    """The plank truths run their boards four to eight times as long as
+    wide (Planks037A, Planks039, WoodFloor043); a parquet's blocks three."""
+    from golem_blender.pbr import pattern
+
+    def aspect(long_boards):
+        cell, _edge, _grid, _fibre = pattern.parquet_field(
+            512, 6, long_boards=long_boards
+        )
+        along = float(
+            numpy.median(_runs(numpy.diff(cell, axis=1, prepend=-1)[100] == 0))
+        )
+        down = float(
+            numpy.median(_runs(numpy.diff(cell, axis=0, prepend=-1)[:, 100] == 0))
+        )
+        return along / down
+
+    assert aspect(True) >= 6.0
+    assert 2.5 <= aspect(False) <= 4.5

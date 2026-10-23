@@ -468,6 +468,11 @@ PARQUET_BLOCKS_ACROSS = 10
 # boards across is about eighteen courses down - and the courses are
 # STAGGERED, so the joints do not line up.
 PARQUET_COURSES_PER_ACROSS = 3.0
+# A PLANK floor's boards are LONG: the truths' Planks037A and Planks039 run
+# nearly the image's width at a seventh of its height, and the "planks"
+# wood floors (WoodFloor040, 041, 043) four to eight times as long as they
+# are wide - where a parquet's blocks are three.
+PLANK_COURSES_PER_ACROSS = 6.0
 # The ROAD MARKINGS' own lattice; the width of the paint; and the
 # dash's own pattern.
 #
@@ -2657,6 +2662,7 @@ def parquet_field(
     cells: int,
     aspect: float = PARQUET_ASPECT,
     courses: int | None = None,
+    long_boards: bool = False,
 ):
     """A wood floor: long BLOCKS, staggered, each with its own tone.
 
@@ -2717,10 +2723,16 @@ def parquet_field(
     # And the truth's own WoodFloor051's boards are about a hundred
     # and eighty pixels wide and about fifty-five tall, so a floor of
     # six boards across is about eighteen courses down.
-    across_count = max(1, round(cells * aspect / max(1.0, PARQUET_COURSES_PER_ACROSS)))
+    per_across = PLANK_COURSES_PER_ACROSS if long_boards else PARQUET_COURSES_PER_ACROSS
+    # A plank floor's COURSES are its features: the truths' Planks037A,
+    # Planks039 and WoodFloor043 lay three to seven planks down at five and
+    # six features, and the parquet's own aspect doubled them to twelve.
+    if long_boards:
+        aspect = 1.0
+    across_count = max(1, round(cells * aspect / max(1.0, per_across)))
     course_pitch = _nearest_divisor(
         resolution,
-        max(1, round(resolution / max(1, across_count * PARQUET_COURSES_PER_ACROSS))),
+        max(1, round(resolution / max(1, across_count * per_across))),
     )
     courses = max(1, resolution // course_pitch)
     # The blocks ACROSS a course, and the floor's boards are WIDE.
@@ -2739,7 +2751,7 @@ def parquet_field(
     # of the seven parquets in the truth's own, because a row of a
     # parquet is SMOOTH along its length. So the floor came out as
     # one row of ten narrow blocks.
-    across = max(1, round(cells * aspect / max(1.0, PARQUET_COURSES_PER_ACROSS)))
+    across = max(1, round(cells * aspect / max(1.0, per_across)))
     block_pitch = _nearest_divisor(resolution, max(1, round(resolution / across)))
     across = max(1, resolution // block_pitch)
 
@@ -2803,10 +2815,13 @@ def parquet_field(
     staggered = sample_x * across + offset
     within_x = staggered - numpy.floor(staggered)
     within_y = sample_y * courses - row
-    distance = numpy.minimum(
-        numpy.minimum(within_x, 1.0 - within_x), numpy.minimum(within_y, 1.0 - within_y)
-    )
-    edge = numpy.clip(distance * min(across, courses), 0.0, 1.0)
+    # The distance to the nearest joint in ONE unit - a course's height - so
+    # a board's END is as sharp as its sides. Taken as a fraction of the
+    # board's LENGTH, a tenth of a long board was forty pixels, and the
+    # joint falloff smeared every board end over them (looked at).
+    to_end = numpy.minimum(within_x, 1.0 - within_x) * courses / across
+    to_side = numpy.minimum(within_y, 1.0 - within_y)
+    edge = numpy.clip(2.0 * numpy.minimum(to_end, to_side), 0.0, 1.0)
 
     # The block's own GRAIN, and it is STRAIGHT LINES running along
     # the block.

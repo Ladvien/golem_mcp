@@ -452,6 +452,17 @@ def is_checkered(description: str) -> bool:
     return bool(words & {"checkered", "chequered", "checkerboard", "gingham"})
 
 
+def has_long_boards(description: str) -> bool:
+    """Whether a wood floor is laid in long PLANKS or boards.
+
+    "plank" alone is not: the truth's own WoodFloor051 says it of boards
+    three and a half times as long as they are wide.
+    """
+    return bool(
+        set(description.lower().replace(",", " ").split()) & {"planks", "boards"}
+    )
+
+
 def carpet_is_streaked(description: str) -> bool:
     """Whether a carpet is a CLOTH, its fibre lying along the rows."""
     return bool(
@@ -475,6 +486,7 @@ __all__ = (
     "DEFAULT_PATTERN",
     "asphalt_is_worn",
     "carpet_is_streaked",
+    "has_long_boards",
     "is_checkered",
     "is_cracked",
     "is_mortared_wall",

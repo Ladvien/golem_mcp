@@ -546,6 +546,7 @@ def write_procedural_base_color(
     asphalt_worn: bool = False,
     cracked: bool = False,
     carpet_streaked: bool = False,
+    long_boards: bool = False,
     courses: int | None = None,
     joint_height_out: dict | None = None,
 ) -> Path:
@@ -699,11 +700,14 @@ def write_procedural_base_color(
         # A PARQUET is the brick's courses with a wood's palette and
         # a much wider block, and the wide set says so: the truth's
         # own parquet measures a row-to-column change ratio of 0.24.
+        # The parquet's OWN aspect: the palette's brick aspect (1.34, a
+        # brick's) is always given, and it replaced the parquet's.
         cell, edge, grid, fibre = pattern.parquet_field(
             resolution,
             cells,
-            aspect=brick_aspect if brick_aspect is not None else pattern.PARQUET_ASPECT,
+            aspect=pattern.PARQUET_ASPECT,
             courses=courses,
+            long_boards=long_boards,
         )
     elif kind == "herringbone":
         # A HERRINGBONE floor is BOARDS at ninety degrees to each
