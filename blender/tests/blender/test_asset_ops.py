@@ -78,8 +78,12 @@ def test_pack_piece_keeps_its_materials_and_its_pivot(empty_scene, tmp_path):
     report = import_glb_piece(str(glb_path), "Piece")
 
     assert sorted(report.material_names) == ["Blue", "Red"]
-    assert report.bounds_min_m == pytest.approx(exported_minimum, abs=POSITION_TOLERANCE_M)
-    assert report.bounds_max_m == pytest.approx(exported_maximum, abs=POSITION_TOLERANCE_M)
+    assert report.bounds_min_m == pytest.approx(
+        exported_minimum, abs=POSITION_TOLERANCE_M
+    )
+    assert report.bounds_max_m == pytest.approx(
+        exported_maximum, abs=POSITION_TOLERANCE_M
+    )
     assert report.extents_m == pytest.approx(
         [hi - lo for lo, hi in zip(exported_minimum, exported_maximum)],
         abs=POSITION_TOLERANCE_M,
@@ -126,7 +130,9 @@ def test_generated_asset_is_sized_grounded_centred_and_decimated(empty_scene, tm
         triangle_count=GENERATED_TRIANGLE_BUDGET,
     )
 
-    assert report.extents_m[2] == pytest.approx(GENERATED_HEIGHT_M, abs=POSITION_TOLERANCE_M)
+    assert report.extents_m[2] == pytest.approx(
+        GENERATED_HEIGHT_M, abs=POSITION_TOLERANCE_M
+    )
     assert report.bounds_min_m[2] == pytest.approx(0.0, abs=BASE_TOLERANCE_M)
     centre_x_m = (report.bounds_min_m[0] + report.bounds_max_m[0]) / 2
     centre_y_m = (report.bounds_min_m[1] + report.bounds_max_m[1]) / 2

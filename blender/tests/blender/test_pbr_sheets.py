@@ -351,3 +351,15 @@ def test_a_plaid_is_stripes_and_not_a_two_tone_chequer(tmp_path):
     skew = float((standard**3).mean())
     kurtosis = float((standard**4).mean())
     assert (skew * skew + 1.0) / kurtosis < 0.75
+
+
+def test_a_leaf_litter_tiles():
+    from golem_blender.pbr import pattern
+
+    _cell, mask, _grid, tone, _slow, _hue = pattern.leaves_field(RESOLUTION, 10)
+    for field in (mask, tone):
+        for axis in (0, 1):
+            rows = numpy.moveaxis(field, axis, 0)
+            seam = float(numpy.abs(rows[0] - rows[-1]).mean())
+            interior = numpy.abs(numpy.diff(rows, axis=0)).mean(axis=1)
+            assert seam <= float(interior.max())

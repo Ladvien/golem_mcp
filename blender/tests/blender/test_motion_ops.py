@@ -357,7 +357,10 @@ def test_a_moved_and_turned_armature_measures_the_same(empty_scene, tmp_path):
     The adapter composes `armature.matrix_world` into the roots' rest matrix, the
     inverse bind and the mesh's vertices; leaving any one out reads a sheared figure.
     """
-    from golem_blender.ops.motion import body_capsules_report, clip_self_intersection_report
+    from golem_blender.ops.motion import (
+        body_capsules_report,
+        clip_self_intersection_report,
+    )
 
     armature, action = _import_tube(tmp_path, "hand_through_torso")
     still = clip_self_intersection_report(armature, action)

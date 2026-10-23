@@ -139,8 +139,7 @@ def test_the_file_reopens_with_exactly_the_named_objects(empty_scene, tmp_path):
     assert held["triangles"] == report.triangle_counts
     assert held["material_slots"]["SaveCrate"] == ["SaveWood"]
     assert held["material_slots"]["SaveBarrel"] == [
-        slot.material.name if slot.material else None
-        for slot in barrel.material_slots
+        slot.material.name if slot.material else None for slot in barrel.material_slots
     ]
     saved_location_m, saved_rotation_rad = held["transforms"]["SaveCrate"]
     assert saved_location_m == pytest.approx(SAVED_LOCATION_M)
@@ -218,7 +217,9 @@ def test_a_triangle_mismatch_in_the_written_file_fails_and_deletes_it(
         counts = real_reread(destination, names)
         return {name: count - 1 for name, count in counts.items()}
 
-    monkeypatch.setattr(blend, "_reread_triangle_counts", reread_with_one_triangle_missing)
+    monkeypatch.setattr(
+        blend, "_reread_triangle_counts", reread_with_one_triangle_missing
+    )
     with pytest.raises(BlendSaveError, match="triangles"):
         save_blend([crate.name], tmp_path / "pieces.blend")
     assert not (tmp_path / "pieces.blend").exists()

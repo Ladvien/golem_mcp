@@ -577,6 +577,7 @@ def write_procedural_base_color(
     graph: dict | None = None,
     checkered: bool = False,
     plaid: bool = False,
+    leaf_litter: bool = False,
     mortared: bool = False,
     asphalt_worn: bool = False,
     cracked: bool = False,
@@ -686,12 +687,17 @@ def write_procedural_base_color(
         #
         # The joint is the MATRIX between the stones, and the stones'
         # own tone is the matrix's mottle.
-        cell, edge, grid, fibre, slow, stone_hue = pattern.scattered_field(
-            resolution,
-            cells,
-            lines_per_cell=lines_per_cell,
-            density=stone_density,
-        )
+        if leaf_litter:
+            cell, edge, grid, fibre, slow, stone_hue = pattern.leaves_field(
+                resolution, cells
+            )
+        else:
+            cell, edge, grid, fibre, slow, stone_hue = pattern.scattered_field(
+                resolution,
+                cells,
+                lines_per_cell=lines_per_cell,
+                density=stone_density,
+            )
     elif kind == "voronoi":
         # The stones are FRACTAL: the base octave is the cell count
         # the truth asks for, and each octave above it adds a finer

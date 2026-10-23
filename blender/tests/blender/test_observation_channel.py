@@ -44,7 +44,10 @@ def test_stdout_is_captured_even_when_the_chunk_raises(empty_scene):
 
 
 def test_stdout_window_is_bounded_and_keeps_the_tail(empty_scene):
-    from golem_blender.run.executor import MAXIMUM_STDOUT_CHARACTERS, run_source_in_process
+    from golem_blender.run.executor import (
+        MAXIMUM_STDOUT_CHARACTERS,
+        run_source_in_process,
+    )
 
     result = run_source_in_process(
         f"print('x' * {MAXIMUM_STDOUT_CHARACTERS * 2})\nprint('CONCLUSION')"

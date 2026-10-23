@@ -19,7 +19,12 @@ def empty_scene():
 
 
 def _bored_box():
-    from golem_blender.ops import add_box, add_cylinder, boolean_difference, link_into_scene
+    from golem_blender.ops import (
+        add_box,
+        add_cylinder,
+        boolean_difference,
+        link_into_scene,
+    )
 
     box_object = add_box("BoredBox", BOX_SIZE_M, BOX_SIZE_M, BOX_SIZE_M)
     link_into_scene(box_object)

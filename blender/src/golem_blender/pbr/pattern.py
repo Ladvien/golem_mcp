@@ -4065,6 +4065,99 @@ def wallpaper_field(
     return cell, edge, (lattice, lattice), motif
 
 
+# A LEAF LITTER's leaves: their sizes' periods as multiples of the
+# surface's own feature count (the truth's own ScatteredLeaves009 reads 20
+# features - its clumps - over leaves about 17 pixels long), how many size
+# octaves, a leaf's half-length in cells, its width over its length, the
+# midrib's width and darkness, and the rim's light.
+LEAF_PERIOD_FACTOR = 3.0
+LEAF_OCTAVES = 3
+LEAF_LENGTH = (0.55, 0.9)
+LEAF_WIDTH = (0.32, 0.5)
+LEAF_MIDRIB = 0.06
+LEAF_MIDRIB_DARK = 0.25
+LEAF_RIM_LIGHT = 0.15
+
+
+def leaves_field(resolution: int, cells: int):
+    """A ground of fallen LEAVES: tapered leaves with a midrib, of several
+    sizes, lying over one another on a soil.
+
+    Returns what scattered_field returns - the cell (zeros), the leaves'
+    mask, the grid, each pixel's leaf TONE, the soil's slow drift and each
+    leaf's HUE offset - so the scatter's writer draws the leaves on their
+    soil. A leaf is a lens: its half-width tapers as one less the square of
+    the place along it, and its midrib is a dark line down the middle. Each
+    size is a jittered grid read over the 3 x 3 cells around a pixel, every
+    grid wraps, and the ground tiles. The truth's own ScatteredLeaves009
+    came out as orange discs - stones.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    axis = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+    mask = numpy.zeros((resolution, resolution), dtype=numpy.float64)
+    tone = numpy.full((resolution, resolution), 0.5, dtype=numpy.float64)
+    hue = numpy.zeros((resolution, resolution), dtype=numpy.float64)
+    low_length, high_length = LEAF_LENGTH
+    low_width, high_width = LEAF_WIDTH
+    for octave in reversed(range(LEAF_OCTAVES)):
+        period = max(2, round(cells * LEAF_PERIOD_FACTOR * 2**octave))
+        grid_x = sample_x * period
+        grid_y = sample_y * period
+        cell_x = numpy.floor(grid_x).astype(numpy.int64)
+        cell_y = numpy.floor(grid_y).astype(numpy.int64)
+        lattice = numpy.arange(period)
+        table_x, table_y = numpy.meshgrid(lattice, lattice, indexing="ij")
+        table = [
+            noise._hash01(table_x, table_y, period, period, 211 + 41 * octave + index)
+            for index in range(7)
+        ]
+        # A pixel is soft-edged over one pixel of its own grid.
+        soft = period / resolution
+        for step_x in (-1, 0, 1):
+            for step_y in (-1, 0, 1):
+                near_x = (cell_x + step_x) % period
+                near_y = (cell_y + step_y) % period
+                draws = [entry[near_x, near_y] for entry in table]
+                length = low_length + (high_length - low_length) * draws[0]
+                width = length * (low_width + (high_width - low_width) * draws[1])
+                angle = numpy.pi * draws[2]
+                across = grid_x - (cell_x + step_x + draws[3])
+                down = grid_y - (cell_y + step_y + draws[4])
+                cosine, sine = numpy.cos(angle), numpy.sin(angle)
+                along = (across * cosine + down * sine) / length
+                athwart = -across * sine + down * cosine
+                taper = width * numpy.clip(1.0 - along * along, 0.0, 1.0)
+                inside = numpy.clip((taper - numpy.abs(athwart)) / soft, 0.0, 1.0)
+                rim = numpy.clip(
+                    1.0 - numpy.abs(athwart) / numpy.maximum(taper, 1e-6), 0.0, 1.0
+                )
+                midrib = numpy.exp(-((athwart / (LEAF_MIDRIB * width + 1e-6)) ** 2)) * (
+                    numpy.abs(along) < 0.95
+                )
+                leaf_tone = draws[5] + LEAF_RIM_LIGHT * rim - LEAF_MIDRIB_DARK * midrib
+                tone = tone * (1.0 - inside) + leaf_tone * inside
+                hue = hue * (1.0 - inside) + (2.0 * draws[6] - 1.0) * inside
+                mask = numpy.maximum(mask, inside)
+    # The soil's slow drift, as the scatter's: a Gaussian grain.
+    lattice = max(2, round(cells * SCATTER_SLOW_CELL_FRACTION))
+    drift = noise.gaussian_grain(
+        resolution, 1024.0 / (lattice * SLOW_FEATURE_SIGMAS), seed=4
+    )
+    slow = 0.5 + SCATTER_DRIFT_WEIGHT * (_unit(drift) - 0.5)
+    return (
+        numpy.zeros((resolution, resolution), dtype=numpy.int32),
+        mask,
+        (cells, cells),
+        numpy.clip(tone, 0.0, 1.0),
+        slow,
+        hue,
+    )
+
+
 def scattered_field(
     resolution: int,
     cells: int,

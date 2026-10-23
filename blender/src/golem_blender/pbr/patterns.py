@@ -199,6 +199,7 @@ FAN_WORDS = frozenset(("arch", "arches", "arched", "fan", "fanned", "segmental")
 KNIT_WORDS = frozenset(("knit", "knitted", "knitwear", "sweater", "jumper", "cardigan"))
 KNIT_EXCLUDED_WORDS = frozenset(("carpet", "rug", "felt", "felted"))
 PLAID_WORDS = frozenset(("plaid", "tartan"))
+LEAF_WORDS = frozenset(("leaves", "leaf", "foliage", "litter"))
 PAVING_WORDS = frozenset(
     (
         "cobble",
@@ -474,6 +475,12 @@ def is_pebbled(description: str) -> bool:
     return any(word in words for word in _PEBBLED_WORDS)
 
 
+def is_leaf_litter(description: str) -> bool:
+    """Whether a loose ground's pieces are fallen LEAVES and not stones."""
+    words = set(description.lower().replace(",", " ").split())
+    return bool(words & LEAF_WORDS)
+
+
 def is_plaid(description: str) -> bool:
     """Whether a woven cloth is a PLAID: stripes crossing on the warp and the weft."""
     words = set(description.lower().replace(",", " ").split())
@@ -568,6 +575,7 @@ __all__ = (
     "has_long_boards",
     "is_checkered",
     "is_cracked",
+    "is_leaf_litter",
     "is_mortared_wall",
     "is_pebbled",
     "is_plaid",

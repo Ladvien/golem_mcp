@@ -62,8 +62,21 @@ DEFAULT_HEIGHT = (0.0, -0.3)
 # its size).
 RELIEF_FEATURE_SIGMAS = 3.3
 RELIEF_BROAD_SHARE = 0.7
-# How dark the deepest cavity is in the AO channel.
-AO_STRENGTH = 0.6
+# A set's AMBIENT OCCLUSION: its mean and its spread by kind, the medians
+# of the truths that ship an AO (kinds with three or more), and the cavity
+# radius it is read from.
+KIND_AO = {
+    "brick": (0.857, 0.099),
+    "scattered": (0.858, 0.096),
+    "flat": (0.930, 0.039),
+    "asphalt": (0.814, 0.056),
+    "woven": (0.789, 0.050),
+    "parquet": (0.983, 0.030),
+    "rock": (0.914, 0.073),
+    "roof": (0.810, 0.117),
+}
+DEFAULT_AO = (0.882, 0.082)
+AO_CAVITY_PX = 6
 # A kind's SURFACE, measured on the truths' own maps across the four
 # sets (159 materials, the median of each kind): how far its normals tilt
 # from flat (mean degrees), how much its roughness varies (standard
@@ -320,6 +333,31 @@ def _material_maps(
     )
 
 
+def _ambient_occlusion(height, kind: str):
+    """The occlusion: the height's cavities, as dark and as varied as the
+    kind's truths' own AO maps.
+
+    It was one less 0.6 of the cavity mask, so every set's AO spread was
+    about 0.14 whatever it was - the truths' run from 0.030 on a parquet to
+    0.117 on a roof (median 0.082) - and its mean 0.91 where an asphalt's
+    is 0.81 and a parquet's 0.98: the AO's spread error read 0.80. So the
+    cavities are standardised and placed at the kind's measured mean and
+    spread (kinds with three or more truths that ship an AO), deeper
+    cavities darker.
+    """
+    import numpy
+
+    from golem_blender.pbr import layers
+
+    mean, spread = KIND_AO.get(kind, DEFAULT_AO)
+    cavity = layers.cavity_mask(height, radius_px=AO_CAVITY_PX)
+    deviation = float(cavity.std())
+    if deviation < 1e-9:
+        return numpy.full_like(height, mean)
+    standard = (cavity - float(cavity.mean())) / deviation
+    return numpy.clip(mean - spread * standard, 0.0, 1.0)
+
+
 def _relief_height(luma, kind: str, scale_cells: float, resolution: int):
     """A non-jointed kind's height: its own relief, as related to its colour
     and as skewed as the kind's truths are, 0 the lowest.
@@ -567,7 +605,7 @@ def write_layered_texture_set(
         shutil.rmtree(scratch_dir, ignore_errors=True)
 
     height = layers._normalised(composed.height)
-    ambient = 1.0 - AO_STRENGTH * layers.cavity_mask(height, radius_px=6)
+    ambient = _ambient_occlusion(height, kinds[0] if kinds else "")
     orm = numpy.stack((ambient, composed.roughness, composed.metallic), axis=2)
     written = {
         "base_color": _write_image(

@@ -300,3 +300,29 @@ def test_an_asphalt_s_relief_skews_low(tmp_path):
     height, _luma = _height_and_luma(tmp_path, "asphalt, gray, road")
     standard = (height - height.mean()) / height.std()
     assert float((standard**3).mean()) < -0.8
+
+
+def test_a_set_s_occlusion_is_as_dark_and_as_varied_as_its_kind_s(tmp_path):
+    """The AO was one less 0.6 of the cavity mask, so every set's AO read a
+    spread of about 0.14 and a mean of 0.91, where a parquet's truths read
+    0.030 and 0.983 and an asphalt's 0.056 and 0.814."""
+    floor = write_layered_texture_set(
+        tmp_path / "floor",
+        "Set",
+        {"description": "floor, parquet, planks, wood"},
+        [],
+        8.0,
+        RESOLUTION,
+    )
+    road = write_layered_texture_set(
+        tmp_path / "road",
+        "Set",
+        {"description": "asphalt, gray, road"},
+        [],
+        8.0,
+        RESOLUTION,
+    )
+    floor_ao = _pixels(floor["paths"]["orm"])[:, :, 0]
+    road_ao = _pixels(road["paths"]["orm"])[:, :, 0]
+    assert float(floor_ao.std()) < 0.06
+    assert float(road_ao.mean()) < float(floor_ao.mean()) - 0.1

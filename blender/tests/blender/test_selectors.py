@@ -157,7 +157,11 @@ def test_vertex_selectors_resolve_each_kind(box_with_top_marked):
 
 def test_weights_take_a_selector_not_indices(box_with_top_marked):
     """The one existing subset op switches from indices to a selector (OT-14)."""
-    from golem_blender.ops import VertexSelector, assign_vertex_group_weights, weight_report
+    from golem_blender.ops import (
+        VertexSelector,
+        assign_vertex_group_weights,
+        weight_report,
+    )
 
     assign_vertex_group_weights(
         box_with_top_marked,

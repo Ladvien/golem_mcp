@@ -929,7 +929,10 @@ def test_a_shallow_crossing_fails_only_on_the_penetration_depth(empty_scene):
     Deleting the depth comparison in `_measure_relations` leaves the
     failure list empty and reddens this test.
     """
-    from golem_blender.analyze.pair_checks import CONTACT_DEPTH_TOLERANCE_M, analyze_pair
+    from golem_blender.analyze.pair_checks import (
+        CONTACT_DEPTH_TOLERANCE_M,
+        analyze_pair,
+    )
     from golem_blender.evaluate.acceptance import evaluate_brief
 
     assert PLATE_THICKNESS_M < CONTACT_DEPTH_TOLERANCE_M, (

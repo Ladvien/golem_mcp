@@ -213,7 +213,10 @@ def test_a_failed_unwrap_leaves_the_object_out_of_edit_mode(empty_scene):
 def test_a_flat_colour_replaces_a_texture_left_on_a_reused_material(empty_scene):
     # Old: the checker stayed linked to Base Color, so the requested flat
     # colour was ignored by every renderer but Workbench.
-    from golem_blender.ops.material_nodes import assign_procedural_material, material_report
+    from golem_blender.ops.material_nodes import (
+        assign_procedural_material,
+        material_report,
+    )
     from golem_blender.ops.materials import assign_material
 
     box = _linked_box("Box")

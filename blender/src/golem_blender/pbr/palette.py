@@ -29,6 +29,7 @@ from golem_blender.pbr.patterns import (
     has_long_boards,
     is_checkered,
     is_cracked,
+    is_leaf_litter,
     is_mortared_wall,
     is_plaid,
     stone_density_for_description,
@@ -4006,6 +4007,7 @@ def palette_for_description(
         "carpet_streaked": carpet_is_streaked(description),
         "long_boards": has_long_boards(description),
         "stone_density": stone_density_for_description(description),
+        "leaf_litter": is_leaf_litter(description),
     }
 
 
