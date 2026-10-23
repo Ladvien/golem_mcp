@@ -198,7 +198,9 @@ def export_texture_set(
     The three maps are the ones the set is made of — the base colour, the
     ORM and the normal map. A map that does not exist is reported in the
     result rather than silently skipped, so a half-exported set is
-    visible.
+    visible. A layered set also has a HEIGHT map; it is copied when it is
+    there and not reported when it is not, because a generated set never
+    has one.
 
     `extras` are files copied alongside the maps: the environment map the
     set was lit with, the reference photos it was authored from. A set
@@ -224,12 +226,14 @@ def export_texture_set(
         "orm": pbr_paths.orm_file_name(texture_name),
         "normal": pbr_paths.normal_file_name(texture_name),
     }
+    optional = {"height": pbr_paths.height_file_name(texture_name)}
     copied: dict[str, str] = {}
     missing: list[str] = []
-    for key, file_name in wanted.items():
+    for key, file_name in {**wanted, **optional}.items():
         source = texture_directory / file_name
         if not source.is_file():
-            missing.append(file_name)
+            if key not in optional:
+                missing.append(file_name)
             continue
         target = destination / file_name
         shutil.copy2(source, target)
@@ -260,7 +264,7 @@ def export_texture_set(
         destination,
         set(copied.values()),
         set(extras_copied.values()),
-        set(wanted.values()),
+        set(wanted.values()) | set(optional.values()),
         texture_name,
     )
 

@@ -498,6 +498,15 @@ def write_layered_texture_set(
             resolution,
             _normal_map(height, normal_deg),
         ),
+        # The height the normal and the AO were made from, 0 the lowest
+        # and 1 the highest - a parallax or a displacement reads it.
+        "height": _write_image(
+            directory / paths.height_file_name(texture_name),
+            resolution,
+            resolution,
+            resolution,
+            height[:, :, None],
+        ),
     }
     return {
         "paths": {key: str(value) for key, value in written.items()},

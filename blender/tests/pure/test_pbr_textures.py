@@ -189,6 +189,27 @@ def test_exporting_reports_a_map_that_is_missing_instead_of_hiding_it(tmp_path):
     assert set(report["files"]) == {"base_color"}
 
 
+def test_exporting_a_layered_set_carries_its_height_map(tmp_path):
+    """A layered set writes a height beside its three maps; an export
+    that left it behind would ship a set with no displacement."""
+    texture_directory = tmp_path / "textures"
+    texture_directory.mkdir()
+    for file_name in (
+        "T_Brick_BaseColor.png",
+        "T_Brick_ORM.png",
+        "T_Brick_Normal.png",
+        "T_Brick_Height.png",
+    ):
+        (texture_directory / file_name).write_bytes(b"png-bytes")
+
+    report = pbr_generate.export_texture_set(
+        "Brick", texture_directory, tmp_path / "export"
+    )
+
+    assert (tmp_path / "export" / "T_Brick_Height.png").is_file()
+    assert report["missing"] == []
+
+
 def test_the_generated_png_is_found_through_the_mac_mount(tmp_path, monkeypatch):
     """A path big reports must be TRANSLATED before it can be opened.
 

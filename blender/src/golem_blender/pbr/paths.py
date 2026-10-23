@@ -67,6 +67,10 @@ SET_RESOLUTION_PX = 2048
 BASE_COLOR_SUFFIX = "BaseColor"
 ORM_SUFFIX = "ORM"
 NORMAL_SUFFIX = "Normal"
+# A layered set also writes its HEIGHT: the truths ship a displacement
+# beside their colour and normal (ambientCG's Displacement), a parallax or
+# a displacement needs it, and the normal says only its slope.
+HEIGHT_SUFFIX = "Height"
 FILE_PREFIX = "T_"
 
 
@@ -96,6 +100,11 @@ def orm_file_name(texture_name: str) -> str:
 def normal_file_name(texture_name: str) -> str:
     """The normal-map file name for a texture set: ``T_<Name>_Normal.png``."""
     return f"{FILE_PREFIX}{texture_name}_{NORMAL_SUFFIX}.png"
+
+
+def height_file_name(texture_name: str) -> str:
+    """The height-map file name for a texture set: ``T_<Name>_Height.png``."""
+    return f"{FILE_PREFIX}{texture_name}_{HEIGHT_SUFFIX}.png"
 
 
 # How large a seam may be, relative to the texture's own features,
@@ -279,6 +288,7 @@ def tile_seam_ratio(image_path: Path) -> float:
 __all__ = (
     "BASE_COLOR_SUFFIX",
     "FILE_PREFIX",
+    "HEIGHT_SUFFIX",
     "NORMAL_SUFFIX",
     "ORM_CHANNEL_PACKING",
     "ORM_SUFFIX",
@@ -287,6 +297,7 @@ __all__ = (
     "TILE_SEAM_LIMIT",
     "base_color_file_name",
     "big_path",
+    "height_file_name",
     "normal_file_name",
     "orm_file_name",
     "texture_root",

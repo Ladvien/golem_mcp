@@ -9,7 +9,12 @@ metal - and compares each channel with the truth's:
 
 - roughness: its mean and its spread;
 - metallic: its mean;
-- ambient occlusion: its mean, where the truth ships one;
+- ambient occlusion: its mean and its spread, where the truth ships one;
+- height: how it follows the albedo (the correlation of the height with
+  the luma - a brick's joint is dark AND low) and its SKEW (a wall's flat
+  faces cut by narrow joints skew low; pebbles on a flat skew high), where
+  the truth ships a displacement. Two layouts again, so the shape of the
+  height and not its pixels;
 - normal: its STRENGTH, the mean angle of the normals from flat in
   degrees (the two surfaces are different layouts, so a per-pixel angle
   between them says nothing; how much relief each carries does).
@@ -83,6 +88,24 @@ def _normal_strength(rgb) -> float:
     return float(numpy.degrees(numpy.arccos(z)).mean())
 
 
+def _luma(rgb):
+    return rgb[:, :, 0] * 0.2126 + rgb[:, :, 1] * 0.7152 + rgb[:, :, 2] * 0.0722
+
+
+def _correlation(a, b) -> float:
+    a = a - a.mean()
+    b = b - b.mean()
+    scale = float(numpy.sqrt((a * a).sum() * (b * b).sum()))
+    return float((a * b).sum() / scale) if scale > 1e-12 else 0.0
+
+
+def _skew(field) -> float:
+    deviation = float(field.std())
+    if deviation < 1e-9:
+        return 0.0
+    return float((((field - field.mean()) / deviation) ** 3).mean())
+
+
 def _log_ratio(ours: float, truth: float, floor: float) -> float:
     return abs(math.log(max(ours, floor) / max(truth, floor)))
 
@@ -124,7 +147,27 @@ def main() -> None:
             float(_channels(metal_path)[:, :, 0].mean()) if metal_path else None
         )
         ao_path = _truth_map(asset_dir, "ambient_occlusion")
-        truth_ao = float(_channels(ao_path)[:, :, 0].mean()) if ao_path else None
+        truth_ao_map = _channels(ao_path)[:, :, 0] if ao_path else None
+        truth_ao = float(truth_ao_map.mean()) if ao_path else None
+        height_path = _truth_map(asset_dir, "displacement")
+        ours_height = _channels(pathlib.Path(written["paths"]["height"]))[:, :, 0]
+        ours_luma = _luma(_channels(pathlib.Path(written["paths"]["base_color"])))
+        if height_path is not None:
+            truth_height = _channels(height_path)[:, :, 0]
+            truth_luma = _luma(_channels(_truth_map(asset_dir, "albedo")))
+            if truth_luma.shape != truth_height.shape:
+                # Both are square powers of two; take every n-th pixel of
+                # the larger so the correlation pairs the same places.
+                step = truth_luma.shape[0] // truth_height.shape[0]
+                if step >= 1:
+                    truth_luma = truth_luma[::step, ::step]
+                else:
+                    step = truth_height.shape[0] // truth_luma.shape[0]
+                    truth_height = truth_height[::step, ::step]
+            truth_height_luma = _correlation(truth_height, truth_luma)
+            truth_height_skew = _skew(truth_height)
+        else:
+            truth_height_luma = truth_height_skew = None
 
         row = {
             "asset_id": asset_id,
@@ -133,6 +176,15 @@ def main() -> None:
             "roughness_spread": [float(orm[:, :, 1].std()), float(truth_rough.std())],
             "metallic_mean": [float(orm[:, :, 2].mean()), truth_metal],
             "ao_mean": [float(orm[:, :, 0].mean()), truth_ao],
+            "ao_spread": [
+                float(orm[:, :, 0].std()),
+                None if truth_ao_map is None else float(truth_ao_map.std()),
+            ],
+            "height_luma_correlation": [
+                _correlation(ours_height, ours_luma),
+                truth_height_luma,
+            ],
+            "height_skew": [_skew(ours_height), truth_height_skew],
             "normal_strength_deg": [
                 _normal_strength(ours_normal),
                 _normal_strength(_channels(normal_path)),
@@ -164,6 +216,23 @@ def main() -> None:
     normal = sum(
         _log_ratio(r["normal_strength_deg"][0], r["normal_strength_deg"][1], 0.5)
         for r in results
+    )
+    aos = [r for r in results if r["ao_mean"][1] is not None]
+    ao_mean = sum(abs(r["ao_mean"][0] - r["ao_mean"][1]) for r in aos)
+    ao_spread = sum(
+        _log_ratio(r["ao_spread"][0], r["ao_spread"][1], SPREAD_FLOOR) for r in aos
+    )
+    heights = [r for r in results if r["height_skew"][1] is not None]
+    height_luma = sum(
+        abs(r["height_luma_correlation"][0] - r["height_luma_correlation"][1])
+        for r in heights
+    )
+    height_skew = sum(abs(r["height_skew"][0] - r["height_skew"][1]) for r in heights)
+    print(
+        f"SCORE over {len(aos)} with an AO: ao mean |error| {ao_mean / max(1, len(aos)):.3f}  "
+        f"ao spread mean |log| {ao_spread / max(1, len(aos)):.3f}; over {len(heights)} with a "
+        f"height: height-luma correlation |error| {height_luma / max(1, len(heights)):.3f}  "
+        f"height skew |error| {height_skew / max(1, len(heights)):.3f}"
     )
     print(
         f"SCORE over {count}: roughness mean |error| {rough_mean / count:.3f}  "

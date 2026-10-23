@@ -70,7 +70,8 @@ def register(mcp: FastMCP) -> None:
         """Write a base material with others laid over it as one PBR set.
 
         Writes T_<Name>_BaseColor.png, T_<Name>_ORM.png (AO, roughness,
-        metallic) and T_<Name>_Normal.png, and returns the base colour.
+        metallic), T_<Name>_Normal.png and T_<Name>_Height.png (0 lowest,
+        1 highest), and returns the base colour.
         Every material - the base and each layer - is made from its own
         description through the procedural lane, so each chooses its own
         pattern, colours, roughness and metal. The set tiles.

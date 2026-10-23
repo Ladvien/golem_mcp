@@ -262,3 +262,15 @@ def test_a_smooth_plastic_is_far_flatter_than_a_plaster(tmp_path):
     _orm, plaster = _set_channels(tmp_path / "plaster", "plaster, rough, white, wall")
     assert float(plastic.mean()) < 1.5
     assert float(plaster.mean()) > 3.0
+
+
+def test_a_brick_wall_s_height_map_sets_its_joints_low(tmp_path):
+    """The set writes the height its normal was made from, 0 the lowest: a
+    wall is mostly flat faces with narrow joints sunk into them, so its
+    height skews LOW - inverted, the joints would stand proud."""
+    written = write_layered_texture_set(
+        tmp_path, "Set", {"description": WALL}, [], 8.0, RESOLUTION
+    )
+    height = _pixels(written["paths"]["height"])[:, :, 0]
+    standard = (height - height.mean()) / height.std()
+    assert float((standard**3).mean()) < -0.5
