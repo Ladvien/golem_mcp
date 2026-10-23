@@ -382,6 +382,12 @@ DEFAULT_CELL_FRACTION = 1.0
 # thirds as wide as it is tall. The three-to-one default put 48
 # bricks across where the truth shows 6.
 BRICK_ASPECT = 1.34
+# How far an ASHLAR course's vertical joint moves off its lattice place,
+# in bricks: blocks then run from 0.5 to 1.5 bricks long. At 0.35 the
+# shortest (0.3) were all joint under the mortar's soft falloff and read
+# as strips of mortar (looked at).
+ASHLAR_JOINT_JITTER = 0.25
+ASHLAR_SEED = 29
 # A BRICK's own FACE: the lattice of its grain, how far the warp
 # displaces it, the grain's own frequency, and the finer tooth.
 #
@@ -1443,6 +1449,7 @@ def brick_field(
     cells: int,
     aspect: float = BRICK_ASPECT,
     staggered: bool = True,
+    ashlar: bool = False,
 ):
     """Courses of bricks: the cell each sample is in, and the distance to
     its mortar.
@@ -1583,6 +1590,38 @@ def brick_field(
     )
     within_brick = across_with_offset % 1.0
     within_course = numpy.tile(within_course.reshape(-1, 1), (1, resolution))
+    course_down = numpy.tile(course_index.reshape(-1, 1), (1, resolution))
+    if ashlar:
+        # An ASHLAR course is blocks of UNEQUAL length: the truths' own
+        # natural-stone walls (Bricks106A-113A) and their random rubble
+        # wall (Bricks089) lay long and short blocks side by side, and a
+        # regular course drew them all one length.
+        #
+        # Each vertical joint moves off its lattice place by a hash of its
+        # (joint, course) index taken MODULO the counts, so a course holds
+        # the same number of blocks, their lengths run from 1 - 2J to
+        # 1 + 2J bricks, and the wall still wraps exactly.
+        from golem_blender.pbr.noise import _hash01
+
+        course_of_joint = course_down % courses
+
+        def joint_at(index):
+            jitter = _hash01(index, course_of_joint, row_width, courses, ASHLAR_SEED)
+            return index + ASHLAR_JOINT_JITTER * (2.0 * jitter - 1.0)
+
+        # The ABSOLUTE place along the course, in bricks: the within-brick
+        # place above has lost which brick it is in.
+        place = numpy.tile(horizontal.reshape(1, -1), (resolution, 1)) + offset_down
+        nearest = numpy.floor(place).astype(numpy.int64)
+        # A place is in the block whose LEFT joint is the last one at or
+        # before it - and a joint moves up to J either way, so that is the
+        # block before, this one or the one after.
+        left_index = numpy.where(place < joint_at(nearest), nearest - 1, nearest)
+        left_index = numpy.where(place >= joint_at(nearest + 1), nearest + 1, left_index)
+        left = joint_at(left_index)
+        right = joint_at(left_index + 1)
+        to_brick = numpy.minimum(place - left, right - place)
+        within_brick = (place - left) / numpy.maximum(right - left, 1e-6)
 
     # The distance to the nearest mortar line, in brick units.
     #
@@ -1592,7 +1631,8 @@ def brick_field(
     # down. The earlier version had them the other way round, so the
     # brick's own width was measured down the image and the pattern
     # came out with twice as many bricks as it should.
-    to_brick = numpy.minimum(within_brick, 1.0 - within_brick)
+    if not ashlar:
+        to_brick = numpy.minimum(within_brick, 1.0 - within_brick)
     to_course = numpy.minimum(within_course, 1.0 - within_course)
     edge = numpy.minimum(to_course, to_brick)
 
@@ -1607,12 +1647,14 @@ def brick_field(
     # cell, and the whole course one colour. Measured: one row of
     # the brick had a single distinct colour, and the wall read as
     # soft blue-white blobs with no brick in them.
-    course_down = numpy.tile(course_index.reshape(-1, 1), (1, resolution))
     # The brick's index within its course, with the course's offset
     # applied: the position across the image plus the offset, taken
     # to the brick it lands in.
     across_image = numpy.tile(horizontal.reshape(1, -1), (resolution, 1))
     shifted = numpy.floor(across_image + offset_down).astype(numpy.int32)
+    if ashlar:
+        # The ashlar block is the one between its own two joints.
+        shifted = left_index.astype(numpy.int32)
     cell = course_down * row_width + (shifted % row_width)
     # The brick's own FACE, and it is a WORKED surface.
     #

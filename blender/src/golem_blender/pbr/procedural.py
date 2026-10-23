@@ -203,6 +203,8 @@ SCATTER_JOINT_EDGE = 0.5
 # ground's matrix between its stones is a sixth of the surface, and a
 # concrete's or a tile's joint is a hairline.
 JOINT_SOLID_FRACTION = 0.12
+# How much wider a MORTARED wall's joint is than a solid surface's.
+MORTARED_JOINT_FACTOR = 2.0
 # How much the noise varies a stone within itself, as a fraction of
 # the stone's colour.
 DEFAULT_VARIATION = 0.15
@@ -542,6 +544,7 @@ def write_procedural_base_color(
     drift_strength: float = 0.0,
     brick_aspect: float | None = None,
     brick_staggered: bool = True,
+    brick_ashlar: bool = False,
     metal_horizontal: bool = False,
     metal_banded: bool = True,
     metal_brushed: bool = False,
@@ -549,6 +552,7 @@ def write_procedural_base_color(
     stone_tone_fraction: float = 1.0,
     graph: dict | None = None,
     checkered: bool = False,
+    mortared: bool = False,
     courses: int | None = None,
     joint_height_out: dict | None = None,
 ) -> Path:
@@ -696,6 +700,7 @@ def write_procedural_base_color(
             else max(1, round(cells / pattern.TILE_FEATURES_PER_TILE)),
             aspect=brick_aspect if brick_aspect is not None else pattern.BRICK_ASPECT,
             staggered=brick_staggered,
+            ashlar=brick_ashlar,
         )
     elif kind == "parquet":
         # A PARQUET is the brick's courses with a wood's palette and
@@ -1146,6 +1151,11 @@ def write_procedural_base_color(
         width = mortar_width
     else:
         width = mortar_width * JOINT_SOLID_FRACTION
+    if mortared:
+        # A MORTARED wall's joint is a filled band wider than a brick's:
+        # the truth's own random stone wall's joints are a fifth of its
+        # surface.
+        width *= MORTARED_JOINT_FACTOR
     if kind == "scattered":
         # A SCATTER's joint is the MATRIX between its stones, and the
         # matrix is WIDE: the truth's own ground is a gravel with a

@@ -48,5 +48,16 @@ family covers.
 | B2 one normal strength | NORMAL_STRENGTH 6 for every surface | the normal scaled to its kind's measured tilt; tiles, smooth finishes and pressed metal refined; mean \|log\| 1.09-1.43 -> 0.27-0.51 | (channels) |
 | bricks as pyramids | the joint distance peaked each brick | flat-topped pieces rising over a bevel (looked at) | (channels) |
 | polished stones rough, brushed metal glossy | "stone" outranked "polished"; brushed 0.12 | marble/onyx/travertine fitted (0.078/0.044/0.037), brushed 0.505; roughness mean error 0.112 -> 0.095 | (channels) |
+| A7/A11/A4 routes | "brick", "wood" and "patterned" were read before "debris", "planks" and "cobblestone" | rubble -> scattered, planks -> boards, cobblestone -> set stones, an irregular stone floor -> crazy paving (looked at: PavingStones150 no longer flat grey) | (routes) |
+| A3/A4 walls | every course one block length; a random stone wall's mortar a black crack | ashlar courses (joints moved by a wrapped hash, blocks 0.5-1.5 long, seam = one step) for natural/irregular stone walls; a random wall's mortar pale and twice as wide (looked at). Open: the blocks' faces are still flat tones, not textured stone | (routes) |
 
 ## Still open
+
+## Four-set runs (round 10)
+
+| run | albedo brightness | contrast | scale | colour | roughness mean err | spread \|log\| | normal \|log\| |
+|---|---|---|---|---|---|---|---|
+| round 9 end (1be82b2) | 0.166 | 0.234 | 0.325 | 0.1313 | 0.112 | ~2.1 | ~1.2 |
+| channels (5e27ac9) | 0.166 | 0.234 | 0.325 | 0.1313 | 0.090 | 0.407 | 0.461 |
+| routes + ashlar | 0.166 | 0.221 | 0.325 | 0.1312 | 0.090 | 0.404 | 0.449 |
+

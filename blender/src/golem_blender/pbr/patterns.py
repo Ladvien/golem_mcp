@@ -157,7 +157,37 @@ _SPECIFIC_KINDS = (
     ("textile", "woven"),
     ("cloth", "woven"),
     ("markings", "markings"),
+    # A PLANK floor is boards, whatever wood it is: the truth's own
+    # Planks037A is "floor, planks, wood", and "wood" - a structure -
+    # took it as one plain grain with no boards in it.
+    ("planks", "parquet"),
+    # RUBBLE is loose pieces, whatever they were broken from: the
+    # truth's own Ground107 is "brick, debris, dirt, fragments, ground,
+    # ..." and "brick" - a structure - drew it as an orange brick wall.
+    ("rubble", "scattered"),
+    ("debris", "scattered"),
+    ("fragments", "scattered"),
+    # A COBBLESTONE paving is set stones, however it is laid: the
+    # truth's own PavingStones150 is "arches, ..., cobble, cobblestone,
+    # ..., patterned" and "patterned" - a printed design's word - drew it
+    # as a flat grey wallpaper.
+    ("cobblestone", "voronoi"),
+    ("cobble", "voronoi"),
 )
+
+# IRREGULAR masonry. A "castle" floor of broken stone tiles is the
+# truth's own Tiles130, a CRAZY PAVING of stones of every size laid
+# without courses - a Voronoi - and as tiles it was a regular grid. An
+# irregular WALL is still courses: the truth's own "random ... stone,
+# wall" (Bricks089) is rubble in rough rows with a pale mortar - ashlar
+# bricks (palette.brick_is_ashlar, is_mortared_wall) - and as Voronoi
+# stones it was a scribble of pale joints through black (looked at).
+# ("medieval" is not such a word: the truth's own medieval Bricks076A is
+# coursed blocks.) The words count only beside a LAID masonry word: a
+# "medieval" plank floor is boards, and an "irregular rock, stone" is the
+# truth's own Rock064, a rock face - "stone" alone is not masonry.
+IRREGULAR_WORDS = frozenset(("random", "castle", "irregular"))
+MASONRY_WORDS = frozenset(("brick", "bricks", "tile", "tiles", "wall"))
 
 _COURSE_PATTERNS = (
     ("parquet", "parquet"),
@@ -220,8 +250,6 @@ _MATERIAL_PATTERNS = (
     ("sand", "flat"),
     ("dune", "flat"),
     ("beach", "flat"),
-    ("cobble", "scattered"),
-    ("cobblestone", "scattered"),
     ("gravel", "scattered"),
     ("ground", "scattered"),
     ("dirt", "scattered"),
@@ -320,6 +348,8 @@ def pattern_for_description(description: str) -> str:
     for word, pattern in _SPECIFIC_KINDS:
         if word in words:
             return pattern
+    if words & IRREGULAR_WORDS and words & MASONRY_WORDS and "wall" not in words:
+        return "voronoi"
     for word, pattern in _STRUCTURE_PATTERNS:
         if word in words:
             return pattern
@@ -394,9 +424,22 @@ def is_checkered(description: str) -> bool:
     return bool(words & {"checkered", "chequered", "checkerboard", "gingham"})
 
 
+def is_mortared_wall(description: str) -> bool:
+    """Whether the description is an IRREGULAR stone WALL laid in mortar.
+
+    The truth's own random stone wall, Bricks089, has its joints PALER
+    than its stones (luma 0.515 against 0.455 over the lowest fifth of its
+    height) and a fifth of its surface wide; an irregular FLOOR's joints
+    are cracks (Tiles130: 0.484 against 0.564), the rock's rule.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    return bool(words & IRREGULAR_WORDS) and "wall" in words
+
+
 __all__ = (
     "DEFAULT_PATTERN",
     "is_checkered",
+    "is_mortared_wall",
     "is_pebbled",
     "pattern_for_description",
 )

@@ -600,3 +600,26 @@ def test_a_checkered_cloth_s_spread_is_its_checks_not_its_softness():
     plaid = "checkered, cotton, fabric, plaid, red, smooth, soft, textile, woven"
     assert palette_for_description(plaid, path="woven")["target_spread"] > 0.1
     assert palette_for_description(plaid, path="woven")["checkered"]
+
+
+def test_a_random_stone_wall_s_mortar_is_paler_than_its_stones():
+    """The truth's own random stone wall (Bricks089) reads its joints 0.06
+    ABOVE its stones; the rock's rule - a crack at the ramp's floor - drew
+    them black. A crazy-paving floor's joints stay cracks."""
+    from golem_blender.pbr.palette import palette_for_description
+
+    wall = palette_for_description(
+        "brick, bricks, gray, random, stone, wall", path="brick"
+    )
+    assert wall["mortared"]
+    assert _luma(wall["mortar_rgb"]) > _luma(wall["stone_dark_rgb"])
+    assert _luma(wall["mortar_rgb"]) >= wall["target_value"]
+    floor = palette_for_description(
+        "broken, castle, floor, stone, tiles", path="voronoi"
+    )
+    assert not floor["mortared"]
+    assert _luma(floor["mortar_rgb"]) < floor["target_value"]
+
+
+def _luma(rgb):
+    return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]

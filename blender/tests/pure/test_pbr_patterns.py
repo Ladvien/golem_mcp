@@ -31,8 +31,24 @@ from golem_blender.pbr.patterns import DEFAULT_PATTERN, pattern_for_description
         ),
         # A brick wall is courses.
         ("bricks, stone", "brick"),
-        # Separate rounded pieces.
-        ("cobblestone, grey, pavement", "scattered"),
+        # A cobblestone paving is SET stones, however it is laid - and a
+        # printed design's word does not make it a wallpaper (the truth's
+        # own PavingStones150 drew as flat grey).
+        ("cobblestone, grey, pavement", "voronoi"),
+        ("arches, cobble, cobblestone, floor, gray, patterned", "voronoi"),
+        # Plank floors are boards whatever wood they are (Planks037A).
+        ("floor, planks, wood", "parquet"),
+        # Rubble is loose pieces whatever it was broken from (Ground107).
+        ("brick, debris, dirt, fragments, ground, rough", "scattered"),
+        # An irregular stone FLOOR is a crazy paving (Tiles130); an
+        # irregular WALL is still courses (Bricks089, ashlar), a medieval
+        # wall is coursed blocks (Bricks076A), and an irregular ROCK is a
+        # rock face (Rock064) - "stone" alone is not masonry.
+        ("broken, castle, floor, medieval, old, stone, tiles", "voronoi"),
+        ("brick, bricks, dark, gray, random, stone, wall", "brick"),
+        ("bricks, dirty, medieval, old", "brick"),
+        ("irregular, moss, rock, stone", "rock"),
+        ("medieval, oak, wood", "grain"),
         ("asphalt, charcoal, dark, granular, road, urban", "voronoi"),
         # A loose ground is SCATTERED stones and not a Voronoi: a
         # Voronoi's cells tile the plane and a heap of loose stones

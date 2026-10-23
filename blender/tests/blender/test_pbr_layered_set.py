@@ -181,3 +181,22 @@ def test_a_polished_marble_is_far_flatter_than_a_rough_rock(tmp_path):
     _orm, rock = _set_channels(tmp_path / "rock", "grey cliff rock, rough")
     assert float(marble.mean()) < 2.0
     assert float(rock.mean()) > 10.0
+
+
+def test_an_ashlar_wall_lays_blocks_of_unequal_length_and_still_tiles():
+    """The truths' natural-stone walls (Bricks106A-113A) lay long and short
+    blocks side by side, and every course was one length. The joints move
+    by a wrapped hash, so the wall still tiles: its seam is one interior
+    step, no more."""
+    from golem_blender.pbr import pattern
+
+    cell, edge, _grid, _face = pattern.brick_field(512, 8, ashlar=True)
+    lengths = []
+    for row in range(32, 512, 64):
+        joints = numpy.flatnonzero(numpy.diff(cell[row]) != 0)
+        lengths.extend(numpy.diff(joints).tolist())
+    lengths = numpy.asarray(lengths, dtype=float)
+    assert lengths.std() / lengths.mean() > 0.15
+    step = float(numpy.abs(numpy.diff(edge, axis=1)).max())
+    assert float(numpy.abs(edge[:, 0] - edge[:, -1]).max()) <= step + 1e-9
+    assert float(numpy.abs(edge[0] - edge[-1]).max()) <= step + 1e-9

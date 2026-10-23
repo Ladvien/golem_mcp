@@ -23,7 +23,7 @@ brought the fabric's spread to 1.13x the truth's and the asphalt's to
 from __future__ import annotations
 
 from golem_blender.pbr.material import is_metal
-from golem_blender.pbr.patterns import is_checkered
+from golem_blender.pbr.patterns import is_checkered, is_mortared_wall
 
 # The named colours, and how light the surface is: a value from 0 for
 # the darkest to 1 for the lightest. The value is the middle of the
@@ -3660,6 +3660,20 @@ def brick_staggered_for_description(description: str) -> bool:
     return not (words & {"tile", "tiles", "tiled"} and not words & {"brick", "bricks"})
 
 
+def brick_is_ashlar(description: str) -> bool:
+    """Whether a wall's courses are ASHLAR - stone blocks of unequal length.
+
+    The truths' own "bricks, natural, stone" walls (Bricks106A-113A) and
+    their "random ... stone, wall" (Bricks089) lay long and short blocks
+    side by side; a "stone" alone is not enough - the truth's own Bricks097
+    is a red factory wall that says "stone" too.
+    """
+    from golem_blender.pbr.patterns import IRREGULAR_WORDS
+
+    words = set(description.lower().replace(",", " ").split())
+    return "stone" in words and bool(words & ({"natural"} | IRREGULAR_WORDS))
+
+
 def metal_envelope_factor_for_description(description: str) -> float:
     """How much COARSER the metal's envelope is than its cell count.
 
@@ -3875,6 +3889,12 @@ def palette_for_description(
     # of flat cells with PALE edges - the opposite of a crack.
     if path == "voronoi" and _is_rock(description):
         mortar = low
+    # A MORTARED wall's joint is filled with a PALE mortar, wider than a
+    # brick's: the truth's own random stone wall, Bricks089, reads its
+    # joints 0.06 ABOVE its stones.
+    mortared = path == "brick" and is_mortared_wall(description)
+    if mortared:
+        mortar = high
     # The colour is (luma, HUE), and the hue is the description's
     # colour word's: the truth's ground is R 0.379 G 0.336 B 0.286 and
     # its blue fabric is R 0.217 G 0.333 B 0.451. A palette with no
@@ -3904,11 +3924,13 @@ def palette_for_description(
         "pebble_factor": pebble_factor_for_description(description),
         "brick_aspect": brick_aspect_for_description(description),
         "brick_staggered": brick_staggered_for_description(description),
+        "brick_ashlar": brick_is_ashlar(description),
         "metal_horizontal": metal_direction_for_description(description),
         "metal_banded": metal_is_banded(description),
         "metal_brushed": metal_is_brushed(description),
         "checkered": is_checkered(description),
         "metal_envelope_factor": metal_envelope_factor_for_description(description),
+        "mortared": mortared,
     }
 
 
