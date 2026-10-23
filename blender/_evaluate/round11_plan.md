@@ -32,6 +32,7 @@ called "bricks", Bricks076A stone called "bricks", Wood066 red-brown called "bro
 
 ## Four-set runs (round 11)
 
-| run | albedo brightness | contrast | scale | colour | roughness mean err | spread \|log\| | normal \|log\| |
-|---|---|---|---|---|---|---|---|
-| round 10 end (26f83b3) | 0.162 | 0.212 | 0.306 | 0.1291 | 0.0896 | 0.400 | 0.423 |
+| run | albedo brightness | contrast | scale | colour | roughness mean err | spread \|log\| | normal \|log\| | AO mean err / spread \|log\| (74) | height-luma err / skew err (159) |
+|---|---|---|---|---|---|---|---|---|---|
+| round 10 end (26f83b3) | 0.162 | 0.212 | 0.306 | 0.1291 | 0.0896 | 0.400 | 0.423 | - | - |
+| height map, hues (378aaa8) | 0.162 | 0.213 | 0.306 | 0.1288 | 0.0896 | 0.400 | 0.423 | 0.067 / 0.844 | 0.666 / 1.132 |
