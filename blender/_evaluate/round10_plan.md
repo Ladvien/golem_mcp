@@ -85,4 +85,5 @@ a fraction of today's weight, the stones' tone their own.
 | carpet pile, leather (476a44b) | 0.162 | 0.212 | 0.308 | 0.1291 | 0.090 | 0.405 | 0.454 |
 | planks (6d4d98d) | 0.162 | 0.212 | 0.322 | 0.1291 | 0.090 | 0.405 | 0.448 |
 | compose (83016c6) | 0.162 | 0.212 | 0.322 | 0.1291 | 0.0896 | 0.400 | 0.462 (stacks' normals weighted by moss/rust: fixed next) |
+| layered normal, banded (66072a3) | 0.162 | 0.212 | 0.320 | 0.1291 | 0.0896 | 0.400 | 0.446 |
 
