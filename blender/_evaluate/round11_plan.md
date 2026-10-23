@@ -49,7 +49,8 @@ called "bricks", Bricks076A stone called "bricks", Wood066 red-brown called "bro
   cavity field and place it at the kind's measured (mean, spread) - brick (0.857, 0.099), scattered
   (0.858, 0.096), flat (0.930, 0.039), asphalt (0.814, 0.056), woven (0.789, 0.050), parquet (0.983,
   0.030), rock (0.914, 0.073), roof (0.810, 0.117), others (0.882, 0.082). Expected to cut the AO spread
-  error (0.800) most.
+  error (0.800) most. Measured on the wide set alone (53 with an AO) at 7a7daa9: AO mean error 0.073 ->
+  0.039, spread |log| 0.734 -> 0.323; roughness, normal and height unchanged. The four-set run is next.
 - **Leaf litter (F3, ScatteredLeaves009) - applied; looked at: orange, tan, olive and brown leaves on soil (scale ratio 3.25: the measure reads the truth's clumps).** Prototyped and looked at: tapered lens-shaped leaves with a
   dark midrib and a light rim, three size octaves on jittered grids (3x3 neighbours, wrapped), periods
   3x the surface's feature count (the truth reads 20 features - its clumps - over leaves about 17 pixels
