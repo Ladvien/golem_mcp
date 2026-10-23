@@ -75,4 +75,5 @@ a fraction of today's weight, the stones' tone their own.
 | channels (5e27ac9) | 0.166 | 0.234 | 0.325 | 0.1313 | 0.090 | 0.407 | 0.461 |
 | routes + ashlar | 0.166 | 0.221 | 0.325 | 0.1312 | 0.090 | 0.404 | 0.449 |
 | asphalt (e306c4f) | 0.162 | 0.212 | 0.326 | 0.1292 | 0.090 | 0.405 | 0.453 |
+| stones, carpet seam, ribs (b3c53b0) | 0.162 | 0.212 | 0.309 | 0.1292 | 0.090 | 0.405 | 0.453 |
 
