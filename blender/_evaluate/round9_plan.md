@@ -103,7 +103,8 @@ transcript; the four sets re-run after each batch.
 | Wood052 orange as tan | the wood rule ignored every colour word | a colour warmer than the wood decides (woods 0.1044 -> 0.0952) | 3af878f |
 | moss/rock/wood hues diluted | material hues fitted over descriptions where the word was one material of several | fitted first where it is the only material (LOO 0.0784 -> 0.0779, median 0.0511 -> 0.0462) | 55df6a3 |
 | Fabric085 grey, Leather038 brown | with only generic materials named the first word with a hue decided ("fabric" before "orange") | a dyed material (fabric, wool, leather, carpet) takes its colour word; 0.0613 -> 0.0588 | b7698d9 |
-| marble scale 0.54 | the presence mask at half the count set the scale | presence at the count (seven marbles' scale error 0.279 -> 0.183) | (presence) |
+| marble scale 0.54 | the presence mask at half the count set the scale | presence at the count (seven marbles' scale error 0.279 -> 0.183) | 0245750 |
+| B10 Road007 five lines | markings at random places of a lattice of four (the constant's own comment said three) | the measured layout: solid edges at 7.5%/92.5%, a dashed centre, four dashes; an asphalt grain; the road's spread is what the paint leaves | (road) |
 
 Measured but NOT taken (lost on the holdout or in-sample): colour-word-first hue (41 better / 56 worse);
 a one-colour-word hue (28/58); dropping lightness words from the spread outright (holdout 0.4323);
@@ -118,7 +119,7 @@ words (mean 0.0620 -> 0.0595 but median 0.0375 -> 0.0387, 9 better / 6 worse).
 - Moss002 too pale (value 0.466 vs 0.353) and unsaturated; Concrete031 olive (its words say
   "green" and its pixels are grey: a description limit); dark woods too light (Wood067 1.71x,
   Wood026 1.54x): the truths are saturated red-brown, and the words do not carry it.
-- B10 road lane count; Fabric036's slubs and Fabric019's knit are not drawn; Metal007's gold is lemon against an orange-tan truth.
+- Fabric036's slubs and Fabric019's knit are not drawn; Metal007's gold is lemon against an orange-tan truth.
 - Marble014's beige (the specificity rule picks marble's neutral; numerically closer to the truth).
 - Tiles107's glazed white face gets the terrazzo tooth; Wood052's 'orange' is ignored (the wood rule);
   Carpet016 is peach; WoodFloor040/041 are vertical planks (orientation is not in the words).

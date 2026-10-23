@@ -438,21 +438,19 @@ PARQUET_COURSES_PER_ACROSS = 3.0
 # dash's own pattern.
 #
 # Measured on the truth's own roads: a road carries THREE markings
-# across - two solid edge lines and a dashed centre line - and they
-# are nine to fourteen pixels wide in a thousand and twenty-four, so
-# the paint is about a fiftieth of the surface.
-#
-# The lattice is the number of markings' PLACES across the surface,
-# and the stripes sit at a third of them: a road has three markings
-# and they are not side by side, they are spread across the road.
-#
-# The dash is HALF the pitch: the truth's own Road008A's centre line
-# runs ninety pixels on and a hundred off, so the dash is half of
-# the pitch and not a third of it.
-MARKINGS_PLACES = 3
-MARKINGS_WIDTH = 0.05
-MARKINGS_DASHES = 1.0
-MARKINGS_SEED = 21
+# across - two solid edge lines and a dashed centre line - and they are
+# nine to fourteen pixels wide in a thousand and twenty-four, so the
+# paint is about a fiftieth of the surface. The truth's own Road007 has
+# its edge lines at 7.5% and 92.5% across, and four dashes down it; its
+# Road008A's dash is half its pitch.
+MARKINGS_LAYOUT = ((0.075, False), (0.5, True), (0.925, False))
+MARKINGS_LINE_WIDTH = 0.011
+MARKINGS_DASHES_PER_IMAGE = 4
+# The road's own slow variation under the markings.
+MARKINGS_ROAD_LATTICE = 4
+# The asphalt's grain: its Gaussian's sigma (pixels at 1024) and share.
+MARKINGS_GRAIN_PX = 1.0
+MARKINGS_GRAIN_SHARE = 0.6
 # A WOVEN cloth's threads: how many of the measure's features one
 # thread is,
 # the fewest threads that are the cloth's structure, the threads a fine
@@ -3248,9 +3246,9 @@ def markings_field(
     run every fifty-odd pixels, and the solid edge line is five
     pixels wide too.
 
-    So the markings are a set of VERTICAL STRIPES at a pitch, and
-    each stripe is either solid or dashed - and the pitch is the
-    stripe's own, so the map tiles.
+    So the markings are the road's own LAYOUT: two solid edge lines
+    and a dashed centre line, the dashes a whole number of times
+    along the road so the map tiles.
 
     The field is the markings' own DARKNESS: one on a stripe and
     zero on the road, and the writer draws it over the road.
@@ -3262,62 +3260,23 @@ def markings_field(
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
 
-    # The markings' own lattice, and it is a POWER OF TWO that
-    # divides the resolution, so the stripes land on whole pixels
-    # and the wrap joins two whole stripes.
+    # The markings are the road's own LAYOUT, as the truths measure it:
+    # two solid edge lines and a dashed centre line, a fiftieth of the
+    # surface in paint. They were drawn at random places of a lattice of
+    # four - solid or dashed by a seed - and the truth's own Road007, a
+    # two-lane road, came out with five lines across it.
     #
-    # The lattice is the number of the road's PLACES and the
-    # stripes sit at ONE of them - the truth's own road has three
-    # markings across it and they are spread out, and a lattice of
-    # two put them a quarter and three quarters of the way across.
-    lattice = _power_of_two_at_least(max(2, MARKINGS_PLACES))
-    while lattice > 1 and resolution % lattice != 0:
-        lattice //= 2
-    while lattice > 1 and lattice * 4 > resolution:
-        lattice //= 2
-
-    # The stripe's own place in the lattice, and the stripe's WIDTH
-    # as a fraction of the lattice's cell.
-    column = numpy.floor(sample_x * lattice)
-    within = sample_x * lattice - column
-
-    # A SOLID stripe or a DASHED one, and the choice is the stripe's
-    # own hash: the truth's own road has a solid edge line and a
-    # dashed centre line side by side.
-    generator = numpy.random.default_rng(MARKINGS_SEED)
-    solid = generator.random(lattice) > 0.5
-    # The dash's own phase, so the dashes of two neighbouring stripes
-    # are not in step - and it is the STRIPE's own phase, taken at
-    # the stripe's own column.
-    phase = generator.random(lattice)
-
-    # The dash's own pattern, and it is measured in the lattice's own
-    # rows: the dash is HALF the pitch, and the truth's own centre
-    # line runs ninety pixels on and a hundred off.
-    dash_rows = numpy.floor(sample_y * lattice * MARKINGS_DASHES)
-    stripe_column = numpy.mod(column, lattice).astype(numpy.int64)
-    dashed = numpy.where(
-        solid[stripe_column],
-        True,
-        numpy.mod(dash_rows + phase[stripe_column], 2.0) < 1.0,
-    )
-
-    # The stripe's own mask: a band at the CELL'S CENTRE, and the
-    # band's width is the width of the paint.
-    #
-    # The paint's WIDTH is a fraction of the CELL and not of the
-    # surface: a stripe thirteen pixels wide in a thousand and
-    # twenty-four is a fiftieth of a quarter of the surface.
-    #
-    # It was a fraction of the surface, so the stripe was under a
-    # pixel wide and the road came out with no markings on it at
-    # all.
-    centre = numpy.full_like(within, 0.5)
-    distance = numpy.abs(within - centre)
-    painted = (distance < MARKINGS_WIDTH * 0.5) & dashed
-
-    # The road's own SURFACE, and it is the surface's slow
-    # variation: a road is a sheet and its markings are on it.
+    # The dashes run along the road a whole number of times, so the map
+    # tiles along it; across, the edge lines stand clear of the image's
+    # edge, so a road strip repeated side by side is two roads.
+    half_width = MARKINGS_LINE_WIDTH / 2.0
+    painted = numpy.zeros(sample_x.shape, dtype=bool)
+    for place, is_dashed in MARKINGS_LAYOUT:
+        on_line = numpy.abs(sample_x - place) < half_width
+        if is_dashed:
+            on_line &= numpy.mod(sample_y * MARKINGS_DASHES_PER_IMAGE, 1.0) < 0.5
+        painted |= on_line
+    lattice = MARKINGS_ROAD_LATTICE
     road = noise.fbm_2d_value(
         sample_x * lattice,
         sample_y * lattice,
@@ -3327,6 +3286,14 @@ def markings_field(
     )
     road_reach = max(1e-6, float(road.max() - road.min()))
     road = (road - float(road.min())) / road_reach
+    # And the asphalt's own GRAIN over the slow variation: the truth's own
+    # Road007 is a fine speckle of stones in bitumen, and the slow field
+    # alone drew a smooth dark sheet.
+    road = (
+        1.0 - MARKINGS_GRAIN_SHARE
+    ) * road + MARKINGS_GRAIN_SHARE * noise.gaussian_grain(
+        resolution, MARKINGS_GRAIN_PX, seed=6
+    )
 
     edge = 1.0 - painted.astype(numpy.float64)
     return (

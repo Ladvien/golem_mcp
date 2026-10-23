@@ -1855,19 +1855,27 @@ def write_procedural_base_color(
         # The road's own TEXTURE, and it is the road's spread: the
         # truth's own asphalt carries 0.0301 and the painted line is
         # the rest of the map's contrast.
-        texture = (road - 0.5) * (target_spread or 0.03)
-        colour = base + texture[:, :, numpy.newaxis]
+        # The road's own variation is what the target spread leaves after
+        # the PAINT: the truth's spread includes its white lines on dark
+        # asphalt, so a road scaled to the whole spread overshot it (0.110
+        # against Road007's 0.071). And it is scaled by the field's own
+        # standard deviation - a quarter of its range - and not its range,
+        # or the road came out a quarter as varied as asked: the markings
+        # path does not rescale afterwards.
         paint = numpy.array(
             paint_rgb if paint_rgb is not None else DEFAULT_PAINT_RGB,
             dtype=numpy.float32,
         ).reshape(1, 1, 3)
-        # The markings' own field is a DARKNESS - one on a stripe and
-        # zero on the road - and the writer's joint is the road's own
-        # distance to its edge, so the paint is drawn with the
-        # markings' own mask.
-        # The joint is already a column of three, so the paint's mask
-        # is one minus it and the road is under it.
         marked = 1.0 - joint
+        spread = target_spread or 0.03
+        painted_share = float(marked.mean())
+        paint_contrast = float(paint.mean() - base.mean())
+        paint_variance = painted_share * (1.0 - painted_share) * paint_contrast**2
+        road_spread = max(0.3 * spread, (max(0.0, spread**2 - paint_variance)) ** 0.5)
+        texture = (
+            (road - float(road.mean())) / max(1e-6, float(road.std())) * road_spread
+        )
+        colour = base + texture[:, :, numpy.newaxis]
         colour = colour * (1.0 - marked) + paint * marked
     else:
         colour = colour * (1.0 - joint) + mortar * joint
