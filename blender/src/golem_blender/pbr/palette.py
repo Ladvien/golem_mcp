@@ -30,6 +30,7 @@ from golem_blender.pbr.patterns import (
     is_checkered,
     is_cracked,
     is_mortared_wall,
+    stone_density_for_description,
 )
 
 # The named colours, and how light the surface is: a value from 0 for
@@ -3969,6 +3970,7 @@ def palette_for_description(
         "cracked": is_cracked(description),
         "carpet_streaked": carpet_is_streaked(description),
         "long_boards": has_long_boards(description),
+        "stone_density": stone_density_for_description(description),
     }
 
 

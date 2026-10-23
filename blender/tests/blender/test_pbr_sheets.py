@@ -160,3 +160,16 @@ def test_a_concrete_shows_no_lattice(tmp_path):
     slope = numpy.abs(numpy.roll(edge, -1, axis=1) - numpy.roll(edge, 1, axis=1))
     columns = slope.mean(axis=0)
     assert float(columns.min()) > 0.5 * float(numpy.median(columns))
+
+
+def test_a_surface_s_slow_drift_shows_no_lattice():
+    """The slow drift - the stain across a tiled floor, a brick face's
+    drift - was one value-noise octave, and its lattice showed as soft
+    squares across the tiles: its slope across vanished on every lattice
+    column."""
+    from golem_blender.pbr import pattern
+
+    drift = pattern.slow_variation(RESOLUTION, 8)
+    slope = numpy.abs(numpy.roll(drift, -1, axis=1) - numpy.roll(drift, 1, axis=1))
+    columns = slope.mean(axis=0)
+    assert float(columns.min()) > 0.4 * float(numpy.median(columns))

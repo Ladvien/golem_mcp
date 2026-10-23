@@ -56,3 +56,24 @@ def test_a_ground_s_soil_is_gritty(tmp_path):
     soil = mask < 0.05
     fine = luma - _wrapped_box_blur(luma, 2)
     assert float(fine[soil].std()) > 0.25 * float(luma.std())
+
+
+def test_a_soil_has_far_fewer_stones_than_a_gravel():
+    """The truths' soils (Ground103 "dirt, earth, soil", Ground106 "mud,
+    muddy") are smooth ground with a few small stones; drawn at a gravel's
+    density they were heaps of big stones."""
+    from golem_blender.pbr import pattern
+    from golem_blender.pbr.palette import palette_for_description
+
+    def cover(description):
+        density = palette_for_description(description, path="scattered")[
+            "stone_density"
+        ]
+        _cell, mask, _grid, _tone, _slow, _hue = pattern.scattered_field(
+            RESOLUTION, 16, density=density
+        )
+        return float(mask.mean())
+
+    assert cover("brown, dirt, earth, ground, soil") < 0.5 * cover(
+        "dirt, gravel, ground, rocky"
+    )

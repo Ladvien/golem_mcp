@@ -181,6 +181,8 @@ GRASS_BLADE_DIRECTIONS = (
 FLAT_SHEET_OCTAVES = 4
 # A flat sheet's feature spans this many sigmas of its Gaussian grain.
 FLAT_FEATURE_SIGMAS = 3.3
+# And so does a surface's slow drift (slow_variation).
+SLOW_FEATURE_SIGMAS = 3.3
 # How much of the STONE's colour variation is the surface's mottle,
 # against the cell's own colour.
 #
@@ -3767,6 +3769,7 @@ def scattered_field(
     cells: int,
     octaves=STONE_OCTAVES,
     lines_per_cell: int = 1,
+    density: float = 1.0,
 ):
     """A loose ground: distinct STONES of many sizes on a soil.
 
@@ -3789,7 +3792,7 @@ def scattered_field(
     low_radius, high_radius = SCATTER_STONE_RADIUS
     low_aspect, high_aspect = SCATTER_STONE_ASPECT
     for octave in reversed(range(len(SCATTER_STONE_PRESENCE))):
-        presence = SCATTER_STONE_PRESENCE[octave]
+        presence = SCATTER_STONE_PRESENCE[octave] * density
         period = base * 2**octave
         grid_x = sample_x * period
         grid_y = sample_y * period
@@ -4420,43 +4423,22 @@ def surface_octaves_for(resolution: int):
 
 
 def slow_variation(resolution: int, cells: int, seed: int = 4):
-    """The surface's own SLOW variation, at the SURFACE's scale.
+    """The surface's own SLOW variation, at the SURFACE's scale, in 0..1.
 
     A surface's slow variation is the drift of the whole thing - the
-    worn patch, the damp corner, the patch of sand - and it is at
-    the scale the SURFACE's features are at.
+    worn patch, the damp corner, the stain across a tiled wall - at the
+    scale the surface's own features are at.
 
-    It is not the stone's own mottle, which is a fine Perlin at
-    twelve patches a cell: the truth's own ground measures nineteen
-    features across where its stones are a couple of pixels across,
-    and the measure finds the slow variation and not the stones.
-
-    So the slow variation is a Perlin at the surface's OWN count - the
-    count the truth's feature measure gives - and it is one octave,
-    so it has no ripple in it and the measure reads the drift.
-
-    The lattice is a power of two that divides the resolution, so the
-    field's wrap joins two whole cells and the map still tiles.
+    It is a Gaussian grain - FFT-smoothed white noise, periodic and with
+    no lattice - a feature SLOW_FEATURE_SIGMAS sigmas across. It was one
+    octave of a value noise at a power-of-two lattice, and the lattice
+    showed as soft squares and crosses: cloudy blotches across the tiled
+    floors (Tiles139, 142, 143) and the brick faces (looked at).
     """
-    import numpy
-
     from golem_blender.pbr import noise
 
-    samples = _domain_samples(resolution)
-    sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="ij")
-
-    lattice = _power_of_two_nearest(max(2, cells))
-    while lattice > 1 and resolution % lattice != 0:
-        lattice //= 2
-    field = noise.fbm_2d_value(
-        sample_x * lattice,
-        sample_y * lattice,
-        size=lattice,
-        octaves=1,
-        seed=seed,
-    )
-    reach = max(1e-6, float(field.max() - field.min()))
-    return (field - float(field.min())) / reach
+    sigma = 1024.0 / (SLOW_FEATURE_SIGMAS * max(2, cells))
+    return _unit(noise.gaussian_grain(resolution, max(0.5, sigma), seed=seed))
 
 
 def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES):

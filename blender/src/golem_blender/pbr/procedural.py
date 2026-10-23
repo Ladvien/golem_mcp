@@ -551,6 +551,7 @@ def write_procedural_base_color(
     cracked: bool = False,
     carpet_streaked: bool = False,
     long_boards: bool = False,
+    stone_density: float = 1.0,
     courses: int | None = None,
     joint_height_out: dict | None = None,
 ) -> Path:
@@ -658,6 +659,7 @@ def write_procedural_base_color(
             resolution,
             cells,
             lines_per_cell=lines_per_cell,
+            density=stone_density,
         )
     elif kind == "voronoi":
         # The stones are FRACTAL: the base octave is the cell count

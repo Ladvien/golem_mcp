@@ -455,6 +455,40 @@ def is_checkered(description: str) -> bool:
     return bool(words & {"checkered", "chequered", "checkerboard", "gingham"})
 
 
+# How STONY a loose ground is, from its words. The truths' soils (Ground103
+# "dirt, earth, soil"; Ground106 "dirt, earth, mud, muddy, leaves") are
+# smooth ground with a few small stones, and drawn at the gravels' density
+# they were heaps of big stones (looked at); their gravels (Gravel043,
+# Ground108 "debris, gravel, rocky, rubble", Ground110) are packed. A
+# "riverbed" is not stony by itself: Ground106 says it of muddy soil.
+STONY_WORDS = frozenset(
+    (
+        "gravel",
+        "pebbles",
+        "pebble",
+        "rocky",
+        "rubble",
+        "stones",
+        "stony",
+        "debris",
+    )
+)
+SOIL_WORDS = frozenset(
+    ("soil", "mud", "muddy", "earth", "sand", "sandy", "loam", "clay")
+)
+SOIL_STONE_DENSITY = 0.35
+
+
+def stone_density_for_description(description: str) -> float:
+    """How many of a loose ground's stones are there, as a share of a gravel's."""
+    words = set(description.lower().replace(",", " ").split())
+    if words & STONY_WORDS:
+        return 1.0
+    if words & SOIL_WORDS:
+        return SOIL_STONE_DENSITY
+    return 1.0
+
+
 def has_long_boards(description: str) -> bool:
     """Whether a wood floor is laid in long PLANKS or boards.
 
@@ -495,4 +529,5 @@ __all__ = (
     "is_mortared_wall",
     "is_pebbled",
     "pattern_for_description",
+    "stone_density_for_description",
 )
