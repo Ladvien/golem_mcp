@@ -179,7 +179,8 @@ GRASS_BLADE_DIRECTIONS = (
 # How many octaves a flat sheet's two layers carry. One octave of a
 # value noise shows its own lattice as soft squares.
 FLAT_SHEET_OCTAVES = 4
-FLAT_TOOTH_OCTAVES = 3
+# A flat sheet's feature spans this many sigmas of its Gaussian grain.
+FLAT_FEATURE_SIGMAS = 3.3
 # How much of the STONE's colour variation is the surface's mottle,
 # against the cell's own colour.
 #
@@ -2309,9 +2310,6 @@ def flat_field(
 
     from golem_blender.pbr import noise
 
-    axis = _domain_samples(resolution)
-    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
-
     # The sheet's slow variation, and it is the ENVELOPE: the truth's
     # plaster measures its features here, because there is nothing
     # else.
@@ -2325,66 +2323,40 @@ def flat_field(
     #
     # A plaster is a smooth sheet with a tooth on it, and the tooth
     # is the fine layer and not the envelope.
-    lattice = max(2, cells)
-    # Both layers are an fBm of SEVERAL octaves, and not one.
+    # Both layers are GAUSSIAN grains - FFT-smoothed white noise, which
+    # has no lattice at all - and the sheet is their fBm.
     #
-    # One octave of a value noise is a set of soft squares on the
-    # lattice - the noise interpolates between random values at the
-    # lattice's corners - and the close sheet showed the concretes as
-    # a CHECKER: thirteen soft squares across Concrete030 and a pixel
-    # mosaic in Concrete042A's crop. The finer octaves fall between
-    # the coarse one's corners, and the lattice stops showing.
-    sheet = noise.fbm_2d_value(
-        sample_x * lattice,
-        sample_y * lattice,
-        size=lattice,
-        octaves=FLAT_SHEET_OCTAVES,
-        seed=4,
-    )
+    # They were value noises. One octave was a checker of soft squares
+    # (thirteen across Concrete030), and several octaves still showed
+    # them: the close sheets of round 10 read squares in the crops of
+    # Concrete030, Concrete046, Concrete047A and Plaster007. A Perlin was
+    # tried before that for the tooth, and a Perlin's value is zero at
+    # every lattice point - a maze. The sheet's features are the surface's
+    # own count, a feature about FLAT_FEATURE_SIGMAS sigmas across (the
+    # leather's measured calibration), and the tooth FLAT_TOOTH_LATTICE_
+    # FACTOR times finer.
+    def standardised(field):
+        deviation = float(field.std())
+        return (
+            (field - float(field.mean())) / deviation
+            if deviation > 1e-12
+            else field * 0.0
+        )
 
-    # The sheet's own FINE variation: a sum of sines at high
-    # frequencies, and the frequencies are integers over the domain
-    # so the field is periodic and the map still tiles.
-    #
-    # The sheet's own fine variation is the SINE sum, and it is what
-    # a plaster's tooth is.
-    #
-    # But the truth's own plaster has no fine structure at all: its
-    # correlation decays smoothly from 0.45 at a lag of five to 0.11
-    # at fifty and to nothing at ninety-five, with no ripple in it.
-    # A sum of sines at high frequencies puts a ripple in the
-    # correlation, and the measure finds it: the plaster's feature
-    # scale read 9.27x the truth's.
-    #
-    # So the fine variation is the sheet's own mottle - a Perlin at a
-    # fine lattice - and not a sum of sines. A Perlin has no
-    # preferred direction, so the tooth does not read as a weave.
-    #
-    # And the Perlin was wrong too: a Perlin's value is ZERO at
-    # every lattice point, and a field that is zero at a regular
-    # lattice shows it - so the tooth came out as a MAZE, a regular
-    # grid of worm-like cells, where the truth's own plaster is a
-    # random speckle.
-    #
-    # So the tooth is a VALUE noise, and Material Maker's own: the
-    # value noise's corners are RANDOM, so the field shows no
-    # lattice at all, and its fade is the QUINTIC - so the field is
-    # smooth in its second derivative too and the tooth reads as
-    # grain and not as a grid.
-    fine_lattice = _power_of_two_nearest(max(8, cells * FLAT_TOOTH_LATTICE_FACTOR))
-    while fine_lattice > 1 and resolution % fine_lattice != 0:
-        fine_lattice //= 2
-    while fine_lattice > 1 and fine_lattice * 4 > resolution:
-        fine_lattice //= 2
-    fine = noise.fbm_2d_value(
-        sample_x * fine_lattice,
-        sample_y * fine_lattice,
-        size=fine_lattice,
-        octaves=FLAT_TOOTH_OCTAVES,
-        seed=11,
+    sigma = 1024.0 / (FLAT_FEATURE_SIGMAS * max(2, cells))
+    sheet = numpy.zeros((resolution, resolution))
+    for octave in range(FLAT_SHEET_OCTAVES):
+        sheet = sheet + 0.5**octave * standardised(
+            noise.gaussian_grain(
+                resolution, max(0.5, sigma / 2**octave), seed=4 + octave
+            )
+        )
+    sheet = _unit(sheet)
+    fine = _unit(
+        noise.gaussian_grain(
+            resolution, max(0.5, sigma / FLAT_TOOTH_LATTICE_FACTOR), seed=11
+        )
     )
-    reach = max(1e-6, float(fine.max() - fine.min()))
-    fine = (fine - float(fine.min())) / reach
 
     # The sheet's SURFACE, and it is a DARKNESS: one where the sheet
     # is darkest.

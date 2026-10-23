@@ -146,3 +146,17 @@ def test_a_roof_s_shingle_edges_are_shadows(tmp_path):
     luma = _luma(tmp_path, "clay, roof, roofing, tiles, tiling", 6.0)
     _cell, edge, _grid, _tone = pattern.roof_field(RESOLUTION, 6)
     assert float(luma[edge < 0.05].mean()) < float(luma[edge > 0.5].mean())
+
+
+def test_a_concrete_shows_no_lattice(tmp_path):
+    """The flat sheet was a value noise, and its lattice showed as squares
+    in the concretes' and plasters' crops. A quintic value noise's slope
+    across is ZERO along every lattice column - every octave's at the
+    coarse ones - so the mean slope per column dips there; a grain with no
+    lattice has no such columns."""
+    from golem_blender.pbr import pattern
+
+    _cell, edge, _grid, _tooth = pattern.flat_field(RESOLUTION, 16)
+    slope = numpy.abs(numpy.roll(edge, -1, axis=1) - numpy.roll(edge, 1, axis=1))
+    columns = slope.mean(axis=0)
+    assert float(columns.min()) > 0.5 * float(numpy.median(columns))
