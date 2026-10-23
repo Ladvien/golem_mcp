@@ -23,7 +23,9 @@ import glob
 import json
 import os
 import pathlib
+import shutil
 import sys
+import tempfile
 import time
 
 for _p in glob.glob("/Users/ladvien/golem_mcp/blender/.venv/lib/python*/site-packages"):
@@ -34,6 +36,10 @@ import bpy  # pylint: disable=import-error,import-outside-toplevel
 
 from golem_blender.pbr import (
     paths as pbr_paths,  # pylint: disable=import-outside-toplevel
+)
+from golem_blender.pbr.layered_set import (  # pylint: disable=import-outside-toplevel
+    compose_from_description,
+    write_layered_texture_set,
 )
 from golem_blender.pbr.palette import (  # pylint: disable=import-outside-toplevel
     line_palette_for_description,
@@ -138,23 +144,44 @@ def main():
         # and the lines are the only variation on it. So they take the
         # line palette and not the cell one.
         description = describe(entry["tags"])
-        palette = (
-            line_palette_for_description(description, path=kind)
-            if kind in ("grain", "metal")
-            else palette_for_description(description, path=kind)
-        )
-        write_procedural_base_color(
-            base_path,
-            kind=kind,
-            scale_cells=float(scale),
-            fibre_scale=float(fibre_scale),
-            width_px=pbr_paths.SET_RESOLUTION_PX,
-            height_px=pbr_paths.SET_RESOLUTION_PX,
-            courses=courses_for(
-                entry["tags"], truth[asset_id]["albedo"].get("features_down", 0.0)
-            ),
-            **palette,
-        )
+        # A description that COMPOSES - a mossy rock, a rusted iron - is drawn
+        # as the agent's layered set draws it, the base with its overlay on
+        # it; drawn as its one pattern a mossy rock was all moss and a
+        # rusted metal had no rust (Rock063, Rock064, Metal053C).
+        composed, layers = compose_from_description({"description": description})
+        if layers:
+            kind = "+".join(
+                [composed["kind"]]
+                + [pattern_for_description(layer["description"]) for layer in layers]
+            )
+            with tempfile.TemporaryDirectory() as scratch:
+                written = write_layered_texture_set(
+                    pathlib.Path(scratch),
+                    asset_id,
+                    {"description": description},
+                    [],
+                    scale_cells=float(scale),
+                    resolution=pbr_paths.SET_RESOLUTION_PX,
+                )
+                shutil.copyfile(written["paths"]["base_color"], base_path)
+        else:
+            palette = (
+                line_palette_for_description(description, path=kind)
+                if kind in ("grain", "metal")
+                else palette_for_description(description, path=kind)
+            )
+            write_procedural_base_color(
+                base_path,
+                kind=kind,
+                scale_cells=float(scale),
+                fibre_scale=float(fibre_scale),
+                width_px=pbr_paths.SET_RESOLUTION_PX,
+                height_px=pbr_paths.SET_RESOLUTION_PX,
+                courses=courses_for(
+                    entry["tags"], truth[asset_id]["albedo"].get("features_down", 0.0)
+                ),
+                **palette,
+            )
         elapsed = time.time() - started
         print(
             f"RUN {asset_id:16s} the pattern is {kind:8s} at {scale:6.1f} cells  "

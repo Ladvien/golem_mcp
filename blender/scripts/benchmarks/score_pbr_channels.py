@@ -131,7 +131,9 @@ def main() -> None:
         written = write_layered_texture_set(
             OUT / asset_id,
             asset_id,
-            {"description": description, "kind": kind},
+            # The description alone: given the whole description's kind, a
+            # mossy rock's base stayed a moss under its moss layer.
+            {"description": description},
             [],
             scale_cells=scale,
             resolution=RESOLUTION,
