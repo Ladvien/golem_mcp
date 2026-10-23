@@ -39,3 +39,4 @@ called "bricks", Bricks076A stone called "bricks", Wood066 red-brown called "bro
 | metal sheets, wall mortar and faces (193a80d) | 0.162 | 0.212 | 0.310 | 0.1288 | 0.0896 | 0.400 | 0.420 | 0.067 / 0.844 | 0.672 / 1.129 |
 | composed albedo, stacked stone (c3f0b20) | 0.161 | 0.218 | 0.309 | 0.1284 | 0.0888 | 0.401 | 0.430 | 0.067 / 0.843 | 0.669 / 1.127 |
 | tile grout, rock faces (df569ad) | 0.161 | 0.218 | 0.332 (Tiles107 0.74 -> 13.0 and Tiles138 3.8 -> 9.5 are 0.020 of the 0.023: the zero-crossing measure reads a hairline grid's grout) | 0.1283 | 0.0888 | 0.399 | 0.430 | 0.067 / 0.842 | 0.670 / 1.129 |
+| height relief by kind (c5edf97) | 0.161 | 0.218 | 0.331 | 0.1286 | 0.0885 | 0.398 | 0.427 | 0.067 / 0.800 | 0.318 / 0.902 |

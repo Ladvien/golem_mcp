@@ -41,19 +41,19 @@ overlay laid on it), in both scores.
 ## The current score
 
 Over the 159, mean |log ratio| for the albedo's ratios and mean |error| for
-the rest (run b20, at `df569ad`):
+the rest (run b21, at `c5edf97`):
 
 | measure | score |
 |---|---|
 | albedo brightness | 0.161 |
 | albedo contrast | 0.218 |
-| albedo feature scale | 0.332 |
-| albedo colour balance error | 0.1283 |
-| roughness mean error | 0.0888 |
-| roughness spread | 0.399 |
-| normal strength | 0.430 |
-| AO mean error / spread (74 with an AO) | 0.067 / 0.842 |
-| height-luma correlation error / skew error | 0.670 / 1.129 |
+| albedo feature scale | 0.331 |
+| albedo colour balance error | 0.1286 |
+| roughness mean error | 0.0885 |
+| roughness spread | 0.398 |
+| normal strength | 0.427 |
+| AO mean error / spread (74 with an AO) | 0.067 / 0.800 |
+| height-luma correlation error / skew error | 0.318 / 0.902 |
 
 Every run of a round, with what changed, is in `_evaluate/round<N>_plan.md`.
 
