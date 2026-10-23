@@ -267,3 +267,28 @@ def test_a_brick_wall_s_mortar_is_a_band_and_not_a_cushion(tmp_path):
     end = int(numpy.argmax(numpy.abs(profile - face) < 0.1 * contrast))
     inner = profile[: max(2, end // 2)]
     assert float(numpy.nanmax(inner) - numpy.nanmin(inner)) < 0.25 * contrast
+
+
+@pytest.mark.parametrize(
+    ("description", "grout_darker"),
+    [("tiles, white", True), ("black, square, stone, tiles", False)],
+)
+def test_a_tile_floor_s_grout_is_a_mid_tone(tmp_path, description, grout_darker):
+    """The truths' light tiles have darker grout and their dark ones paler
+    (Tiles107 against Tiles138, 140); the grout was the tiles' colour less
+    a spread, so a black floor's grout was blacker still."""
+    luma = _luma(tmp_path, description, 8.0)
+    rows = luma.mean(axis=1) - float(numpy.median(luma))
+    if grout_darker:
+        assert -float(rows.min()) > float(rows.max())
+    else:
+        assert float(rows.max()) > -float(rows.min())
+
+
+def test_a_rock_face_is_broad_tone_and_not_a_speckle(tmp_path):
+    """Its layers were mixed by their ranges, so the fine grain took the
+    variance: the truths' rock faces hold a median 0.30 of it above eight
+    pixels and ours held 0.17 - a salt-and-pepper speckle."""
+    luma = _luma(tmp_path, "cliff, grey, rock", 12.0)
+    coarse = _gaussian(luma, 8.0 * RESOLUTION / 1024)
+    assert float(coarse.var()) / float(luma.var()) > 0.25

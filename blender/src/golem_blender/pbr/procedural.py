@@ -405,6 +405,10 @@ MATRIX_TONE_RANGE = 0.80
 
 # A tile's grout, in pixels at 1024 across: the truths' own measure one
 # to two (Tiles141/139/143/142/144: 1; Tiles107/040, Concrete031: 2).
+# A tile's grout is pulled this far from the tile's own luma toward a mid
+# luma, in the tile's own hue.
+TILE_GROUT_LUMA = 0.45
+TILE_GROUT_PULL = 0.6
 TILE_GROUT_PX = 2.0
 # A glazed tile face's fine tooth: its lattice's cell in pixels at the
 # map's own resolution, and its share of the ramp. Swept against the
@@ -1697,6 +1701,22 @@ def write_procedural_base_color(
 
     # The joint replaces the stone where the joint is.
     mortar = numpy.array(mortar_rgb, dtype=numpy.float32).reshape(1, 1, 3)
+    if kind == "brick" and not brick_staggered:
+        # A TILE's grout is a MID tone, whatever the tile: the truths' light
+        # tiles (faces 0.64-0.98: Tiles040, 107, 139, 141, 142, 143) show
+        # grout rows of 0.51-0.88 and their dark ones (faces 0.21-0.29:
+        # Tiles138, 140) rows of 0.23-0.38 - darker than a light tile,
+        # lighter than a dark one. The grout was the stones' colour less a
+        # spread, a hairline one spread down, and the floor's grid all but
+        # vanished (the truths' grout dips 4.2-5.8 deviations below their
+        # rows, ours 2.4-3.9). So it is a fixed luma in the tile's own hue.
+        middle = numpy.array(
+            [(stone_dark_rgb[c] + stone_light_rgb[c]) * 0.5 for c in range(3)],
+            dtype=numpy.float32,
+        )
+        middle_luma = float(middle @ numpy.array([0.2126, 0.7152, 0.0722]))
+        grout_luma = middle_luma + (TILE_GROUT_LUMA - middle_luma) * TILE_GROUT_PULL
+        mortar = (middle / max(1e-6, middle_luma) * grout_luma).reshape(1, 1, 3)
     joint = joint[:, :, numpy.newaxis]
     if kind == "scattered":
         # The MATRIX's own grit, and it is the surface's own mottle.

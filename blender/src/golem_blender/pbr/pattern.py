@@ -163,9 +163,24 @@ BARK_LICHEN = 2.5
 # face each layer carries. The truth's own rock faces are mostly fine
 # grain with a gentle body and thin pale scribbles.
 ROCK_GRAIN_PX = 1.0
-ROCK_BODY_SHARE = 0.3
-ROCK_GRAIN_SHARE = 0.5
-ROCK_SCRIBBLE_SHARE = 0.4
+ROCK_MID_PX = 3.0
+# The layers' variance shares, the share of the body at the surface's own
+# scale (the rest a quarter of it), and the scribbles' depth in the
+# face's own deviations.
+ROCK_BODY_SHARE = 0.5
+ROCK_MID_SHARE = 0.25
+ROCK_GRAIN_SHARE = 0.25
+ROCK_BODY_BROAD = 0.7
+ROCK_SCRIBBLE_DEPTH = 1.2
+# A rock face's FRACTURE web: its cells as a fraction of the face's own
+# count, how far it is warped, its lines' width at 1024, the slow field's
+# share below which no fracture runs, and how pale a fracture is in the
+# face's own deviations.
+ROCK_FRACTURE_CELL_FRACTION = 0.5
+ROCK_FRACTURE_WARP = 0.2
+ROCK_FRACTURE_PX = 1.5
+ROCK_FRACTURE_PRESENCE = 0.35
+ROCK_FRACTURE_LIGHT = 2.5
 # A MOSS's speckle: its Gaussian grain's sigma, in pixels at 1024.
 MOSS_SPECKLE_PX = 0.8
 # A GRASS's blades: how many cross the lawn per feature of the
@@ -2381,13 +2396,26 @@ def rock_field(resolution: int, cells: int):
     axis = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
     lattice = max(2, int(cells))
-    body = noise.fbm_2d_value(
-        sample_x * lattice,
-        sample_y * lattice,
-        size=lattice,
-        octaves=7,
-        persistence=0.6,
-        seed=3,
+
+    def standardised(field):
+        deviation = float(field.std())
+        return (field - float(field.mean())) / max(1e-12, deviation)
+
+    # The BODY is the rock's broad tone, at the surface's own scale and a
+    # quarter of it: Gaussian grains, which show no lattice.
+    body = standardised(
+        ROCK_BODY_BROAD**0.5
+        * standardised(
+            noise.gaussian_grain(
+                resolution, 1024.0 / (lattice * SLOW_FEATURE_SIGMAS), seed=3
+            )
+        )
+        + (1.0 - ROCK_BODY_BROAD) ** 0.5
+        * standardised(
+            noise.gaussian_grain(
+                resolution, 1024.0 / (4 * lattice * SLOW_FEATURE_SIGMAS), seed=5
+            )
+        )
     )
     ridge = noise.fbm_2d_value(
         sample_x * lattice * 4,
@@ -2403,10 +2431,31 @@ def rock_field(resolution: int, cells: int):
     # showed as pixel blocks on the close sheet, where the truths' own
     # rock faces decorrelate within 2-4 pixels.
     grain = noise.gaussian_grain(resolution, ROCK_GRAIN_PX, seed=9)
+    mid = noise.gaussian_grain(resolution, ROCK_MID_PX, seed=8)
+    # The layers are added at the truths' own VARIANCE shares: mixed by
+    # their ranges, the fine grain - whose range is set by its rare tails -
+    # took most of the variance, and every rock was a salt-and-pepper
+    # speckle at 1.7-1.8x the truth's contrast (Rock058, 060). The truths'
+    # rock faces (Rock020, 030, 035, 051, 058, 060) hold a median 0.30 of
+    # their variance above eight pixels and 0.22 below one and a half;
+    # ours held 0.17 and 0.29.
     field = (
-        ROCK_BODY_SHARE * _unit(body)
-        + ROCK_GRAIN_SHARE * _unit(grain)
-        + ROCK_SCRIBBLE_SHARE * scribble
+        ROCK_BODY_SHARE**0.5 * body
+        + ROCK_MID_SHARE**0.5 * standardised(mid)
+        + ROCK_GRAIN_SHARE**0.5 * standardised(grain)
+        + ROCK_SCRIBBLE_DEPTH * scribble
+        # And its FRACTURES: the truths' own Rock058 and Rock060 are broad
+        # faces split by a web of pale veins - straight runs meeting at
+        # angles, which the ridged scribbles are not.
+        + ROCK_FRACTURE_LIGHT
+        * _crack_network(
+            resolution,
+            max(2, round(lattice * ROCK_FRACTURE_CELL_FRACTION)),
+            ROCK_FRACTURE_WARP,
+            ROCK_FRACTURE_PX,
+            ROCK_FRACTURE_PRESENCE,
+            seed=41,
+        )
     )
     return 0, _unit(field), (lattice, lattice), None
 
@@ -2463,12 +2512,38 @@ def asphalt_field(
 
 def _asphalt_cracks(resolution: int):
     """Thin pale cracks along a sparse warped Voronoi's joints, 0..1."""
+    return _crack_network(
+        resolution,
+        ASPHALT_CRACK_CELLS,
+        ASPHALT_CRACK_WARP,
+        ASPHALT_CRACK_PX,
+        ASPHALT_CRACK_PRESENCE,
+        seed=31,
+    )
+
+
+def _crack_network(
+    resolution: int,
+    cells: int,
+    warp: float,
+    width_px: float,
+    presence_level: float,
+    seed: int,
+):
+    """Thin lines along a warped Voronoi's joints, present in patches, 0..1.
+
+    The joints are the exact distance to the bisector (Material Maker's
+    voronoi pass two, MIT), so the lines are straight runs meeting at
+    angles - a crack or a fracture, and not a noise's wiggly level set.
+    `width_px` is at 1024; `presence_level` is the share of a slow field
+    below which no line is drawn. Every field wraps, so the network tiles.
+    """
     import numpy
 
     from golem_blender.pbr import noise
     from golem_blender.pbr.noise_worley_fbm import _bilinear, _bisector_distance
 
-    period = ASPHALT_CRACK_CELLS
+    period = cells
     grid = min(resolution, ASPHALT_CRACK_GRID)
     coarse_axis = _domain_samples(grid)
     coarse_x, coarse_y = numpy.meshgrid(coarse_axis, coarse_axis, indexing="ij")
@@ -2478,21 +2553,21 @@ def _asphalt_cracks(resolution: int):
         coarse_y * warp_lattice,
         size=warp_lattice,
         octaves=3,
-        seed=31,
+        seed=seed,
     )
     warp_y = noise.fbm_2d_value(
         coarse_x * warp_lattice,
         coarse_y * warp_lattice,
         size=warp_lattice,
         octaves=3,
-        seed=32,
+        seed=seed + 1,
     )
     distance = _bisector_distance(
-        coarse_x * period + (warp_x - 0.5) * 2.0 * ASPHALT_CRACK_WARP,
-        coarse_y * period + (warp_y - 0.5) * 2.0 * ASPHALT_CRACK_WARP,
+        coarse_x * period + (warp_x - 0.5) * 2.0 * warp,
+        coarse_y * period + (warp_y - 0.5) * 2.0 * warp,
         period,
         0.9,
-        35,
+        seed + 4,
     )
     if grid != resolution:
         # The coarse field was sampled at i / grid, so the fine pixel j
@@ -2501,15 +2576,13 @@ def _asphalt_cracks(resolution: int):
         rows, columns = numpy.meshgrid(index, index, indexing="ij")
         distance = _bilinear(distance, rows, columns)
     distance_px = distance * resolution / period
-    line = numpy.clip(
-        1.0 - distance_px / (ASPHALT_CRACK_PX * resolution / 1024.0), 0.0, 1.0
-    )
+    line = numpy.clip(1.0 - distance_px / (width_px * resolution / 1024.0), 0.0, 1.0)
     axis = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
     presence = noise.fbm_2d_value(
-        sample_x * 4, sample_y * 4, size=4, octaves=3, seed=34
+        sample_x * 4, sample_y * 4, size=4, octaves=3, seed=seed + 3
     )
-    return line * numpy.clip((presence - ASPHALT_CRACK_PRESENCE) / 0.06, 0.0, 1.0)
+    return line * numpy.clip((presence - presence_level) / 0.06, 0.0, 1.0)
 
 
 def banded_field(resolution: int, cells: int):
