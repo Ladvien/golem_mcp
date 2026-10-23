@@ -110,7 +110,8 @@ def register(mcp: FastMCP) -> None:
         or rolled sheet), "flat" (plaster, paint, concrete), "rock" (a
         rock face), "moss", "grass", "woven" (cloth), "carpet",
         "leather", "wallpaper", "roof" (shingles), "markings" (road
-        lines). `scale_cells` is how many features cross the image.
+        lines), "asphalt" (aggregate; worn and cracked from the words).
+        `scale_cells` is how many features cross the image.
 
         `graph_json` COMPOSES the texture instead of choosing one
         pattern, and it is how a description that is really a STACK

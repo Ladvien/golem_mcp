@@ -105,6 +105,34 @@ SURFACE_PATCHES_PER_CELL = 12
 # nothing there at all, because the sheet's fine texture was
 # computed and thrown away.
 FLAT_TOOTH_LATTICE_FACTOR = 32
+# An ASPHALT's layers, measured on the truths' own blur profiles (the
+# share of a map's variance finer than a blur of 1, 2, 4, 8, 16, 32 px at
+# 1024): the plain asphalts are AGGREGATE (Asphalt033: 0.39, 0.71, 0.86,
+# ...; 86% of the variance finer than 4 px), the worn roads a quarter
+# aggregate below a pixel and two fifths slow patches (Road012A/013A/
+# 014A/012B: 0.24-0.31, 0.42-0.55, ...). The three parts - a fine grain,
+# a stone grain and a slow drift - are independent, so their variance
+# SHARES add, and the shares are fitted to the median profile: worn
+# (0.55, 0.25, 0.20) reads 0.23, 0.48, 0.66, 0.76, 0.82, 0.89 against the
+# truths' 0.26, 0.48, 0.60, 0.70, 0.82, 0.92; granular (0.90, 0.05, 0.05)
+# reads 0.37, 0.72, 0.88, 0.93, 0.95, 0.97 against 0.37, 0.71, 0.88, ...
+ASPHALT_FINE_PX = 0.6
+ASPHALT_STONE_PX = 2.0
+ASPHALT_GRANULAR_SHARES = (0.90, 0.05, 0.05)
+ASPHALT_WORN_SHARES = (0.55, 0.25, 0.20)
+# A cracked asphalt's cracks: the joints of a sparse Voronoi - straight
+# runs meeting at angles, as the truths' block cracking does - gently
+# warped, thin and PALE (the truths' cracks are filled with dust: Road012B,
+# Road015C), present over part of the surface only. The distance is the
+# exact bisector distance and it is the costly part (7 s at 1024), so it
+# is computed on a grid of at most ASPHALT_CRACK_GRID and brought up by a
+# wrapped bilinear read before the line is thresholded.
+ASPHALT_CRACK_CELLS = 6
+ASPHALT_CRACK_WARP = 0.12
+ASPHALT_CRACK_PX = 1.6
+ASPHALT_CRACK_PRESENCE = 0.45
+ASPHALT_CRACK_LIGHT = 5.0
+ASPHALT_CRACK_GRID = 1024
 # A ROCK face's layers: the fine grain's sigma (pixels at 1024) and how
 # much of the
 # face each layer carries. The truth's own rock faces are mostly fine
@@ -452,11 +480,6 @@ PARQUET_COURSES_PER_ACROSS = 3.0
 MARKINGS_LAYOUT = ((0.075, False), (0.5, True), (0.925, False))
 MARKINGS_LINE_WIDTH = 0.011
 MARKINGS_DASHES_PER_IMAGE = 4
-# The road's own slow variation under the markings.
-MARKINGS_ROAD_LATTICE = 4
-# The asphalt's grain: its Gaussian's sigma (pixels at 1024) and share.
-MARKINGS_GRAIN_PX = 1.0
-MARKINGS_GRAIN_SHARE = 0.6
 # A WOVEN cloth's threads: how many of the measure's features one
 # thread is,
 # the fewest threads that are the cloth's structure, the threads a fine
@@ -1617,7 +1640,9 @@ def brick_field(
         # before it - and a joint moves up to J either way, so that is the
         # block before, this one or the one after.
         left_index = numpy.where(place < joint_at(nearest), nearest - 1, nearest)
-        left_index = numpy.where(place >= joint_at(nearest + 1), nearest + 1, left_index)
+        left_index = numpy.where(
+            place >= joint_at(nearest + 1), nearest + 1, left_index
+        )
         left = joint_at(left_index)
         right = joint_at(left_index + 1)
         to_brick = numpy.minimum(place - left, right - place)
@@ -2417,6 +2442,107 @@ def rock_field(resolution: int, cells: int):
         + ROCK_SCRIBBLE_SHARE * scribble
     )
     return 0, _unit(field), (lattice, lattice), None
+
+
+def asphalt_field(
+    resolution: int, cells: int, worn: bool = False, cracked: bool = False
+):
+    """An ASPHALT: a fine aggregate, a slow drift and, cracked, pale cracks.
+
+    Asphalt was a Voronoi, and the close sheet showed every road as a
+    camouflage of polygon PLATES where the truths' own are a near-uniform
+    dark surface (luma spread 0.018-0.037) of salt-and-pepper aggregate,
+    broad worn patches on an old road, and thin pale cracks on a cracked
+    one. Every period is a whole number, so the surface tiles.
+    """
+    import numpy
+
+    from golem_blender.pbr import noise
+
+    axis = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+    lattice = max(2, int(cells))
+
+    def standardised(field):
+        deviation = float(field.std())
+        return (
+            (field - float(field.mean())) / deviation
+            if deviation > 1e-12
+            else field * 0.0
+        )
+
+    fine_share, stone_share, drift_share = (
+        ASPHALT_WORN_SHARES if worn else ASPHALT_GRANULAR_SHARES
+    )
+    drift = noise.fbm_2d_value(
+        sample_x * lattice,
+        sample_y * lattice,
+        size=lattice,
+        octaves=4,
+        persistence=0.55,
+        seed=21,
+    )
+    field = (
+        fine_share**0.5
+        * standardised(noise.gaussian_grain(resolution, ASPHALT_FINE_PX, seed=22))
+        + stone_share**0.5
+        * standardised(noise.gaussian_grain(resolution, ASPHALT_STONE_PX, seed=23))
+        + drift_share**0.5 * standardised(drift)
+    )
+    if cracked:
+        field = field + ASPHALT_CRACK_LIGHT * _asphalt_cracks(resolution)
+    return 0, _unit(field), (lattice, lattice), None
+
+
+def _asphalt_cracks(resolution: int):
+    """Thin pale cracks along a sparse warped Voronoi's joints, 0..1."""
+    import numpy
+
+    from golem_blender.pbr import noise
+    from golem_blender.pbr.noise_worley_fbm import _bilinear, _bisector_distance
+
+    period = ASPHALT_CRACK_CELLS
+    grid = min(resolution, ASPHALT_CRACK_GRID)
+    coarse_axis = _domain_samples(grid)
+    coarse_x, coarse_y = numpy.meshgrid(coarse_axis, coarse_axis, indexing="ij")
+    warp_lattice = period * 2
+    warp_x = noise.fbm_2d_value(
+        coarse_x * warp_lattice,
+        coarse_y * warp_lattice,
+        size=warp_lattice,
+        octaves=3,
+        seed=31,
+    )
+    warp_y = noise.fbm_2d_value(
+        coarse_x * warp_lattice,
+        coarse_y * warp_lattice,
+        size=warp_lattice,
+        octaves=3,
+        seed=32,
+    )
+    distance = _bisector_distance(
+        coarse_x * period + (warp_x - 0.5) * 2.0 * ASPHALT_CRACK_WARP,
+        coarse_y * period + (warp_y - 0.5) * 2.0 * ASPHALT_CRACK_WARP,
+        period,
+        0.9,
+        35,
+    )
+    if grid != resolution:
+        # The coarse field was sampled at i / grid, so the fine pixel j
+        # reads it at j * grid / resolution - and the read WRAPS.
+        index = numpy.arange(resolution) * grid / resolution
+        rows, columns = numpy.meshgrid(index, index, indexing="ij")
+        distance = _bilinear(distance, rows, columns)
+    distance_px = distance * resolution / period
+    line = numpy.clip(
+        1.0 - distance_px / (ASPHALT_CRACK_PX * resolution / 1024.0), 0.0, 1.0
+    )
+    axis = _domain_samples(resolution)
+    sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
+    presence = noise.fbm_2d_value(
+        sample_x * 4, sample_y * 4, size=4, octaves=3, seed=34
+    )
+    return line * numpy.clip((presence - ASPHALT_CRACK_PRESENCE) / 0.06, 0.0, 1.0)
 
 
 def moss_field(resolution: int, cells: int):
@@ -3299,6 +3425,7 @@ def markings_field(
     cells: int,
     octaves=DEFAULT_LINE_OCTAVES,
     lines_per_cell: int = 1,
+    worn: bool = False,
 ):
     """ROAD MARKINGS: painted stripes on a surface.
 
@@ -3324,8 +3451,6 @@ def markings_field(
     """
     import numpy
 
-    from golem_blender.pbr import noise
-
     samples = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(samples, samples, indexing="xy")
 
@@ -3345,24 +3470,13 @@ def markings_field(
         if is_dashed:
             on_line &= numpy.mod(sample_y * MARKINGS_DASHES_PER_IMAGE, 1.0) < 0.5
         painted |= on_line
-    lattice = MARKINGS_ROAD_LATTICE
-    road = noise.fbm_2d_value(
-        sample_x * lattice,
-        sample_y * lattice,
-        size=lattice,
-        octaves=1,
-        seed=4,
-    )
-    road_reach = max(1e-6, float(road.max() - road.min()))
-    road = (road - float(road.min())) / road_reach
-    # And the asphalt's own GRAIN over the slow variation: the truth's own
-    # Road007 is a fine speckle of stones in bitumen, and the slow field
-    # alone drew a smooth dark sheet.
-    road = (
-        1.0 - MARKINGS_GRAIN_SHARE
-    ) * road + MARKINGS_GRAIN_SHARE * noise.gaussian_grain(
-        resolution, MARKINGS_GRAIN_PX, seed=6
-    )
+    # The road under the markings is an ASPHALT, its drift at the surface's
+    # own feature count like every other kind's. It was one coarse
+    # value-noise octave at four cells and drew a dark blob across the
+    # truth's own Road008A; at a fixed thirty the scale read 2.85x
+    # Road008B's twelve features and 0.41x Road008A's eighty-five.
+    lattice = max(2, int(cells))
+    _cell, road, _grid, _fibre = asphalt_field(resolution, lattice, worn=worn)
 
     edge = 1.0 - painted.astype(numpy.float64)
     return (

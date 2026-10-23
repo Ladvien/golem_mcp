@@ -24,6 +24,15 @@ family covers.
 | A12 | metals' colour and wear | Metal048A/034 (lemon gold), Metal062C (platinum as gold), Metal053C/052C/062C (big flecks) | gold too saturated; damaged metal as large blobs |
 | A13 | stacks | Rock063, Rock064, Ground037, Metal053C | a mossy rock as flat moss; rusted iron as grey blobs - layered sets, composed from the words (C1) |
 
+## A2 measured (next)
+
+The scattered grounds' blur profile (share of variance finer than a 1/2/4/8/16/32 px blur, median of
+11): truths 0.14 0.32 0.52 0.69 0.81 0.90, ours 0.09 0.22 0.39 0.52 0.58 0.66 - a third of our
+variance is coarser than 32 px against the truths' tenth. The one-octave `slow_variation` (a value
+noise at a power-of-two lattice, crosses visible) modulates both the stones' tone and the matrix, so
+after the spread is scaled the stones have no contrast left: camouflage. Fix: a multi-octave drift at
+a fraction of today's weight, the stones' tone their own.
+
 ## B. The PBR channels (score_pbr_channels.py; scripts/benchmarks/channel_sheet.py to look)
 
 | # | channel | first measure (ambientcg, 20) |
@@ -50,6 +59,7 @@ family covers.
 | polished stones rough, brushed metal glossy | "stone" outranked "polished"; brushed 0.12 | marble/onyx/travertine fitted (0.078/0.044/0.037), brushed 0.505; roughness mean error 0.112 -> 0.095 | (channels) |
 | A7/A11/A4 routes | "brick", "wood" and "patterned" were read before "debris", "planks" and "cobblestone" | rubble -> scattered, planks -> boards, cobblestone -> set stones, an irregular stone floor -> crazy paving (looked at: PavingStones150 no longer flat grey) | (routes) |
 | A3/A4 walls | every course one block length; a random stone wall's mortar a black crack | ashlar courses (joints moved by a wrapped hash, blocks 0.5-1.5 long, seam = one step) for natural/irregular stone walls; a random wall's mortar pale and twice as wide (looked at). Open: the blocks' faces are still flat tones, not textured stone | (routes) |
+| A1 asphalt and roads | asphalt routed to Voronoi plates; a painted road took its paint's yellow; the markings' road was a one-octave blob | an `asphalt` kind: fine/stone/drift grains with variance shares fitted to the truths' blur profiles (granular 0.90/0.05/0.05, worn 0.55/0.25/0.20), pale block cracks along a warped Voronoi's joints when "cracked"; asphalt's own hue (hue error over 11: 0.0338 -> 0.0131); "striped" + road -> markings, on the asphalt field (looked at). Open: patch repairs (no word says them) | (asphalt) |
 
 ## Still open
 

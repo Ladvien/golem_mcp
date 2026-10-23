@@ -68,6 +68,8 @@ KIND_SURFACE: dict[str, tuple[float, float, float, float]] = {
     "roof": (21.4, 0.076, 0.28, 0.76),
     "markings": (4.1, 0.056, -0.72, -0.54),
     "moss": (29.1, 0.054, 0.49, 0.76),
+    # The truths' ten asphalts and roads (Road007, painted, apart).
+    "asphalt": (9.3, 0.059, 0.03, -0.20),
 }
 DEFAULT_SURFACE = (8.0, 0.045, 0.0, -0.3)
 # A TILE floor (the brick kind, unstaggered) is flat where a brick wall

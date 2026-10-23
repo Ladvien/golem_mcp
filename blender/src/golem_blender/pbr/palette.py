@@ -23,7 +23,12 @@ brought the fabric's spread to 1.13x the truth's and the asphalt's to
 from __future__ import annotations
 
 from golem_blender.pbr.material import is_metal
-from golem_blender.pbr.patterns import is_checkered, is_mortared_wall
+from golem_blender.pbr.patterns import (
+    asphalt_is_worn,
+    is_checkered,
+    is_cracked,
+    is_mortared_wall,
+)
 
 # The named colours, and how light the surface is: a value from 0 for
 # the darkest to 1 for the lightest. The value is the middle of the
@@ -3352,6 +3357,15 @@ def hue_for_description(description: str) -> tuple[float, float, float]:
     # two change, Metal007 and Metal048A, and both come nearer the
     # truth; nothing else moves.
     words_set = {word.strip(".,") for word in words}
+    # And an ASPHALT is its own near-neutral grey, whatever else is said:
+    # the truths' eleven asphalts and roads all measure within 0.03 of
+    # (0.342, 0.338, 0.320). Read by specificity, the grey Asphalt031 took
+    # "stone"'s beige and the painted Road008A its paint's "yellow" - the
+    # paint is drawn in its own colour. Hue error over the eleven 0.0338
+    # -> 0.0131; nothing else moves.
+    if "asphalt" in words_set:
+        return MATERIAL_HUES["asphalt"]
+    words_set = {word.strip(".,") for word in words}
     if words_set & {"metal", "metallic"}:
         coloured = [word for word in COLOURED_METAL_WORDS if word in words_set]
         if coloured and HUES.get(coloured[0]) is not None:
@@ -3426,6 +3440,11 @@ SPREAD_LIGHTNESS_WORDS = frozenset(
 )
 
 
+# An asphalt's own spread: the geometric mean of the truths' ten unpainted
+# asphalts and roads, the constant that minimises their mean |log| error.
+ASPHALT_SPREAD = 0.028
+
+
 def spread_for_description(description: str) -> float:
     """How much the surface's colour varies, from the description's
     texture words.
@@ -3446,6 +3465,14 @@ def spread_for_description(description: str) -> float:
     mean truth's spread over the materials that name it.
     """
     words = _words_of(description)
+    # An ASPHALT is as even as asphalt is, whatever its finish words say:
+    # the truths' ten unpainted asphalts and roads measure 0.018-0.077
+    # (geometric mean 0.028), and read by the words they took 0.018 to
+    # 0.076 - Road014A's "damaged ... rough" 3.70x its truth. Contrast
+    # error over the ten (mean |log|) 0.48 -> 0.37, the self-fitted
+    # words' exact matches given up.
+    if "asphalt" in words:
+        return ASPHALT_SPREAD
     # The words that name a SPREAD, and the most specific of them
     # wins.
     #
@@ -3931,6 +3958,8 @@ def palette_for_description(
         "checkered": is_checkered(description),
         "metal_envelope_factor": metal_envelope_factor_for_description(description),
         "mortared": mortared,
+        "asphalt_worn": asphalt_is_worn(description),
+        "cracked": is_cracked(description),
     }
 
 

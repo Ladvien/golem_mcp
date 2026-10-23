@@ -494,8 +494,9 @@ def test_the_spreads_are_the_truths_own():
 
     The expectations are the truth's OWN measured spreads, and not
     the rule's own output: the truth's own Fabric085 is 0.0505, the
-    truth's own Asphalt033 is 0.0178, the truth's own Concrete034
-    is 0.0218 and the truth's own Ground108 is 0.1337.
+    truth's own Concrete034 is 0.0218 and the truth's own Ground108 is
+    0.1337. (An asphalt reads asphalt's own spread: Asphalt033's exact
+    0.0178 came from "charcoal", a word fitted on Asphalt033 alone.)
 
     The numbers are fitted on ALL THREE sets - a hundred and fifty-four
     real ambientcg materials - and not on the twenty hand-picked
@@ -507,7 +508,6 @@ def test_the_spreads_are_the_truths_own():
 
     cases = {
         "fabric, orange, red, wool": 0.0508,
-        "asphalt, charcoal, dark, granular, gray, industrial, matte, pavement, road, rough, urban": 0.0178,
         "concrete, grey, light, plaster, smooth": 0.0228,
         # The ground's own spread is the one the words cannot say:
         # "dirt" now names eleven materials whose spreads run from
@@ -623,3 +623,21 @@ def test_a_random_stone_wall_s_mortar_is_paler_than_its_stones():
 
 def _luma(rgb):
     return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+
+
+def test_an_asphalt_is_its_own_grey_whatever_else_is_said():
+    """The truths' eleven asphalts all measure within 0.03 of a neutral
+    grey; read by specificity the grey Asphalt031 took "stone"'s beige and
+    the painted Road008A its paint's yellow - the paint keeps its own."""
+    from golem_blender.pbr.palette import hue_for_description, palette_for_description
+
+    for description in (
+        "asphalt, floor, grey, light, stone, street",
+        "asphalt, gray, old, road, striped, worn, yellow",
+    ):
+        red, _green, blue = hue_for_description(description)
+        assert abs(red - blue) < 0.04
+    paint = palette_for_description("asphalt, gray, old, road, striped, worn, yellow")[
+        "paint_rgb"
+    ]
+    assert paint[0] - paint[2] > 0.3

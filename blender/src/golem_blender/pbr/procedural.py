@@ -237,6 +237,7 @@ PROCEDURAL_COLOUR_KINDS = (
     "leather",
     "wallpaper",
     "markings",
+    "asphalt",
     "woven",
     "roof",
     "herringbone",
@@ -553,6 +554,8 @@ def write_procedural_base_color(
     graph: dict | None = None,
     checkered: bool = False,
     mortared: bool = False,
+    asphalt_worn: bool = False,
+    cracked: bool = False,
     courses: int | None = None,
     joint_height_out: dict | None = None,
 ) -> Path:
@@ -779,6 +782,7 @@ def write_procedural_base_color(
             resolution,
             cells,
             lines_per_cell=lines_per_cell,
+            worn=asphalt_worn,
         )
     elif kind == "wallpaper":
         cell, edge, grid, fibre = pattern.wallpaper_field(
@@ -837,6 +841,10 @@ def write_procedural_base_color(
         )
     elif kind == "rock":
         cell, edge, grid, fibre = pattern.rock_field(resolution, cells)
+    elif kind == "asphalt":
+        cell, edge, grid, fibre = pattern.asphalt_field(
+            resolution, cells, worn=asphalt_worn, cracked=cracked
+        )
     elif kind == "moss":
         cell, edge, grid, fibre = pattern.moss_field(resolution, cells)
     elif kind == "grass":
@@ -861,7 +869,7 @@ def write_procedural_base_color(
         low, high = float(joint.min()), float(joint.max())
         joint_height_out["height"] = (joint - low) / max(1e-9, high - low)
 
-    if kind in ("flat", "wallpaper", "rock", "moss", "grass"):
+    if kind in ("flat", "wallpaper", "rock", "moss", "grass", "asphalt"):
         # A FLAT sheet is a SOFT variation about its base, and not a
         # set of lines.
         #
@@ -1858,7 +1866,15 @@ def write_procedural_base_color(
         # cell's hash: a road is one surface and the markings are on
         # it, so there are no cells to hash. The road's own texture
         # is the markings' slow field.
-        base = numpy.array(stone_dark_rgb, dtype=numpy.float32).reshape(1, 1, 3)
+        #
+        # And the road's colour is the ramp's MIDDLE - the description's
+        # value - and not its dark end: the ramp's dark end drew the
+        # truth's own Road007 at 0.51x its brightness, and this path is
+        # not shifted to the value afterwards.
+        base = (
+            numpy.array(stone_dark_rgb, dtype=numpy.float32)
+            + numpy.array(stone_light_rgb, dtype=numpy.float32)
+        ).reshape(1, 1, 3) * 0.5
         road = fibre if fibre is not None else numpy.zeros_like(colour[:, :, 0])
         road_reach = max(1e-6, float(road.max() - road.min()))
         road = (road - float(road.min())) / road_reach

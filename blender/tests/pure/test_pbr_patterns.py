@@ -49,7 +49,13 @@ from golem_blender.pbr.patterns import DEFAULT_PATTERN, pattern_for_description
         ("bricks, dirty, medieval, old", "brick"),
         ("irregular, moss, rock, stone", "rock"),
         ("medieval, oak, wood", "grain"),
-        ("asphalt, charcoal, dark, granular, road, urban", "voronoi"),
+        # An asphalt is an aggregate surface (as a Voronoi every road was
+        # a camouflage of plates), and a "striped" road is painted - but
+        # "striped" alone is not paint (a corrugated steel says it).
+        ("asphalt, charcoal, dark, granular, road, urban", "asphalt"),
+        ("asphalt, floor, grey, light, stone, street", "asphalt"),
+        ("asphalt, gray, old, road, striped, worn, yellow", "markings"),
+        ("corrugated, metal, steel, striped", "metal"),
         # A loose ground is SCATTERED stones and not a Voronoi: a
         # Voronoi's cells tile the plane and a heap of loose stones
         # does not. The truth's own ground is fifty-six bright stones

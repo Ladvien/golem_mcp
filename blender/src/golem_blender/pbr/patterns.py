@@ -188,6 +188,25 @@ _SPECIFIC_KINDS = (
 # truth's own Rock064, a rock face - "stone" alone is not masonry.
 IRREGULAR_WORDS = frozenset(("random", "castle", "irregular"))
 MASONRY_WORDS = frozenset(("brick", "bricks", "tile", "tiles", "wall"))
+ROAD_WORDS = frozenset(("road", "street", "asphalt", "highway"))
+# An asphalt's WEAR and its CRACKS. Every worn truth road says "worn",
+# "old" or "damaged" and carries broad patches; the two plain asphalts
+# (Asphalt033, Asphalt031) say none of them and are aggregate alone.
+ASPHALT_WEAR_WORDS = frozenset(
+    ("worn", "old", "damaged", "aged", "deteriorated", "weathered")
+)
+CRACK_WORDS = frozenset(("cracked", "cracks", "cracking"))
+
+
+def asphalt_is_worn(description: str) -> bool:
+    """Whether an asphalt is a worn road, with broad patches in it."""
+    return bool(set(description.lower().replace(",", " ").split()) & ASPHALT_WEAR_WORDS)
+
+
+def is_cracked(description: str) -> bool:
+    """Whether the description says the surface is cracked."""
+    return bool(set(description.lower().replace(",", " ").split()) & CRACK_WORDS)
+
 
 _COURSE_PATTERNS = (
     ("parquet", "parquet"),
@@ -262,11 +281,14 @@ _MATERIAL_PATTERNS = (
     # read before "stone", which a cliff's description often adds.
     # And a MOSS is a speckle; a mossy rock is a rock, so the moss is
     # read after it.
+    # An ASPHALT is an aggregate surface and not a set of pieces: as a
+    # Voronoi every road was a camouflage of polygon plates. It is read
+    # before "stone", which the truth's own Asphalt031 also says.
+    ("asphalt", "asphalt"),
     ("rock", "rock"),
     ("cliff", "rock"),
     ("moss", "moss"),
     ("stone", "voronoi"),
-    ("asphalt", "voronoi"),
     ("concrete", "voronoi"),
     # A FABRIC is a WEAVE and not a Voronoi.
     #
@@ -350,6 +372,12 @@ def pattern_for_description(description: str) -> str:
             return pattern
     if words & IRREGULAR_WORDS and words & MASONRY_WORDS and "wall" not in words:
         return "voronoi"
+    # A "striped" ROAD is painted: the truths' own Road008A and Road008B
+    # say "striped" for their yellow dashes and edge lines, and as plain
+    # asphalt Road008A took the paint's "yellow" as the whole surface's
+    # colour. "striped" alone is not paint - a corrugated steel says it.
+    if "striped" in words and words & ROAD_WORDS:
+        return "markings"
     for word, pattern in _STRUCTURE_PATTERNS:
         if word in words:
             return pattern
@@ -438,7 +466,9 @@ def is_mortared_wall(description: str) -> bool:
 
 __all__ = (
     "DEFAULT_PATTERN",
+    "asphalt_is_worn",
     "is_checkered",
+    "is_cracked",
     "is_mortared_wall",
     "is_pebbled",
     "pattern_for_description",
