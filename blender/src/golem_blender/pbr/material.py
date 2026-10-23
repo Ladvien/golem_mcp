@@ -45,6 +45,12 @@ ROUGHNESS: dict[str, float] = {
     "brick": 0.63,
     "bricks": 0.643,
     "stone": 0.549,
+    # A POLISHED stone: the truths' own seven marbles measure 0.037 to
+    # 0.116 (mean 0.078), their onyx 0.044 and their travertine 0.037 -
+    # and as a "stone" they read 0.549.
+    "marble": 0.078,
+    "onyx": 0.044,
+    "travertine": 0.037,
     # And the words that were in a TIER and had no value, and a tier
     # word with no value is a KeyError - so a description naming
     # "plank" or "sand" or "clay" or "velvet" raised, and the rule
@@ -90,7 +96,10 @@ ROUGHNESS: dict[str, float] = {
     "pipe": 0.47,
     "ribbed": 0.47,
     "ridged": 0.47,
-    "brushed": 0.12,
+    # A BRUSHED metal scatters the light along its streaks: the truths' own
+    # brushed steels measure 0.47 and 0.54, and as 0.12 they read as a
+    # polished mirror.
+    "brushed": 0.505,
     "industrial": 0.451,
     "urban": 0.517,
     "pavement": 0.74,
@@ -212,6 +221,7 @@ SURFACE_WORDS = (
 MATERIAL_TIERS = (
     ("wooden", "softwood", "timber", "plank", "floorboard"),
     ("fabric", "wool", "linen", "microfiber", "fur", "velvet"),
+    ("marble", "onyx", "travertine"),
     ("brick", "bricks"),
     ("tile", "tiles", "grid", "checkered", "checkerboard"),
     ("limestone", "slate", "clay", "terracotta"),

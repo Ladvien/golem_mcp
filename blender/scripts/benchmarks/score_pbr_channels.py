@@ -1,0 +1,176 @@
+"""Score the WHOLE PBR set the lane makes from a description against the truth's own maps.
+
+The albedo benchmark (score_recreations.py) reads only the colour map. A
+PBR set is more than its colour: the truths ship a roughness, a normal, a
+displacement, often an ambient occlusion and, for the metals, a metalness.
+This builds each material's set the way the agent's layered-set tool does -
+the description chooses the pattern, the palette, the roughness and the
+metal - and compares each channel with the truth's:
+
+- roughness: its mean and its spread;
+- metallic: its mean;
+- ambient occlusion: its mean, where the truth ships one;
+- normal: its STRENGTH, the mean angle of the normals from flat in
+  degrees (the two surfaces are different layouts, so a per-pixel angle
+  between them says nothing; how much relief each carries does).
+
+Run it in Blender, with GOLEM_BENCH_ROOT set to one truth set:
+
+    GOLEM_BENCH_ROOT=~/mnt/codex_fs/game_assets/benchmarks/ambientcg_top \\
+        blender --background --factory-startup --python score_pbr_channels.py
+
+It writes recreated_set/<asset>/ and pbr_channel_scores.json under the root.
+"""
+
+from __future__ import annotations
+
+import glob
+import json
+import math
+import os
+import pathlib
+import sys
+
+for _p in glob.glob("/Users/ladvien/golem_mcp/blender/.venv/lib/python*/site-packages"):
+    sys.path.append(_p)
+sys.path.insert(0, "/Users/ladvien/golem_mcp/blender/src")
+
+import numpy
+
+from golem_blender.ops._image_loading import load_image
+from golem_blender.pbr.layered_set import write_layered_texture_set
+from golem_blender.pbr.patterns import pattern_for_description
+
+ROOT = pathlib.Path(
+    os.environ.get(
+        "GOLEM_BENCH_ROOT",
+        str(pathlib.Path.home() / "mnt/codex_fs/game_assets/benchmarks/ambientcg"),
+    )
+).expanduser()
+OUT = ROOT / "recreated_set"
+RESOLUTION = int(os.environ.get("GOLEM_BENCH_SET_RESOLUTION", "1024"))
+# A spread below this is a flat map, and its ratio is read against it.
+SPREAD_FLOOR = 0.005
+
+
+def _channels(path: pathlib.Path):
+    """The map's RGB as floats in 0..1, read as data, not colour."""
+    image = load_image(path, non_color=True)
+    try:
+        width, height = image.size
+        pixels = numpy.empty(width * height * 4, dtype=numpy.float32)
+        image.pixels.foreach_get(pixels)
+    finally:
+        import bpy
+
+        bpy.data.images.remove(image)
+    return pixels.reshape((height, width, 4))[:, :, :3].astype(numpy.float64)
+
+
+def _truth_map(asset_dir: pathlib.Path, stem: str):
+    for suffix in (".png", ".jpg"):
+        path = asset_dir / f"{stem}{suffix}"
+        if path.is_file():
+            return path
+    return None
+
+
+def _normal_strength(rgb) -> float:
+    """The mean angle of a tangent-space normal map's normals from flat, in degrees."""
+    normal = rgb * 2.0 - 1.0
+    length = numpy.maximum(numpy.linalg.norm(normal, axis=2), 1e-6)
+    z = numpy.clip(normal[:, :, 2] / length, -1.0, 1.0)
+    return float(numpy.degrees(numpy.arccos(z)).mean())
+
+
+def _log_ratio(ours: float, truth: float, floor: float) -> float:
+    return abs(math.log(max(ours, floor) / max(truth, floor)))
+
+
+def main() -> None:
+    manifest = json.loads((ROOT / "manifest.json").read_text())
+    truth_statistics = {
+        entry["asset_id"]: entry
+        for entry in json.loads((ROOT / "truth_statistics.json").read_text())
+    }
+    OUT.mkdir(parents=True, exist_ok=True)
+    results = []
+    for entry in manifest:
+        asset_id = entry["asset_id"]
+        asset_dir = ROOT / asset_id
+        roughness_path = _truth_map(asset_dir, "roughness")
+        normal_path = _truth_map(asset_dir, "normal_gl")
+        if roughness_path is None or normal_path is None:
+            continue
+        description = ", ".join(entry["tags"])
+        kind = pattern_for_description(description)
+        scale = max(2.0, round(truth_statistics[asset_id]["albedo"]["features_across"]))
+        written = write_layered_texture_set(
+            OUT / asset_id,
+            asset_id,
+            {"description": description, "kind": kind},
+            [],
+            scale_cells=scale,
+            resolution=RESOLUTION,
+        )
+        orm = _channels(pathlib.Path(written["paths"]["orm"]))
+        ours_normal = _channels(pathlib.Path(written["paths"]["normal"]))
+
+        truth_rough = _channels(roughness_path)[:, :, 0]
+        metal_path = _truth_map(asset_dir, "metalness")
+        # A set without a metalness map has not said whether it is metal,
+        # and reading it as zero scored every metal of those sets wrong.
+        truth_metal = (
+            float(_channels(metal_path)[:, :, 0].mean()) if metal_path else None
+        )
+        ao_path = _truth_map(asset_dir, "ambient_occlusion")
+        truth_ao = float(_channels(ao_path)[:, :, 0].mean()) if ao_path else None
+
+        row = {
+            "asset_id": asset_id,
+            "kind": kind,
+            "roughness_mean": [float(orm[:, :, 1].mean()), float(truth_rough.mean())],
+            "roughness_spread": [float(orm[:, :, 1].std()), float(truth_rough.std())],
+            "metallic_mean": [float(orm[:, :, 2].mean()), truth_metal],
+            "ao_mean": [float(orm[:, :, 0].mean()), truth_ao],
+            "normal_strength_deg": [
+                _normal_strength(ours_normal),
+                _normal_strength(_channels(normal_path)),
+            ],
+        }
+        results.append(row)
+        print(
+            f"SCORE {asset_id:16s} roughness {row['roughness_mean'][0]:.2f}/"
+            f"{row['roughness_mean'][1]:.2f}  spread {row['roughness_spread'][0]:.3f}/"
+            f"{row['roughness_spread'][1]:.3f}  metal {row['metallic_mean'][0]:.2f}/"
+            f"{'-' if truth_metal is None else format(truth_metal, '.2f')}  normal {row['normal_strength_deg'][0]:5.1f}/"
+            f"{row['normal_strength_deg'][1]:5.1f} deg",
+            flush=True,
+        )
+    (ROOT / "pbr_channel_scores.json").write_text(json.dumps(results, indent=2))
+    if not results:
+        print("SCORE no material had a roughness and a normal map")
+        return
+    count = len(results)
+    rough_mean = sum(
+        abs(r["roughness_mean"][0] - r["roughness_mean"][1]) for r in results
+    )
+    rough_spread = sum(
+        _log_ratio(r["roughness_spread"][0], r["roughness_spread"][1], SPREAD_FLOOR)
+        for r in results
+    )
+    metals = [r for r in results if r["metallic_mean"][1] is not None]
+    metal = sum(abs(r["metallic_mean"][0] - r["metallic_mean"][1]) for r in metals)
+    normal = sum(
+        _log_ratio(r["normal_strength_deg"][0], r["normal_strength_deg"][1], 0.5)
+        for r in results
+    )
+    print(
+        f"SCORE over {count}: roughness mean |error| {rough_mean / count:.3f}  "
+        f"roughness spread mean |log| {rough_spread / count:.3f}  "
+        f"metallic mean |error| {metal / max(1, len(metals)):.3f} (over {len(metals)})  "
+        f"normal strength mean |log| {normal / count:.3f}"
+    )
+
+
+main()

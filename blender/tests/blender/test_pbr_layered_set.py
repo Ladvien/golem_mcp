@@ -43,7 +43,12 @@ def _greening(tmp_path: Path):
         tmp_path / "bare", "Wall", {"description": WALL}, [], CELLS, RESOLUTION
     )
     mossy = write_layered_texture_set(
-        tmp_path / "mossy", "Wall", {"description": WALL}, [MOSS_IN_THE_JOINTS], CELLS, RESOLUTION
+        tmp_path / "mossy",
+        "Wall",
+        {"description": WALL},
+        [MOSS_IN_THE_JOINTS],
+        CELLS,
+        RESOLUTION,
     )
     base = _pixels(bare["paths"]["base_color"])
     out = _pixels(mossy["paths"]["base_color"])
@@ -78,7 +83,9 @@ def test_moss_laid_in_the_joints_does_not_seek_out_the_dark_bricks(tmp_path):
     greening, joint_height, luma = _greening(tmp_path)
     faces = joint_height > 0.5
     darkest = faces & (luma < numpy.percentile(luma[faces], 25))
-    assert greening[darkest].mean() < 1.5 * greening[faces].mean()
+    # With flat-topped bricks no face may take moss at all - and the dark
+    # ones then take exactly as little as the rest.
+    assert greening[darkest].mean() <= 1.5 * greening[faces].mean() + 1e-3
 
 
 def test_rust_laid_over_steel_is_orange_and_not_metal(tmp_path):
@@ -105,7 +112,9 @@ def test_the_set_tiles(tmp_path):
         tmp_path, "Wall", {"description": WALL}, [MOSS_IN_THE_JOINTS], CELLS, RESOLUTION
     )
     for key in ("base_color", "orm", "normal"):
-        assert paths.tile_seam_ratio(Path(written["paths"][key])) <= paths.TILE_SEAM_LIMIT
+        assert (
+            paths.tile_seam_ratio(Path(written["paths"][key])) <= paths.TILE_SEAM_LIMIT
+        )
 
 
 def test_a_misspelt_mask_is_named_and_leaves_nothing_behind(tmp_path):
@@ -119,3 +128,56 @@ def test_a_misspelt_mask_is_named_and_leaves_nothing_behind(tmp_path):
             RESOLUTION,
         )
     assert list(tmp_path.iterdir()) == []
+
+
+def _set_channels(tmp_path: Path, description: str, cells: float = 8.0):
+    written = write_layered_texture_set(
+        tmp_path, "Set", {"description": description}, [], cells, RESOLUTION
+    )
+    orm = _pixels(written["paths"]["orm"])
+    normal = _pixels(written["paths"]["normal"]) * 2.0 - 1.0
+    tilt = numpy.degrees(
+        numpy.arccos(
+            numpy.clip(normal[:, :, 2] / numpy.linalg.norm(normal, axis=2), -1, 1)
+        )
+    )
+    return orm, tilt
+
+
+def test_a_brick_wall_s_bricks_are_flat_topped(tmp_path):
+    """The joint distance peaked every brick in its middle - a normal map of
+    four-sided pyramids. The truths' bricks are flat with the mortar
+    recessed, so most of a wall's normals point straight out."""
+    _orm, tilt = _set_channels(tmp_path, WALL)
+    assert float((tilt < 1.0).mean()) > 0.4
+
+
+def test_a_brick_wall_s_joints_are_rougher_than_its_faces(tmp_path):
+    """The truths' roughness follows their height - the joints roughest
+    (a brick wall -0.36) - and a constant roughness gave mortar and brick
+    the same."""
+    orm, _tilt = _set_channels(tmp_path, WALL)
+    joint = {}
+    procedural.write_procedural_base_color(
+        tmp_path / "geometry.png",
+        kind="brick",
+        scale_cells=8.0,
+        width_px=RESOLUTION,
+        height_px=RESOLUTION,
+        joint_height_out=joint,
+        **palette_for_description(WALL, path="brick"),
+    )
+    roughness = orm[:, :, 1]
+    assert (
+        roughness[joint["height"] < 0.1].mean()
+        > roughness[joint["height"] > 0.5].mean() + 0.01
+    )
+
+
+def test_a_polished_marble_is_far_flatter_than_a_rough_rock(tmp_path):
+    """One normal strength gave a polished marble 9.5 degrees of relief
+    against its truths' 0.4, and a rock less than its truths' 17."""
+    _orm, marble = _set_channels(tmp_path / "marble", "white marble, polished, smooth")
+    _orm, rock = _set_channels(tmp_path / "rock", "grey cliff rock, rough")
+    assert float(marble.mean()) < 2.0
+    assert float(rock.mean()) > 10.0
