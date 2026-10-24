@@ -523,3 +523,33 @@ The parent audit read 5 turns on the required provider and model. Because both
 call sites resolve model/role/override the same way, the two pin layers cover
 `agent()` and `workpool()` without extra config — now measured rather than
 assumed.
+
+## The third spawn path: `workpool()`
+
+`agent()` was verified last turn; `workpool()` was still only inferred from it
+sharing the executor. Closed empirically — two items pushed into one pool:
+
+```
+pool-model-check-1: POOL_ATTEST_1: ollama-cloud/deepseek-v4.1-flash:1017
+                    session_init / model_change / 5 assistant turns all agree,
+                    resolvedModelIsFallback false
+pool-model-check-2: POOL_ATTEST_2: ollama-cloud/deepseek-v4.1-flash:1017
+                    same three vectors, plus its own
+                    MODEL_ROUTING: ... across 5 work turns, fallback=false
+```
+
+The parent audit read 18 work turns across the two pool agents, 0 off-pin. So all
+THREE spawn mechanisms now carry the pin by measurement: `task`, `eval agent()`,
+and `eval workpool()`.
+
+## Whole session
+
+```
+TOTAL work turns: 975 | off-pin: 1
+PASS every work turn ran on the required provider and model
+NOTE excused as a deliberate discriminator: probe-model
+```
+
+975 work turns across 26 child transcripts. The single off-pin turn remains the
+deliberate `probe-model` control on the retired model, which is the evidence that
+the check can fail rather than an exception to it.
