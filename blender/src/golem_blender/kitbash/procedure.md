@@ -274,6 +274,7 @@ Generated, pack and assembled entries keep the family and class of what they are
 |Plants|Tree, Tree_Dead, Bush, Grass_Tuft, Log_Stump|plant|base z=0 centre|`add_lathe` trunk (all radii > 0, apex ring 0.02) as one material object; canopy `add_lathe`/`add_cylinder` with `round_segments` as another|
 |Water & shore|Water_Tile, Shore_Edge, Shore_Corner, Dock_Plank, Pier_Post|water|1 cell; water top at `water_level_m`|Thin `add_box` at water level; shore = ground slab with a `boolean_difference` bevel cut toward the water side|
 |Props|Crate, Barrel, Lamp_Post, Sign, Bench|prop|base centre, sized against character_height|Primitives + unions; Barrel = `add_lathe`|
+|Hollow props|Cauldron, Wash_Boiler, Basin, Mortar, Basin_Ring|prop|base centre, mouth at the top|`add_shell_lathe` with the OUTER profile and `wall_m`; `open_top=True` (the default) leaves the mouth open so the inside shows. A hand-built ring loop in `run_python` was the old workaround|
 |Trims & greebles|Beam, Ledge_Trim, Pipe, Buttress, Banner|trim|snaps to wall faces: back face at y = -(wall_m/2 + proud_m) or front at +(wall_m/2 + proud_m)|Single box/cylinder/lathe|
 
 General modelling rules:

@@ -258,9 +258,9 @@ def test_the_tool_set_has_not_drifted():
     )
 
 
-def test_the_four_unlinked_constructors_are_the_only_ungated_object_returners():
-    """Measured set (OT-5): add_box, add_cylinder, add_lathe and
-    add_relief_slab return an object nothing has linked yet. Every other
+def test_the_five_unlinked_constructors_are_the_only_ungated_object_returners():
+    """Measured set (OT-5): add_box, add_cylinder, add_lathe, add_relief_slab
+    and add_shell_lathe return an object nothing has linked yet. Every other
     op whose return names an object is gated. A new ungated op must be
     added here on purpose."""
     ungated = sorted(
@@ -268,7 +268,13 @@ def test_the_four_unlinked_constructors_are_the_only_ungated_object_returners():
         for name, function in facade_ops()
         if returns_object_names(function) and not is_gated(function)
     )
-    assert ungated == ["add_box", "add_cylinder", "add_lathe", "add_relief_slab"]
+    assert ungated == [
+        "add_box",
+        "add_cylinder",
+        "add_lathe",
+        "add_relief_slab",
+        "add_shell_lathe",
+    ]
     assert not returns_object_names(
         ops_facade.assign_material
     )  # a material name, not an object

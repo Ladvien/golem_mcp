@@ -30,7 +30,7 @@ from golem_blender.ops.canonical_orientation import (
     orientation_reading,
 )
 from golem_blender.ops.heal import weld_and_dissolve
-from golem_blender.ops.lathe import add_lathe
+from golem_blender.ops.lathe import add_lathe, add_shell_lathe
 from golem_blender.ops.legs import (
     ImpossibleLeg,
     SplayedLegSpec,
@@ -156,6 +156,7 @@ __all__ = [
     "add_cylinder",
     "add_lathe",
     "add_relief_slab",
+    "add_shell_lathe",
     "add_splayed_leg",
     "animation_report",
     "apply_all_modifiers",
