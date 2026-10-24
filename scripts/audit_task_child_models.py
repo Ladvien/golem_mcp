@@ -61,6 +61,7 @@ def audit_one(transcript: pathlib.Path) -> dict:
     """Every work turn, resolution and non-work call in one transcript."""
     work_turns = collections.Counter()
     resolutions = []
+    session_resolutions = []
     non_work_calls = collections.Counter()
     for line in transcript.open(encoding="utf-8", errors="ignore"):
         try:
@@ -77,6 +78,8 @@ def audit_one(transcript: pathlib.Path) -> dict:
             resolutions.append(
                 (record.get("model"), record.get("resolvedModelIsFallback"))
             )
+        elif kind == "session_init":
+            session_resolutions.append(record.get("resolvedModel"))
         elif kind == "model_usage":
             purpose = record.get("purpose") or "model"
             if purpose != "task-completion-probe":
@@ -84,6 +87,7 @@ def audit_one(transcript: pathlib.Path) -> dict:
     return {
         "work_turns": work_turns,
         "resolutions": resolutions,
+        "session_resolutions": session_resolutions,
         "non_work_calls": non_work_calls,
     }
 
@@ -108,8 +112,17 @@ def report(transcripts: dict[str, pathlib.Path], as_json: bool) -> int:
             model for model, is_fallback in result["resolutions"] if is_fallback
         ]
         unresolved = [model for model, _ in result["resolutions"] if model is None]
+        session_wrong = [
+            model
+            for model in result["session_resolutions"]
+            if model != f"{REQUIRED_PROVIDER}/{REQUIRED_MODEL}"
+        ]
         if off_pin:
             failures.append(f"{name}: {off_pin} work turn(s) off the required pin")
+        if session_wrong or not result["session_resolutions"]:
+            failures.append(
+                f"{name}: session_init resolvedModel is {session_wrong or 'absent'}"
+            )
         if fallbacks:
             failures.append(f"{name}: resolved through a fallback ({fallbacks})")
         if unresolved:
@@ -120,6 +133,7 @@ def report(transcripts: dict[str, pathlib.Path], as_json: bool) -> int:
             "off_pin": off_pin,
             "combinations": {f"{p} / {m}": c for (p, m), c in work_turns.items()},
             "resolutions": result["resolutions"],
+            "session_resolutions": result["session_resolutions"],
             "non_work_calls": {
                 f"{purpose} / {p} / {m}": c
                 for (purpose, p, m), c in result["non_work_calls"].items()
@@ -134,6 +148,8 @@ def report(transcripts: dict[str, pathlib.Path], as_json: bool) -> int:
                 print(f"      {marker}{count:>4}x {provider} / {model}")
             for model, is_fallback in result["resolutions"]:
                 print(f"    resolved: {model}  fallback={is_fallback}")
+            for model in result["session_resolutions"]:
+                print(f"    session_init: {model}")
             for (purpose, provider, model), count in result["non_work_calls"].items():
                 print(f"    non-work ({purpose}): {count}x {provider} / {model}")
 

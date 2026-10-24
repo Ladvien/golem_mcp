@@ -184,3 +184,38 @@ Proven it can fail, on a two-agent fixture with one drifted child and a fallback
 resolution: `exit 1`, with
 `FAIL loop-a2: 1 work turn(s) off the required pin` and
 `FAIL loop-a2: resolved through a fallback (['anthropic/claude-haiku-5-5'])`.
+
+## Child-side attestation, not only parent-side archaeology
+
+Every check above was the parent reading transcripts. A child can measure the
+same thing about itself, and one was spawned to do exactly that — a `self-attest`
+agent (frontmatter `model: ollama-cloud/deepseek-v4.1-flash:1017`, since deleted)
+told to find its own transcript and report three vectors without trusting the
+prompt. It reported, verbatim:
+
+| vector | value |
+|---|---|
+| `session_init` → `resolvedModel` | `ollama-cloud/deepseek-v4.1-flash:1017` |
+| `model_change` → `model` / `resolvedModelIsFallback` | `ollama-cloud/deepseek-v4.1-flash:1017` / `false` |
+| assistant turns by `(provider, model)` | `ollama-cloud` × `deepseek-v4.1-flash:1017`, 4 turns, none off |
+
+Two things about that report are worth keeping:
+
+- **It flagged its own weakness.** It noted the transcript is append-only and it
+  sits inside it, so its count was the turns written at read time and could never
+  include its own final message. The parent audit, run afterwards, counted 5 —
+  the predicted growth, not a contradiction.
+- **It excluded nothing by accident.** Its transcript contained no
+  `model_usage` rows at all, so no turn had to be set aside as a completion probe
+  or an `auto-thinking` classifier.
+
+Every model-bearing record class in the six-way run is now accounted for, not
+just the work turns: `session_init` resolved the required model in all seven
+records across the six children, `title` records are empty (no title-model call),
+and `model_usage` appears only as 18 `task-completion-probe` rows.
+
+`scripts/audit_task_child_models.py` now also FAILS on a `session_init` that
+resolved another model, so the resolution vector cannot pass unnoticed. Proven:
+a fixture whose work turns are all on the pin but whose `session_init` names
+`anthropic/claude-sonnet-5-5` exits 1 with
+`FAIL loop-a1: session_init resolvedModel is ['anthropic/claude-sonnet-5-5']`.
