@@ -2,9 +2,10 @@
 
 ## The commit
 
-The code commit is named in `docs/loop/log.md` (and on `origin/main`); it
-carries the op, the six tests, the moved pin, `BACKLOG.md`, the spec row and
-`kitbash/procedure.md`. Push was a plain fast-forward, never a force.
+`bb3dfa6` — `blender: duplicate_object drops the source's parent, so location_m is world (issue #19)`,
+on `origin/main` (a plain fast-forward; never a force). It carries the op, the
+six tests, the moved pin, `BACKLOG.md`, the spec row and
+`kitbash/procedure.md`.
 
 ## Mac half (the change)
 

@@ -5,7 +5,7 @@ tier, the unit, the evidence, the commit, the deploy result and what is left.
 
 | run | date | tier | unit | commit |
 |---|---|---|---|---|
-| 2026-10-24-01 | 2026-10-24 | 1 (issue) | #19 `duplicate_object` kept the source's parent | see below |
+| 2026-10-24-01 | 2026-10-24 | 1 (issue) | #19 `duplicate_object` kept the source's parent | `bb3dfa6` |
 
 ---
 
