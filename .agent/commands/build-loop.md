@@ -205,3 +205,27 @@ issues filed, and the top 5 remaining items.
 - No claim of improvement without a number or before/after renders.
 - Not deployed means not done. Not logged means not done.
 - If blocked, log it and take the next item in the tier.
+
+## The model: every subagent MUST run `ollama-cloud/deepseek-v4.1-flash:1017`
+
+The user's standing requirement, and it applies to every agent this loop spawns
+and to any agent that spawns further. Do not choose a model "to suit the work".
+
+- The pin lives in two places, and both must hold:
+  `task.agentModelOverrides` in `~/.omp/agent/config.yml` (the layer that
+  outranks agent frontmatter), and the agent's own `model:` line.
+- A bundled agent that names a ROLE (`@smol`, `@slow`, `@task`) resolves through
+  `modelRoles`, so those roles are pinned too. `plan`, `vision`, `web` and
+  `designer` are the interactive session's and are deliberately NOT pinned.
+- Each spawned agent MUST verify its own routing from its transcript
+  (`session_init.resolvedModel`, `model_change.model` with
+  `resolvedModelIsFallback`, and every assistant turn's `provider`/`model`) and
+  publish one line:
+  `MODEL_ROUTING: <provider>/<model> across <N> work turns, fallback=<true|false>`
+  copying the model string exactly, tag included — `deepseek-v4.1-flash` and
+  `deepseek-v4.1-flash:1017` are different models. Lead with `MISMATCH:` if any
+  vector differs.
+- Do not count a `model_usage` row as a work turn: `task-completion-probe` is the
+  harness's completion probe and `auto-thinking` is its own classifier.
+- Gates: `make test-golem` runs the pin tests; after a fan-out run
+  `python3 scripts/audit_task_child_models.py` (exit 1 on any drift).

@@ -471,3 +471,31 @@ session exits 1 only because `probe-model` is off-pin, and 0 with
 Both are covered by tests, so the shape cannot return: a directory it cannot read
 and an empty directory each raise, and the pin module fails rather than skips on
 a missing config.
+
+## The rule was only in the agent brief, not in the loop itself
+
+`grep -c deepseek-v4.1-flash .agent/commands/build-loop.md` returned **0**. The
+imperative lived only in `.omp/agents/loop-worker.md`, so a future loop run
+reading the command it is told to follow had nothing telling it which model to
+spawn on. The command's Rules section now carries it: both pin layers, the role
+resolution caveat, the per-child `MODEL_ROUTING` line (exact tag, `MISMATCH:`
+first when wrong), the warning not to count `task-completion-probe` or
+`auto-thinking` rows as work turns, and the two gates to run.
+
+## The audit's root was hardcoded, and the default would have audited nothing
+
+Two defects in `scripts/audit_task_child_models.py`, both found this turn:
+
+1. **Hardcoded root.** It defaulted to
+   `~/.omp/agent/sessions/-golem_mcp`, while **2718 child transcripts** live
+   outside that folder across 16 working-directory folders. A child's `cwd`
+   follows its worktree, so a fan-out can legitimately write elsewhere.
+2. **"Newest session" was the wrong rule.** Broadening the root alone made it
+   pick `--private-tmp--`, an unrelated newer session with **no children**, and
+   print `nothing was audited`. The default now ranks sessions by recency among
+   those that ACTUALLY HOLD child transcripts, and accepts both the flat and the
+   nested layout. Measured: 149 sessions hold children; the chosen one is this
+   run's, with 25.
+
+After both fixes the sweep is unchanged and correct: **952 work turns, 1 off-pin**
+(the deliberate `probe-model` control), `--allow-off-pin probe-model` → exit 0.

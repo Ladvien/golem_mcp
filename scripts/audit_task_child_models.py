@@ -55,15 +55,50 @@ import sys
 REQUIRED_PROVIDER = "ollama-cloud"
 REQUIRED_MODEL = "deepseek-v4.1-flash:1017"
 
-DEFAULT_SESSION_ROOT = pathlib.Path.home() / ".omp" / "agent" / "sessions" / "-golem_mcp"
+DEFAULT_SESSIONS_ROOT = pathlib.Path.home() / ".omp" / "agent" / "sessions"
+
+
+def _child_transcripts(session_dir: pathlib.Path) -> dict[str, pathlib.Path]:
+    """Every child transcript in ONE session directory.
+
+    A child is a `.jsonl` that is not the session's own dated parent file. Both
+    a flat layout (`<session>/loop-a1.jsonl`) and a nested one
+    (`<session>/<Date>_<id>/Child.jsonl`, used by other working directories) are
+    accepted, because a child's `cwd` follows its worktree.
+    """
+    found: dict[str, pathlib.Path] = {}
+    for path in sorted(session_dir.rglob("*.jsonl")):
+        if path.stem.startswith("2026-"):
+            continue
+        found[path.stem] = path
+    return found
 
 
 def newest_session_dir(root: pathlib.Path) -> pathlib.Path:
-    """The most recently touched session directory under `root`."""
-    candidates = [path for path in root.iterdir() if path.is_dir()]
+    """The most recent session directory that ACTUALLY HOLDS CHILD TRANSCRIPTS.
+
+    Not simply the newest session: measured 2026-10-26, the newest session under
+    `~/.omp/agent/sessions` belonged to an unrelated working directory and had no
+    children at all, so "newest" would report "nothing audited" for a run that
+    spawned sixteen. The default therefore ranks sessions by the newest mtime
+    among those WITH children, searching every working-directory folder:
+    `-golem_mcp`, and also `--private-tmp--` and others, since a child running in
+    a worktree can write to its own folder. Measured: 2718 child transcripts
+    live outside the single `-golem_mcp` session this audit first read.
+    """
+    candidates = [
+        session
+        for folder in root.iterdir()
+        if folder.is_dir()
+        for session in folder.iterdir()
+        if session.is_dir() and _child_transcripts(session)
+    ]
     if not candidates:
-        raise SystemExit(f"no session directories under {root}")
-    return max(candidates, key=lambda path: path.stat().st_mtime)
+        raise SystemExit(
+            f"no session under {root} holds any child transcript, so nothing "
+            f"could be audited. Pass --dir explicitly."
+        )
+    return max(candidates, key=lambda session: session.stat().st_mtime)
 
 
 def audit_one(transcript: pathlib.Path) -> dict:
@@ -207,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
         "--dir",
         type=pathlib.Path,
         default=None,
-        help="the session directory holding the child transcripts (default: newest under ~/.omp/agent/sessions/-golem_mcp)",
+        help="the session directory holding the child transcripts (default: the newest session across EVERY working directory under ~/.omp/agent/sessions)",
     )
     parser.add_argument(
         "--agent",
@@ -232,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", dest="as_json")
     arguments = parser.parse_args(argv)
 
-    session_dir = arguments.dir or newest_session_dir(DEFAULT_SESSION_ROOT)
+    session_dir = arguments.dir or newest_session_dir(DEFAULT_SESSIONS_ROOT)
     if not session_dir.is_dir():
         raise SystemExit(
             f"no such session directory: {session_dir}. An audit that reads "
@@ -247,13 +282,8 @@ def main(argv: list[str] | None = None) -> int:
         # EVERY child transcript, not a name pattern: a default sweep that
         # matched only `loop-a*` silently skipped the concurrency and probe
         # children (measured: 6 of 17 children covered), which is exactly the
-        # blind spot an audit must not have. The parent session's own
-        # `2026-...jsonl` is excluded by its date prefix.
-        transcripts = {
-            path.stem: path
-            for path in sorted(session_dir.glob("*.jsonl"))
-            if not path.stem.startswith("2026-")
-        }
+        # blind spot an audit must not have.
+        transcripts = _child_transcripts(session_dir)
 
     missing = [name for name, path in transcripts.items() if not path.is_file()]
     if missing:
