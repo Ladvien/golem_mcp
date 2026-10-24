@@ -296,6 +296,7 @@ def test_the_readers_are_the_only_plan_free_op_tools():
         "depth_axis_extent_rank",
         "depth_axis_holds_middle_extent",
         "material_report",
+        "measure_objects",
         "middle_extent_m",
         "orientation_reading",
         "pbr_texture_report",

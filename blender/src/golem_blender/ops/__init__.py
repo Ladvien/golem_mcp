@@ -51,6 +51,7 @@ from golem_blender.ops.material_nodes import (
     material_report,
 )
 from golem_blender.ops.materials import assign_material
+from golem_blender.ops.measure_set import SetReport, measure_objects
 from golem_blender.ops.modifiers import (
     DecimateReport,
     add_bevel,
@@ -161,6 +162,7 @@ __all__ = [
     "RigReport",
     "RoughenReport",
     "RingSkirtSpec",
+    "SetReport",
     "SplayedLegSpec",
     "UnlinkedOperand",
     "UnwrapReport",
@@ -211,6 +213,7 @@ __all__ = [
     "link_into_scene",
     "mark_uv_seams",
     "material_report",
+    "measure_objects",
     "middle_extent_m",
     "move_object_to",
     "orientation_reading",

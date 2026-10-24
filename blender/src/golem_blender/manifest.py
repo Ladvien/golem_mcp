@@ -29,6 +29,7 @@ OP_MODULE_NAMES = (
     "legs",
     "transforms",
     "assets",
+    "measure_set",
     "modifiers",
     "heal",
     "roughen",
