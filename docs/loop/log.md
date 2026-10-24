@@ -8,6 +8,7 @@ tier, the unit, the evidence, the commit, the deploy result and what is left.
 | 2026-10-24-01 | 2026-10-24 | 1 (issue) | #19 `duplicate_object` kept the source's parent | `bb3dfa6` |
 | 2026-10-25-01 | 2026-10-25 | 1 (issue) | #24 the GPU-timeout test raced bash's startup | `c32f998` |
 | 2026-10-26-01 | 2026-10-26 | 1 (issue) | #21 `join_objects` combines parts into one mesh | `9ad4b71` |
+| 2026-10-26-02 | 2026-10-26 | 1 (issue) x6 | six-way fan-out: #12, #15, #16, #18, #20, #22 | `66be8f8`, `16303df`, `2579653`, `fb104c4`, `add1fa1`, `60397ba` |
 
 ---
 
@@ -181,3 +182,71 @@ same 35 Sanctuary objects as before. big and bmb untouched.
 4. **No op sets an object's parent** — still unfiled; `bind_mesh_to_armature`
    is the only parenting path.
 5. #15 — remove the unused `pbr/splatter.py` (cheap, unblocks a clean `git grep`).
+
+---
+
+## 2026-10-26-02 — six agents, six issues, one worktree each
+
+**The run shape.** Six `loop-worker` agents (`ollama-cloud/deepseek-v4.1-flash:1017`,
+`thinking: high`, model verified in each child's own session transcript), each in
+its own `git worktree` under `/tmp/golem-loop/a1…a6` branched from `786af06`, one
+issue per agent, then six cherry-picks onto `main`. Isolation was measured before
+spawning: in every worktree `sys.path[0]` resolved `golem_blender` and
+`golem_mcp` to a path under that worktree, not the main checkout.
+
+| agent | issue | outcome | commit on main |
+|---|---|---|---|
+| a1 | #16 decimate op | merged | `add1fa1` |
+| a2 | #20 seeded roughen op | merged | `fb104c4` |
+| a3 | #18 open lathe profiles | merged | `16303df` |
+| a4 | #22 grid/ring/path arrays | merged | `2579653` |
+| a5 | #12 'vertical' turns the grain | merged | `60397ba` |
+| a6 | #15 delete `pbr/splatter.py` | merged | `66be8f8` |
+
+**Merged surface, re-measured after every pick, not taken from any branch.**
+63 → **69 ops**, 72 → **78 tools**, 46 → **52 plan-required**, 18 readers
+unchanged. Fingerprint `t:ff9833ed06ec` → **`t:a9c0b64f6da0`**, always written
+from `TOOL_SCHEMAS_FINGERPRINT`'s own output. Contract violations across the
+whole facade: none.
+
+**Gates on merged `main`:** `test-golem` 10 passed; `test-pure` **1597 passed /
+1 xfailed** (from 1553); `test-mcp` 53 OK; `test-blender-app` **541 passed /
+1 skipped** (from 487).
+
+**Every conflict was the one the plan predicted** — `ops/__init__.py`, the pin,
+`BACKLOG.md`, the spec's tool-surface row — and every one had a fixed resolution.
+The pin was never taken from a side; the counts were re-measured from the live
+facade at each pick, which is how the row moved 63 → 69 ops without trusting any
+agent's arithmetic. `ops/__init__.py` merged textually clean in every pick.
+
+**Two agents edited shared contract surface, additively.** a1 added
+`target_triangles` and `ratio` to `UNITLESS_NUMERIC_NAMES`; a2 added `frequency`
+and `seed`. Both survive, both are guarded by the existing
+`test_unitless_allowlist_is_all_in_use` (an unused entry is a failure).
+
+**One agent broke the isolation rule and it is recorded, not buried.** a5 wrote
+into `/Users/ladvien/golem_mcp` before moving to its worktree, then ran
+`git checkout --` on exactly those six files. The user chose to merge on the
+evidence rather than reject on the rule, so main was first verified byte-clean
+(`git status --porcelain` empty, `git diff HEAD -- pbr/` empty) and a5's branch
+gates were re-run in its own worktree. The work is sound; the slip is in the log
+and in #12's closing comment because a future reader deserves both facts.
+
+**A finding no issue asked for:** a5 measured that `tile_seam_ratio` reads the
+last column against the first and **never the rows**, so a turned wood's own row
+steps register as a "seam" (0.001× → 0.224×) on a map whose content did not
+change. Documented in `scripts/benchmarks/README.md`'s known-limits list and
+asserted in the test (the two axes' numbers must swap). Also recorded by a6: the
+same reachability walk that proved `splatter.py` dead cannot reach
+`pbr/noise_curl.py` or `pbr/noise_gabor.py` either — #15 named only
+`splatter.py`, so those were left alone and are worth their own issue.
+
+**Issues closed with evidence:** #12, #15, #16, #18, #20, #22.
+
+**Top 5 remaining.**
+1. #23 — measure/save/export a multi-part piece as ONE asset (unblocked by #21).
+2. #17 — a piece grouping; the same complaint from the catalog side.
+3. #2 — the loose-ground scatter's colour model (stones read as flat discs).
+4. New — `pbr/noise_curl.py` and `pbr/noise_gabor.py` are unreachable by the same
+   AST walk that condemned `splatter.py`; confirm dead, then delete or wire.
+5. #1 — the full four-set PBR run after the knit/plaid/seam batches.
