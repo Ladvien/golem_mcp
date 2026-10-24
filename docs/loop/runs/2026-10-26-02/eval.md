@@ -219,3 +219,48 @@ resolved another model, so the resolution vector cannot pass unnoticed. Proven:
 a fixture whose work turns are all on the pin but whose `session_init` names
 `anthropic/claude-sonnet-5-5` exits 1 with
 `FAIL loop-a1: session_init resolvedModel is ['anthropic/claude-sonnet-5-5']`.
+
+## The imperative: every child attests, and the parent gates on it
+
+Seven earlier answers were the parent reading transcripts. That is archaeology:
+it proves what happened, and nothing makes a future child state its own routing.
+The `loop-worker` brief now carries a MODEL section that is an imperative, not a
+note:
+
+- measure three vectors from your OWN transcript (`session_init.resolvedModel`,
+  `model_change.model` + `resolvedModelIsFallback`, and every assistant turn's
+  `provider`/`model`);
+- never count a `model_usage` row as a work turn (completion probe or the
+  harness's `auto-thinking` classifier);
+- if anything differs or `resolvedModelIsFallback` is true, put `MISMATCH:` first
+  in the report and do NOT claim the required model;
+- publish exactly one line:
+  `MODEL_ROUTING: <provider>/<model> across <N> work turns, fallback=<true|false>`
+
+**Proven on a live spawn of the `loop-worker` definition itself:**
+
+```
+probe ok
+V1 session_init.resolvedModel  -> ollama-cloud/deepseek-v4.1-flash:1017
+V2 model_change                -> model ollama-cloud/deepseek-v4.1-flash:1017,
+                                  resolvedModelIsFallback false
+V3 assistant work turns        -> (ollama-cloud, deepseek-v4.1-flash:1017) x 7
+
+MODEL_ROUTING: ollama-cloud/deepseek-v4.1-flash:1017 across 7 work turns, fallback=false
+```
+
+The parent audit run afterwards on the same transcript read 8 work turns on the
+same provider/model with `fallback=False`. The count differs by design — a child
+cannot see its own final message — so the gate compares the **model**, never the
+turn count.
+
+`tests/test_loop_worker_report_routing.py` makes the line a hard requirement and
+refuses the two dangerous shapes: no line at all (a confident report with no
+attestation) and two lines (one is stale), plus a bare model name with no
+provider, which parses but cannot compare equal to the required selector.
+
+## No mid-run switch vector is left open
+
+`task.prewalk`, `task.agentPrewalk` and `task.agentAdvisor` are all unset, and
+the agent declares neither `prewalk` nor `advisor` — so no child can start on the
+pinned model and be handed off to another one after its first edit.
