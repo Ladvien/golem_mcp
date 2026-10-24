@@ -553,3 +553,39 @@ NOTE excused as a deliberate discriminator: probe-model
 975 work turns across 26 child transcripts. The single off-pin turn remains the
 deliberate `probe-model` control on the retired model, which is the evidence that
 the check can fail rather than an exception to it.
+
+## The layers above the global config, and the hole they left
+
+Every check so far read `~/.omp/agent/config.yml` — the GLOBAL layer. The settings
+precedence is:
+
+```
+built-in defaults  <  global  <  PROJECT  <  CLI overlay  <  runtime  <  env var
+```
+
+So a project `<cwd>/.omp/config.yml`, a `--config` overlay, or a
+`PI_SMOL_MODEL`-style env var outranks everything I pinned, and the file-based
+tests would stay green while a subagent resolved elsewhere.
+
+**Measured, not theorised.** With `modelRoles: {smol: anthropic/claude-haiku-5-5}`
+in a project config, `omp config list --json` reported
+`smol = anthropic/claude-haiku-5-5` — the project layer winning over the global
+pin. My file-based tests read the global file and saw nothing wrong.
+
+The check now asks **omp itself** for the merged value (`omp config list --json →
+modelRoles.value`) and asserts every non-main-session role there. Proven: putting
+that same project config at the repository root fails the test with
+
+```
+the EFFECTIVE merged modelRoles do not name 'ollama-cloud/deepseek-v4.1-flash:1017':
+{'smol': 'anthropic/claude-haiku-5-5'}. A project `<cwd>/.omp/config.yml`,
+a `--config` overlay or a `PI_*_MODEL` env var outranks the global pin; the global
+file can be correct while a subagent still resolves elsewhere.
+```
+
+Removed, 9 passed. The project config is not committed: the point is that the
+check would catch one, not that this repo needs one.
+
+Two things also confirmed unset, so they are not current vectors: no
+`PI_SMOL_MODEL`/`PI_SLOW_MODEL`/`PI_PLAN_MODEL` in the environment, and no
+`.omp/config.yml` at the repository root or in any other checkout probed.

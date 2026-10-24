@@ -244,3 +244,72 @@ def test_every_role_is_SET_rather_than_left_to_fall_through():
         f"falls through to the default selection, so leaving one unset is a "
         f"routing hole that looks tidy in the config."
     )
+
+
+def _effective_model_roles() -> dict:
+    """The MERGED roles across every settings layer, from omp itself.
+
+    Reading the global file alone was a real hole, measured 2026-10-26: a project
+    `<cwd>/.omp/config.yml` containing `modelRoles: {smol: anthropic/...}`
+    overrode the global pin, and `omp config list --json` showed `smol =
+    anthropic/claude-haiku-5-5` while the file-based tests stayed green. Precedence
+    per the settings docs is global < project < overlay < runtime < env, so the
+    only honest check reads the merged value rather than one layer of it.
+
+    Returns `{}` when omp cannot be run here; the caller decides whether that is
+    an opt-out or a failure.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    executable = shutil.which("omp")
+    if executable is None:
+        return {}
+    completed = subprocess.run(
+        [executable, "config", "list", "--json"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=REPOSITORY_ROOT,
+    )
+    if completed.returncode != 0:
+        return {}
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return {}
+    return (payload.get("modelRoles") or {}).get("value") or {}
+
+
+def test_the_EFFECTIVE_merged_roles_name_the_required_model():
+    """The layer-proof check: a project config or an env var cannot hide here.
+
+    This is the test the earlier file-based ones could not be. It asks omp for the
+    merged value, so a `<cwd>/.omp/config.yml` override, a `--config` overlay or a
+    `PI_SMOL_MODEL`-style env var all surface as a wrong effective value instead of
+    passing silently.
+
+    Opt out on a machine with no omp with `OMP_MODEL_PIN_REQUIRED=0`.
+    """
+    effective = _effective_model_roles()
+    if not effective:
+        if os.environ.get("OMP_MODEL_PIN_REQUIRED", "1") == "0":
+            pytest.skip("OMP_MODEL_PIN_REQUIRED=0 and no omp to query")
+        raise AssertionError(
+            "could not read the EFFECTIVE modelRoles (omp missing, or `omp config "
+            "list --json` failed). The file-based tests only see the global layer, "
+            "so without this the project config and env-var layers go unchecked."
+        )
+
+    wrong = {
+        role: selector
+        for role, selector in sorted(effective.items())
+        if role not in MAIN_SESSION_ROLES and selector != REQUIRED_MODEL
+    }
+    assert not wrong, (
+        f"the EFFECTIVE merged modelRoles do not name {REQUIRED_MODEL!r}: {wrong}. "
+        f"A project `<cwd>/.omp/config.yml`, a `--config` overlay or a "
+        f"`PI_*_MODEL` env var outranks the global pin; the global file can be "
+        f"correct while a subagent still resolves elsewhere."
+    )
