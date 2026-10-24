@@ -321,6 +321,11 @@ def test_the_save_blend_tool_saves_several_objects_and_refuses_the_rest(
         {"object_names": [], "blend_path": str(blend_path)},
         {"object_names": "SaveCrate", "blend_path": str(blend_path)},
         {"object_names": ["SaveCrate", "Ghost"], "blend_path": str(blend_path)},
+        # Issue #17: `piece` is the other spelling, so neither given is a refusal.
+        {"blend_path": str(blend_path)},
+        {"piece": "", "blend_path": str(blend_path)},
+        {"piece": "Ghost", "blend_path": str(blend_path)},
+        {"piece": "Piece", "object_names": ["SaveCrate"], "blend_path": str(blend_path)},
     ]
     for arguments in refused:
         outcome = dispatch_tool("save_blend", arguments, tmp_path)

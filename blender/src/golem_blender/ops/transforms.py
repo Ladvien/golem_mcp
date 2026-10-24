@@ -169,14 +169,62 @@ def move_object_to(
     return ObjectName(object_name)
 
 
-def snap_base_to_ground(object_name: str) -> float:
-    """Move the named object so its lowest point sits exactly at z=0.
+def snap_base_to_ground(
+    object_name: str | None = None, *, piece: str | None = None
+) -> float:
+    """Move the named object, or a PIECE, so the lowest point sits at z=0; returns the offset in m.
 
-    Returns the applied z offset in meters.
+    A piece moves as one: every member takes the SAME z offset, so the
+    piece keeps its shape and the set's lowest point lands at 0 (moving
+    one part would put the piece's lowest point somewhere else). The
+    measurement reads the parts' joint world bounds, so it is the set's
+    lowest point that is grounded, not one member's.
+
+    Give `object_name` or `piece`, never both: two targets in one call
+    have no single offset to report.
     """
     from mathutils import Vector
 
     from golem_blender.ops._objects import object_by_name
+
+    if object_name is not None and piece is not None:
+        raise ValueError(
+            f"give object_name or piece, not both: got object_name="
+            f"{object_name!r} and piece={piece!r}"
+        )
+    if object_name is None and piece is None:
+        raise ValueError(
+            "give exactly one of object_name or piece; got neither, so there "
+            "is nothing to ground"
+        )
+
+    if piece is not None:
+        from golem_blender.ops.pieces import _piece_all_objects, _piece_mesh_objects
+
+        # The SAME members the report measures (decision 4 of ops.pieces):
+        # a non-mesh member has no geometry to ground, so including its box
+        # would put the piece's lowest point where the report does not
+        # read it.
+        mesh_objects = _piece_mesh_objects(piece)
+        if not mesh_objects:
+            raise ValueError(
+                f"piece {piece!r} has no mesh members, so it has no lowest "
+                f"point to ground"
+            )
+        _refresh_dependency_graph()
+        lowest_z_m = min(
+            (blender_object.matrix_world @ Vector(corner)).z
+            for blender_object in mesh_objects
+            for corner in blender_object.bound_box
+        )
+        offset_z_m = -lowest_z_m
+        # EVERY member moves, meshes and the armature/empties beside them,
+        # by the same offset: grounding half a rigged piece would tear it
+        # apart.
+        for blender_object in _piece_all_objects(piece):
+            blender_object.location.z += offset_z_m
+        _refresh_dependency_graph()
+        return offset_z_m
 
     blender_object = object_by_name(object_name)
     _refresh_dependency_graph()

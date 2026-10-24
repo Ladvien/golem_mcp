@@ -46,6 +46,16 @@ def test_no_names_and_repeated_names_are_refused():
         validate_blend_request(["Thing", ""], Path("/tmp/thing.blend"))
 
 
+def test_a_missing_list_or_path_is_refused_by_name():
+    """Issue #17: `object_names` became optional because `piece` is the other
+    spelling, so the call that gives NEITHER is refused here, without Blender,
+    rather than raising TypeError from `tuple(None)`."""
+    with pytest.raises(BlendSaveError, match="object_names=\\[...\\] or piece"):
+        validate_blend_request(None, Path("/tmp/thing.blend"))
+    with pytest.raises(BlendSaveError, match="blend_path is REQUIRED"):
+        validate_blend_request(["Thing"], None)
+
+
 def test_a_good_request_comes_back_normalized():
     names, destination = validate_blend_request(["A", "B"], "/tmp/thing.blend")
     assert names == ("A", "B")
@@ -75,12 +85,17 @@ def test_export_asset_requires_a_blend_path_in_its_schema():
     assert set(schema["required"]) == {"object_name", "path", "blend_path"}
 
 
-def test_save_blend_is_a_service_tool_with_its_two_required_arguments():
+def test_save_blend_is_a_service_tool_that_takes_names_or_a_piece():
     assert "save_blend" in SERVICE_TOOL_NAMES
     schema = _tool("save_blend")["parameters"]
     assert schema["properties"]["object_names"]["type"] == "array"
     assert schema["properties"]["object_names"]["items"] == {"type": "string"}
-    assert set(schema["required"]) == {"object_names", "blend_path"}
+    # Issue #17: a defined piece is the other spelling. Either satisfies the
+    # call, so only the .blend path is unconditionally required; the
+    # implementation (and the tool branch) refuse a call that gives neither
+    # or both, because a schema cannot express "exactly one of".
+    assert schema["properties"]["piece"]["type"] == "string"
+    assert set(schema["required"]) == {"blend_path"}
 
 
 @pytest.mark.parametrize(

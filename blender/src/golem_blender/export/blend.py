@@ -48,9 +48,13 @@ class BlendSaveReport:
 
 
 def validate_blend_request(
-    object_names: Sequence[str], blend_path: Path
+    object_names: Sequence[str] | None, blend_path: Path | None
 ) -> tuple[tuple[str, ...], Path]:
     """The argument checks that need no Blender; raises BlendSaveError."""
+    if object_names is None:
+        raise BlendSaveError(
+            "no objects to save: give object_names=[...] or piece='Name'"
+        )
     if isinstance(object_names, str):
         raise BlendSaveError(
             f"object_names must be a list of names, got the string "
@@ -65,6 +69,11 @@ def validate_blend_request(
     duplicates = sorted({name for name in names if names.count(name) > 1})
     if duplicates:
         raise BlendSaveError(f"object_names repeats {duplicates}")
+    if blend_path is None:
+        raise BlendSaveError(
+            f"blend_path is REQUIRED: the .blend source must be written to a "
+            f"path ending in {BLEND_SUFFIX!r}, got nothing"
+        )
     destination = Path(blend_path)
     if destination.suffix != BLEND_SUFFIX:
         raise BlendSaveError(
@@ -80,8 +89,13 @@ def _triangle_count(blender_object) -> int:
     return sum(len(polygon.vertices) - 2 for polygon in blender_object.data.polygons)
 
 
-def save_blend(object_names: Sequence[str], blend_path: Path) -> BlendSaveReport:
-    """Write the named objects to a compressed .blend and verify the file.
+def save_blend(
+    object_names: Sequence[str] | None = None,
+    blend_path: Path | None = None,
+    *,
+    piece: str | None = None,
+) -> BlendSaveReport:
+    """Write the named objects, or a defined PIECE, to a compressed .blend and verify it.
 
     The file's one scene holds exactly these objects, with their mesh and
     material data, under the same names and with their transforms. The
@@ -91,8 +105,37 @@ def save_blend(object_names: Sequence[str], blend_path: Path) -> BlendSaveReport
     the requested ones (a parent or modifier target pulled in as a
     dependency) and any triangle-count mismatch; a file that fails the
     check is deleted rather than left behind as an unverified artifact.
+
+    `piece` names a set held by `golem_blender.ops.pieces`, so a piece is
+    saved by its own name instead of by repeating its members. The two
+    spellings are exclusive: a call with both is refused rather than
+    silently ignoring one, and a piece with a removed member is refused
+    by name (the piece is not what it was, so its file would be a lie).
     """
     import bpy
+
+    if piece is not None:
+        if object_names is not None:
+            raise BlendSaveError(
+                f"give object_names or piece, not both: piece {piece!r} "
+                f"already names its objects, so a list beside it is ambiguous"
+            )
+        from golem_blender.ops.pieces import (
+            PieceChangedError,
+            UnknownPiece,
+            _piece_object_names,
+        )
+
+        try:
+            object_names = list(_piece_object_names(piece))
+        except (UnknownPiece, PieceChangedError) as error:
+            # Re-raised as this module's one error type, carrying the piece
+            # module's own message (which names the piece and the members).
+            raise BlendSaveError(str(error)) from error
+    elif object_names is None:
+        raise BlendSaveError(
+            "no objects to save: give object_names=[...] or piece='Name'"
+        )
 
     names, destination = validate_blend_request(object_names, blend_path)
     live_objects = []

@@ -274,11 +274,12 @@ SERVICE_TOOL_SCHEMAS: list[dict] = [
         "function": {
             "name": "save_blend",
             "description": (
-                "Save the named objects as an editable .blend (one scene, "
-                "exactly those objects with their mesh and material data and "
-                "transforms) and VERIFY it by re-reading the written file. "
-                "Use it for pieces exported some other way, such as several "
-                "objects in one .glb; export_asset already saves its own."
+                "Save the named objects, or a defined PIECE, as an editable "
+                ".blend (one scene, exactly those objects with their mesh and "
+                "material data and transforms) and VERIFY it by re-reading the "
+                "written file. Use it for pieces exported some other way, such "
+                "as several objects in one .glb; export_asset already saves its "
+                "own. `define_piece` names a set once, then `piece` saves it."
             ),
             "parameters": {
                 "type": "object",
@@ -287,6 +288,16 @@ SERVICE_TOOL_SCHEMAS: list[dict] = [
                         "type": "array",
                         "items": {"type": "string"},
                         "minItems": 1,
+                        "description": (
+                            "The objects to save. Give this OR `piece`, not both."
+                        ),
+                    },
+                    "piece": {
+                        "type": "string",
+                        "description": (
+                            "A piece defined by define_piece: its whole set is "
+                            "saved. Give this OR `object_names`, not both."
+                        ),
                     },
                     "blend_path": {
                         "type": "string",
@@ -294,7 +305,7 @@ SERVICE_TOOL_SCHEMAS: list[dict] = [
                     },
                     "plan_step": PLAN_STEP_SCHEMA,
                 },
-                "required": ["object_names", "blend_path"],
+                "required": ["blend_path"],
             },
         },
     },
@@ -817,18 +828,38 @@ def _dispatch_service_tool(
         if refusal:
             return failed(refusal, STAGE_EXPORT)
         object_names = arguments.get("object_names")
-        if (
-            not isinstance(object_names, list)
-            or not object_names
-            or not all(isinstance(name, str) for name in object_names)
-        ):
-            return failed(
-                "object_names must be a non-empty list of object names.", STAGE_LOCATE
-            )
-        try:
-            blend_report = save_blend(object_names, blend_path)
-        except BlendSaveError as error:
-            return failed(f"SAVE BLEND FAILED: {error}", STAGE_EXPORT)
+        piece = arguments.get("piece")
+        if piece is not None:
+            if not isinstance(piece, str) or not piece.strip():
+                return failed(
+                    "piece must be a non-empty piece name (define_piece it first).",
+                    STAGE_LOCATE,
+                )
+            if object_names is not None:
+                return failed(
+                    "give object_names or piece, not both: a piece already names "
+                    "its objects.",
+                    STAGE_LOCATE,
+                )
+            try:
+                blend_report = save_blend(None, blend_path, piece=piece.strip())
+            except BlendSaveError as error:
+                return failed(f"SAVE BLEND FAILED: {error}", STAGE_EXPORT)
+        else:
+            if (
+                not isinstance(object_names, list)
+                or not object_names
+                or not all(isinstance(name, str) for name in object_names)
+            ):
+                return failed(
+                    "object_names must be a non-empty list of object names, or "
+                    "give `piece`.",
+                    STAGE_LOCATE,
+                )
+            try:
+                blend_report = save_blend(object_names, blend_path)
+            except BlendSaveError as error:
+                return failed(f"SAVE BLEND FAILED: {error}", STAGE_EXPORT)
         return done(
             f"Saved and re-read the .blend source {blend_report.blend_path} "
             f"({blend_report.file_size_bytes} bytes): "
