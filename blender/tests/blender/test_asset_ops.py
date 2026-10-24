@@ -203,3 +203,171 @@ def test_duplicate_has_its_own_mesh_and_the_requested_pose(empty_scene):
 
     with pytest.raises(NameTaken):
         duplicate_object("Original", "Copy")
+
+
+# --- issue #19: a copy must not inherit the source's parent ----------------
+
+PARENT_HEIGHT_M = 3.0
+COPY_LOCATION_M = (1.0, 2.0, 3.0)
+PARENT_BONE_NAME = "Spine"
+
+
+def _parented_child(object_name, parent_name, height_m):
+    """A box linked into the scene and parented to an empty at height_m."""
+    from golem_blender.ops.primitives import add_box, link_into_scene
+
+    child_name = add_box(object_name, 1.0, 1.0, 1.0, (0.0, 0.0, 0.0))
+    link_into_scene(child_name)
+    parent = bpy.data.objects.new(parent_name, None)
+    bpy.context.scene.collection.objects.link(parent)
+    parent.location = (0.0, 0.0, height_m)
+    bpy.context.view_layer.update()
+    bpy.data.objects[child_name].parent = parent
+    bpy.context.view_layer.update()
+    return child_name
+
+
+def _world_location(object_name):
+    return tuple(bpy.data.objects[object_name].matrix_world.translation)
+
+
+def test_a_copy_is_placed_where_it_was_told_not_relative_to_the_sources_parent(
+    empty_scene,
+):
+    """Issue #19, conditions 1 and 4: the default drops the source's parent.
+
+    Old (`main`): `Object.copy()` carried the parent over, so `location`
+    stayed parent-relative and the copy landed at world z = 3 + PARENT.
+    """
+    from golem_blender.ops.assets import duplicate_object
+
+    source_name = _parented_child("Child", "Mount", PARENT_HEIGHT_M)
+
+    duplicate_object(source_name, "Copy", COPY_LOCATION_M, 0.0)
+
+    copy = bpy.data.objects["Copy"]
+    assert copy.parent is None
+    assert _world_location("Copy") == pytest.approx(
+        COPY_LOCATION_M, abs=POSITION_TOLERANCE_M
+    )
+
+
+def test_keep_parent_reproduces_the_parent_relative_behaviour_exactly(empty_scene):
+    """Issue #19, condition 2: keep_parent=True is today's placement.
+
+    The copy keeps the parent AND its matrix_parent_inverse, so its world
+    location is the parent's height plus the local one — stated as measured
+    rather than as the old docstring claimed.
+    """
+    from golem_blender.ops.assets import duplicate_object
+
+    source_name = _parented_child("Child", "Mount", PARENT_HEIGHT_M)
+
+    report = duplicate_object(
+        source_name, "Copy", COPY_LOCATION_M, 0.0, keep_parent=True
+    )
+
+    copy = bpy.data.objects["Copy"]
+    expected_world_m = (
+        COPY_LOCATION_M[0],
+        COPY_LOCATION_M[1],
+        COPY_LOCATION_M[2] + PARENT_HEIGHT_M,
+    )
+    assert copy.parent is not None and copy.parent.name == "Mount"
+    assert _world_location("Copy") == pytest.approx(
+        expected_world_m, abs=POSITION_TOLERANCE_M
+    )
+    assert report.location_is_parent_relative is True
+
+
+def test_keep_parent_with_a_zero_location_reports_a_world_location(empty_scene):
+    from golem_blender.ops.assets import duplicate_object
+
+    source_name = _parented_child("Child", "Mount", PARENT_HEIGHT_M)
+
+    report = duplicate_object(
+        source_name, "Copy", (0.0, 0.0, 0.0), 0.0, keep_parent=True
+    )
+
+    assert report.location_is_parent_relative is False
+
+
+def test_clearing_the_parent_also_clears_a_bone_parent(empty_scene):
+    """A bone-parented mesh must not keep parent_type='BONE' on a parent-less copy."""
+    from mathutils import Matrix
+
+    from golem_blender.ops.assets import duplicate_object
+    from golem_blender.ops.primitives import add_box, link_into_scene
+
+    source_name = add_box("Sleeve", 1.0, 1.0, 1.0, (0.0, 0.0, 0.0))
+    link_into_scene(source_name)
+    armature_data = bpy.data.armatures.new("Rig")
+    armature = bpy.data.objects.new("Rig", armature_data)
+    bpy.context.scene.collection.objects.link(armature)
+    bpy.context.view_layer.objects.active = armature
+    bpy.ops.object.mode_set(mode="EDIT")
+    bone = armature_data.edit_bones.new(PARENT_BONE_NAME)
+    bone.head = (0.0, 0.0, 0.0)
+    bone.tail = (0.0, 0.0, 1.0)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    sleeve = bpy.data.objects[source_name]
+    sleeve.parent = armature
+    sleeve.parent_type = "BONE"
+    sleeve.parent_bone = PARENT_BONE_NAME
+    sleeve.matrix_parent_inverse = Matrix.Translation((0.0, 0.0, 1.0))
+    bpy.context.view_layer.update()
+
+    duplicate_object(source_name, "Copy", COPY_LOCATION_M, 0.0)
+
+    copy = bpy.data.objects["Copy"]
+    assert copy.parent is None
+    assert copy.parent_type == "OBJECT"
+    assert copy.parent_bone == ""
+    assert _world_location("Copy") == pytest.approx(
+        COPY_LOCATION_M, abs=POSITION_TOLERANCE_M
+    )
+
+
+def test_duplicating_leaves_the_sources_placement_and_parent_alone(empty_scene):
+    """Issue #19, condition 3: the source is measured before and after."""
+    from golem_blender.ops.assets import duplicate_object
+
+    source_name = _parented_child("Child", "Mount", PARENT_HEIGHT_M)
+    source = bpy.data.objects[source_name]
+    world_before = _world_location(source_name)
+    parent_world_before = tuple(source.parent.matrix_world.translation)
+
+    duplicate_object(source_name, "Copy", COPY_LOCATION_M, 0.0)
+
+    assert source.parent is not None and source.parent.name == "Mount"
+    assert _world_location(source_name) == pytest.approx(
+        world_before, abs=POSITION_TOLERANCE_M
+    )
+    assert tuple(source.parent.matrix_world.translation) == pytest.approx(
+        parent_world_before, abs=POSITION_TOLERANCE_M
+    )
+
+
+def test_a_copy_is_linked_into_each_of_the_sources_collections_once(empty_scene):
+    """Issue #19 edge case: nested collections A -> B list the source once each."""
+    from golem_blender.ops.assets import duplicate_object
+    from golem_blender.ops.primitives import add_box, link_into_scene
+
+    outer = bpy.data.collections.new("Outer")
+    inner = bpy.data.collections.new("Inner")
+    bpy.context.scene.collection.children.link(outer)
+    outer.children.link(inner)
+    source_name = add_box("Piece", 1.0, 1.0, 1.0, (0.0, 0.0, 0.0))
+    link_into_scene(source_name)
+    piece = bpy.data.objects[source_name]
+    inner.objects.link(piece)
+    bpy.context.view_layer.update()
+
+    duplicate_object(source_name, "Copy", COPY_LOCATION_M, 0.0)
+
+    copy = bpy.data.objects["Copy"]
+    assert sorted(collection.name for collection in copy.users_collection) == sorted(
+        collection.name for collection in piece.users_collection
+    )
+    for collection in copy.users_collection:
+        assert sum(1 for linked in collection.objects if linked is copy) == 1

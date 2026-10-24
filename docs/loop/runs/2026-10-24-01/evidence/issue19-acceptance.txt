@@ -1,0 +1,8 @@
+1 copy world: (1.0, 2.0, 3.0) -> True
+2 keep_parent world: (1.0, 2.0, 8.0) -> True
+3 source unchanged: True (0.0, 0.0, 5.0)
+4 copy.parent is None: True
+5 own mesh data: True True
+report flag default: False kept: True
+6 boolean on the copy left the source's polygons alone: True probe now: 32
+JSON form: {"object_name": "Copy", "location_is_parent_relative": false}

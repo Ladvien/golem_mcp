@@ -42,6 +42,10 @@ class AssetReport:
     material_names: tuple[str, ...]
     connected_component_count: int
     boundary_edge_count: int
+    # True only for a copy that kept its parent AND was given a non-zero
+    # location: `location_m` is then parent-relative and the measured
+    # bounds are the only world reading (issue #19).
+    location_is_parent_relative: bool = False
 
 
 def _asset_report(
@@ -49,6 +53,7 @@ def _asset_report(
     source_glb: str,
     scale: float,
     triangle_count_before: int | None = None,
+    location_is_parent_relative: bool = False,
 ) -> AssetReport:
     """Measure the object as it now stands; `triangle_count_before` defaults to the measured count."""
     from golem_blender.analyze.mesh_checks import analyze_object
@@ -78,6 +83,7 @@ def _asset_report(
         ),
         connected_component_count=mesh_report.connected_component_count,
         boundary_edge_count=mesh_report.boundary_edge_count,
+        location_is_parent_relative=location_is_parent_relative,
     )
 
 
@@ -303,14 +309,20 @@ def duplicate_object(
     new_name: str,
     location_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
     z_rad: float = 0.0,
+    keep_parent: bool = False,
 ) -> AssetReport:
-    """Copy the named object (own mesh data, materials shared) to new_name at location_m, turned z_rad about Z.
+    """Copy the named object (own mesh data) to new_name at world location_m, turned z_rad about Z; parent dropped.
 
-    Location and rotation are SET on the copy, not inherited. The copy has
-    its own mesh data, so a boolean on one copy cannot change the others.
-    Raises NameTaken when new_name exists.
+    The copy's `location` is the WORLD location: the source's parent, its
+    type and bone, and matrix_parent_inverse are cleared first, because
+    `Object.copy()` carries them and would leave `location_m`
+    parent-relative (issue #19). keep_parent=True keeps today's
+    behaviour exactly — the copy stays parent-relative and the report
+    says so. The copy has its own mesh data, so a boolean on one copy
+    cannot change the others. Raises NameTaken when new_name exists.
     """
     import bpy
+    from mathutils import Matrix
 
     from golem_blender.ops.primitives import NameTaken
     from golem_blender.ops.transforms import _refresh_dependency_graph
@@ -328,10 +340,29 @@ def duplicate_object(
     copied_object.data = source_object.data.copy()
     copied_object.name = new_name
     copied_object.data.name = new_name
+    if not keep_parent:
+        # `Object.copy()` carries the parent, its type and bone, and the
+        # matrix_parent_inverse. Left in place, `location` stays
+        # PARENT-RELATIVE and the copy lands somewhere other than
+        # location_m (measured: a child of an empty at z=3 given
+        # location z=3 landed at world z=6). Clearing the parent alone is
+        # not enough — a bone parent survives it as parent_type='BONE'.
+        # Same trap `move_object_to` handles for a parented object.
+        copied_object.parent = None
+        copied_object.parent_type = "OBJECT"
+        copied_object.parent_bone = ""
+        copied_object.matrix_parent_inverse = Matrix.Identity(4)
     for collection in source_object.users_collection:
         collection.objects.link(copied_object)
     copied_object.location = location_m
     copied_object.rotation_mode = "XYZ"
     copied_object.rotation_euler = (0.0, 0.0, z_rad)
     _refresh_dependency_graph()
-    return _asset_report(copied_object, source_glb="", scale=1.0)
+    return _asset_report(
+        copied_object,
+        source_glb="",
+        scale=1.0,
+        # Only meaningful while the copy keeps a parent: with the parent
+        # dropped, location_m IS the world location.
+        location_is_parent_relative=keep_parent and location_m != (0.0, 0.0, 0.0),
+    )

@@ -371,7 +371,7 @@ A new asset built from pieces that already exist: approved pieces of this or a c
 2. `declare_plan` (<= 8 steps).
 3. For each part:
    - the first use of a piece: `import_glb_piece(glb_path=<its GLB>, object_name="<Asset>__<Piece>")`, then `move_object_to` + `rotate_object_euler` to the part's `offset_m` and `yaw_deg`;
-   - later uses of the same piece: `duplicate_object(object_name="<Asset>__<Piece>", new_name="<Asset>__<Piece>_<k>", location_m=<offset_m>, z_rad=<radians(yaw_deg)>)` with k = 2, 3, ...: each copy has its own mesh data, so a boolean on one cannot change the others.
+   - later uses of the same piece: `duplicate_object(object_name="<Asset>__<Piece>", new_name="<Asset>__<Piece>_<k>", location_m=<offset_m>, z_rad=<radians(yaw_deg)>)` with k = 2, 3, ...: each copy has its own mesh data, so a boolean on one cannot change the others, and each copy drops the source's parent so `location_m` is its WORLD location (pass `keep_parent=True` only when the part genuinely stays a child of the piece, and read `location_is_parent_relative` in the report).
 4. Booleans and new primitives follow the section 4 rules. `import_glb_piece` counts components and boundary edges as imported (glTF stores vertices per face), and a boolean is gated like any other: a piece whose geometry is split or open fails that gate until it is welded (`weld_and_dissolve`) or left untouched.
 5. The recipe records every call.
 6. Measure with snippets F (body = the first part) and Z over all the part objects; look (B5); approve (B9, with snippet D joining all parts into one node `<Asset>`).
