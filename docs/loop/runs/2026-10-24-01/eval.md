@@ -47,7 +47,7 @@ pins that.
 
 | gate | baseline (before) | after |
 |---|---|---|
-| `make test-golem` | 10 passed | 10 passed |
+| `make test-golem` | 10 passed | **1 failed, 9 passed** — a pre-existing flake, not this change: `tests/test_gpu.py::test_a_job_over_its_timeout_is_terminated_and_reported` fails 4–5 of every 5 runs, and 5 of 5 in a fresh worktree at `c217f2f` (the pre-change commit). `src/golem_mcp/gpu.py` and `tests/test_gpu.py` are untouched by this run. Filed as issue #24 with the measured mechanism and a verified fix. |
 | `make -C blender test-pure` | 1547 passed, 1 xfailed | 1547 passed, 1 xfailed |
 | `make -C blender test-mcp` | all OK (36 / 1 / 36 / 7 / 53) | all OK (36 / 1 / 36 / 7 / 53) |
 | `make -C blender test-blender-app` | 469 passed, 1 skipped | 475 passed, 1 skipped (the six new tests) |

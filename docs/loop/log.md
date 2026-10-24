@@ -34,9 +34,16 @@ the copy cut it to 32 polys, source untouched) — plus the fail-first run
 smoke through the single `golem` entry point (default copy bounds z 3.0–4.0,
 `keep_parent` copy z 6.0–7.0, `location_is_parent_relative: true`).
 
-**Gates.** `test-golem` 10 passed; `test-pure` 1547 passed / 1 xfailed;
-`test-mcp` all OK; `test-blender-app` 469 → **475 passed**, 1 skipped. Nothing
-went worse. Tool count unchanged at 71; fingerprint `t:16855e3dd426` →
+**Gates.** `test-pure` 1547 passed / 1 xfailed; `test-mcp` all OK;
+`test-blender-app` 469 → **475 passed**, 1 skipped. Nothing this run touched got
+worse. `test-golem` reads 1 failed / 9 passed at HEAD, and that failure is NOT
+this change: `tests/test_gpu.py::test_a_job_over_its_timeout_is_terminated_and_reported`
+fails 4–5 of every 5 runs and 5 of 5 in a fresh worktree at `c217f2f` (the
+pre-change commit), with `src/golem_mcp/gpu.py` untouched by this run. Its
+baseline "10 passed" was one lucky draw of a flake, not a green suite — recorded
+as such rather than as a regression.
+
+**Pin.** Tool count unchanged at 71; fingerprint `t:16855e3dd426` →
 `t:7a8ffdbc17da`, pin updated in the same commit.
 
 **Deploy.** Mac half only; the schema is read at server start and the omp
@@ -45,16 +52,20 @@ went worse. Tool count unchanged at 71; fingerprint `t:16855e3dd426` →
 half is untouched — `src/golem_mcp` did not change, so its editable install
 serves identical code and was not restarted.
 
-**Issues filed.** None (nothing found that was not fixed).
+**Issues filed.** #24 — the flaky `test_gpu.py` timeout test, with the measured
+mechanism (a freshly written script's first exec costs up to 7.8 s on this Mac;
+SIGTERM at 1 s can land before bash installs its trap, so the shell dies `-15`
+and never writes the marker) and a verified readiness-gated fix (6/6 with the
+gate, 0/2 without).
 
 **Top 5 remaining.**
 1. #2 — the loose-ground scatter's colour model (stones read as flat discs).
 2. #1 — the full four-set run after the knit/plaid/seam and AO/leaf-litter batches.
-3. #19's sibling gap, now measured: **no op sets an object's parent**. Building
-   the fixture for this issue needed `run_python`; a kitbash piece that mounts
-   on another part has no op path. File as an issue in the next run if it is
-   still true.
-4. #11 — the tile-floors scale measure reads hairline grout and hands the lane
+3. #24 — the flaky `test_gpu.py` timeout test (filed this run); `make
+   test-golem` is red 4 of 5 runs until it lands.
+4. **No op sets an object's parent**, measured while building this issue's
+   fixture: only `bind_mesh_to_armature` parents anything, so a kitbash piece
+   that mounts on another part has no op path and needs `run_python`. Worth an
+   issue.
+5. #11 — the tile-floors scale measure reads hairline grout and hands the lane
    2–3× the truth's tile count.
-5. #20 — a seeded jitter op, so a stone or straw bundle is not a smooth
-   primitive.
