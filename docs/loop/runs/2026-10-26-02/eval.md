@@ -375,3 +375,40 @@ Anthropic turns, having previously run on `claude-opus-5-5`.
 The audit also surfaced the harness classifier explicitly for the first time —
 `non-work (auto-thinking): 1x openrouter / typesafe/jev-1.14` — which is excluded
 from work turns by design and now printed rather than hidden.
+
+## Roster closure: every agent a session can spawn, live-verified
+
+The pinned lists were enumerated by name, so they were only as strong as their
+completeness. The roster is closed at seven — `~/.claude/agents` is empty, no
+extension roots are configured, `enabledProviders` and `CLAUDE_CONFIG_DIR` are
+unset, so `.omp/agents` and `~/.omp/agent/agents` are the whole surface. Each was
+then spawned and asked to report its own record:
+
+| agent | resolves through | live result |
+|---|---|---|
+| `loop-worker` | concrete `model:` | `ollama-cloud/deepseek-v4.1-flash:1017` |
+| `scout` | `@smol` | same |
+| `reviewer` | `@slow` | same |
+| `task` | `@task` | same |
+| `sonic` | `@smol` | same (7 turns) |
+| `security-reviewer` | no `model:` → `default` | same (14 turns) |
+| `seance` | no `model:` → `default` | same (11 turns) |
+
+`seance` needed a `sourceSession`, and it first read the FORK's record rather
+than its own — reporting correctly but from the wrong file. Its own transcript
+(`final-seance.jsonl`) independently confirms 11 turns on the required model, so
+the routing is right and only the child's chosen file was wrong. Worth recording
+because it is the same class of mistake as the untagged attestation: a child can
+be right by luck about the answer and wrong about the evidence.
+
+## The whole session, swept
+
+```
+TOTAL work turns: 933 | off-pin: 1
+PASS every work turn ran on the required provider and model
+NOTE excused as a deliberate discriminator: probe-model
+```
+
+933 work turns across 22 child transcripts, one off-pin turn — the deliberate
+`probe-model` control on the retired model. Every other child, including all
+seven roster agents, on `ollama-cloud/deepseek-v4.1-flash:1017`.
