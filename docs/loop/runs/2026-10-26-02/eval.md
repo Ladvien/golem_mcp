@@ -338,3 +338,40 @@ The script now:
 - is covered by three new tests — a conforming directory passes, an off-pin child
   ANYWHERE in the directory fails (not just in `loop-a*`), and an excused agent
   is named in the output.
+
+## "Each subagent" was broader than my pin, and roles were the hole
+
+The override pinned three names — `loop-worker`, `task`, `sonic`. The roster a
+session can actually spawn is seven, and four of them named a **ROLE**, not a
+model, so they resolved through `modelRoles` and were never covered:
+
+| agent | resolves through | pointed at (before) |
+|---|---|---|
+| `scout` | `@smol` | `anthropic/claude-haiku-5-5` |
+| `sonic` | `@smol` | `anthropic/claude-haiku-5-5` |
+| `reviewer` | `@slow` | `anthropic/claude-opus-5-5` |
+| `task` | `@task` | `anthropic/claude-haiku-5-5` |
+| `seance`, `security-reviewer` | no `model:` line at all | fall through to `default` → `anthropic/claude-sonnet-5-5` |
+
+So the concrete-model pin was green and **silent about most of the roster**. That
+is the gap ten prior answers left open: they proved what `loop-worker` ran on and
+never asked what else could be spawned.
+
+Every role a subagent can resolve through — `smol`, `slow`, `task`, `default`,
+`advisor` — now names `ollama-cloud/deepseek-v4.1-flash:1017`.
+
+**Proven live, not asserted:** a `scout` (role `@smol`) and a `reviewer` (role
+`@slow`) were spawned and both reported the required model from their own
+transcripts. The parent audit read 26 work turns across the two, 0 off-pin, with
+`resolvedModel` agreeing. `reviewer` measured 16 of its own turns with zero
+Anthropic turns, having previously run on `claude-opus-5-5`.
+
+**Proven able to fail:** set `modelRoles.smol` back to
+`anthropic/claude-haiku-5-5:auto` and
+`test_every_role_a_subagent_can_resolve_through_names_the_required_model` reads
+`these modelRoles do not point at 'ollama-cloud/deepseek-v4.1-flash:1017':
+{'smol': 'anthropic/claude-haiku-5-5:auto'}`. Restored, 5 passed.
+
+The audit also surfaced the harness classifier explicitly for the first time —
+`non-work (auto-thinking): 1x openrouter / typesafe/jev-1.14` — which is excluded
+from work turns by design and now printed rather than hidden.

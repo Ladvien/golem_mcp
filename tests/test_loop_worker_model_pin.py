@@ -100,3 +100,38 @@ def test_the_pin_names_the_required_provider_and_not_just_a_model():
     assert model_name == REQUIRED_MODEL_NAME
     # The separator matters: `ollama-cloud:deepseek-...` is a different selector.
     assert REQUIRED_MODEL == "ollama-cloud/deepseek-v4.1-flash:1017"
+
+
+def test_every_role_a_subagent_can_resolve_through_names_the_required_model():
+    """A bundled agent names a ROLE, not a model, so the role target is a pin.
+
+    Measured 2026-10-26, before this was pinned: `scout` and `sonic` resolve
+    through `@smol`, `reviewer` through `@slow`, `task` through `@task`, and
+    those roles pointed at `anthropic/claude-haiku-5-5`, `claude-opus-5-5` and
+    `claude-sonnet-5-5`. So four of the seven agents a session can spawn ran on
+    Anthropic models while the concrete-model pin above was green — the pin was
+    true about `loop-worker` and silent about the rest of the roster.
+
+    `ollama-cloud` is part of the requirement, so the role targets are asserted
+    with their provider, not as bare model names.
+    """
+    if not USER_CONFIG_PATH.is_file():
+        pytest.skip(f"no user config at {USER_CONFIG_PATH}")
+
+    config = yaml.safe_load(USER_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    roles = config.get("modelRoles") or {}
+
+    # Every role the bundled roster resolves through, plus `default` and
+    # `advisor`: an advisor call is still a subagent-side model call.
+    required_roles = ("smol", "slow", "task", "default", "advisor")
+    wrong = {
+        role: roles.get(role)
+        for role in required_roles
+        if roles.get(role) != REQUIRED_MODEL
+    }
+    assert not wrong, (
+        f"these modelRoles do not point at {REQUIRED_MODEL!r}: {wrong}. A "
+        f"bundled agent that names a role (scout/sonic -> @smol, reviewer -> "
+        f"@slow, task -> @task) would then run on that role's model, so the "
+        f"concrete-model pin alone leaves most of the roster unpinned."
+    )
