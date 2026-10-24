@@ -264,3 +264,37 @@ provider, which parses but cannot compare equal to the required selector.
 `task.prewalk`, `task.agentPrewalk` and `task.agentAdvisor` are all unset, and
 the agent declares neither `prewalk` nor `advisor` — so no child can start on the
 pinned model and be handed off to another one after its first edit.
+
+## Concurrency: six at once, each attesting, all on the pin
+
+Every earlier probe was a single spawn, and the real fan-out had six agents in
+flight — which is exactly when a provider rate limit could cause a silent
+switch. So six `loop-worker` agents were spawned **in one batch** and told to do
+nothing but measure and attest their own routing.
+
+Each child's own report, and the parent audit run afterwards:
+
+| child | child's own attested turns | parent audit turns | provider / model | fallback |
+|---|---|---|---|---|
+| conc-a1 | 4 | 5 | `ollama-cloud / deepseek-v4.1-flash:1017` | false |
+| conc-a2 | 7 | 8 | same | false |
+| conc-a3 | 2 | 3 | same | false |
+| conc-a4 | 6 | 7 | same | false |
+| conc-a5 | 4 | 5 | same | false |
+| conc-a6 | 3 | 6 | same | false |
+
+**34 work turns under concurrency, 0 off-pin.** Every child also reported
+`session_init.resolvedModel` and `model_change.model` agreeing, with
+`resolvedModelIsFallback: false`. Where the parent's count exceeds the child's,
+that is the append-only growth a child cannot see (its own final message); a6's
+gap is larger because its measurement ran earlier in a longer turn. The model,
+which is what the requirement names, agreed in every case.
+
+## Why a silent switch is not merely unlikely but impossible here
+
+`retry.fallbackChains` in the user config contains exactly one key, `web`. There
+is **no model fallback chain**, so a model failure ERRORS rather than quietly
+switching provider. Combined with `task.prewalk`, `task.agentPrewalk` and
+`task.agentAdvisor` all being unset and the agent declaring neither `prewalk` nor
+`advisor`, there is no configured path by which a child starts on the pinned
+model and continues on another.
