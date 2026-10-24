@@ -499,3 +499,27 @@ Two defects in `scripts/audit_task_child_models.py`, both found this turn:
 
 After both fixes the sweep is unchanged and correct: **952 work turns, 1 off-pin**
 (the deliberate `probe-model` control), `--allow-off-pin probe-model` → exit 0.
+
+## The other spawn path: `eval`'s `agent()`
+
+`task` is not the only way a subagent starts. `eval`'s `agent(prompt, agent=…)`
+and `workpool()` spawn through the same executor but are separate call sites, and
+until now nothing had exercised them. Tested directly:
+
+```python
+h = agent("<measure your own routing>", agent="loop-worker",
+          label="eval-agent-model-check")
+h.wait()
+```
+
+```
+session_init_resolvedModel: ollama-cloud/deepseek-v4.1-flash:1017
+model_change:               ollama-cloud/deepseek-v4.1-flash:1017  fallback=false
+assistant_turns:            ollama-cloud / deepseek-v4.1-flash:1017  x4
+MODEL_ROUTING: ollama-cloud/deepseek-v4.1-flash:1017 across 4 work turns, fallback=false
+```
+
+The parent audit read 5 turns on the required provider and model. Because both
+call sites resolve model/role/override the same way, the two pin layers cover
+`agent()` and `workpool()` without extra config — now measured rather than
+assumed.
