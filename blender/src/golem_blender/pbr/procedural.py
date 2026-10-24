@@ -583,6 +583,7 @@ def write_procedural_base_color(
     cracked: bool = False,
     carpet_streaked: bool = False,
     long_boards: bool = False,
+    vertical: bool = False,
     stone_density: float = 1.0,
     courses: int | None = None,
     joint_height_out: dict | None = None,
@@ -612,6 +613,12 @@ def write_procedural_base_color(
     needs THIS and not the colour: a weathered wall's darker bricks are
     darker than its mortar, and a height read from the colour put moss
     on whole bricks.
+
+    `vertical` turns a GRAIN or a wood FLOOR a quarter turn, so a
+    board's lines run UP the image instead of across it. It is the
+    description's own word (`patterns.is_vertical`), and it is a
+    transpose so the map still tiles. A kind with no grain in it
+    ignores it: a brick's courses are a wall's and not a board's.
     """
     import numpy
 
@@ -751,6 +758,7 @@ def write_procedural_base_color(
             aspect=pattern.PARQUET_ASPECT,
             courses=courses,
             long_boards=long_boards,
+            vertical=vertical,
         )
     elif kind == "herringbone":
         # A HERRINGBONE floor is BOARDS at ninety degrees to each
@@ -866,6 +874,7 @@ def write_procedural_base_color(
             resolution,
             max(2, round(cells / pattern.GRAIN_CELLS_PER_FEATURE)),
             lines_per_cell=lines_per_cell,
+            vertical=vertical,
         )
     elif kind == "metal":
         cell, edge, grid, fibre = pattern.metal_field(

@@ -32,6 +32,13 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
      the pattern when the words choose wrong. The whole set can then be
      made with bpy alone: the base colour, the relief, and the ORM and
      normal map baked from that relief.
+
+     **A board's grain runs ACROSS the image, and "vertical" turns it.**
+     Twenty of the truth's twenty-seven woods run across, so that is what
+     a grain and a plank floor do unless the words say otherwise. Write
+     "vertical" - or "vertically" - for a board whose lines run UP it: a
+     panelled door, a fence post, a wall's applied boards. The turn is a
+     quarter turn of the pattern, and the map still tiles.
    - `generate_texture_base(prompt="...")` generates it with FLUX on
      the golem server. That is the photoreal route, and the only one
      that is.

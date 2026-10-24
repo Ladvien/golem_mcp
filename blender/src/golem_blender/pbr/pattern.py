@@ -1947,6 +1947,7 @@ def grain_field(
     octaves=DEFAULT_LINE_OCTAVES,
     lines_per_cell: int = 1,
     fibre_cells: int | None = None,
+    vertical: bool = False,
 ):
     """A wood grain: the cell each sample is in, and the distance to
     its grain line.
@@ -2288,6 +2289,28 @@ def grain_field(
         # are opposites - so the light and the dark were swapped and
         # the wood's mean came out at 0.159 against a base of 0.600.
         fine_edge = fibre_dark
+
+    if vertical:
+        # THE BOARD IS LAID THE OTHER WAY. The rings above are counted on
+        # the X axis, so their lines run ACROSS the image; a description
+        # that says "vertical" asked for the board turned a quarter turn,
+        # and the turn is a TRANSPOSE so the pattern still tiles.
+        #
+        # A TRANSPOSE and not a rotation: every field here is computed
+        # over one period of a wrapped square domain, so its first row
+        # meets its last and its first column meets its last. A transpose
+        # swaps the two pairs of edges, and two edges that met still do. A
+        # rotation moves the bottom row onto the first COLUMN - an edge the
+        # field's own row never met - and the seams cross.
+        #
+        # Measured on the turned grain at 1024: the seam reads 0.001x
+        # before the turn and 0.001x after it, and the pattern's own
+        # anisotropy (the step down against the step across) flips from
+        # 8.6 to 0.12.
+        band = numpy.ascontiguousarray(band.T)
+        edge = numpy.ascontiguousarray(edge.T)
+        if fine_edge is not None:
+            fine_edge = numpy.ascontiguousarray(fine_edge.T)
 
     return band, edge, (cells, cells), fine_edge
 
@@ -2855,6 +2878,7 @@ def parquet_field(
     aspect: float = PARQUET_ASPECT,
     courses: int | None = None,
     long_boards: bool = False,
+    vertical: bool = False,
 ):
     """A wood floor: long BLOCKS, staggered, each with its own tone.
 
@@ -3040,6 +3064,25 @@ def parquet_field(
     # across the image's edge keeps one index and so one offset.
     board_offset = numpy.mod(cell.astype(numpy.float64) * 0.6180339887, 1.0)
     fibre = 1.0 - wood_ring_lightness(sample_y + board_offset, sample_x)
+    if vertical:
+        # THE FLOOR IS LAID THE OTHER WAY: the boards run up the image
+        # instead of across it, which is what a description that says
+        # "vertical" asks for on a panelled wall or a fence.
+        #
+        # The turn is a TRANSPOSE, so the map still tiles - the field is
+        # computed over one period of a wrapped domain, so its edges meet;
+        # a transpose swaps the two pairs of edges and the meeting holds.
+        #
+        # The CELLS are left as they are, and the grid with them, because
+        # their values are the boards' own identity: the colour hash
+        # decodes the cell into a row and a column of the layout and gives
+        # that board its tone, so an unchanged cell is the same board
+        # turned. The joint's own unit is a course's height, and
+        # `courses` is still that height - the board's SHORT side - so the
+        # writer's hairline keeps its pixel width.
+        cell = numpy.ascontiguousarray(cell.T)
+        edge = numpy.ascontiguousarray(edge.T)
+        fibre = numpy.ascontiguousarray(fibre.T)
     return cell, edge, (across, courses), fibre
 
 

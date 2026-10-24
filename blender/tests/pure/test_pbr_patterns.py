@@ -120,3 +120,57 @@ def test_bare_rust_and_dust_are_films_and_a_rusty_steel_is_a_sheet():
     assert pattern_for_description("rust, rusty, orange brown") == "flat"
     assert pattern_for_description("pale grey dust") == "flat"
     assert pattern_for_description("aged, rusty, steel") == "metal"
+
+
+def test_a_direction_word_turns_the_grain_and_not_the_pattern():
+    """A board's grain runs ACROSS the image unless the words say otherwise.
+
+    Twenty of the truth's twenty-seven woods run across and the five that
+    run down name no direction at all, so a direction word is the only
+    thing that can ask for the other one - and a user writes it: "vertical
+    oak" is a panelled door, not a floor.
+
+    It is a DIRECTION and never a structure: the same description chooses
+    the same pattern either way, and only the grain's way changes. A word
+    that leaked into the pattern choice would turn "vertical wood" into a
+    different material.
+    """
+    from golem_blender.pbr.patterns import is_vertical
+
+    assert not is_vertical("beige, grain, knots, light, natural, smooth, wood")
+    for description in (
+        "beige, grain, knots, vertical, wood",
+        "beige, grain, knots, vertically, wood",
+        "VERTICAL, oak",
+        "oak, vertical",
+    ):
+        assert is_vertical(description), description
+
+
+def test_a_direction_word_leaves_the_pattern_and_the_palette_alone():
+    """Only the grain's way moves; nothing else about the surface does."""
+    from golem_blender.pbr.palette import (
+        line_palette_for_description,
+        palette_for_description,
+    )
+
+    flat = "beige, grain, knots, light, natural, smooth, softwood, wood"
+    turned = f"{flat}, vertical"
+
+    # The same kind, and the same colours: a direction is not a material.
+    assert pattern_for_description(flat) == pattern_for_description(turned) == "grain"
+    for builder, path in (
+        (line_palette_for_description, "grain"),
+        (palette_for_description, "grain"),
+    ):
+        plain = builder(flat, path=path)
+        upright = builder(turned, path=path)
+        assert upright.pop("vertical") is True
+        assert plain.pop("vertical") is False
+        assert upright == plain
+    # And a horizontal board is what the pattern already does, so it needs
+    # no word: only "vertical" is read.
+    assert (
+        line_palette_for_description(f"{flat}, horizontal", path="grain")["vertical"]
+        is False
+    )

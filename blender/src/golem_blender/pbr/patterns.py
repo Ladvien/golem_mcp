@@ -218,6 +218,13 @@ ASPHALT_WEAR_WORDS = frozenset(
     ("worn", "old", "damaged", "aged", "deteriorated", "weathered")
 )
 CRACK_WORDS = frozenset(("cracked", "cracks", "cracking"))
+# A surface's GRAIN, turned a quarter turn. A wood's grain and a floor's
+# boards run ACROSS the image unless the description says otherwise -
+# and that is the truth's own majority: twenty of the twenty-seven wood
+# truths run across, and the five that run down name no direction. So the
+# word is read only as a DIRECTION and never as a structure: "vertical"
+# is not a material, it is which way the board was laid.
+ORIENTATION_WORDS = frozenset(("vertical", "vertically", "upright"))
 
 
 def asphalt_is_worn(description: str) -> bool:
@@ -538,6 +545,22 @@ def stone_density_for_description(description: str) -> float:
     return 1.0
 
 
+def is_vertical(description: str) -> bool:
+    """Whether the description turns a surface's GRAIN a quarter turn.
+
+    A grain and a floor's boards run ACROSS the image by default, and
+    that is the truth's own majority: twenty of the twenty-seven wood
+    truths run across, and the five that run down name no direction at
+    all. So a direction word is the only way to ask for the other one,
+    and "vertical" is what a person writes for a board whose grain runs
+    up the wall - a panelled door, a fence post, a herringbone's pair.
+
+    "horizontal" needs no word: it is what the pattern already does.
+    """
+    words = set(description.lower().replace(",", " ").split())
+    return bool(words & ORIENTATION_WORDS)
+
+
 def has_long_boards(description: str) -> bool:
     """Whether a wood floor is laid in long PLANKS or boards.
 
@@ -579,6 +602,7 @@ __all__ = (
     "is_mortared_wall",
     "is_pebbled",
     "is_plaid",
+    "is_vertical",
     "pattern_for_description",
     "stone_density_for_description",
 )

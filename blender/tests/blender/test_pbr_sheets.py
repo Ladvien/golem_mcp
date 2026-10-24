@@ -15,10 +15,10 @@ from golem_blender.pbr.procedural import write_procedural_base_color
 RESOLUTION = 512
 
 
-def _luma(tmp_path, description: str, cells: float):
+def _luma(tmp_path, description: str, cells: float, stem: str = "map"):
     kind = pattern_for_description(description)
     path = write_procedural_base_color(
-        tmp_path / "map.png",
+        tmp_path / f"{stem}.png",
         kind=kind,
         scale_cells=cells,
         width_px=RESOLUTION,
@@ -363,3 +363,104 @@ def test_a_leaf_litter_tiles():
             seam = float(numpy.abs(rows[0] - rows[-1]).mean())
             interior = numpy.abs(numpy.diff(rows, axis=0)).mean(axis=1)
             assert seam <= float(interior.max())
+
+
+def test_a_vertical_board_turns_the_grain_a_quarter_turn(tmp_path):
+    """A description that says "vertical" lays the board the other way.
+
+    The grain's lines run ACROSS the image by default, because that is what
+    twenty of the truth's twenty-seven woods do - so a board's lines vary
+    fast DOWN it. "Vertical" is the only way to ask for the other one, and
+    it must be a QUARTER TURN: the measure that reads it is the same map's
+    step down against its step across, which swaps.
+
+    A TRANSPOSE and not a rotation, because the map must still tile: every
+    field is computed over one period of a wrapped square domain, so its
+    edges meet; a transpose swaps the two pairs of edges and the meeting
+    holds, a rotation moves the bottom row onto the first column.
+    """
+    words = "beige, grain, knots, light, natural, smooth, softwood, wood"
+    flat = _luma(tmp_path, words, 12.0, stem="flat")
+    turned = _luma(tmp_path, f"{words}, vertical", 12.0, stem="vertical")
+
+    def anisotropy(luma):
+        down = float(numpy.abs(numpy.diff(luma, axis=0)).mean())
+        across = float(numpy.abs(numpy.diff(luma, axis=1)).mean())
+        return down / across
+
+    before, after = anisotropy(flat), anisotropy(turned)
+    # The default's lines run across, so it varies fast down: measured 7.2.
+    assert before > 2.0, f"the default grain is not a grain across: {before:.2f}"
+    # And the turned one is the reciprocal of it: the same field, swapped.
+    assert after < 0.5, f"a vertical board did not turn: {after:.2f}"
+    assert 1.0 / before == pytest.approx(after, rel=0.25), (
+        f"the turn is not a quarter turn: {before:.2f} became {after:.2f}, "
+        f"which is not 1/{before:.2f}"
+    )
+
+    # The turn must not COST the tiling, and it does not: the two axes'
+    # seams are the same two numbers on both maps, swapped. Measured, the
+    # column ratio is 0.007 and the row ratio 0.638 before the turn, and
+    # 0.638 and 0.007 after it.
+    #
+    # BOTH are measured here, and the reason is the seam metric itself:
+    # `tile_seam_ratio` reads the LAST COLUMN against the first and never
+    # the rows, so it can only ever report the column edge. A grain laid
+    # across the image carries its steps along the ROWS - the cut across
+    # the lines - so after the turn that step reaches the column edge and
+    # the metric reads it for the first time. Comparing only that number
+    # before and after would read the turn as a broken seam when nothing
+    # broke.
+    def axis_seams(luma):
+        column = numpy.abs(luma[:, -1] - luma[:, 0]).mean()
+        column_interior = numpy.percentile(
+            numpy.abs(numpy.diff(luma, axis=1)).mean(0), 95
+        )
+        row = numpy.abs(luma[-1, :] - luma[0, :]).mean()
+        row_interior = numpy.percentile(numpy.abs(numpy.diff(luma, axis=0)).mean(1), 95)
+        return (
+            float(column) / max(float(column_interior), 1e-12),
+            float(row) / max(float(row_interior), 1e-12),
+        )
+
+    flat_columns, flat_rows = axis_seams(flat)
+    turned_columns, turned_rows = axis_seams(turned)
+    assert turned_columns == pytest.approx(flat_rows, rel=0.05), (
+        f"the turn did not carry the row seam to the column edge: the flat "
+        f"map's rows read {flat_rows:.3f} and the turned map's columns "
+        f"{turned_columns:.3f}"
+    )
+    assert turned_rows == pytest.approx(flat_columns, rel=0.05), (
+        f"the turn did not carry the column seam to the row edge: the flat "
+        f"map's columns read {flat_columns:.3f} and the turned map's rows "
+        f"{turned_rows:.3f}"
+    )
+    # And both axes still meet no worse than the texture's own largest
+    # ordinary step: a seam at or below 1.0 is invisible.
+    for columns, rows, name in (
+        (flat_columns, flat_rows, "the default map"),
+        (turned_columns, turned_rows, "the vertical map"),
+    ):
+        assert max(columns, rows) <= 1.0, (
+            f"{name}'s larger seam is {max(columns, rows):.3f}x its own "
+            f"interior step, which is a visible line"
+        )
+
+
+def test_a_vertical_plank_floor_turns_its_boards(tmp_path):
+    """A plank floor's boards run across; "vertical" runs them up instead."""
+    words = "floor, planks, wood"
+    flat = _luma(tmp_path, words, 10.0, stem="planks_flat")
+    turned = _luma(tmp_path, f"{words}, vertical", 10.0, stem="planks_vertical")
+    down_flat = float(numpy.abs(numpy.diff(flat, axis=0)).mean())
+    across_flat = float(numpy.abs(numpy.diff(flat, axis=1)).mean())
+    down_turned = float(numpy.abs(numpy.diff(turned, axis=0)).mean())
+    across_turned = float(numpy.abs(numpy.diff(turned, axis=1)).mean())
+    assert down_flat > across_flat, (
+        f"a floor's boards do not run across: down {down_flat:.5f} "
+        f"against across {across_flat:.5f}"
+    )
+    assert across_turned > down_turned, (
+        f"a vertical plank floor's boards do not run up: down "
+        f"{down_turned:.5f} against across {across_turned:.5f}"
+    )

@@ -65,6 +65,14 @@ Two limits of the measures, known and left as they are:
 - The size handed to the lane is the truth's measured feature count, and a
   tile floor's count is its faces' shading (Tiles107: 26 features, eight
   tiles), so a recreated floor has two to three times the truth's tiles.
+- **`tile_seam_ratio` reads the LAST COLUMN against the first, and never the
+  rows.** A grain laid across the image carries its steps along the rows - the
+  cut across its lines - so the column edge is the quiet one and the metric
+  reports 0.001x on a wood. Turn that board a quarter turn and the same steps
+  reach the column edge, and the metric reads 0.34x on a map whose field is
+  periodic to 3e-13. So the seam is only comparable between two maps laid the
+  same way; measuring a turn needs both axes (`tests/blender/test_pbr_sheets.py`
+  does, and asserts the two axes' numbers swap).
 
 ## The order the scripts run in
 

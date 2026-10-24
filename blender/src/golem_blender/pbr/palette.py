@@ -32,6 +32,7 @@ from golem_blender.pbr.patterns import (
     is_leaf_litter,
     is_mortared_wall,
     is_plaid,
+    is_vertical,
     stone_density_for_description,
 )
 
@@ -4006,6 +4007,9 @@ def palette_for_description(
         "cracked": is_cracked(description),
         "carpet_streaked": carpet_is_streaked(description),
         "long_boards": has_long_boards(description),
+        # Which way the GRAIN runs. It is the description's word and not
+        # the path's: the same board can be laid either way.
+        "vertical": is_vertical(description),
         "stone_density": stone_density_for_description(description),
         "leaf_litter": is_leaf_litter(description),
     }
@@ -4042,6 +4046,7 @@ def line_palette_for_description(description: str, path: str = "grain"):
         "metal_brushed": metal_is_brushed(description),
         "checkered": is_checkered(description),
         "metal_envelope_factor": metal_envelope_factor_for_description(description),
+        "vertical": is_vertical(description),
     }
 
 
