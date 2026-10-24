@@ -131,3 +131,43 @@ new ops made visible.
 ## bmb
 
 Untouched: no mflux, FLUX or rigging change.
+
+## Release to the four machines
+
+Asked for directly: push, merge, pull local, then release to Big Mac, MacAir,
+BMB and Big, upgrading or overriding the existing MCP on each.
+
+**The registered MCP server is `golem`.** No server named "Skullum" exists in
+this repository, in omp's `~/.omp/agent/mcp.json` on any of the four hosts, in
+GitHub, or anywhere in this machine's prompt history — searched before assuming,
+because a release to the wrong name would leave the real one stale. The change
+set is `golem_mcp`, whose two halves are the `golem` MCP entry (Mac, stdio from
+`blender/.venv`) and big's HTTP service on port 9786. That is what was upgraded.
+
+| host | role | before | after | check |
+|---|---|---|---|---|
+| mac_air | Mac half, this machine | `fe782f4` | `fe782f4` | live `golem` ✔ Connected; 88 tools / `t:365aafec29d4` served to this session |
+| big_mac | Mac half | `c217f2f` | `fe782f4` | pulled `--ff-only`; `TOOL_SCHEMAS` 88 / `t:365aafec29d4`; all eight new ops import |
+| bmb | Mac half | `c217f2f` | `fe782f4` | same: 88 / `t:365aafec29d4`; all eight import |
+| big | GPU half, HTTP service | `c217f2f` | `fe782f4` | pulled `--ff-only`; `systemctl --user restart golem-mcp` → **active**; `initialize` over HTTP answers `serverInfo: {"name":"golem","version":"0.5.0"}` |
+
+MacAir was already at the target SHA because the merge happened here, so it
+needed no pull — the add-on is editable and picks the code up on the next call.
+
+**Overridden, not duplicated.** Each host already had a `golem` entry pointing
+at its own checkout's `blender/.venv/bin/blender-mcp` (big_mac:
+`/Users/ladvien/golem_mcp/...`; bmb: `/Users/rebekahbrittain/golem_mcp/...`;
+big: `http://192.168.1.110:9786/mcp`). Because the installs are editable, the
+pull replaced the served code in place — no entry was added, renamed or
+disabled, and no host now has two `golem` servers.
+
+**Two stale things deliberately left alone**, since neither is this change:
+
+1. `big_mac`'s and `bmb`'s `~/.local/bin/blender-mcp` symlink points at
+   `~/.local/share/uv/tools/blender-mcp/bin/blender-mcp`, and that uv tool is
+   gone — the symlink dangles. Nothing uses it: both hosts' `golem` entry names
+   the venv path directly. Worth removing or repointing, but it is a separate
+   cleanup, not part of this release.
+2. `big`'s `~/.omp/agent/mcp.json` carries only `home-still` and `golem`, where
+   the Mac hosts carry four servers. A missing entry is not a broken one, and a
+   release does not silently install what the user did not ask for.
