@@ -108,3 +108,96 @@ def test_two_lines_are_refused_because_one_is_stale():
     )
     with pytest.raises(AssertionError, match="2 MODEL_ROUTING lines"):
         routing_of(report)
+
+
+def _load_audit_module():
+    """Import `scripts/audit_task_child_models.py` by path.
+
+    `scripts/` is not a package and the root suite's `pythonpath` is only
+    `["src"]`, so `import scripts.audit_task_child_models` fails under
+    `make test-golem`. Loading by path keeps the test honest about the script's
+    real location without adding a package marker to a bin-style directory.
+    """
+    import importlib.util
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "audit_task_child_models.py"
+    spec = importlib.util.spec_from_file_location("_audit_task_child_models", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# --- the audit's SWEEP must not narrow ------------------------------------
+
+
+def test_the_audit_sweeps_every_child_and_not_a_name_pattern(tmp_path):
+    """A default sweep that matched only `loop-a*` covered 6 of 17 children.
+
+    Measured 2026-10-26: the session held 17 child transcripts (`loop-a1..6`,
+    `conc-a1..6`, four probes and a self-attest) while the default run reported
+    PASS having read only the six `loop-a*`. A narrow default is the worst kind
+    of audit bug: it prints PASS for a population it never looked at. This test
+    pins the sweep to every child transcript in the directory.
+    """
+    audit_main = _load_audit_module().main
+
+    for stem in ("loop-a1", "conc-a1", "probe-x", "self-attest"):
+        (tmp_path / f"{stem}.jsonl").write_text(
+            '{"type":"session_init","resolvedModel":'
+            '"ollama-cloud/deepseek-v4.1-flash:1017"}\n'
+            '{"type":"model_change","model":'
+            '"ollama-cloud/deepseek-v4.1-flash:1017",'
+            '"resolvedModelIsFallback":false}\n'
+            '{"type":"message","message":{"role":"assistant",'
+            '"provider":"ollama-cloud","model":"deepseek-v4.1-flash:1017"}}\n'
+        )
+    # The parent session's own transcript is not a child and must be skipped.
+    (tmp_path / "2026-10-24T20-06-15-291Z_parent.jsonl").write_text("{}\n")
+
+    code = audit_main(["--dir", str(tmp_path), "--json"])
+    assert code == 0, "a directory of conforming children must pass"
+
+    names = {path.stem for path in tmp_path.glob("*.jsonl")}
+    assert {"loop-a1", "conc-a1", "probe-x", "self-attest"} <= names
+
+
+def test_an_off_pin_child_fails_the_default_sweep(tmp_path, capsys):
+    """Drift anywhere in the directory fails, not just drift in `loop-a*`."""
+    audit_main = _load_audit_module().main
+
+    good = (
+        '{"type":"session_init","resolvedModel":'
+        '"ollama-cloud/deepseek-v4.1-flash:1017"}\n'
+        '{"type":"message","message":{"role":"assistant",'
+        '"provider":"ollama-cloud","model":"deepseek-v4.1-flash:1017"}}\n'
+    )
+    drifted = (
+        '{"type":"session_init","resolvedModel":"anthropic/claude-sonnet-5-5"}\n'
+        '{"type":"message","message":{"role":"assistant",'
+        '"provider":"anthropic","model":"claude-sonnet-5-5"}}\n'
+    )
+    (tmp_path / "loop-a1.jsonl").write_text(good)
+    (tmp_path / "conc-a9.jsonl").write_text(drifted)
+
+    assert audit_main(["--dir", str(tmp_path)]) == 1
+    assert "conc-a9" in capsys.readouterr().out
+
+
+def test_a_deliberate_discriminator_can_be_excused_but_is_named(tmp_path, capsys):
+    """The only legal off-pin child is one spawned on purpose to prove routing."""
+    audit_main = _load_audit_module().main
+
+    (tmp_path / "probe-retired.jsonl").write_text(
+        '{"type":"session_init","resolvedModel":'
+        '"ollama-cloud/deepseek-v4-flash"}\n'
+        '{"type":"message","message":{"role":"assistant",'
+        '"provider":"ollama-cloud","model":"deepseek-v4-flash"}}\n'
+    )
+
+    assert audit_main(["--dir", str(tmp_path)]) == 1
+    assert audit_main(
+        ["--dir", str(tmp_path), "--allow-off-pin", "probe-retired"]
+    ) == 0
+    output = capsys.readouterr().out
+    assert "NOTE excused as a deliberate discriminator: probe-retired" in output

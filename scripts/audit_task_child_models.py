@@ -26,13 +26,22 @@ Which field to read — this is the trap the script exists to close:
 
 Usage, from the repository root::
 
-    python3 scripts/audit_task_child_models.py            # newest golem_mcp session dir
+    python3 scripts/audit_task_child_models.py            # EVERY child in the newest session dir
+    python3 scripts/audit_task_child_models.py --allow-off-pin probe-model
     python3 scripts/audit_task_child_models.py --dir <session dir> --agent loop-a1...
     python3 scripts/audit_task_child_models.py --json
 
+The default sweep covers EVERY child transcript in the session directory, not a
+name pattern. Measured 2026-10-26: an earlier default that matched only
+``loop-a*.jsonl`` reported PASS having read 6 of the directory's 17 children, so
+the concurrency and probe children were outside the audit while it printed PASS.
+
 Exit status is 0 only when every agent's every work turn matches the required
-provider and model, and no session recorded a fallback resolution. Anything else
-is exit 1, so this can gate a release.
+provider and model, and no session resolved or fell back to another one.
+Anything else is exit 1, so this can gate a release. ``--allow-off-pin AGENT``
+exists for exactly one situation: a child spawned ON PURPOSE on another model to
+prove which layer routes. It prints a NOTE naming what it excused, so an excused
+child is never silently green.
 """
 
 from __future__ import annotations
@@ -92,7 +101,11 @@ def audit_one(transcript: pathlib.Path) -> dict:
     }
 
 
-def report(transcripts: dict[str, pathlib.Path], as_json: bool) -> int:
+def report(
+    transcripts: dict[str, pathlib.Path],
+    as_json: bool,
+    allowed_off_pin: tuple[str, ...] = (),
+) -> int:
     """Print the audit and return the process exit status."""
     required = (REQUIRED_PROVIDER, REQUIRED_MODEL)
     total_turns = 0
@@ -117,9 +130,10 @@ def report(transcripts: dict[str, pathlib.Path], as_json: bool) -> int:
             for model in result["session_resolutions"]
             if model != f"{REQUIRED_PROVIDER}/{REQUIRED_MODEL}"
         ]
-        if off_pin:
+        excused = name in allowed_off_pin
+        if off_pin and not excused:
             failures.append(f"{name}: {off_pin} work turn(s) off the required pin")
-        if session_wrong or not result["session_resolutions"]:
+        if (session_wrong or not result["session_resolutions"]) and not excused:
             failures.append(
                 f"{name}: session_init resolvedModel is {session_wrong or 'absent'}"
             )
@@ -134,6 +148,7 @@ def report(transcripts: dict[str, pathlib.Path], as_json: bool) -> int:
             "combinations": {f"{p} / {m}": c for (p, m), c in work_turns.items()},
             "resolutions": result["resolutions"],
             "session_resolutions": result["session_resolutions"],
+            "off_pin_allowed": excused,
             "non_work_calls": {
                 f"{purpose} / {p} / {m}": c
                 for (purpose, p, m), c in result["non_work_calls"].items()
@@ -175,6 +190,11 @@ def report(transcripts: dict[str, pathlib.Path], as_json: bool) -> int:
                 print(f"FAIL {failure}")
         else:
             print("PASS every work turn ran on the required provider and model")
+        if allowed_off_pin:
+            print(
+                f"NOTE excused as a deliberate discriminator: "
+                f"{', '.join(sorted(allowed_off_pin))}"
+            )
 
     return 1 if failures else 0
 
@@ -194,7 +214,20 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=None,
         dest="agents",
-        help="a child transcript name, without .jsonl; repeatable (default: every loop-aN.jsonl found)",
+        help="a child transcript name, without .jsonl; repeatable (default: EVERY child transcript in the session dir)",
+    )
+    parser.add_argument(
+        "--allow-off-pin",
+        action="append",
+        default=[],
+        dest="allowed_off_pin",
+        metavar="AGENT",
+        help=(
+            "an agent whose off-pin turns are EXPECTED and must not fail the run; "
+            "repeatable. Use it for a deliberate discriminator probe (e.g. one "
+            "spawned on a retired model to prove which layer routes), never to "
+            "excuse a worker that drifted"
+        ),
     )
     parser.add_argument("--json", action="store_true", dest="as_json")
     arguments = parser.parse_args(argv)
@@ -205,8 +238,15 @@ def main(argv: list[str] | None = None) -> int:
             name: session_dir / f"{name}.jsonl" for name in arguments.agents
         }
     else:
+        # EVERY child transcript, not a name pattern: a default sweep that
+        # matched only `loop-a*` silently skipped the concurrency and probe
+        # children (measured: 6 of 17 children covered), which is exactly the
+        # blind spot an audit must not have. The parent session's own
+        # `2026-...jsonl` is excluded by its date prefix.
         transcripts = {
-            path.stem: path for path in sorted(session_dir.glob("loop-a*.jsonl"))
+            path.stem: path
+            for path in sorted(session_dir.glob("*.jsonl"))
+            if not path.stem.startswith("2026-")
         }
 
     missing = [name for name, path in transcripts.items() if not path.is_file()]
@@ -215,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
     if not transcripts:
         raise SystemExit(f"no loop-aN.jsonl transcripts under {session_dir}")
 
-    return report(transcripts, arguments.as_json)
+    return report(transcripts, arguments.as_json, tuple(arguments.allowed_off_pin))
 
 
 if __name__ == "__main__":

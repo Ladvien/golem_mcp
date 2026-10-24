@@ -298,3 +298,43 @@ switching provider. Combined with `task.prewalk`, `task.agentPrewalk` and
 `task.agentAdvisor` all being unset and the agent declaring neither `prewalk` nor
 `advisor`, there is no configured path by which a child starts on the pinned
 model and continues on another.
+
+## The audit had a blind spot, and finding it was the point
+
+Nine earlier answers swept `loop-a*.jsonl`. The session actually held **17 child
+transcripts**: six `loop-a*`, six `conc-a*` from the concurrency test, and five
+probes. The default run therefore printed
+
+```
+TOTAL work turns: 816 | off-pin: 0
+PASS every work turn ran on the required provider and model
+```
+
+having read **6 of 17 children**. A narrow default is the worst kind of audit
+bug: it prints PASS for a population it never looked at.
+
+Sweeping all 17:
+
+| group | work turns | off-pin |
+|---|---|---|
+| `loop-a1..a6` (the fan-out) | 816 | 0 |
+| `conc-a1..a6` (concurrency test) | 34 | 0 |
+| probes (`probe-imperative`, `probe-loopworker`, `probe-override`, `probe-selfattest`) | 15 | 0 |
+| `probe-model` (deliberate discriminator) | 1 | **1** |
+
+**866 work turns, 1 off-pin — and that one is the point of the exercise.**
+`probe-model` was spawned ON PURPOSE on the retired `deepseek-v4-flash` to prove
+which layer routes; its single turn is
+`provider: ollama-cloud, model: deepseek-v4-flash, stopReason: error`, empty
+output. It is the control that makes the pin meaningful, not a drifted worker.
+
+The script now:
+
+- sweeps **every** child transcript by default, excluding only the parent's own
+  dated `2026-*.jsonl`;
+- takes `--allow-off-pin AGENT` for exactly that discriminator case, and prints
+  `NOTE excused as a deliberate discriminator: probe-model` so an excused child
+  can never be silently green;
+- is covered by three new tests — a conforming directory passes, an off-pin child
+  ANYWHERE in the directory fails (not just in `loop-a*`), and an excused agent
+  is named in the output.
