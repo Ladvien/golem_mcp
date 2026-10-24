@@ -412,3 +412,37 @@ NOTE excused as a deliberate discriminator: probe-model
 933 work turns across 22 child transcripts, one off-pin turn — the deliberate
 `probe-model` control on the retired model. Every other child, including all
 seven roster agents, on `ollama-cloud/deepseek-v4.1-flash:1017`.
+
+## I overreached, and restored it
+
+Pinning every role in the file was a change the requirement never asked for.
+`plan`, `vision`, `web` and `designer` are roles the **interactive session** uses;
+no subagent names them. Repointing them moved the user's own models off
+`claude-opus-5-5`, `claude-opus-5-5:auto`, `claude-haiku-4-5` and
+`claude-opus-5-5` for no reason. All four are restored to their original values;
+the five roles a subagent can reach (`smol`, `slow`, `task`, `default`,
+`advisor`) stay pinned.
+
+**The closure check is now DEFAULT-DENY** rather than a name list, because the
+name list is what let four agents sit on Anthropic models unnoticed:
+
+- every role must name the required model, EXCEPT the roles in an explicit
+  `MAIN_SESSION_ROLES` exemption set;
+- a role added later fails without anyone remembering its name;
+- a second test asserts the exemption set stays honest — if an agent on disk
+  starts naming an exempted role, that test fails, because the exemption would
+  have become a hole.
+
+Deriving the reachable set from the roster's `@role` references was tried first
+and does not work: the bundled agents live inside the omp binary, so a disk walk
+found only `advisor` and `default` while `smol`/`slow`/`task` went unchecked.
+
+**Both failure modes proven.** Adding `future-role: openrouter/xiaomi/mimo-v2.6-flash`
+fails the closure with
+`these subagent-reachable roles do not name 'ollama-cloud/deepseek-v4.1-flash:1017': {'future-role': …}`
+and listing the exemptions. Repointing `smol` back to Anthropic fails the
+explicit role test. Restored, 8 passed in the pin module, 29 in `make test-golem`.
+
+**Post-restore live check:** `scout` (7 turns) and `loop-worker` both again
+attested `ollama-cloud/deepseek-v4.1-flash:1017`; the audit read 19 work turns
+across the two, 0 off-pin.

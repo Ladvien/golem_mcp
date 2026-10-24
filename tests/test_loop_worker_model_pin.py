@@ -137,38 +137,72 @@ def test_every_role_a_subagent_can_resolve_through_names_the_required_model():
     )
 
 
-def test_no_model_selector_anywhere_in_the_routing_config_leaves_the_pin():
-    """A CLOSURE check, because every list above is enumerated by name.
+# Roles that exist for the USER'S OWN session and that no subagent reaches.
+# An explicit list, so it takes a deliberate edit to exempt a role, and so
+# DEFAULT-DENY below catches any role nobody thought about.
+MAIN_SESSION_ROLES = frozenset({"plan", "vision", "web", "designer"})
 
-    The named lists (`PINNED_AGENT_NAMES`, the role tuple) are exactly as strong
-    as their completeness: add a role, or an `agentModelOverrides` entry, and
-    nothing above notices. Measured 2026-10-26, that is how four of seven agents
-    sat on Anthropic models while a name-based pin was green.
 
-    So this asserts the closure instead: every concrete selector in
-    `modelRoles` and `task.agentModelOverrides` must BE the required model. A
-    future role added with an Anthropic or OpenRouter target fails here without
-    anyone remembering to add its name.
+def test_every_role_except_a_named_few_names_the_required_model():
+    """DEFAULT-DENY closure over `modelRoles`.
+
+    An enumerated pin is only as strong as its completeness, and deriving the
+    set from the roster's `@role` references does not work either: the bundled
+    agents live inside the omp binary, so a disk walk found only `advisor` and
+    `default` while `smol`/`slow`/`task` went unchecked. Measured 2026-10-26.
+
+    So this inverts the rule: EVERY role must name the required model except the
+    named main-session ones. A role added later fails here without anyone
+    remembering its name, which is the property a name list cannot have.
+
+    `MAIN_SESSION_ROLES` is the user's to own. `plan`, `vision`, `web` and
+    `designer` are used by the interactive session, no subagent names them, and
+    pinning them changed the user's own models for no reason — measured and
+    restored 2026-10-26.
     """
     if not USER_CONFIG_PATH.is_file():
         pytest.skip(f"no user config at {USER_CONFIG_PATH}")
 
     config = yaml.safe_load(USER_CONFIG_PATH.read_text(encoding="utf-8")) or {}
     roles = config.get("modelRoles") or {}
-    overrides = (config.get("task") or {}).get("agentModelOverrides") or {}
 
-    stray: dict[str, str] = {}
-    for label, mapping in (("modelRoles", roles), ("agentModelOverrides", overrides)):
-        for key, selector in mapping.items():
-            if selector is None:
-                continue  # an unset role falls through; asserted below
-            if selector != REQUIRED_MODEL:
-                stray[f"{label}.{key}"] = str(selector)
+    wrong = {
+        role: selector
+        for role, selector in sorted(roles.items())
+        if role not in MAIN_SESSION_ROLES and selector != REQUIRED_MODEL
+    }
+    assert not wrong, (
+        f"these subagent-reachable roles do not name {REQUIRED_MODEL!r}: {wrong}. "
+        f"Every role is treated as subagent-reachable unless it is listed in "
+        f"MAIN_SESSION_ROLES ({sorted(MAIN_SESSION_ROLES)}), so a new role fails "
+        f"here until it is pinned or deliberately exempted."
+    )
 
-    assert not stray, (
-        f"these selectors leave {REQUIRED_MODEL!r}: {stray}. Every role and "
-        f"override a subagent can resolve through must name it, or a child "
-        f"reaches another provider without any name-based pin noticing."
+
+def test_the_main_session_exemptions_are_roles_no_subagent_names():
+    """The exemption list must stay honest: an exempted role that a subagent CAN
+    reach would be an unpinned path. Checked against the agents on disk, which is
+    all this machine can verify — the bundled roster's own references are
+    asserted separately by `test_the_required_model_is_spelled_fully`'s sibling
+    below."""
+    import re
+
+    agents_dirs = [REPOSITORY_ROOT / ".omp" / "agents"]
+    user_agents = pathlib.Path.home() / ".omp" / "agent" / "agents"
+    if user_agents.is_dir():
+        agents_dirs.append(user_agents)
+
+    named: set[str] = set()
+    for directory in agents_dirs:
+        for path in directory.glob("*.md"):
+            named.update(
+                re.findall(r'"@([a-z][a-z0-9_-]*)"',
+                           path.read_text(encoding="utf-8", errors="ignore"))
+            )
+    overlap = named & MAIN_SESSION_ROLES
+    assert not overlap, (
+        f"these roles are exempted as main-session-only but an agent on disk "
+        f"names them: {sorted(overlap)}. Pin them, or the exemption is a hole."
     )
 
 
