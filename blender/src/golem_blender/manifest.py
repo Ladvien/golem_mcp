@@ -31,6 +31,7 @@ OP_MODULE_NAMES = (
     "assets",
     "modifiers",
     "heal",
+    "roughen",
     "uv",
     "pbr_textures",
     "pbr_bake",

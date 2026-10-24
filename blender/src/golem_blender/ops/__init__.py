@@ -96,6 +96,7 @@ from golem_blender.ops.rigging import (
     bind_mesh_to_armature,
     rig_report,
 )
+from golem_blender.ops.roughen import FaceInversion, RoughenReport, roughen_object
 from golem_blender.ops.selectors import (
     EdgeSelector,
     FaceSelector,
@@ -140,6 +141,7 @@ __all__ = [
     "ClipIntersectionReport",
     "ClothBakeReport",
     "EdgeSelector",
+    "FaceInversion",
     "FaceSelector",
     "ImpossibleLeg",
     "InvalidSelector",
@@ -151,6 +153,7 @@ __all__ = [
     "PbrTextureReport",
     "ReliefSlabReport",
     "RigReport",
+    "RoughenReport",
     "RingSkirtSpec",
     "SplayedLegSpec",
     "UnlinkedOperand",
@@ -213,6 +216,7 @@ __all__ = [
     "repair_limb_penetration",
     "rig_report",
     "rotate_object_euler",
+    "roughen_object",
     "select_edges",
     "select_faces",
     "select_vertices",

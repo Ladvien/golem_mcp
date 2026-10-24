@@ -53,6 +53,13 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         "color_b_rgb",
         "location_m",
         "source_scale_cells",
+        # `roughen_object` (issue #20): `frequency` is a MULTIPLIER of that
+        # op's base noise cell (BASE_NOISE_CELL_M), so the physical length
+        # lives on the constant and a suffix on the parameter would name a
+        # scale twice; `seed` is an identity, not a quantity at all — an
+        # integer that selects one surface out of the noise's family.
+        "frequency",
+        "seed",
     }
 )
 
