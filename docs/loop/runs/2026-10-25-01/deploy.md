@@ -2,7 +2,8 @@
 
 ## The commit
 
-`TBD` — `golem: the GPU-timeout test stops racing bash's startup (issue #24)`.
+`c32f998` — `golem: the GPU-timeout test stops racing bash's startup (issue #24)`,
+on `origin/main` (plain fast-forward).
 
 Changed file: `tests/test_gpu.py` only. `src/golem_mcp/gpu.py` is byte-identical
 to HEAD (verified: `git diff --quiet HEAD -- src/golem_mcp/gpu.py`).

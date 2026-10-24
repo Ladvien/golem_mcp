@@ -6,6 +6,7 @@ tier, the unit, the evidence, the commit, the deploy result and what is left.
 | run | date | tier | unit | commit |
 |---|---|---|---|---|
 | 2026-10-24-01 | 2026-10-24 | 1 (issue) | #19 `duplicate_object` kept the source's parent | `bb3dfa6` |
+| 2026-10-25-01 | 2026-10-25 | 1 (issue) | #24 the GPU-timeout test raced bash's startup | `c32f998` |
 
 ---
 
@@ -69,3 +70,57 @@ gate, 0/2 without).
    issue.
 5. #11 — the tile-floors scale measure reads hairline grout and hands the lane
    2–3× the truth's tile count.
+
+---
+
+## 2026-10-25-01 — issue #24: the gate stops reporting red by luck
+
+**Tier 1 (open issue).** Chosen over the PBR-lane issues (#1–#15) and the
+missing-op issues (#16–#23) because `make test-golem` is the gate every later
+iteration reads, and a gate whose colour depends on page-cache state is worse
+than a missing feature. #15 (delete an unused file) is smaller with no user
+impact; the PBR issues need a four-set re-score.
+
+**What changed.** `tests/test_gpu.py::test_a_job_over_its_timeout_is_terminated_and_reported`
+had asserted that a marker file existed, written by the fake `gpu-tenant`'s
+`trap … TERM` inside a **1 s** timeout. A trap only fires for a signal that
+arrives after it is installed, so the assertion was asking how fast bash starts.
+
+**Evidence** (`runs/2026-10-25-01/`): the same code read **5 of 5 red** on a
+cold cache (2026-10-24, fresh worktree at `c217f2f`) and **10 of 10 green** on a
+warm one (today). A startup-delay sweep puts the old fixture's threshold between
+0.5 s (pass) and 1.5 s (fail); a freshly written script's first exec on this Mac
+measured 5.4–7.8 s against 0.01 s warm. The new fixture (`exec python -c
+"time.sleep(41.3)" <per-run token>`) is deterministic at every delay, and
+asserts what the op actually promises: it raises, the job's **pid is gone**, and
+it returns far under 41.3 s.
+
+**Two of my own attempts were wrong, and mutation testing said so.** A
+timing-only assertion **passed** a mutant that reports the timeout and leaves the
+job running; a `# <token>` marker was a shell comment that never reached argv, so
+the process check matched nothing. Both are recorded rather than quietly fixed:
+`eval.md` names them. Final sweep — no raise, no `_stop`, `timeout=None` — each
+mutant fails; unmutated passes 10 of 10, leaving 0 orphans.
+
+**Gates.** `test-golem` 5 of 5 green; `test-pure` 1547 / 1 xfailed; `test-mcp`
+all OK; `test-blender-app` 475 passed / 1 skipped (unchanged). No product code
+touched: `src/golem_mcp/gpu.py` is byte-identical, so no fingerprint move and no
+schema pin edit.
+
+**Deploy.** None needed and none skipped: a test-only change is deployed by
+landing on `origin/main`. Both servers load no file this change touched —
+neither `src/golem_mcp` nor `src/golem_blender` changed, the add-on is
+untouched, the tool fingerprint stays `t:7a8ffdbc17da`.
+
+**Issues filed.** None.
+
+**Top 5 remaining.**
+1. #2 — the loose-ground scatter's colour model (stones read as flat discs).
+2. #1 — the full four-set run after the knit/plaid/seam and AO/leaf-litter batches.
+3. **No op sets an object's parent** (measured building #19's fixture): only
+   `bind_mesh_to_armature` parents anything, so a kitbash piece that mounts on
+   another part needs `run_python`. Still unfiled.
+4. #11 — the tile-floors scale measure reads hairline grout and hands the lane
+   2–3× the truth's tile count.
+5. #15 — remove the unused `pbr/splatter.py` (cheap, no user impact, unblocks a
+   clean `git grep`).
