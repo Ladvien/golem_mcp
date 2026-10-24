@@ -57,6 +57,21 @@ plumbing is needed between the two stages.
 - Tests: `make test` at the root runs the golem unit tests and the blender pure and MCP layers (`test-mcp` points the remote at a closed port, so it does not depend on big); `make test-blender-full` adds the Blender layers.
 - Big ignores `blender/`: the golem service and its wheel are built from `src/golem_mcp` only.
 
+## The work loop (`/build-loop`)
+
+`.agent/commands/build-loop.md` is omp's project command for one iteration of
+this repo's loop: it takes the top open issue (or, with none workable, the worst
+bug, then one improvement), proves it with a failing-before test and renders,
+documents it, deploys it to the machines the change touches, and appends the
+result to `docs/loop/log.md`. It names the baseline gates (`make test-golem`,
+`make -C blender test-pure`, `test-mcp`, `test-blender-app`), the documented
+deploy step per machine (big: `systemctl --user restart golem-mcp` after the
+checkout moves, never under a GPU lease; this Mac: live source reload, server
+restart for anything read at start; bmb: `needs-decision/` when no procedure
+exists), and the PBR re-score command. `/build-loop #7` or `/build-loop pbr`
+overrides the issue choice. omp's `agents` provider discovers `.agent/commands/`
+from the repo root and from subdirectories such as `blender/`.
+
 ---
 
 ## Installation
