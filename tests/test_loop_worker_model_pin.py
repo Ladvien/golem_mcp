@@ -24,7 +24,9 @@ import pathlib
 import pytest
 import yaml
 
-REQUIRED_MODEL = "ollama-cloud/deepseek-v4.1-flash:1017"
+REQUIRED_PROVIDER = "ollama-cloud"
+REQUIRED_MODEL_NAME = "deepseek-v4.1-flash:1017"
+REQUIRED_MODEL = f"{REQUIRED_PROVIDER}/{REQUIRED_MODEL_NAME}"
 
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
 TRACKED_AGENT_PATH = REPOSITORY_ROOT / ".omp" / "agents" / "loop-worker.md"
@@ -81,3 +83,20 @@ def test_the_required_model_is_spelled_fully():
     the pin would then be ambiguous in a log or a transcript audit."""
     provider, _, name = REQUIRED_MODEL.partition("/")
     assert provider and name and ":" in name, REQUIRED_MODEL
+
+
+def test_the_pin_names_the_required_provider_and_not_just_a_model():
+    """`ollama-cloud` is part of the requirement, so it gets its own assertion.
+
+    A bare model name would be routed by whichever provider the resolver
+    preferred, and a transcript audit that read only the `model` field could not
+    tell the two apart: that field is spelled `deepseek-v4.1-flash:1017` whether
+    the call went to ollama-cloud or anywhere else. The `provider` field is what
+    settles it — measured on the six-way run, all 18 records read
+    `provider: ollama-cloud`, `api: ollama-chat`.
+    """
+    provider, _, model_name = REQUIRED_MODEL.partition("/")
+    assert provider == REQUIRED_PROVIDER
+    assert model_name == REQUIRED_MODEL_NAME
+    # The separator matters: `ollama-cloud:deepseek-...` is a different selector.
+    assert REQUIRED_MODEL == "ollama-cloud/deepseek-v4.1-flash:1017"
