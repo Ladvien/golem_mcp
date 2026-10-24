@@ -313,3 +313,45 @@ def test_the_EFFECTIVE_merged_roles_name_the_required_model():
         f"`PI_*_MODEL` env var outranks the global pin; the global file can be "
         f"correct while a subagent still resolves elsewhere."
     )
+
+
+# Model-role env vars are the TOP settings layer, and `omp config list --json`
+# does NOT expose them: measured 2026-10-26, with PI_SMOL_MODEL set to an
+# Anthropic model the merged `modelRoles.value.smol` still read the pinned value.
+# So the effective-config check cannot see this layer at all, and the only honest
+# check is on the environment itself.
+MODEL_ROLE_ENV_VARS = (
+    "PI_SMOL_MODEL",
+    "PI_SLOW_MODEL",
+    "PI_PLAN_MODEL",
+    "PI_MODEL",
+)
+
+
+def test_no_model_role_env_var_overrides_the_pin():
+    """The env layer outranks every config file and is invisible to `omp config`.
+
+    This test exists because the effective-config check passed WITH
+    `PI_SMOL_MODEL=anthropic/claude-haiku-5-5` in the environment — the merged
+    value did not move, so a config-based assertion can never catch this vector.
+    A subagent spawned while such a variable is set resolves the role from the
+    environment, which is the highest layer there is.
+
+    A session may legitimately set one for a one-off; it must then opt out
+    explicitly with OMP_MODEL_PIN_REQUIRED=0 rather than leave the fan-out
+    running on an unpinned role.
+    """
+    offending = {
+        name: os.environ[name] for name in MODEL_ROLE_ENV_VARS if name in os.environ
+    }
+    if not offending:
+        return
+    if os.environ.get("OMP_MODEL_PIN_REQUIRED", "1") == "0":
+        pytest.skip(f"OMP_MODEL_PIN_REQUIRED=0 with model env overrides: {offending}")
+    raise AssertionError(
+        f"these model-role env vars are set and outrank every config file: "
+        f"{offending}. A subagent spawned now resolves its role from them, and "
+        f"`omp config list --json` will still show the pinned value, so no "
+        f"config-based check can catch it. Unset them, or set "
+        f"OMP_MODEL_PIN_REQUIRED=0 to accept the override deliberately."
+    )

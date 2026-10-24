@@ -589,3 +589,36 @@ check would catch one, not that this repo needs one.
 Two things also confirmed unset, so they are not current vectors: no
 `PI_SMOL_MODEL`/`PI_SLOW_MODEL`/`PI_PLAN_MODEL` in the environment, and no
 `.omp/config.yml` at the repository root or in any other checkout probed.
+
+## The top settings layer is invisible to the config check
+
+`modelRoles` env vars (`PI_SMOL_MODEL`, `PI_SLOW_MODEL`, `PI_PLAN_MODEL`,
+`PI_MODEL`) are the HIGHEST layer, above every config file. Measured: with
+`PI_SMOL_MODEL=anthropic/claude-haiku-5-5` set, `omp config list --json` still
+reported `modelRoles.value.smol = ollama-cloud/deepseek-v4.1-flash:1017`.
+
+**So the effective-config check cannot see this vector at all** — it reads a
+merged config value that the environment does not participate in. A subagent
+spawned in such a process would resolve the role from the environment while every
+config-based assertion stayed green. That is the same class of hole as the
+project-config one, one layer higher.
+
+No config query closes it, so the check reads the environment itself: any of the
+four variables being set fails the test unless the session opts out explicitly
+with `OMP_MODEL_PIN_REQUIRED=0`. Proven:
+
+```
+PI_SMOL_MODEL=anthropic/claude-haiku-5-5 .venv/bin/python -m pytest   tests/test_loop_worker_model_pin.py
+→ FAILED test_no_model_role_env_var_overrides_the_pin
+  these model-role env vars are set and outrank every config file:
+  {'PI_SMOL_MODEL': 'anthropic/claude-haiku-5-5'} … no config-based check can catch it
+```
+
+Unset, 10 passed. The live omp process that spawns these agents carries none of
+the four (`ps eww` shows 0), so the fan-out was never affected — but nothing
+would have said so before this test existed.
+
+Two attempts that did NOT prove anything, recorded so they are not repeated:
+`omp dry-balance --json` reports the `default` role, so it never changes when
+`smol` is overridden; and the `--smol` flag has no effect on it either. Neither is
+evidence about `smol` resolution.
