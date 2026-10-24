@@ -1,0 +1,4 @@
+delay_s timeout_s  killed_at_timeout rc    trap_ran
+    0.0         1              True   143   True
+    1.5         1              True   -15   False
+    3.0         1              True   -15   False

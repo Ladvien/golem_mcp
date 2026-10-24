@@ -1,0 +1,14 @@
+=== The OLD fixture against startup delays (1 s timeout, the test's own timeout_s)
+old fixture, 1 s timeout:
+  startup delay  0.0s -> trap ran: True, rc 143
+  startup delay 0.05s -> trap ran: True, rc 143
+  startup delay 0.25s -> trap ran: True, rc 143
+  startup delay  0.5s -> trap ran: True, rc 143
+  startup delay  1.5s -> trap ran: False, rc -15
+
+=== The NEW fixture (exec sleep, no trap) against the same delays: nothing to race
+  startup delay  0.0s -> job still running: False, rc -15
+  startup delay 0.05s -> job still running: False, rc -15
+  startup delay 0.25s -> job still running: False, rc -15
+  startup delay  0.5s -> job still running: False, rc -15
+  startup delay  1.5s -> job still running: False, rc -15

@@ -1,0 +1,2 @@
+token in argv while running: True
+token in argv after terminate: False
