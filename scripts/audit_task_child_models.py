@@ -233,6 +233,12 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
 
     session_dir = arguments.dir or newest_session_dir(DEFAULT_SESSION_ROOT)
+    if not session_dir.is_dir():
+        raise SystemExit(
+            f"no such session directory: {session_dir}. An audit that reads "
+            f"nothing must not print PASS: point --dir at the directory holding "
+            f"the child transcripts."
+        )
     if arguments.agents:
         transcripts = {
             name: session_dir / f"{name}.jsonl" for name in arguments.agents
@@ -253,7 +259,10 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         raise SystemExit(f"no transcript for {missing} under {session_dir}")
     if not transcripts:
-        raise SystemExit(f"no loop-aN.jsonl transcripts under {session_dir}")
+        raise SystemExit(
+            f"no child transcripts under {session_dir}: nothing was audited, so "
+            f"there is nothing to pass. Check the path, or pass --agent NAME."
+        )
 
     return report(transcripts, arguments.as_json, tuple(arguments.allowed_off_pin))
 

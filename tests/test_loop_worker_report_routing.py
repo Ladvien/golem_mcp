@@ -258,3 +258,28 @@ def test_a_fully_conforming_report_is_accepted():
         "work turns, fallback=false"
     )
     assert parsed["selector"] == REQUIRED_SELECTOR
+
+
+def test_the_audit_refuses_a_directory_it_cannot_read(tmp_path):
+    """An audit that reads NOTHING must not exit 0.
+
+    Measured 2026-10-26: `--dir /tmp/nonexistent-session` exited **0** while
+    printing that there were no transcripts. A caller scripting this as a gate
+    would have read that as a pass.
+    """
+    missing_main = _load_audit_module().main
+
+    # SystemExit is the script's own refusal and carries its message; either
+    # form is a non-zero outcome, which is what a gate reads.
+    with pytest.raises(SystemExit) as exit_info:
+        missing_main(["--dir", str(tmp_path / "does-not-exist")])
+    assert str(exit_info.value) != "0"
+
+
+def test_the_audit_refuses_an_empty_directory(tmp_path):
+    """No children is not a pass: there is nothing to have checked."""
+    empty_main = _load_audit_module().main
+
+    with pytest.raises(SystemExit) as exit_info:
+        empty_main(["--dir", str(tmp_path)])
+    assert str(exit_info.value) != "0"

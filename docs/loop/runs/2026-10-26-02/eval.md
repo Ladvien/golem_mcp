@@ -446,3 +446,28 @@ explicit role test. Restored, 8 passed in the pin module, 29 in `make test-golem
 **Post-restore live check:** `scout` (7 turns) and `loop-worker` both again
 attested `ollama-cloud/deepseek-v4.1-flash:1017`; the audit read 19 work turns
 across the two, 0 off-pin.
+
+## Two ways my own checks were green while nothing was pinned
+
+Both found this turn, both the same disease: a check that cannot fail.
+
+**1. The guard skipped when the config was absent.** `test_loop_worker_model_pin`
+called `pytest.skip` if `~/.omp/agent/config.yml` was missing. Measured by moving
+the file aside: **4 passed, 4 skipped, exit 0** — a green module while every
+subagent was unpinned, because the override and role layers live in that file. A
+missing config is not "not applicable"; it is the pin being gone, which is the
+condition the guard exists to catch. All four skips are replaced by one loader
+that FAILS with that explanation, and a machine that legitimately has no pin opts
+out explicitly with `OMP_MODEL_PIN_REQUIRED=0`. Re-measured: config absent now
+reads **4 failed**, and the opt-out skips.
+
+**2. The audit exited 0 on a path it could not read.** `--dir
+/tmp/nonexistent-session` printed a "no transcripts" line and exited **0**, so a
+script using it as a gate would have read a pass. It now raises for both a
+missing directory and an empty one. Measured: both exit non-zero; the real
+session exits 1 only because `probe-model` is off-pin, and 0 with
+`--allow-off-pin probe-model`.
+
+Both are covered by tests, so the shape cannot return: a directory it cannot read
+and an empty directory each raise, and the pin module fails rather than skips on
+a missing config.

@@ -19,6 +19,7 @@ Measured 2026-10-26 on the six-way run: every child resolved exactly one model,
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -36,6 +37,36 @@ TRACKED_AGENT_PATH = REPOSITORY_ROOT / ".omp" / "agents" / "loop-worker.md"
 PINNED_AGENT_NAMES = ("loop-worker", "task", "sonic")
 
 USER_CONFIG_PATH = pathlib.Path.home() / ".omp" / "agent" / "config.yml"
+
+
+def _user_config() -> dict:
+    """The user's omp config, or a loud failure.
+
+    This used to `pytest.skip` when the file was absent, which made the whole
+    guard silently green while every subagent was unpinned: measured 2026-10-26,
+    with `config.yml` moved aside the module reported `4 passed, 4 skipped`,
+    exit 0. A missing config is not "not applicable" — it is the pin being GONE,
+    and the config layer is the one that outranks agent frontmatter, so its
+    absence is exactly the condition these tests exist to catch.
+
+    CI and other machines legitimately have no pinned config. They should set
+    `OMP_MODEL_PIN_REQUIRED=0` to opt out deliberately, so an accidental
+    `~/.omp` wipe on the machine that runs the fan-out can never read as green.
+    """
+    if not USER_CONFIG_PATH.is_file():
+        if os.environ.get("OMP_MODEL_PIN_REQUIRED", "1") == "0":
+            pytest.skip(
+                "OMP_MODEL_PIN_REQUIRED=0: an unpinned config was opted out of "
+                "deliberately on this machine"
+            )
+        raise AssertionError(
+            f"no user config at {USER_CONFIG_PATH}, so no model pin exists. The "
+            f"task.agentModelOverrides and modelRoles layers are what route every "
+            f"subagent; without the file a child runs on the default selection. "
+            f"Restore the config, or set OMP_MODEL_PIN_REQUIRED=0 to opt out on a "
+            f"machine that does not run the fan-out."
+        )
+    return yaml.safe_load(USER_CONFIG_PATH.read_text(encoding="utf-8")) or {}
 
 
 def _frontmatter(path: pathlib.Path) -> dict:
@@ -58,10 +89,7 @@ def test_the_tracked_agent_declares_the_required_model():
 def test_the_override_layer_pins_every_loop_worker():
     """The config override OUTRANKS frontmatter, so it is the layer that holds
     when an agent file drifts. Its absence is a silent routing gap."""
-    if not USER_CONFIG_PATH.is_file():
-        pytest.skip(f"no user config at {USER_CONFIG_PATH}")
-
-    config = yaml.safe_load(USER_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    config = _user_config()
     overrides = (config.get("task") or {}).get("agentModelOverrides") or {}
 
     wrong = {
@@ -115,10 +143,7 @@ def test_every_role_a_subagent_can_resolve_through_names_the_required_model():
     `ollama-cloud` is part of the requirement, so the role targets are asserted
     with their provider, not as bare model names.
     """
-    if not USER_CONFIG_PATH.is_file():
-        pytest.skip(f"no user config at {USER_CONFIG_PATH}")
-
-    config = yaml.safe_load(USER_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    config = _user_config()
     roles = config.get("modelRoles") or {}
 
     # Every role the bundled roster resolves through, plus `default` and
@@ -160,10 +185,7 @@ def test_every_role_except_a_named_few_names_the_required_model():
     pinning them changed the user's own models for no reason — measured and
     restored 2026-10-26.
     """
-    if not USER_CONFIG_PATH.is_file():
-        pytest.skip(f"no user config at {USER_CONFIG_PATH}")
-
-    config = yaml.safe_load(USER_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    config = _user_config()
     roles = config.get("modelRoles") or {}
 
     wrong = {
@@ -213,10 +235,7 @@ def test_every_role_is_SET_rather_than_left_to_fall_through():
     they resolved via `default` — which is why `default` has to be pinned too,
     and why a `None` here is the same defect as a wrong value.
     """
-    if not USER_CONFIG_PATH.is_file():
-        pytest.skip(f"no user config at {USER_CONFIG_PATH}")
-
-    config = yaml.safe_load(USER_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    config = _user_config()
     roles = config.get("modelRoles") or {}
 
     unset = sorted(role for role, selector in roles.items() if not selector)
