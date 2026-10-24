@@ -51,7 +51,12 @@ from golem_blender.ops.material_nodes import (
     material_report,
 )
 from golem_blender.ops.materials import assign_material
-from golem_blender.ops.modifiers import add_bevel, apply_all_modifiers
+from golem_blender.ops.modifiers import (
+    DecimateReport,
+    add_bevel,
+    apply_all_modifiers,
+    decimate_object,
+)
 from golem_blender.ops.motion import (
     ArmatureRotationModeError,
     BodyCapsulesReport,
@@ -140,6 +145,7 @@ __all__ = [
     "CapsuleReading",
     "ClipIntersectionReport",
     "ClothBakeReport",
+    "DecimateReport",
     "EdgeSelector",
     "FaceInversion",
     "FaceSelector",
@@ -190,6 +196,7 @@ __all__ = [
     "canonical_depth_axis_rotation_euler_rad",
     "center_on_origin_xy",
     "clip_self_intersection_report",
+    "decimate_object",
     "deforming_bone_names",
     "depth_axis_extent_rank",
     "depth_axis_holds_middle_extent",
