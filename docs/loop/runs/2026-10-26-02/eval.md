@@ -97,3 +97,42 @@ a5 wrote into `/Users/ladvien/golem_mcp` before moving to its worktree, then ran
 gates were re-run in its own worktree before the merge. The user chose to merge
 on that evidence. Both facts — the sound work and the broken rule — are in
 `docs/loop/log.md` and #12's closing comment.
+
+## Model routing: how it is guaranteed, not just observed
+
+Six children, one model. Counted from each child's own transcript, by purpose:
+
+| child | model calls | model |
+|---|---|---|
+| loop-a1 … loop-a6 | 3 each, `purpose=task-completion-probe` | `deepseek-v4.1-flash:1017` |
+
+Eighteen of eighteen on the required model; the full `"model"` field audit over
+all six transcripts (840 records) found no other model.
+
+**Two layers pin it, and the stronger one now outranks the agent file.**
+
+1. `~/.omp/agent/config.yml` → `task.agentModelOverrides` pins `loop-worker`,
+   `task` and `sonic` to `ollama-cloud/deepseek-v4.1-flash:1017`. This layer
+   takes precedence OVER agent frontmatter, so a frontmatter edit, a stale agent
+   file or a future agent with no `model:` line cannot drift off the required
+   model.
+2. `.omp/agents/loop-worker.md` (tracked, on `main`) carries
+   `model: ollama-cloud/deepseek-v4.1-flash:1017` as the per-agent default.
+
+**Both layers proven by live probes, not inference.** Two throwaway agents, each
+deleted afterwards:
+
+- `model-probe` named `deepseek-v4-flash` in its frontmatter and the child failed
+  with `HTTP 410 … deepseek-v4-flash:0731 was retired`. The frontmatter's model
+  was genuinely what got called, so frontmatter routing is real and not merely
+  inheritance from the parent session.
+- `routing-check` named the SAME retired model in frontmatter while the config
+  override pinned it to `flash:1017`, and the child answered: `override wins`.
+  The override layer therefore wins, which is what makes the pin structural.
+
+**One honest caveat about harness-internal calls.** A `purpose=auto-thinking`
+record for `typesafe/jev-1.14` appears in a child's transcript. It is the
+harness's own classifier, not the agent's work model — the same probe's
+`purpose=model` entries are `flash:1017`. The six loop children show no such
+entry at all. Reported rather than omitted so the count above cannot be
+misread as "every single API call in the process".
