@@ -1,3 +1,10 @@
+from golem_blender.ops.alignment import (
+    AlignReport,
+    TargetPlane,
+    align_to,
+    span_between,
+    stand_against,
+)
 from golem_blender.ops.animation import (
     AnimationReport,
     animation_report,
@@ -143,6 +150,7 @@ from golem_blender.ops.weights import (
 )
 
 __all__ = [
+    "AlignReport",
     "AnimationReport",
     "ArmatureRotationModeError",
     "ArrayReport",
@@ -175,6 +183,7 @@ __all__ = [
     "RingSkirtSpec",
     "SetReport",
     "SplayedLegSpec",
+    "TargetPlane",
     "UnknownPiece",
     "UnlinkedOperand",
     "UnwrapReport",
@@ -188,6 +197,7 @@ __all__ = [
     "add_relief_slab",
     "add_shell_lathe",
     "add_splayed_leg",
+    "align_to",
     "animation_report",
     "apply_all_modifiers",
     "apply_canonical_depth_axis",
@@ -246,7 +256,9 @@ __all__ = [
     "select_vertices",
     "set_frame_range",
     "snap_base_to_ground",
+    "span_between",
     "splayed_leg_ring",
+    "stand_against",
     "trim_soles_flat",
     "unwrap_uvs",
     "weight_report",
