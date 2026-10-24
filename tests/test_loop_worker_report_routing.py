@@ -201,3 +201,60 @@ def test_a_deliberate_discriminator_can_be_excused_but_is_named(tmp_path, capsys
     ) == 0
     output = capsys.readouterr().out
     assert "NOTE excused as a deliberate discriminator: probe-retired" in output
+
+
+def assert_report_complies(report_text: str) -> dict[str, str]:
+    """The parent's acceptance predicate: one line, right selector, no fallback.
+
+    Separated from the parser because parsing and ACCEPTING are different
+    questions, and conflating them is how a sloppy attestation passes. Measured
+    2026-10-26: a live `task` child reported
+    ``ollama-cloud/deepseek-v4.1-flash`` — the required provider and model but
+    WITHOUT the ``:1017`` tag — while its transcript said
+    ``ollama-cloud/deepseek-v4.1-flash:1017`` on all 9 work turns. Routing was
+    correct; the attestation was not. A gate that accepted the untagged string
+    would let a genuinely different model tag through beside it.
+    """
+    parsed = routing_of(report_text)
+    if parsed["selector"] != REQUIRED_SELECTOR:
+        raise AssertionError(
+            f"the report attests {parsed['selector']!r}, not the required "
+            f"{REQUIRED_SELECTOR!r}. The provider AND the model tag are part of "
+            f"the requirement: `deepseek-v4.1-flash` and "
+            f"`deepseek-v4.1-flash:1017` are different models."
+        )
+    if parsed["fallback"] != "false":
+        raise AssertionError(
+            f"the report attests fallback={parsed['fallback']}; a child that "
+            f"resolved through a fallback did not run on the required model"
+        )
+    return parsed
+
+
+def test_a_wrong_model_tag_is_refused_even_when_the_provider_is_right():
+    """The real sloppy line from this run: right provider, missing `:1017`."""
+    untagged = (
+        "MODEL_ROUTING: ollama-cloud/deepseek-v4.1-flash across 9 work turns, "
+        "fallback=false"
+    )
+    # It PARSES ...
+    assert routing_of(untagged)["selector"] == "ollama-cloud/deepseek-v4.1-flash"
+    # ... and must still be REFUSED.
+    with pytest.raises(AssertionError, match="different models"):
+        assert_report_complies(untagged)
+
+
+def test_a_true_fallback_is_refused_by_the_acceptance_predicate():
+    with pytest.raises(AssertionError, match="did not run on the required model"):
+        assert_report_complies(
+            "MODEL_ROUTING: ollama-cloud/deepseek-v4.1-flash:1017 across 3 "
+            "work turns, fallback=true"
+        )
+
+
+def test_a_fully_conforming_report_is_accepted():
+    parsed = assert_report_complies(
+        "MODEL_ROUTING: ollama-cloud/deepseek-v4.1-flash:1017 across 142 "
+        "work turns, fallback=false"
+    )
+    assert parsed["selector"] == REQUIRED_SELECTOR

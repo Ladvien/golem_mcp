@@ -135,3 +135,59 @@ def test_every_role_a_subagent_can_resolve_through_names_the_required_model():
         f"@slow, task -> @task) would then run on that role's model, so the "
         f"concrete-model pin alone leaves most of the roster unpinned."
     )
+
+
+def test_no_model_selector_anywhere_in_the_routing_config_leaves_the_pin():
+    """A CLOSURE check, because every list above is enumerated by name.
+
+    The named lists (`PINNED_AGENT_NAMES`, the role tuple) are exactly as strong
+    as their completeness: add a role, or an `agentModelOverrides` entry, and
+    nothing above notices. Measured 2026-10-26, that is how four of seven agents
+    sat on Anthropic models while a name-based pin was green.
+
+    So this asserts the closure instead: every concrete selector in
+    `modelRoles` and `task.agentModelOverrides` must BE the required model. A
+    future role added with an Anthropic or OpenRouter target fails here without
+    anyone remembering to add its name.
+    """
+    if not USER_CONFIG_PATH.is_file():
+        pytest.skip(f"no user config at {USER_CONFIG_PATH}")
+
+    config = yaml.safe_load(USER_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    roles = config.get("modelRoles") or {}
+    overrides = (config.get("task") or {}).get("agentModelOverrides") or {}
+
+    stray: dict[str, str] = {}
+    for label, mapping in (("modelRoles", roles), ("agentModelOverrides", overrides)):
+        for key, selector in mapping.items():
+            if selector is None:
+                continue  # an unset role falls through; asserted below
+            if selector != REQUIRED_MODEL:
+                stray[f"{label}.{key}"] = str(selector)
+
+    assert not stray, (
+        f"these selectors leave {REQUIRED_MODEL!r}: {stray}. Every role and "
+        f"override a subagent can resolve through must name it, or a child "
+        f"reaches another provider without any name-based pin noticing."
+    )
+
+
+def test_every_role_is_SET_rather_than_left_to_fall_through():
+    """`None` is not "unpinned but harmless": it falls through to `default`.
+
+    Measured: `seance` and `security-reviewer` carry no `model:` line at all, so
+    they resolved via `default` — which is why `default` has to be pinned too,
+    and why a `None` here is the same defect as a wrong value.
+    """
+    if not USER_CONFIG_PATH.is_file():
+        pytest.skip(f"no user config at {USER_CONFIG_PATH}")
+
+    config = yaml.safe_load(USER_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    roles = config.get("modelRoles") or {}
+
+    unset = sorted(role for role, selector in roles.items() if not selector)
+    assert not unset, (
+        f"these modelRoles are unset: {unset}. An agent naming an unset role "
+        f"falls through to the default selection, so leaving one unset is a "
+        f"routing hole that looks tidy in the config."
+    )

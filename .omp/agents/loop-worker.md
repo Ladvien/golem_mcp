@@ -50,5 +50,8 @@ report work done on anything else.
 4. In your final report, add exactly one line, filled from your own measurement:
 
    MODEL_ROUTING: <provider>/<model> across <N> work turns, fallback=<true|false>
+   Copy the model string EXACTLY as the record spells it, tag included:
+   `deepseek-v4.1-flash` and `deepseek-v4.1-flash:1017` are different
+   models, and a report that drops the tag is refused.
 
    For example: `MODEL_ROUTING: ollama-cloud/deepseek-v4.1-flash:1017 across 142 work turns, fallback=false`
