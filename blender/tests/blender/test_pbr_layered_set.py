@@ -326,3 +326,127 @@ def test_a_set_s_occlusion_is_as_dark_and_as_varied_as_its_kind_s(tmp_path):
     road_ao = _pixels(road["paths"]["orm"])[:, :, 0]
     assert float(floor_ao.std()) < 0.06
     assert float(road_ao.mean()) < float(floor_ao.mean()) - 0.1
+
+
+# --- the height map's RANGE follows its kind --------------------------------
+#
+# A displacement shader reads the Height map's own values as depth, so a
+# map that always spans 0..1 gives every material the same relief. The
+# truths' own displacement maps do not: measured over the four benchmark
+# sets, a metal's spans 0.135 at the median and a rock's 0.757. So the
+# written Height is placed in the kind's measured range, and the metadata
+# says which range it is in.
+
+ASPHALT = "asphalt, gray, road"
+GRAVEL = "gravel, ground, stones"
+
+
+def _height_span(path) -> float:
+    """The written height's 1st-to-99th percentile span, as a shader reads it."""
+    height = _pixels(path)[:, :, 0]
+    return float(numpy.percentile(height, 99) - numpy.percentile(height, 1))
+
+
+def test_an_asphalt_s_height_range_is_narrower_than_a_gravel_s(tmp_path):
+    """The truths' asphalts span 0.269 at the median and their rubble
+    (scattered: gravel, ground, stones) 0.533.
+
+    Written at 0..1 for every kind, ours spanned 0.52-0.99 whatever the
+    material - a sheet of steel with a gravel's relief.
+    """
+    asphalt = write_layered_texture_set(
+        tmp_path / "asphalt", "Set", {"description": ASPHALT}, [], 8.0, RESOLUTION
+    )
+    gravel = write_layered_texture_set(
+        tmp_path / "gravel", "Set", {"description": GRAVEL}, [], 8.0, RESOLUTION
+    )
+    asphalt_span = _height_span(asphalt["paths"]["height"])
+    gravel_span = _height_span(gravel["paths"]["height"])
+    assert asphalt_span < gravel_span, (
+        f"the asphalt's height spans {asphalt_span:.3f} and the gravel's "
+        f"{gravel_span:.3f}: every kind is written at the same depth"
+    )
+
+
+def test_the_written_height_spans_its_kinds_measured_range(tmp_path):
+    """The map's own low and high, checked against the table.
+
+    A range that names 0.435..0.571 must produce a map whose lowest
+    value is 0.435 and whose highest is 0.571, or the metadata is
+    describing a map nobody wrote. (One PNG quantum is 1/255, so the
+    tolerance is two of them.)
+    """
+    from golem_blender.pbr.layered_set import height_range_for
+
+    for name, description, kind in (
+        ("metal", "galvanised, metal, sheet, steel", "metal"),
+        ("rock", "cliff, grey, rock", "rock"),
+    ):
+        written = write_layered_texture_set(
+            tmp_path / name, "Set", {"description": description}, [], 8.0, RESOLUTION
+        )
+        height = _pixels(written["paths"]["height"])[:, :, 0]
+        low, high = height_range_for(kind)
+        assert abs(float(height.min()) - low) <= 2.0 / 255.0, (
+            f"{kind}: the height's lowest is {height.min():.3f}, the measured "
+            f"range's {low:.3f}"
+        )
+        assert abs(float(height.max()) - high) <= 2.0 / 255.0, (
+            f"{kind}: the height's highest is {height.max():.3f}, the measured "
+            f"range's {high:.3f}"
+        )
+
+
+def test_the_normal_map_is_unchanged_by_the_height_range(tmp_path):
+    """The normal is scaled to the kind's measured TILT, not to the range.
+
+    The issue says so, and it is the reason the range can move at all:
+    if the normal were made from the ranged height, narrowing a metal's
+    Height would flatten its relief with it. So the same kind's normal
+    must read the same tilt whether its width range is narrow (metal) or
+    wide (rock) - measured over the truths' own medians, a metal tilts
+    0.7 degrees and a rock 16.9.
+    """
+    written = write_layered_texture_set(
+        tmp_path,
+        "Set",
+        {"description": "galvanised, metal, sheet, steel"},
+        [],
+        8.0,
+        RESOLUTION,
+    )
+    normal = _pixels(written["paths"]["normal"]) * 2.0 - 1.0
+    tilt = numpy.degrees(
+        numpy.arccos(
+            numpy.clip(normal[:, :, 2] / numpy.linalg.norm(normal, axis=2), -1, 1)
+        )
+    )
+    # A metal's truths tilt 0.7 degrees. Scaled to its NARROW height range
+    # the relief would read far flatter still; scaled to the tilt it is
+    # the measured 0.7 either way.
+    assert abs(float(tilt.mean()) - 0.7) < 0.4
+    # The written Height, meanwhile, spans the metal's narrow range.
+    assert _height_span(written["paths"]["height"]) < 0.2
+
+
+def test_the_set_reports_the_height_range_it_wrote(tmp_path):
+    """A consumer sets its displacement scale from the metadata."""
+    measured = write_layered_texture_set(
+        tmp_path / "measured", "Set", {"description": ASPHALT}, [], 8.0, RESOLUTION
+    )
+    assert measured["height_range"] == [0.495, 0.764]
+    assert measured["height_range_kind"] == "asphalt"
+    assert measured["height_range_is_measured"] is True
+
+    # A kind with fewer than three truths is not fitted, and says so.
+    unfitted = write_layered_texture_set(
+        tmp_path / "unfitted",
+        "Set",
+        {"description": "dark, brown, bark"},
+        [],
+        8.0,
+        RESOLUTION,
+    )
+    assert unfitted["height_range"] == [0.0, 1.0]
+    assert unfitted["height_range_kind"] == "bark"
+    assert unfitted["height_range_is_measured"] is False

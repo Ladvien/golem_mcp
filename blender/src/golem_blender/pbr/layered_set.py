@@ -23,10 +23,18 @@ roof) is its pattern's own joint field, so a layer laid in the joints
 lands in the joints whatever each piece's tone; every other
 material's height is its own relief, related to its colour and skewed as
 its kind's truths are (_relief_height).
+
+The written HEIGHT map is a displacement map, and its RANGE follows the
+set's kind: the truths' own displacement maps do not all span 0..1 (a
+metal's spans a tenth of the surface, a rubble's two thirds), and a
+displacement shader reads the map's values as depth, so one fixed range
+gave every material the same relief (KIND_HEIGHT_RANGE). The NORMAL map
+is not affected - it is scaled to the kind's measured tilt.
 """
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -57,6 +65,67 @@ KIND_HEIGHT = {
     "grass": (0.21, 0.51),
 }
 DEFAULT_HEIGHT = (0.0, -0.3)
+# A kind's DISPLACEMENT RANGE: the lowest and highest value its truths'
+# own displacement map carries, so the written Height spans what the
+# material's displacement does and a parallax or a displacement shader
+# gets the DEPTH the material actually has. It was always 0..1, which
+# gave a sheet of steel the relief of a gravel: measured on the
+# `ambientcg` set, our written height spanned 0.52-0.99 for every kind
+# while its truths span 0.00 for a flat steel (Metal049A) to 0.86 for a
+# pressed sheet (CorrugatedSteel009).
+#
+# Measured over all four truth sets (159 distinct materials, each asset's
+# own `displacement.png`/`.jpg` at the 1st and 99th percentile so one
+# blown pixel cannot set the range): the MEDIAN of each kind's own
+# (p1, p99), and the kind is the one `pattern_for_description` assigns
+# the asset's tags. A kind with fewer than HEIGHT_RANGE_MINIMUM_TRUTHS
+# truths is not fitted - its own two or three assets would say more
+# about them than about the kind - and falls back to 0..1
+# (DEFAULT_HEIGHT_RANGE), which is also reported so a consumer can tell
+# a measurement from a fallback.
+KIND_HEIGHT_RANGE: dict[str, tuple[float, float]] = {
+    "asphalt": (0.495, 0.764),
+    "brick": (0.205, 0.830),  # walls and tile floors: the same kind here
+    "carpet": (0.276, 0.741),
+    "flat": (0.408, 0.820),
+    "grain": (0.294, 0.678),
+    "grass": (0.122, 0.737),
+    "leather": (0.206, 0.814),
+    "marble": (0.537, 0.976),
+    "markings": (0.314, 0.859),
+    "metal": (0.435, 0.571),  # the flattest kind
+    "parquet": (0.506, 0.918),
+    "rock": (0.159, 0.916),  # the widest
+    "roof": (0.259, 0.937),
+    "scattered": (0.216, 0.749),
+    "woven": (0.188, 0.698),
+}
+# How many truths each fitted range was measured over, so a range is
+# never used on fewer than HEIGHT_RANGE_MINIMUM_TRUTHS and the counts
+# are checkable against the truth sets rather than living in a comment.
+KIND_HEIGHT_RANGE_TRUTHS: dict[str, int] = {
+    "asphalt": 8,
+    "brick": 24,
+    "carpet": 4,
+    "flat": 21,
+    "grain": 18,
+    "grass": 3,
+    "leather": 6,
+    "marble": 5,
+    "markings": 3,
+    "metal": 18,
+    "parquet": 9,
+    "rock": 7,
+    "roof": 3,
+    "scattered": 11,
+    "woven": 7,
+}
+# A kind with no fitted range - banded, bark, fan, knit, moss, voronoi,
+# wallpaper (one or two truths each) - keeps the old 0..1.
+DEFAULT_HEIGHT_RANGE = (0.0, 1.0)
+# The least truths a kind needs before its range is a measurement of the
+# KIND and not of the two assets that happen to be in it.
+HEIGHT_RANGE_MINIMUM_TRUTHS = 3
 # The independent relief: a feature spans this many sigmas of its broad
 # grain, and the broad grain's share of the relief (the rest a quarter of
 # its size).
@@ -252,6 +321,56 @@ def compose_from_description(base: dict) -> tuple[dict, list[dict]]:
 
 class LayerSpecError(ValueError):
     """A layer's specification cannot be built; the message names the field."""
+
+
+def height_range_for(kind: str) -> tuple[float, float]:
+    """The displacement range the written Height map spans for `kind`.
+
+    A kind measured over HEIGHT_RANGE_MINIMUM_TRUTHS or more truths gets
+    its own range; every other kind - an unknown one, or one with too
+    few truths to fit - gets 0..1, the forcing this replaced, so the
+    caller can always read the map the same way and
+    ``height_range_is_measured`` says which it got.
+    """
+    if not height_range_is_measured(kind):
+        return DEFAULT_HEIGHT_RANGE
+    return KIND_HEIGHT_RANGE[kind]
+
+
+def height_range_is_measured(kind: str) -> bool:
+    """Whether `kind`'s displacement range is fitted from enough truths."""
+    if kind not in KIND_HEIGHT_RANGE:
+        return False
+    return KIND_HEIGHT_RANGE_TRUTHS.get(kind, 0) >= HEIGHT_RANGE_MINIMUM_TRUTHS
+
+
+def _height_in_range(height, kind: str):
+    """The 0..1 height placed in `kind`'s measured displacement range.
+
+    The height arrives normalised (``_relief_height`` and the joint
+    field both return 0..1), and a displacement shader reads the MAP's
+    own values as depth: a steel sheet whose truths span 0.135 must be
+    written narrower than a rubble whose truths span 0.757, or every
+    material is given the same depth. The normal map is NOT made from
+    this - it is scaled by the kind's measured tilt instead, so the
+    relief's angle is unchanged by the range.
+    """
+    low, high = height_range_for(kind)
+    return low + (high - low) * height
+
+
+def _height_range_source(kind: str) -> str:
+    """Where the kind's displacement range came from, for the set's metadata."""
+    if height_range_is_measured(kind):
+        return (
+            f"the median of {kind}'s own truths' displacement maps at their 1st "
+            "and 99th percentile, over the four benchmark sets "
+            "(ambientcg, ambientcg_wide, ambientcg_popular, ambientcg_top)"
+        )
+    return (
+        f"no fitted range for {kind!r} (fewer than "
+        f"{HEIGHT_RANGE_MINIMUM_TRUTHS} truths), so the height keeps 0..1"
+    )
 
 
 def _material_maps(
@@ -605,7 +724,17 @@ def write_layered_texture_set(
         shutil.rmtree(scratch_dir, ignore_errors=True)
 
     height = layers._normalised(composed.height)
-    ambient = _ambient_occlusion(height, kinds[0] if kinds else "")
+    # The set's kind is its BASE's: a layer of moss or rust lies ON the
+    # base's surface, so it takes the base's displacement range as it
+    # takes the base's normal strength.
+    set_kind = kinds[0] if kinds else ""
+    # The NORMAL map is made from the normalised height, unchanged:
+    # _normal_map measures its own slope and scales that to the kind's
+    # measured tilt, so the range must not reach it - only the written
+    # Height, which a displacement shader reads as DEPTH.
+    normal = _normal_map(height, normal_deg)
+    written_height = _height_in_range(height, set_kind)
+    ambient = _ambient_occlusion(height, set_kind)
     orm = numpy.stack((ambient, composed.roughness, composed.metallic), axis=2)
     written = {
         "base_color": _write_image(
@@ -627,21 +756,47 @@ def write_layered_texture_set(
             resolution,
             resolution,
             resolution,
-            _normal_map(height, normal_deg),
+            normal,
         ),
-        # The height the normal and the AO were made from, 0 the lowest
-        # and 1 the highest - a parallax or a displacement reads it.
+        # The height the normal and the AO were made from, placed in the
+        # kind's measured displacement range - a parallax or a
+        # displacement reads it as depth, so a steel sheet's is narrow
+        # and a rubble's wide.
         "height": _write_image(
             directory / paths.height_file_name(texture_name),
             resolution,
             resolution,
             resolution,
-            height[:, :, None],
+            written_height[:, :, None],
         ),
     }
+    height_range = list(height_range_for(set_kind))
+    height_range_is_fitted = height_range_is_measured(set_kind)
+    # What the Height map's values MEAN, written BESIDE the map: its
+    # pixels cannot say which range they are in, and the export's
+    # metadata carries this on so the set is usable on its own.
+    height_metadata_path = directory / paths.height_metadata_file_name(texture_name)
+    height_metadata_path.write_text(
+        json.dumps(
+            {
+                "map": paths.height_file_name(texture_name),
+                "range": height_range,
+                "kind": set_kind,
+                "is_measured": height_range_is_fitted,
+                "source": _height_range_source(set_kind),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return {
         "paths": {key: str(value) for key, value in written.items()},
         "kinds": kinds,
+        "height_range": height_range,
+        "height_range_kind": set_kind,
+        "height_range_is_measured": height_range_is_fitted,
+        "height_metadata": str(height_metadata_path),
     }
 
 
@@ -701,8 +856,14 @@ def _compose(
 
 
 __all__ = (
+    "DEFAULT_HEIGHT_RANGE",
+    "HEIGHT_RANGE_MINIMUM_TRUTHS",
+    "KIND_HEIGHT_RANGE",
+    "KIND_HEIGHT_RANGE_TRUTHS",
     "MASK_COMBINE_MODES",
     "MASK_SOURCES",
     "LayerSpecError",
+    "height_range_for",
+    "height_range_is_measured",
     "write_layered_texture_set",
 )

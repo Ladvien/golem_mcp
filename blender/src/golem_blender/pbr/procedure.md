@@ -253,16 +253,32 @@ in EEVEE for exactly this reason; `render_views` does not show textures.
 
 9. **Export the set.** `export_texture_set(texture_name="<Name>")`
    copies the maps - the three, and a layered set's height map when it
-   has one - and writes a `metadata.json` beside them.
+   has one - and writes a `metadata.json` beside them. A layered set's
+   Height range travels with it (`height` in the metadata), so a
+   displacement shader's scale is read from the export and not guessed.
    Pass `extras=[...]` to copy the environment map and the reference
    photographs with it, so the export is reusable on its own.
 
 ## The conventions
 
 - The file names are `T_<Name>_BaseColor.png`, `T_<Name>_ORM.png` and
-  `T_<Name>_Normal.png`. A layered set also writes `T_<Name>_Height.png`:
-  the height its normal and its AO were made from, 0 the lowest and 1 the
-  highest, for a parallax or a displacement.
+  `T_<Name>_Normal.png`. A layered set also writes `T_<Name>_Height.png`,
+  the height its normal and its AO were made from, for a parallax or a
+  displacement.
+- **The Height map's range follows the material's KIND.** A displacement
+  shader reads the map's own values as DEPTH, so a map that always spans
+  0..1 gives a sheet of steel the relief of a rubble. The truths' own
+  displacement maps do not do that: measured over the four benchmark
+  sets (159 materials), a metal's spans 0.135 at the median and a rock's
+  0.757, and the written map is placed in the kind's range. The pair is
+  reported - `height_range` by `generate_layered_texture_set`, and
+  `height` by the export's `metadata.json` - and a `T_<Name>_Height.json`
+  beside the map says the same thing, so set the displacement scale from
+  it rather than measuring the map. A kind with fewer than three truths
+  is not fitted and keeps 0..1; `is_measured` says which you have.
+  **The normal map is not affected**: `_normal_map` scales its own slope
+  to the kind's measured tilt, so narrowing the Height does not flatten
+  the relief.
 - **A set's three maps are the same size.** They are all 2048, which is
   what every other set on codex_fs uses, and the generator and both
   bakes read that one number so a set cannot come out mismatched. It

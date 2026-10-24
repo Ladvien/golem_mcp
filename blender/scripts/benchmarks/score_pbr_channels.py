@@ -187,6 +187,23 @@ def main() -> None:
                 truth_height_luma,
             ],
             "height_skew": [_skew(ours_height), truth_height_skew],
+            # The map's own range, which a displacement shader reads as
+            # depth: the set says it wrote a kind's measured pair, and
+            # this is what the pixels actually span.
+            "height_range": [
+                [
+                    float(numpy.percentile(ours_height, 1)),
+                    float(numpy.percentile(ours_height, 99)),
+                ],
+                None
+                if height_path is None
+                else [
+                    float(numpy.percentile(truth_height, 1)),
+                    float(numpy.percentile(truth_height, 99)),
+                ],
+            ],
+            "height_range_declared": written.get("height_range"),
+            "height_range_is_measured": written.get("height_range_is_measured"),
             "normal_strength_deg": [
                 _normal_strength(ours_normal),
                 _normal_strength(_channels(normal_path)),
@@ -230,6 +247,22 @@ def main() -> None:
         for r in heights
     )
     height_skew = sum(abs(r["height_skew"][0] - r["height_skew"][1]) for r in heights)
+    # The Height map's own RANGE against the truth's: a displacement
+    # shader reads its values as depth, so a map that always spans 0..1
+    # gives every material the same relief. Measured at the 1st and 99th
+    # percentile, as a spread.
+    spans = [
+        (
+            r["height_range"][0][1] - r["height_range"][0][0],
+            r["height_range"][1][1] - r["height_range"][1][0],
+        )
+        for r in heights
+    ]
+    height_span = sum(abs(ours - truth) for ours, truth in spans) / max(1, len(spans))
+    print(
+        f"SCORE over {len(heights)} with a height: height RANGE span mean |error| "
+        f"{height_span:.3f}"
+    )
     print(
         f"SCORE over {len(aos)} with an AO: ao mean |error| {ao_mean / max(1, len(aos)):.3f}  "
         f"ao spread mean |log| {ao_spread / max(1, len(aos)):.3f}; over {len(heights)} with a "

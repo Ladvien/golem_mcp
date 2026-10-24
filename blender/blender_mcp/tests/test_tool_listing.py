@@ -323,8 +323,14 @@ EXPECTED_TOOLS = [
         "description": "Write a base material with others laid over it as one PBR set.\n"
         "\n"
         "Writes T_<Name>_BaseColor.png, T_<Name>_ORM.png (AO, roughness,\n"
-        "metallic), T_<Name>_Normal.png and T_<Name>_Height.png (0 lowest,\n"
-        "1 highest), and returns the base colour.\n"
+        "metallic), T_<Name>_Normal.png and T_<Name>_Height.png, and\n"
+        "returns the base colour. The Height is a DISPLACEMENT map, and\n"
+        "its range follows the base's KIND: a metal's spans a tenth of\n"
+        "the surface, a rubble's two thirds, as the truths' own\n"
+        'displacement maps do. "height_range" in the result is the pair\n'
+        "of values it was written in - set a displacement shader's\n"
+        "scale from it. A kind with too few truths to fit falls back to\n"
+        '0 lowest and 1 highest, and "height_range_is_measured" is false.\n'
         "Every material - the base and each layer - is made from its own\n"
         "description through the procedural lane, so each chooses its own\n"
         "pattern, colours, roughness and metal. The set tiles.\n"

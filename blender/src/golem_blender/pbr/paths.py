@@ -107,6 +107,18 @@ def height_file_name(texture_name: str) -> str:
     return f"{FILE_PREFIX}{texture_name}_{HEIGHT_SUFFIX}.png"
 
 
+def height_metadata_file_name(texture_name: str) -> str:
+    """What the height map's values MEAN: ``T_<Name>_Height.json``.
+
+    A displacement shader reads the Height map's values as depth, and
+    the range they span follows the material's kind (a metal's is
+    narrow, a rubble's wide). The map's pixels cannot say which range
+    they were written in, so the set says it beside them, and the
+    export's ``metadata.json`` carries it on.
+    """
+    return f"{FILE_PREFIX}{texture_name}_{HEIGHT_SUFFIX}.json"
+
+
 # How large a seam may be, relative to the texture's own features,
 # before it is worth telling the caller about.
 #
@@ -298,6 +310,7 @@ __all__ = (
     "base_color_file_name",
     "big_path",
     "height_file_name",
+    "height_metadata_file_name",
     "normal_file_name",
     "orm_file_name",
     "texture_root",

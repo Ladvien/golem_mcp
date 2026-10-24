@@ -757,3 +757,70 @@ def test_an_export_does_not_delete_another_sets_extras(tmp_path):
         "the brick set's export deleted the cobble set's reference photo"
     )
     assert report["removed"] == []
+
+
+def test_the_export_says_which_range_its_height_map_spans(tmp_path):
+    """A displacement shader reads the Height map's values as depth, and
+    the map's pixels cannot say which range they were written in.
+
+    A layered set writes that beside the map; the export carries it into
+    `metadata.json`, so a consumer reads one file and knows its
+    displacement scale. A set with a Height but no sidecar (one written
+    before the range existed) reports nothing rather than a guess.
+    """
+    texture_directory = tmp_path / "textures"
+    texture_directory.mkdir()
+    for file_name in (
+        "T_Brick_BaseColor.png",
+        "T_Brick_ORM.png",
+        "T_Brick_Normal.png",
+        "T_Brick_Height.png",
+    ):
+        (texture_directory / file_name).write_bytes(b"png-bytes")
+
+    destination = tmp_path / "export"
+    report = pbr_generate.export_texture_set("Brick", texture_directory, destination)
+    metadata = json.loads((destination / "metadata.json").read_text())
+    assert "height" not in metadata, (
+        "a set with no height sidecar must not report a range it cannot know"
+    )
+
+    # Now the set says its range, as a layered set writes it.
+    described = {
+        "map": "T_Brick_Height.png",
+        "range": [0.205, 0.830],
+        "kind": "brick",
+        "is_measured": True,
+        "source": "the median of brick's own truths",
+    }
+    (texture_directory / "T_Brick_Height.json").write_text(json.dumps(described))
+
+    report = pbr_generate.export_texture_set("Brick", texture_directory, destination)
+    assert report["height"] == described
+    metadata = json.loads((destination / "metadata.json").read_text())
+    assert metadata["height"] == described
+    assert metadata["height"]["range"] == [0.205, 0.830]
+    assert (destination / "T_Brick_Height.json").is_file()
+
+
+def test_the_height_sidecar_is_a_layered_sets_own_file(tmp_path):
+    """The sidecar is named for the set, so a re-export that stops having
+    one removes it - and never touches another set's."""
+    source = tmp_path / "source"
+    source.mkdir()
+    destination = tmp_path / "out"
+    for name in ("T_Brick_BaseColor.png", "T_Brick_ORM.png", "T_Brick_Normal.png"):
+        (source / name).write_bytes(b"png")
+    (source / "T_Brick_Height.png").write_bytes(b"png")
+    (source / "T_Brick_Height.json").write_text(json.dumps({"range": [0.1, 0.9]}))
+
+    pbr_generate.export_texture_set("Brick", source, destination)
+    assert (destination / "T_Brick_Height.json").is_file()
+
+    # The set is regenerated WITHOUT a height: the stale pair goes.
+    (source / "T_Brick_Height.png").unlink()
+    (source / "T_Brick_Height.json").unlink()
+    report = pbr_generate.export_texture_set("Brick", source, destination)
+    assert not (destination / "T_Brick_Height.json").exists()
+    assert not (destination / "T_Brick_Height.png").exists()
+    assert sorted(report["removed"]) == ["T_Brick_Height.json", "T_Brick_Height.png"]

@@ -70,8 +70,14 @@ def register(mcp: FastMCP) -> None:
         """Write a base material with others laid over it as one PBR set.
 
         Writes T_<Name>_BaseColor.png, T_<Name>_ORM.png (AO, roughness,
-        metallic), T_<Name>_Normal.png and T_<Name>_Height.png (0 lowest,
-        1 highest), and returns the base colour.
+        metallic), T_<Name>_Normal.png and T_<Name>_Height.png, and
+        returns the base colour. The Height is a DISPLACEMENT map, and
+        its range follows the base's KIND: a metal's spans a tenth of
+        the surface, a rubble's two thirds, as the truths' own
+        displacement maps do. "height_range" in the result is the pair
+        of values it was written in - set a displacement shader's
+        scale from it. A kind with too few truths to fit falls back to
+        0 lowest and 1 highest, and "height_range_is_measured" is false.
         Every material - the base and each layer - is made from its own
         description through the procedural lane, so each chooses its own
         pattern, colours, roughness and metal. The set tiles.
@@ -156,6 +162,8 @@ def register(mcp: FastMCP) -> None:
             "texture_name": texture_name,
             "mac_paths": written,
             "kinds": list(result.get("kinds") or ()),
+            "height_range": json.loads(result.get("height_range_json") or "null"),
+            "height_range_is_measured": bool(result.get("height_range_is_measured")),
             "layer_count": len(layers),
             "resolution_px": resolution_px,
             "tile_seam_ratio": round(seam_ratio, 3),

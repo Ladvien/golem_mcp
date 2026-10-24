@@ -53,6 +53,8 @@ class Result(NamedTuple):
     message: str = ""
     paths_json: str = ""
     kinds: tuple = ()
+    height_range_json: str = ""
+    height_range_is_measured: bool = False
 
 
 def _purge_if_stale(repository_src: str, source_fingerprint: str) -> None:
@@ -108,4 +110,6 @@ def main(params: Params) -> Result:
         status="ok",
         paths_json=json.dumps(written["paths"]),
         kinds=tuple(written["kinds"]),
+        height_range_json=json.dumps(written["height_range"]),
+        height_range_is_measured=bool(written["height_range_is_measured"]),
     )

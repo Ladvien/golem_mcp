@@ -29,10 +29,11 @@ Each `<set>/<asset>/` holds the truth's `albedo`, `normal_gl`, `roughness` and
 - **The whole set** (`score_pbr_channels.py`): the set the agent's layered-set
   tool writes, channel by channel - roughness mean and spread, metallic mean,
   normal strength (the mean tilt from flat, in degrees), AO mean and spread
-  where the truth ships one, and the height's shape where it ships a
-  displacement: its correlation with the albedo's luma and its skew. The two
-  sets are different layouts, so a channel is compared by its statistics, not
-  pixel by pixel.
+  where the truth ships one, and the height where it ships a displacement:
+  its correlation with the albedo's luma, its skew, and its RANGE (the span
+  from the 1st to the 99th percentile, which a displacement shader reads as
+  depth). The two sets are different layouts, so a channel is compared by its
+  statistics, not pixel by pixel.
 
 A description that **composes** - a mossy rock, a rusted iron - is recreated
 as the layered set builds it (`compose_from_description`: the base with its
@@ -54,6 +55,7 @@ the rest (run b21, at `c5edf97`):
 | normal strength | 0.427 |
 | AO mean error / spread (74 with an AO) | 0.067 / 0.800 |
 | height-luma correlation error / skew error | 0.318 / 0.902 |
+| height RANGE span error (20 with a displacement, `ambientcg`) | 0.160 |
 
 Every run of a round, with what changed, is in `_evaluate/round<N>_plan.md`.
 

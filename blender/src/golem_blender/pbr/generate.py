@@ -89,6 +89,28 @@ def _remove_stale_set_files(
     return removed
 
 
+def _height_range_metadata(sidecar: str | None) -> dict:
+    """The Height map's range, read from its own sidecar, as metadata.
+
+    A layered set writes `T_<Name>_Height.json` beside the map, saying
+    which range the map's values span (a metal's is narrow, a rubble's
+    wide - the material's own truths decide). The export copies it, and
+    carries its content into `metadata.json` so a consumer that reads
+    one file has the displacement scale. A set with a Height map but no
+    sidecar (one written before the range existed) reports nothing
+    rather than a guess.
+    """
+    if not sidecar:
+        return {}
+    try:
+        described = json.loads(Path(sidecar).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(described, dict) or "range" not in described:
+        return {}
+    return {"height": described}
+
+
 @dataclass(frozen=True)
 class GeneratedTexture:
     """One generated base-colour map, where it landed and how it was made."""
@@ -226,7 +248,10 @@ def export_texture_set(
         "orm": pbr_paths.orm_file_name(texture_name),
         "normal": pbr_paths.normal_file_name(texture_name),
     }
-    optional = {"height": pbr_paths.height_file_name(texture_name)}
+    optional = {
+        "height": pbr_paths.height_file_name(texture_name),
+        "height_metadata": pbr_paths.height_metadata_file_name(texture_name),
+    }
     copied: dict[str, str] = {}
     missing: list[str] = []
     for key, file_name in {**wanted, **optional}.items():
@@ -238,6 +263,13 @@ def export_texture_set(
         target = destination / file_name
         shutil.copy2(source, target)
         copied[key] = str(target)
+
+    # The Height map's own sidecar says which range its values span, and
+    # a displacement shader needs that: the map's pixels cannot say. It
+    # is read here and carried into the metadata, so an export is
+    # usable on its own (a consumer reads metadata.json, not a second
+    # file beside a map).
+    height_range = _height_range_metadata(copied.get("height_metadata"))
 
     # The extras, under their own names so the export says what each
     # one is. A macOS sidecar file ("._name.png") is skipped: it is
@@ -277,6 +309,7 @@ def export_texture_set(
                 "files": copied,
                 "missing": missing,
                 "extras": extras_copied,
+                **height_range,
                 **(metadata or {}),
             },
             indent=2,
@@ -294,4 +327,5 @@ def export_texture_set(
         "removed": removed,
         "metadata_path": str(metadata_path),
         "channel_packing": pbr_paths.ORM_CHANNEL_PACKING,
+        **height_range,
     }
