@@ -9,6 +9,7 @@ tier, the unit, the evidence, the commit, the deploy result and what is left.
 | 2026-10-25-01 | 2026-10-25 | 1 (issue) | #24 the GPU-timeout test raced bash's startup | `c32f998` |
 | 2026-10-26-01 | 2026-10-26 | 1 (issue) | #21 `join_objects` combines parts into one mesh | `9ad4b71` |
 | 2026-10-26-02 | 2026-10-26 | 1 (issue) x6 | six-way fan-out: #12, #15, #16, #18, #20, #22 | `66be8f8`, `16303df`, `2579653`, `fb104c4`, `add1fa1`, `60397ba` |
+| 2026-10-24-02 | 2026-10-24 | 1 (issue) x6 | six-way fan-out: #25, #26, #23, #17 + PBR #14, #13 | `643b3fe`, `8c4ed4f`, `a5fb116`, `ae1b73e`, `d2dfcd0`, `30bbf21` |
 
 ---
 
@@ -250,3 +251,182 @@ same reachability walk that proved `splatter.py` dead cannot reach
 4. New — `pbr/noise_curl.py` and `pbr/noise_gabor.py` are unreachable by the same
    AST walk that condemned `splatter.py`; confirm dead, then delete or wire.
 5. #1 — the full four-set PBR run after the knit/plaid/seam batches.
+
+---
+
+## 2026-10-24-02 — six-way fan-out: the assembly ops (#25, #26, #23, #17) and the PBR pair (#14, #13)
+
+**Tier 1 (open issue) x6.** The fan-out follows the blacksmith-shop session
+(`~/sanctuary`, a 49-part building from the village kit), which filed #25 and
+#26 out of four measured placement defects and one refused export — 11.10 cm
+between two rear corners, brackets 111.9 cm off their wall, a tool board hung
+flat, a tuyere pipe 50 cm from its nozzle while overlapping its bellows' box,
+and `export_asset` refusing a building for not being one closed manifold under
+2000 triangles.
+
+Six agents, one worktree each, one commit each, all on
+`ollama-cloud/deepseek-v4.1-flash:1017`. BASE `4485106`.
+
+### #25 — place by FEATURE, not by origin (`d2dfcd0`)
+
+`align_to`, `stand_against`, `span_between` in `ops/alignment.py`, all three
+gated and returning `AlignReport`. Features are measured from the EVALUATED
+MESH: a yawed 24-gon's `matrix_world @ bound_box` reads 1.41421 m on x where
+its mesh reads 1.00000, so the alignment lands the mesh face at 3.0 within 1e-4.
+The pier case is asserted with its own off-centre origin (`0.111 m`) so origin
+placement cannot satisfy it. Three chained piers keep every adjacency within
+1 mm. `stand_against` leaves the base unchanged and reports `hangs_in_air`.
+`span_between` reports each end's distance to its OWN object's SURFACE and the
+`collides_with` list for a line through a third object.
+
+One documented deviation: `target_feature` is typed `str | TargetPlane`
+because a heterogeneous `tuple[str, str, float]` has no JSON schema and would
+have made `json_schema_for_type` refuse the whole op set. The issue's
+`("plane", axis, coordinate)` triple is still accepted at runtime and tested
+for byte-identical equivalence.
+
+### #26 — an assembly is a first-class thing (`30bbf21`)
+
+`define_assembly`, `assembly_report`, `export_assembly`, `render_assembly` in
+`ops/assembly.py`. The gate is the PER-PART one, unchanged, and part-vs-part
+interpenetration is REPORTED with the pair's names and volume, never failed:
+`PartIntersection.kind` separates a LAP (the two boxes end in the same plane
+across the penetration axis — cut to meet) from a CLASH (an interior pushed
+through a face). Two walls lapping 0.406 m read as a lap with 0 clashes;
+a 0.1 m overlap reads one intersection at 0.1000 m³. A 49-part, 21 168-triangle
+assembly exports `keep_parts: 49` and re-imports as 49 objects with the same
+triangle total and material names. `focus=["Wall","Shelf"]` fills 1.00 / 0.78 /
+0.76 of the frame against a 0.5 floor, from three angles.
+
+`AssemblyReport.object_name` names the ASSEMBLY — a registry entry, not a scene
+object — so `define_assembly`/`assembly_report` are deliberately NOT gated (the
+name would make `gate_named_object` answer "no object named…"); the verdict
+rides on `ExportReport`. That is the branch the contract forces, stated in the
+module docstring.
+
+### #23 — measure a set as a piece (`a5fb116`)
+
+`measure_objects` -> `SetReport`, read-only. Two 100-triangle boxes report 200
+and `dimensions_m` 4.0 (the union, where a sum would say 8). A never-linked
+name lands in `unlinked` and is excluded from every total, because the silent
+miss at export time is the point. Touching parts are not intersections — the
+coplanar knowledge `BooleanNoOp` already has is reused, not rewritten. Distinct
+materials, not slots: one material on two parts reports 1.
+
+### #17 — a piece names several objects (`ae1b73e`)
+
+`define_piece`, `piece_report` in `ops/pieces.py` (a separate module on purpose,
+so this merge and #26's are independent). A member removed after definition
+makes every read raise `PieceChangedError` rather than report a smaller total.
+Condition 4 was met by EXTENDING the op: `snap_base_to_ground(piece=…)` moves
+every member by one offset and the piece reports `lowest_point_m == 0.0`.
+Order independence is asserted over the whole report, and `save_blend` gained
+its optional `piece` — which moves the fingerprint but not the tool count.
+
+### #14 — three PBR face defects (`643b3fe`)
+
+Measured on `ambientcg_wide`, which contains all six assets, with the scripts
+copy-rewritten so the imported module resolved under the agent's own worktree.
+
+- Asphalt031: contrast 0.36x -> **1.33x**. The eight asphalt truths split by
+  lightness (light cv 0.163, dark 0.092), so the spread is now the coefficient
+  times the description's value instead of one flat 0.028.
+- Ground037: scale 3.09x -> **0.76x**. Blades followed six per feature, so a
+  forest floor's 9.8 features — which are its MOSS PATCHES — drew 59 blades
+  where its own are 71. The pitch is now the truths' own 15.5 px at 1024
+  whatever the feature count is.
+- Tiles139/141/143/144: 0 pits and 0.00% coverage -> **45-68 pits/tile, 3.5σ
+  deep, 0.61-0.64% coverage** against truths of 37-47, 3.45-3.75σ, 0.47-0.78%.
+
+Six-asset means: contrast 0.86x -> 1.09x, scale 1.40x -> 1.01x.
+Honest caveat, recorded by the agent: our asphalt is still 1.33x too bright and
+our tiles' grout is wider and browner than the truths' pale grey. Both are
+palette value/hue defects, not the three face defects this issue named.
+
+### #13 — a height map's range follows its kind (`8c4ed4f`)
+
+`KIND_HEIGHT_RANGE` and `KIND_HEIGHT_RANGE_TRUTHS` measured over all four truth
+sets — 159 distinct materials, each asset's own displacement at p1/p99, the
+median per kind. Metal (0.435, 0.571) spans 0.135; rock (0.159, 0.916) spans
+0.757. Seven kinds with one or two truths are not fitted and fall back to 0..1
+with `is_measured=false`, said in the table, the metadata and the procedure.
+
+Written height span error on `ambientcg`: mean |error| **0.301 -> 0.160**, mean
+relative **4.135 -> 0.790**. The shape metrics are unchanged, as a scale-only
+change must be (height-luma |error| 0.431, skew 0.696, normal strength 0.304,
+all before and after) — that is the normal-map-unaffected proof at the
+benchmark level, and a test pins it directly. The range reaches the consumer:
+`height_range` in the returned dict, a `T_<Name>_Height.json` sidecar, and
+`"height"` in the exported `metadata.json`, verified end to end.
+
+### The merge
+
+Six cherry-picks `-x` in the order a5, a6, a3, a4, a1, a2. The PBR pair landed
+clean. The four op picks conflicted on the pin, `BACKLOG.md`'s row, the spec's
+row, and (a1, a2) `ops/__init__.py` and `manifest.py` — all four resolved by
+the rule the plan fixed: keep both sides, and take NO side for the pin. The pin
+was regenerated from `TOOL_SCHEMAS_FINGERPRINT` at every pick and the counts
+re-measured from the merged facade:
+
+| after pick | tools | ops | plan-required | readers | fingerprint |
+|---|---|---|---|---|---|
+| base | 78 | 69 | 52 | 18 | `t:a9c0b64f6da0` |
+| a5 | 78 | 69 | 52 | 18 | unchanged (no facade change) |
+| a6 | 78 | 69 | 52 | 18 | unchanged (no facade change) |
+| a3 | 79 | 70 | 53 | 19 | `t:1594bd99e511` |
+| a4 | 81 | 72 | 53 | 20 | `t:308fc204331e` |
+| a1 | 84 | 75 | 56 | 20 | `t:653aa9236910` |
+| a2 | **88** | **79** | **59** | **21** | **`t:365aafec29d4`** |
+
+88 tools, exactly the base 78 plus the eleven ops the four agents added — the
+plan's predicted number, measured rather than assumed.
+
+Two `ops/__init__.py` orderings were wrong in the agents' own branches and were
+fixed at the pick: `TargetPlane` sorts before `UnknownPiece`, and a2 had put
+`export_assembly` before `deforming_bone_names` and `render_assembly` before
+`rename_object`. The base file's three pre-existing case-insensitive
+out-of-order pairs were left alone — they are not this run's.
+
+**One branch rule broken, and how it was handled.** a2 appended a 71-line log
+entry to `docs/loop/log.md` naming its commit as `loop/a2` and inventing a run
+id (`2026-10-26-03`). The run log is written after the merge, when the real shas
+exist, so that hunk was DROPPED at the pick and this entry replaced it. The
+work itself was sound and merged whole; only the premature bookkeeping was
+removed.
+
+### Gates on merged `main`
+
+| gate | before the run | after |
+|---|---|---|
+| `test-golem` | 33 passed | 33 passed |
+| `test-pure` | 1597 passed, 1 xfailed | **1693 passed, 1 xfailed** |
+| `test-mcp` | 53 OK | 53 OK |
+| `test-blender-app` | 541 passed, 1 skipped | **605 passed, 1 skipped** |
+
+Every branch's gates were also re-run IN ITS OWN WORKTREE before the merge — a
+reported green is not proof.
+
+### Model routing
+
+`scripts/audit_task_child_models.py` over the six children:
+`PASS every work turn ran on the required provider and model`, 1235 work turns,
+**off-pin 0**. Per child: a1 159, a2 94, a3 179, a4 81, a5 106, a6 181 work
+turns, every one `ollama-cloud/deepseek-v4.1-flash:1017`, `fallback=false`, and
+each child's own report carried its `MODEL_ROUTING:` line.
+
+### Issues closed with evidence
+
+#25, #26, #23, #17, #14, #13.
+
+### Top 5 remaining
+
+1. #1 — the full four-set PBR run, now that the height range and the grass/
+   asphalt/tile fixes have landed one set at a time.
+2. A new issue for the two palette defects a5 named and did not fix: the
+   asphalt's brightness (1.33x) and the tile grout's width and hue.
+3. The `focus` render path is the one the blacksmith session said it would use
+   every turn; a run that re-does that assembly with `define_assembly` +
+   `render_assembly(focus=[…])` would be the honest end-to-end test of #26.
+4. `pbr/noise_curl.py` and `pbr/noise_gabor.py` are unreachable by the same AST
+   walk that condemned `splatter.py` — confirm dead, then delete or wire.
+5. #2 — the loose-ground scatter's colour model (stones read as flat discs).
