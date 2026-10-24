@@ -5,7 +5,13 @@ from golem_blender.ops.animation import (
     keyframe_pose_bone_rotation,
     set_frame_range,
 )
-from golem_blender.ops.arrays import linear_array
+from golem_blender.ops.arrays import (
+    ArrayReport,
+    grid_array,
+    linear_array,
+    path_array,
+    radial_array,
+)
 from golem_blender.ops.assets import (
     AssetReport,
     JoinReport,
@@ -124,6 +130,7 @@ from golem_blender.ops.weights import (
 __all__ = [
     "AnimationReport",
     "ArmatureRotationModeError",
+    "ArrayReport",
     "AssetReport",
     "JoinReport",
     "BodyCapsulesReport",
@@ -184,6 +191,7 @@ __all__ = [
     "depth_axis_extent_rank",
     "depth_axis_holds_middle_extent",
     "duplicate_object",
+    "grid_array",
     "import_generated_asset",
     "import_glb_piece",
     "join_objects",
@@ -196,7 +204,9 @@ __all__ = [
     "middle_extent_m",
     "move_object_to",
     "orientation_reading",
+    "path_array",
     "pbr_texture_report",
+    "radial_array",
     "relief_slab_report",
     "remove_object_and_mesh",
     "rename_object",
