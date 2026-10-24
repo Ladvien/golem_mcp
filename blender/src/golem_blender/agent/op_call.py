@@ -31,7 +31,12 @@ from dataclasses import dataclass, field
 
 from golem_blender.analyze.mesh_checks import MeshBudget
 from golem_blender.harness import GateVerdict
-from golem_blender.ops._contract import is_gated, object_name_parameters, returns_object_names
+from golem_blender.ops._contract import (
+    gate_target_names,
+    is_gated,
+    object_name_parameters,
+    returns_object_names,
+)
 from golem_blender.run.executor import RunResult, execute_captured
 from golem_blender.stages import STAGE_DONE, STAGE_EXECUTE, STAGE_LOCATE, STAGES
 from golem_blender.version import TARGET_BLENDER_SERIES
@@ -250,11 +255,9 @@ class OpCallResult:
 
 
 def _returned_object_names(function, returned) -> tuple[str, ...]:
-    if not returns_object_names(function):
+    if not returns_object_names(function) and not is_gated(function):
         return ()
-    if isinstance(returned, str):
-        return (returned,)
-    return tuple(str(name) for name in returned)
+    return gate_target_names(returned)
 
 
 def _resolved_object_names(function, bound: dict) -> tuple[str, ...]:

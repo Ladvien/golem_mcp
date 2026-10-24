@@ -11,6 +11,11 @@ an object name is measured by the single-mesh acceptance gate
 that has more than one component or an open boundary. The report carries
 those counts as numbers instead; the kitbash procedure reads them.
 
+`join_objects` is the exception in one direction only: issue #21 requires the
+joined piece to carry a gate verdict, so it is `@op(gated=True)` and returns
+`JoinReport`, whose `object_name` field is what the gate measures. The report
+still carries the counts; nothing about the single-component rule changed.
+
 Pack pieces keep their authored pivot. Generated assets are normalized to the
 repo convention (base at z=0, centred on X/Y) because their pivot is
 arbitrary.
@@ -22,7 +27,8 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from golem_blender.ops._objects import ObjectName, object_by_name
+from golem_blender.ops._contract import op
+from golem_blender.ops._objects import object_by_name
 
 MINIMUM_Z_EXTENT_M = 1.0e-6
 
@@ -153,11 +159,12 @@ def _append_part_into(
         bpy.data.meshes.remove(part_temporary_mesh)
 
 
+@op(gated=True)
 def join_objects(
     object_names: list[str],
     result_name: str,
     keep_material_slots: bool = True,
-) -> ObjectName:
+) -> JoinReport:
     """Join the named mesh objects into one mesh named result_name and consume the sources.
 
     The result carries the first object's origin and every part's WORLD

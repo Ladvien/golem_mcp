@@ -162,15 +162,13 @@ def test_the_description_is_the_summary_and_the_return(op_name, function):
     summary = (inspect.getdoc(function) or "").split("\n", 1)[0].strip()
     assert description.startswith(summary)
     assert f"Returns {inspect.signature(function).return_annotation}." in description
-    # OT-5: the gating marker is part of what the model reads, and only
-    # an op whose return names an object carries one.
-    if returns_object_names(function):
-        expected = (
-            generator.GATED_DESCRIPTION
-            if is_gated(function)
-            else generator.UNGATED_DESCRIPTION
-        )
-        assert description.endswith(expected), op_name
+    # OT-5: the gating marker is part of what the model reads. A gated op
+    # carries the gated marker whether its return is a name or a report
+    # that names one; only an unlinked constructor carries the ungated one.
+    if is_gated(function):
+        assert description.endswith(generator.GATED_DESCRIPTION), op_name
+    elif returns_object_names(function):
+        assert description.endswith(generator.UNGATED_DESCRIPTION), op_name
     else:
         assert generator.GATED_DESCRIPTION not in description
         assert generator.UNGATED_DESCRIPTION not in description

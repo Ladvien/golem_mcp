@@ -19,6 +19,7 @@ manifest, not a tool.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import re
 import typing
@@ -104,6 +105,10 @@ GATED_ATTRIBUTE = "__golem_blender_gated__"
 # The attribute `@op(reads_only=True)` stamps: the op inspects the scene
 # and changes nothing, so it needs no declared plan (AGT-5, OT-6).
 READS_ONLY_ATTRIBUTE = "__golem_blender_reads_only__"
+# The field of a report that names the object the gate must measure. Every
+# report in `ops/` already carries it, so a report-returning op is gated
+# without a second return value or a side channel.
+GATE_TARGET_FIELD = "object_name"
 
 
 def op(*, gated: bool | None = None, reads_only: bool = False):
@@ -166,13 +171,45 @@ def returns_object_names(function) -> bool:
     return _names_objects(typing.get_type_hints(function).get("return"))
 
 
-def is_gated(function) -> bool:
-    """An op whose return names an object is gated unless marked otherwise."""
-    return returns_object_names(function) and getattr(function, GATED_ATTRIBUTE, True)
+def is_marked_gated(function) -> bool:
+    return getattr(function, GATED_ATTRIBUTE, None) is True
 
 
 def is_marked_ungated(function) -> bool:
-    return getattr(function, GATED_ATTRIBUTE, True) is False
+    return getattr(function, GATED_ATTRIBUTE, None) is False
+
+
+def is_gated(function) -> bool:
+    """Is what this op returned measured by the gate?
+
+    The default is read off the signature: an op whose return names an
+    object is gated. A REPORT-returning op has to say so, because the
+    contract cannot infer from `JoinReport` that it names an object —
+    `@op(gated=True)` is that statement, and `gate_target_names` is how
+    the name is found in what the op returned.
+    """
+    marked = getattr(function, GATED_ATTRIBUTE, None)
+    if marked is not None:
+        return marked
+    return returns_object_names(function)
+
+
+def gate_target_names(returned) -> tuple[str, ...]:
+    """The object names an op's return carries, for the gate to measure.
+
+    A gated op returns a name, names, or a frozen REPORT whose
+    `object_name` names what it left in the scene — `JoinReport`,
+    `AssetReport` and every other report here already carry that field,
+    so the report itself stays the return type that the issue asked for.
+    """
+    if isinstance(returned, str):
+        return (returned,)
+    if dataclasses.is_dataclass(returned) and not isinstance(returned, type):
+        name = getattr(returned, GATE_TARGET_FIELD, None)
+        return (name,) if isinstance(name, str) and name else ()
+    if isinstance(returned, (list, tuple)):
+        return tuple(str(item) for item in returned)
+    return ()
 
 
 def object_name_parameters(function) -> tuple[str, ...]:
@@ -285,6 +322,19 @@ def contract_violations(function) -> list[str]:
             violations.append(
                 "marked @op(gated=False) but takes no `name` parameter; an "
                 "ungated constructor must return the name it was given"
+            )
+    if is_marked_gated(function) and not returns_object_names(function):
+        # A report-returning op says it is gated; the gate has to be able to
+        # find the object in what came back, or it would silently measure
+        # nothing. Measured need: join_objects returns JoinReport (issue #21
+        # asked for it), and returning a bare name instead would drop the
+        # counts the same issue requires.
+        returned_hint = typing.get_type_hints(function).get("return")
+        hint_fields = getattr(returned_hint, "__dataclass_fields__", None)
+        if hint_fields is None or GATE_TARGET_FIELD not in hint_fields:
+            violations.append(
+                f"marked @op(gated=True) but returns {returned_hint!r}, which "
+                f"carries no {GATE_TARGET_FIELD!r} for the gate to measure"
             )
 
     return_text = _annotation_text(signature.return_annotation)

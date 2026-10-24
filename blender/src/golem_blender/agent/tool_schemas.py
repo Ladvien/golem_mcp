@@ -193,10 +193,12 @@ def op_tool_schema(op_name: str, function) -> dict:
         # Stripped again before binding; the op never sees it.
         properties[PLAN_STEP_ARGUMENT] = dict(PLAN_STEP_SCHEMA)
     description = f"{_summary(function)} Returns {return_text}."
-    if returns_object_names(function):
-        description += " " + (
-            GATED_DESCRIPTION if is_gated(function) else UNGATED_DESCRIPTION
-        )
+    if is_gated(function):
+        description += " " + GATED_DESCRIPTION
+    elif returns_object_names(function):
+        # Only an unlinked constructor can reach here: it returns a name and
+        # is deliberately ungated (OT-5).
+        description += " " + UNGATED_DESCRIPTION
     return {
         "type": "function",
         "function": {

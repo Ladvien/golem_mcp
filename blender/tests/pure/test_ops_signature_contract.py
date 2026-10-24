@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import inspect
 import typing
+from dataclasses import dataclass
 
 import pytest
 
@@ -155,3 +156,53 @@ def test_a_plural_name_parameter_takes_a_list_of_names():
     violations = contract_violations(plural_bpy)
     assert any("looks like a name" in v for v in violations), violations
     assert any("a bpy type" in v for v in violations), violations
+
+
+@dataclass(frozen=True)
+class _NamedReport:
+    """A report that names the object it left in the scene."""
+
+    object_name: str
+    triangles: int
+
+
+@dataclass(frozen=True)
+class _AnonymousReport:
+    """A report with nowhere for the gate to look."""
+
+    triangles: int
+
+
+def test_a_gated_op_may_return_a_report_whose_object_the_gate_measures():
+    """Issue #21 needs a gate verdict AND the report's counts, so a gated op
+    can return a report. Measured need: `join_objects` was annotated
+    `-> ObjectName`, returned `JoinReport`, and the dispatcher iterated the
+    dataclass and raised `TypeError: 'JoinReport' object is not iterable`
+    on a LIVE call. The contract now refuses that shape at the source: a
+    marked-gated op whose return carries no `object_name` is a violation.
+    """
+    from golem_blender.ops._contract import gate_target_names
+
+    # Module-level report types: `from __future__ import annotations` makes
+    # these hints strings, and `get_type_hints` cannot resolve a local class.
+    @op(gated=True)
+    def reports_named(object_names: list[str]) -> _NamedReport:
+        """Joins them, and the gate measures object_name."""
+        return _NamedReport(object_names[0], 24)
+
+    @op(gated=True)
+    def reports_anonymous(object_names: list[str]) -> _AnonymousReport:
+        """Joins them, and the gate has nowhere to look."""
+        return _AnonymousReport(24)
+
+    assert is_gated(reports_named)
+    assert not contract_violations(reports_named)
+    # The gate target IS the report's own field, so the dispatcher never
+    # iterates the dataclass.
+    assert gate_target_names(reports_named(["Joined"])) == ("Joined",)
+    assert gate_target_names("Joined") == ("Joined",)
+    assert gate_target_names(("A", "B")) == ("A", "B")
+    assert gate_target_names(_AnonymousReport(24)) == ()
+
+    violations = contract_violations(reports_anonymous)
+    assert any("carries no 'object_name'" in v for v in violations), violations

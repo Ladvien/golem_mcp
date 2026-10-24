@@ -7,6 +7,7 @@ tier, the unit, the evidence, the commit, the deploy result and what is left.
 |---|---|---|---|---|
 | 2026-10-24-01 | 2026-10-24 | 1 (issue) | #19 `duplicate_object` kept the source's parent | `bb3dfa6` |
 | 2026-10-25-01 | 2026-10-25 | 1 (issue) | #24 the GPU-timeout test raced bash's startup | `c32f998` |
+| 2026-10-26-01 | 2026-10-26 | 1 (issue) | #21 `join_objects` combines parts into one mesh | `9ad4b71` |
 
 ---
 
@@ -124,3 +125,59 @@ untouched, the tool fingerprint stays `t:7a8ffdbc17da`.
    2–3× the truth's tile count.
 5. #15 — remove the unused `pbr/splatter.py` (cheap, no user impact, unblocks a
    clean `git grep`).
+
+---
+
+## 2026-10-26-01 — issue #21: a join op, and the live call that found its defect
+
+**Tier 1 (open issue).** Chosen over #23 (measure a multi-part piece) and the
+PBR-lane issues (#1–#15): #21 has production provenance (a timber stack joined
+through `bpy.ops.object.join` in `run_python` during the 22-piece Sanctuary run)
+and six acceptance conditions decidable in one iteration. #23 needs a report
+*and* a gate verdict *and* a piece-grouping concept — the follow-up, not this.
+
+**What changed.** `join_objects(object_names, result_name,
+keep_material_slots=True) -> JoinReport` in `ops/assets.py`. Sources are
+consumed; world transforms are baked (a moved part keeps its place); material
+slots deduplicate by datablock (sixteen tufts, one slot); the result keeps the
+first part's origin; one name, a duplicate name and a non-mesh are errors raised
+BEFORE anything mutates. It is the first PLURAL name parameter, so `_contract.py`
+gained `PLURAL_NAME_ANNOTATIONS` — the container widened, the element type did
+not.
+
+**Evidence** (`runs/2026-10-26-01/`): gates `test-golem` 10, `test-pure` 1553 /
+1 xfailed, `test-mcp` all OK, `test-blender-app` 488 passed / 1 skipped. The
+measured boundary — 50 % overlap 8 self-intersecting pairs, 1 mm gap 0, 1 m gap
+0, face-to-face contact 1 — is asserted with the reading beside it, because the
+issue expected contact to be clear and the analyzer counts coplanar surfaces.
+
+**The live call found what the units could not.** The op was annotated
+`-> ObjectName` and returned `JoinReport`; every test passed, and the first real
+MCP call raised `TypeError: 'JoinReport' object is not iterable` in
+`_returned_object_names`. Fixed at the contract: an op may now be
+`@op(gated=True)` with a report return, `gate_target_names` reads the report's
+own `object_name`, and a marked-gated op whose return carries none is a
+violation (proven failing by disabling the rule). The tool description gained the
+gated marker, so the pin moved twice: `t:b1b01b125501` → `t:ff9833ed06ec`.
+
+**A second live finding that was NOT a defect.** The overlapping smoke pair
+reported `4 triangles face inward`. Measured: disjoint boxes 0 of 24, overlapping
+4 of 24, each source 0. The join does not flip normals; parity is reporting faces
+inside another solid, which the analyzer already calls "join-without-union".
+Nothing changed for it.
+
+**Deploy.** Mac half, tool listing changed → MCP server restart, which omp's
+`--exit-on-source-change` did; the restarted server served `join_objects` and a
+live call returned the report and `gate: FAIL (24 tris, 2 components)` for two
+disjoint boxes — the correct verdict. Smoke objects removed; the scene holds the
+same 35 Sanctuary objects as before. big and bmb untouched.
+
+**Issues filed.** None.
+
+**Top 5 remaining.**
+1. #23 — measure/save/export a multi-part piece as ONE asset (now unblocked).
+2. #2 — the loose-ground scatter's colour model (stones read as flat discs).
+3. #1 — the full four-set PBR run after the knit/plaid/seam batches.
+4. **No op sets an object's parent** — still unfiled; `bind_mesh_to_armature`
+   is the only parenting path.
+5. #15 — remove the unused `pbr/splatter.py` (cheap, unblocks a clean `git grep`).
