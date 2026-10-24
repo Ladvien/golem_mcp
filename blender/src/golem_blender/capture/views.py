@@ -73,6 +73,17 @@ class CaptureSettings:
     # one without keeps the fast Workbench path. `None` means "choose
     # by what the object carries".
     textured_engine: str | None = "BLENDER_EEVEE"
+    # How much empty frame the orthographic views leave around the
+    # bounding SPHERE. FRAME_MARGIN_FACTOR is right for an inspection
+    # sheet; a close-up of one junction wants the pair to dominate its
+    # frame, so `render_assembly` asks for less air.
+    frame_margin_factor: float = FRAME_MARGIN_FACTOR
+    # Fit each view's FRAME to the geometry instead of the bounding
+    # sphere, and match the image aspect to the geometry's own: a sheet
+    # framed by a sphere leaves a tall thin junction as a sliver in a
+    # square frame. The default (False) keeps every existing sheet as it
+    # was, framed by the sphere.
+    fit_projection: bool = False
 
 
 def _carries_an_image_texture(blender_object) -> bool:
@@ -125,15 +136,68 @@ def _assembly_bounds_center_and_radius(blender_object, extra_objects):
     return center, radius_m
 
 
+def _projected_extents(blender_objects, view_direction, center):
+    """Each corner in the CAMERA's own frame: (right, up, toward-camera).
+
+    The bounding SPHERE is rotation-invariant, which is what a sheet wants and
+    what a close-up cannot use: a tall thin junction framed by its sphere is a
+    sliver in a square image. So the corners are expressed on the camera's own
+    three axes — the axes the FRAME is measured on.
+    """
+    from mathutils import Vector
+
+    camera_rotation = view_direction.to_track_quat("Z", "Y")
+    right_axis = camera_rotation @ Vector((1.0, 0.0, 0.0))
+    up_axis = camera_rotation @ Vector((0.0, 1.0, 0.0))
+    corners = []
+    for blender_object in blender_objects:
+        for corner in blender_object.bound_box:
+            offset = (blender_object.matrix_world @ Vector(corner)) - center
+            corners.append(
+                (
+                    offset.dot(right_axis),
+                    offset.dot(up_axis),
+                    offset.dot(view_direction),
+                )
+            )
+    return corners
+
+
+def _half_extents(corners) -> tuple[float, float]:
+    """(half width, half height) of the projected corners, on the frame's axes."""
+    if not corners:
+        return 0.0, 0.0
+    return (
+        max(abs(right) for right, _up, _toward in corners),
+        max(abs(up) for _right, up, _toward in corners),
+    )
+
+
 def capture_views(
     blender_object,
     output_directory: Path,
     settings: CaptureSettings = CaptureSettings(),
     extra_objects: tuple = (),
+    view_names: tuple[str, ...] | None = None,
 ) -> dict[str, Path]:
-    """Render every named view to PNG; return {view_name: path}."""
+    """Render every named view to PNG; return {view_name: path}.
+
+    `view_names` renders only those views, in this module's own order, and
+    names an unknown one loudly: a caller that asked for a view which does not
+    exist would otherwise get a sheet that silently lacks it. `None` renders
+    the whole set, the default every existing caller wants.
+    """
     import bpy
     from mathutils import Vector
+
+    unknown_view_names = [
+        name for name in (view_names or ()) if name not in VIEW_DIRECTIONS
+    ]
+    if unknown_view_names:
+        raise ValueError(
+            f"unknown view(s) {unknown_view_names}; the known views are "
+            f"{list(VIEW_DIRECTIONS)}"
+        )
 
     output_directory = Path(output_directory)
     output_directory.mkdir(parents=True, exist_ok=True)
@@ -156,6 +220,7 @@ def capture_views(
     previous_camera = scene.camera
     scene.camera = camera_object
 
+    previous_resolution = (scene.render.resolution_x, scene.render.resolution_y)
     scene.render.resolution_x = settings.resolution_px
     scene.render.resolution_y = settings.resolution_px
     scene.render.image_settings.file_format = "PNG"
@@ -194,18 +259,63 @@ def capture_views(
         light_object.location = center + light_offset * radius_m * 3.0
         # A sun's light travels along its local -Z, so the aim is the
         # NEGATED offset: the light has to travel TOWARD the object.
-        light_object.rotation_euler = (-light_offset).to_track_quat(
-            "-Z", "Y"
-        ).to_euler()
+        light_object.rotation_euler = (
+            (-light_offset).to_track_quat("-Z", "Y").to_euler()
+        )
     try:
         for view_name, direction_tuple in VIEW_DIRECTIONS.items():
+            if view_names is not None and view_name not in view_names:
+                continue
             view_direction = Vector(direction_tuple).normalized()
-            if view_name in ORTHOGRAPHIC_VIEWS:
+            frame_objects = (blender_object, *extra_objects)
+            if settings.fit_projection:
+                # A FITTED frame is orthographic on purpose. The frame's extent
+                # is then exactly the geometry's own projected extent, so the
+                # subject fills both axes and nothing near the camera can
+                # project outside a frame fitted to the centre plane — a
+                # perspective fit clips the nearest corner on a deep solid,
+                # which on a junction close-up hides the very edge under review.
+                corners = _projected_extents(frame_objects, view_direction, center)
+                half_width_m, half_height_m = _half_extents(corners)
                 camera_data.type = "ORTHO"
-                camera_data.ortho_scale = 2.0 * radius_m * FRAME_MARGIN_FACTOR
+                if half_width_m <= 0.0 or half_height_m <= 0.0:
+                    camera_data.ortho_scale = 2.0 * radius_m
+                    scene.render.resolution_x = settings.resolution_px
+                    scene.render.resolution_y = settings.resolution_px
+                else:
+                    # `ortho_scale` spans the LARGER image side, so it is twice
+                    # the larger half extent and the resolution follows the
+                    # geometry's own aspect: the subject fills the frame in BOTH
+                    # axes rather than one.
+                    camera_data.ortho_scale = (
+                        2.0
+                        * max(half_width_m, half_height_m)
+                        * settings.frame_margin_factor
+                    )
+                    aspect = max(half_width_m, half_height_m) / min(
+                        half_width_m, half_height_m
+                    )
+                    if half_width_m >= half_height_m:
+                        scene.render.resolution_x = round(
+                            settings.resolution_px * aspect
+                        )
+                        scene.render.resolution_y = settings.resolution_px
+                    else:
+                        scene.render.resolution_x = settings.resolution_px
+                        scene.render.resolution_y = round(
+                            settings.resolution_px * aspect
+                        )
+                camera_distance_m = radius_m * PERSPECTIVE_DISTANCE_FACTOR
+            elif view_name in ORTHOGRAPHIC_VIEWS:
+                camera_data.type = "ORTHO"
+                camera_data.ortho_scale = 2.0 * radius_m * settings.frame_margin_factor
+                scene.render.resolution_x = settings.resolution_px
+                scene.render.resolution_y = settings.resolution_px
                 camera_distance_m = radius_m * PERSPECTIVE_DISTANCE_FACTOR
             else:
                 camera_data.type = "PERSP"
+                scene.render.resolution_x = settings.resolution_px
+                scene.render.resolution_y = settings.resolution_px
                 camera_distance_m = radius_m * PERSPECTIVE_DISTANCE_FACTOR
             camera_object.location = center + view_direction * camera_distance_m
             camera_object.rotation_euler = view_direction.to_track_quat(
@@ -226,6 +336,7 @@ def capture_views(
         shading.show_xray, shading.xray_alpha = previous_xray_state
         scene.camera = previous_camera
         scene.render.engine = previous_engine
+        scene.render.resolution_x, scene.render.resolution_y = previous_resolution
         if light_object is not None:
             bpy.data.objects.remove(light_object)
         if light_data is not None:

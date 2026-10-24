@@ -20,6 +20,7 @@ import inspect
 from dataclasses import fields
 
 OP_MODULE_NAMES = (
+    "assembly",
     "primitives",
     "materials",
     "material_nodes",

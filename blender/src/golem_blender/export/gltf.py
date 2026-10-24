@@ -51,8 +51,101 @@ class ExportReport:
     # The editable source saved beside the .glb (OT-50). None only in
     # synthetic pure-tier reports; export_glb always populates it.
     blend: BlendSaveReport | None = None
+    # --- assembly export (issue #26) -----------------------------------
+    # An assembly is not one mesh, so its gate is the per-PIECE one and its
+    # verdict lives here rather than in a `MeshReport`. Empty for a
+    # single-object `export_glb`, which is gated by `pre_export` instead.
+    assembly_name: str = ""
+    # How many objects shipped (the parts, or 1 for a welded mesh) and how
+    # many parts the assembly had.
+    keep_parts: int = 0
+    part_count: int = 0
+    # Every part that failed its own piece gate, as (name, failures).
+    part_failures: tuple[tuple[str, str], ...] = ()
+    # What a real re-import of the written file delivered: the object count,
+    # and the material names read from the file's own glTF JSON.
+    reimported_object_count: int = 0
+    material_names: tuple[str, ...] = ()
+    expected_material_names: tuple[str, ...] = ()
+    # The root node names the file should carry, one per shipped object.
+    expected_root_node_names: tuple[str, ...] = ()
+
+    def assembly_failures(self, budget: MeshBudget = MeshBudget()) -> list[str]:
+        """Every way a shipped ASSEMBLY fails its own gate (empty = pass).
+
+        Not `MeshBudget` on one mesh: the assembly's parts were each judged by
+        `MeshBudget` already (their failures arrive here as
+        `part_failures`), and this checks what an ASSEMBLY additionally
+        promises — that every part shipped, that the parts are intact pieces,
+        and that the file this call wrote really holds them.
+        """
+        found_failures: list[str] = []
+        for part_name, part_failure in self.part_failures:
+            found_failures.append(
+                f"part {part_name!r} fails the piece gate: {part_failure}"
+            )
+        if self.reimported_object_count != self.keep_parts:
+            found_failures.append(
+                f"the file re-imported {self.reimported_object_count} objects, "
+                f"{self.keep_parts} were shipped"
+            )
+        if self.material_names != tuple(sorted(self.expected_material_names)):
+            found_failures.append(
+                f"the file's materials are {list(self.material_names)}, the "
+                f"assembly's are {sorted(self.expected_material_names)}"
+            )
+        if self.file_report is not None:
+            if tuple(sorted(self.file_report.root_node_names)) != tuple(
+                sorted(self.expected_root_node_names)
+            ):
+                found_failures.append(
+                    f"file root nodes are {self.file_report.root_node_names}, "
+                    f"expected {list(self.expected_root_node_names)}"
+                )
+            if self.file_report.triangle_count != self.pre_export.triangle_count:
+                found_failures.append(
+                    f"file ships {self.file_report.triangle_count} triangles, the "
+                    f"assembly measured {self.pre_export.triangle_count} "
+                    f"(modifier or exporter drift)"
+                )
+            if self.file_report.inverted_facet_count > 0:
+                found_failures.append(
+                    f"{self.file_report.inverted_facet_count} inverted facets in "
+                    f"the shipped file"
+                )
+        else:
+            found_failures.append("no file report: the artifact was not read back")
+        if self.blend is None:
+            found_failures.append("no .blend source: an asset without it is not done")
+        for axis_index, axis_name in enumerate(("x", "y", "z")):
+            drift_m = abs(
+                self.reimported_dimensions_m[axis_index]
+                - self.pre_export_dimensions_m[axis_index]
+            )
+            if drift_m > EXPORT_DIMENSION_TOLERANCE_M:
+                found_failures.append(
+                    f"dimension {axis_name} drifted {drift_m:.6f} m through export "
+                    f"(axis-convention or unit error)"
+                )
+        return found_failures
+
+    def passes_assembly(self, budget: MeshBudget = MeshBudget()) -> bool:
+        """`passes` for an assembly: the per-piece gate plus the set's promises."""
+        return not self.assembly_failures(budget)
 
     def round_trip_failures(self, budget: MeshBudget = MeshBudget()) -> list[str]:
+        """Why this export is not shippable (empty = pass).
+
+        A shipped ASSEMBLY is judged by `assembly_failures`, not here: this
+        body asks `MeshBudget` about ONE merged mesh, which is the right
+        question for a prop and the wrong one for 49 closed solids sharing
+        faces — it would fail every building on "disconnected components"
+        while the parts are each exactly what the piece gate demands. So one
+        entry point answers for both lanes instead of callers having to know
+        which gate applies to what they were handed.
+        """
+        if self.assembly_name:
+            return self.assembly_failures(budget)
         found_failures: list[str] = []
         pre_export_gate_failures = self.pre_export.failures(budget)
         if pre_export_gate_failures:

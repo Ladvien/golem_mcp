@@ -289,6 +289,7 @@ def test_the_readers_are_the_only_plan_free_op_tools():
     )
     assert readers == [
         "animation_report",
+        "assembly_report",
         "body_capsules_report",
         "canonical_depth_axis_rotation_euler_rad",
         "clip_self_intersection_report",
