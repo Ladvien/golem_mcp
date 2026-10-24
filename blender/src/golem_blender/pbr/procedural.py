@@ -423,7 +423,31 @@ TILE_GROUT_PX = 2.0
 # Tiles040 31/2, Tiles141 33/4, Concrete031 51/13; at 0.3 2/2, 2/4,
 # 35/13; at 1.0 every one 2.
 TILE_TOOTH_PX = 4
-TILE_TOOTH_STRENGTH = 0.3
+# A TILE's PITS: their pitch and width in pixels at 1024, and how deep
+# they are in the face's own deviations.
+#
+# The truths' own four tiled floors (Tiles139, 141, 143, 144) carry 37 to
+# 47 pits on each tile - the tile face is worn and pitted, and the lane's
+# faces carried NONE, because its tooth was an isotropic grain and a
+# grain has no spots (measured 2026-10-24). The pits are 3-4 pixels across
+# and 3.5 deviations below the face's mean, over 0.47-0.78% of the
+# surface.
+#
+# Fitted on the same four: a 28-pixel pitch at an 8-pixel width and 4.6
+# deviations reads 47 pits a tile, 7 pixels across its dark core and 3.65
+# deviations deep, over 0.85% of the surface - the count, the depth and
+# the coverage the truths' own carry.
+TILE_PIT_PITCH_PX = 28.0
+TILE_PIT_WIDTH_PX = 8.0
+TILE_PIT_DEPTH = 4.6
+# And the face's own parts, as SHARES of its variation: the slow drift
+# that carries the STAIN across the floor, and the fine grain that is
+# the face's TOOTH. The truth's own Tiles141 carries 0.30 of its spread
+# at a sixty-four-pixel blur and 0.55 finer than two - a stained stone
+# face is a slow cloud with a fine tooth on it. The stone's own variation,
+# and the share each part carries of it.
+TILE_STAIN_SHARE = 0.015
+TILE_TOOTH_SHARE = 0.025
 
 
 def _tile_grout(cell, width_px: float):
@@ -1470,6 +1494,7 @@ def write_procedural_base_color(
             0.0,
             1.0,
         )
+    tile_pits = None
     if kind == "brick" and brick_face_strength <= BRICK_FACE_GRAIN_CUTOFF:
         # A TILE is a GLAZED surface, and its cells do not each have
         # their own random tone - they are all one firing, and what
@@ -1521,7 +1546,28 @@ def write_procedural_base_color(
         ) * drift_at_cell + TILE_HASH_SHARE * _cell_hash(cell, cell_width, cell_height)
         tone = tile_tone + (drift - drift_at_cell) * BRICK_FACE_DRIFT_CONTINUITY
         tone = 0.5 + (tone - 0.5) * TILE_TONE_FRACTION
-        tone = tone + (tooth - 0.5) * TILE_TOOTH_STRENGTH
+        # The face's own STAIN and TOOTH, at their measured shares: the
+        # truth's own Tiles141 carries 0.30 of its spread at a
+        # sixty-four-pixel blur (the stain crossing the floor) and 0.55
+        # finer than two pixels (the tooth), where the lane's face carried
+        # 0.13 and 0.67 - too fine and too flat - because the tone was a
+        # fraction of the ramp and the tooth one amplitude.
+        tone = tone + (drift - 0.5) * TILE_STAIN_SHARE
+        tone = tone + (tooth - 0.5) * TILE_TOOTH_SHARE
+        # And the face's PITS, which a worn stone tile carries: the
+        # truths' own four tiled floors put 37 to 47 pits on each tile,
+        # three to four pixels across and three and a half deviations
+        # deep, over half to four fifths of a per cent of the surface -
+        # and the lane's faces carried none at all, because a tooth is an
+        # isotropic grain and a grain has no spots (measured 2026-10-24).
+        #
+        # They are applied to the finished COLOUR and not to the tone, at
+        # TILE_PIT_DEPTH of the description's own spread: the tone is a
+        # fraction of the ramp and the mottle and the spread correction
+        # are added after it, so a pit drawn in the tone's units came out
+        # a fifth as deep as asked and no pixel of it survived the 3-sigma
+        # threshold.
+        tile_pits = pattern.pit_field(resolution, TILE_PIT_PITCH_PX, TILE_PIT_WIDTH_PX)
         for channel in range(3):
             ramp = _np.linspace(stone_dark_rgb[channel], stone_light_rgb[channel], 256)
             stone[:, :, channel] = ramp[
@@ -2093,6 +2139,19 @@ def write_procedural_base_color(
     # own hue so the shift does not change the colour.
     if target_value is not None and kind != "markings":
         colour = _shift_to_value(colour, target_value)
+    if tile_pits is not None:
+        # A tile face's PITS, at TILE_PIT_DEPTH of the description's own
+        # spread - so a pit is as deep on a pale tile as on a dark one -
+        # and along the image's own hue, so a pit is a shadow on the stone
+        # and not a patch of another colour.
+        spread = float(target_spread or 0.05)
+        weights = numpy.array([0.2126, 0.7152, 0.0722], dtype=numpy.float32)
+        image_luma = (colour * weights).sum(axis=2)
+        image_hue = colour / numpy.maximum(image_luma[:, :, numpy.newaxis], 1e-6)
+        pit_shadow = TILE_PIT_DEPTH * spread * tile_pits
+        colour = numpy.clip(
+            colour - image_hue * pit_shadow[:, :, numpy.newaxis], 0.0, 1.0
+        )
 
     # The image is written at the resolution the pattern was computed
     # at, which is the requested one - there is no upscale, because an

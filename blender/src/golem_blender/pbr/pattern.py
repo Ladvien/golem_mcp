@@ -183,14 +183,38 @@ ROCK_FRACTURE_PRESENCE = 0.35
 ROCK_FRACTURE_LIGHT = 2.5
 # A MOSS's speckle: its Gaussian grain's sigma, in pixels at 1024.
 MOSS_SPECKLE_PX = 0.8
-# A GRASS's blades: how many cross the lawn per feature of the
-# surface's own count, how much longer a blade is than it is wide, and
-# the
-# integer directions they lie in - every vector is whole, so a blade
-# turned along it still repeats on the tile.
-GRASS_BLADES_PER_FEATURE = 6.0
+# A GRASS's blades: their PITCH in pixels at a 1024 map, how much longer
+# a blade is than it is wide, and the integer directions they lie in -
+# every vector is whole, so a blade turned along it still repeats on the
+# tile.
+#
+# The pitch is the truths' own and it is ONE number, not a fraction of
+# the surface's feature count. The blades were drawn at six a feature, so
+# they followed the surface's count - and a FOREST FLOOR's count is its
+# moss and earth patches, not its blades. The truths' own three grasses
+# put their blades 13 to 16 pixels apart at 1024 whatever else they
+# carry: Ground037 reads 7.2 features across, Grass001 34.1 and Grass004
+# 93.1, and all three carry their fine power's peak at 13.1-15.5 px
+# (measured 2026-10-24). At six a feature the forest floor got 59 blades
+# across instead of 71 and its scale read 3.09x the truth's.
+GRASS_BLADE_PIXELS = 15.5
 GRASS_BLADE_ASPECT = 5
-GRASS_MIN_BLADES = 192
+# A grass's three parts, their variance SHARES: the blades themselves,
+# the fine tooth between them, and the surface's own variation at its
+# feature count.
+#
+# Fitted on the truths' own three grasses (Ground037, Grass001,
+# Grass004), the mean |log| of the fine peak's period and the feature
+# measure's count 0.99: the blades' 0.5 share carries the pitch (15.5 px
+# against the truths' 13.1-15.5), the tooth's 0.5 - the leaves' and the
+# tooth's shares add to 0.7 - the fine structure the measure reads, and
+# the ground's 0.3 the patches (Ground037's broad 64-pixel blur carries
+# 0.19 of its spread against the lane's 0.33).
+GRASS_LEAF_SHARE = 0.2
+GRASS_TOOTH_SHARE = 0.5
+GRASS_GROUND_SHARE = 0.3
+# The tooth's sigma, in pixels at 1024.
+GRASS_TOOTH_PX = 0.8
 GRASS_BLADE_DIRECTIONS = (
     (0, 1),
     (1, 1),
@@ -2808,7 +2832,7 @@ def moss_field(resolution: int, cells: int):
 
 
 def grass_field(resolution: int, cells: int):
-    """A GRASS: short blades lying every way, over a soft ground.
+    """A GRASS: short blades at the truth's own pitch, over a soft ground.
 
     A lawn was a field of scattered STONES, and came out as camouflage
     blotches where the truth's own Grass001 and Grass004 are dense short
@@ -2820,6 +2844,19 @@ def grass_field(resolution: int, cells: int):
     directions each fill their own patches, so the blades lie every
     way. The crest is sharpened so a blade is a bright leaf over darker
     gaps.
+
+    The blades' PITCH is the truths' own (GRASS_BLADE_PIXELS, 15.5 px
+    at 1024) whatever the surface's feature count is: a blade is a
+    blade, and a forest floor's few features are its PATCHES, not its
+    blades. It was six blades a feature, so a forest floor's 9.8
+    features drew 59 blades across where its own are 71, and the
+    strokes read 3.09x the truth's scale.
+
+    The blade field is drawn at the pitch and the surface's own
+    variation rides over it at the surface's count - the truth's own
+    three grasses keep a fine peak at 13.1-15.5 px and read 7.2, 34.1
+    and 93.1 features across, so their patches and their blades are two
+    different scales and the patches are the coarser.
     """
     import numpy
 
@@ -2828,19 +2865,12 @@ def grass_field(resolution: int, cells: int):
     axis = _domain_samples(resolution)
     sample_x, sample_y = numpy.meshgrid(axis, axis, indexing="ij")
     lattice = max(2, int(cells))
-    total = numpy.zeros_like(sample_x)
-    weight = numpy.zeros_like(sample_x)
-    # The blade count follows the surface's own feature count: a fixed
-    # three hundred and twenty read 128 features on a lawn whose own
-    # are 73 and 43 on a forest floor whose are 10. Six blades a
-    # feature, measured on Grass001, Grass004 and Ground037: the mean
-    # |log| scale error 0.745 -> 0.253.
-    #
-    # And never fewer than GRASS_MIN_BLADES: a forest floor's few
-    # features are its moss and dirt patches, not its blades, and at
-    # ten features the blades came out as big scribbled strokes.
-    blades_across = max(GRASS_MIN_BLADES, round(lattice * GRASS_BLADES_PER_FEATURE))
+    # The blades' own lattice, from the PITCH in pixels at 1024 - so the
+    # blades are the same size on the surface at any resolution.
+    pitch_px = GRASS_BLADE_PIXELS * resolution / 1024.0
+    blades_across = max(2, round(resolution / pitch_px))
     blades_along = max(1, blades_across // GRASS_BLADE_ASPECT)
+    total = numpy.zeros_like(sample_x)
     for index, (along_x, along_y) in enumerate(GRASS_BLADE_DIRECTIONS):
         along = along_x * sample_x + along_y * sample_y
         across = -along_y * sample_x + along_x * sample_y
@@ -2853,22 +2883,29 @@ def grass_field(resolution: int, cells: int):
             seed=20 + index,
             folds=1,
         )
-        patch = noise.fbm_2d_value(
-            sample_x * 6, sample_y * 6, size=6, octaves=2, seed=40 + index
-        )
-        share = numpy.clip((patch - 0.45) * 6.0, 0.0, 1.0)
-        total = total + share * blade
-        weight = weight + share
-    blades = total / numpy.maximum(weight, 1e-6)
+        total = total + blade
+    blades = total / len(GRASS_BLADE_DIRECTIONS)
     leaves = numpy.clip((_unit(1.0 - blades) - 0.55) / 0.45, 0.0, 1.0)
-    ground = noise.fbm_2d_value(
-        sample_x * lattice * 2,
-        sample_y * lattice * 2,
-        size=lattice * 2,
-        octaves=4,
-        seed=6,
+    # The surface's own variation, at its OWN feature count: a forest
+    # floor's patches (moss and earth), a lawn's evenness.
+    ground = _unit(
+        noise.fbm_2d_value(
+            sample_x * lattice,
+            sample_y * lattice,
+            size=lattice,
+            octaves=3,
+            seed=6,
+        )
     )
-    field = 0.8 * leaves + 0.2 * _unit(ground)
+    # And the blades' own TOOTH, which the truth carries between them: a
+    # fine isotropic grain at a pixel's scale, so the gaps between the
+    # blades are leaf litter and not a flat wash.
+    tooth = _unit(noise.gaussian_grain(resolution, GRASS_TOOTH_PX, seed=11))
+    field = (
+        GRASS_LEAF_SHARE * leaves
+        + GRASS_TOOTH_SHARE * tooth
+        + GRASS_GROUND_SHARE * ground
+    )
     return 0, _unit(field), (lattice, lattice), None
 
 
@@ -4948,6 +4985,48 @@ def slow_variation(resolution: int, cells: int, seed: int = 4):
 
     sigma = 1024.0 / (SLOW_FEATURE_SIGMAS * max(2, cells))
     return _unit(noise.gaussian_grain(resolution, max(0.5, sigma), seed=seed))
+
+
+def pit_field(resolution: int, pitch_px: float, width_px: float, seed: int = 31):
+    """A worn surface's PITS, one per cell of a jittered lattice, 0..1.
+
+    A stone tile's face is not clean: the truths' own four tiled floors
+    carry 37 to 47 pits on each tile, four pixels across at 1024 and
+    three and a half deviations deep, over half to four fifths of a per
+    cent of the surface (measured 2026-10-24). The lane's faces carried
+    NONE - the tooth was an isotropic grain, and a grain has no spots.
+
+    Each cell of a `pitch_px` lattice puts its pit at a hashed place
+    inside the cell, so the pits are not a grid - a regular lattice of
+    spots reads as a dither. The pit is a smooth cone: full depth at its
+    centre and gone by `width_px` / 2. The hash is of the cell's index
+    modulo the lattice's own count, so the field is periodic and the
+    map tiles.
+    """
+    import numpy
+
+    from golem_blender.pbr.noise import _hash01
+
+    pitch = max(4.0, float(pitch_px))
+    cells = max(2, round(resolution * 1024.0 / pitch / 1024.0))
+    axis = numpy.arange(resolution)
+    place = (axis + 0.5) / resolution * cells - 0.5
+    index = numpy.floor(place).astype(numpy.int32)
+    within = place - index
+    cell_x = numpy.tile(index.reshape(1, -1), (resolution, 1))
+    cell_y = numpy.tile(index.reshape(-1, 1), (1, resolution))
+    # The pit's place inside its cell, kept off the cell's rim so a pit
+    # never straddles its own boundary and the wrap is exact.
+    centre_x = 0.25 + 0.5 * _hash01(cell_x, cell_y, cells, cells, seed)
+    centre_y = 0.25 + 0.5 * _hash01(cell_x, cell_y, cells, cells, seed + 1)
+    within_x = numpy.tile(within.reshape(1, -1), (resolution, 1))
+    within_y = numpy.tile(within.reshape(-1, 1), (1, resolution))
+    distance = numpy.hypot(within_x - centre_x, within_y - centre_y)
+    # `width_px` is the pit's own width, so its radius is in cells.
+    radius = max(1e-6, float(width_px) * 0.5 * cells / resolution)
+    cone = numpy.clip(1.0 - distance / radius, 0.0, 1.0)
+    # A smooth cone: the truth's pits are holes, not square blocks.
+    return cone * cone * (3.0 - 2.0 * cone)
 
 
 def surface_texture(resolution: int, cells: int, octaves=DEFAULT_SURFACE_OCTAVES):

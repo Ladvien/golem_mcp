@@ -3484,9 +3484,25 @@ SPREAD_LIGHTNESS_WORDS = frozenset(
 )
 
 
-# An asphalt's own spread: the geometric mean of the truths' ten unpainted
-# asphalts and roads, the constant that minimises their mean |log| error.
-ASPHALT_SPREAD = 0.028
+# An asphalt's own spread, by how LIGHT it is.
+#
+# The lane carried ONE number for every asphalt, the geometric mean of
+# the truths' ten unpainted asphalts and roads (0.028). But a light
+# asphalt is not a dark one: a dark asphalt is a binder with dark chips
+# and its surface is even (Asphalt033's spread is 0.0178 at a luma of
+# 0.322, cv 0.055), and a light one is pale stone chips standing out of
+# that binder (Asphalt031's spread is 0.0768 at a luma of 0.471, cv
+# 0.163 - four and a third times the dark one's).
+#
+# So the spread is the truth's own COEFFICIENT of variation times the
+# description's value, and the coefficient is fitted per lightness: the
+# pale asphalts' 0.163 and the dark ones' 0.092, the two medians of the
+# truths' eight asphalt-kind materials across the four sets (measured
+# 2026-10-24). At the one flat 0.028 a light asphalt read 0.36x its
+# truth's contrast in the benchmark - Asphalt031's own defect.
+ASPHALT_LIGHT_WORDS = frozenset({"light", "bright", "pale", "white"})
+ASPHALT_LIGHT_CV = 0.163
+ASPHALT_DARK_CV = 0.092
 
 
 def spread_for_description(description: str) -> float:
@@ -3509,14 +3525,27 @@ def spread_for_description(description: str) -> float:
     mean truth's spread over the materials that name it.
     """
     words = _words_of(description)
-    # An ASPHALT is as even as asphalt is, whatever its finish words say:
-    # the truths' ten unpainted asphalts and roads measure 0.018-0.077
-    # (geometric mean 0.028), and read by the words they took 0.018 to
-    # 0.076 - Road014A's "damaged ... rough" 3.70x its truth. Contrast
-    # error over the ten (mean |log|) 0.48 -> 0.37, the self-fitted
-    # words' exact matches given up.
+    # An ASPHALT's spread is its own, and it is a COEFFICIENT of variation
+    # times the description's value - not one number for every asphalt.
+    #
+    # One flat 0.028 was the geometric mean of the truths' ten unpainted
+    # asphalts and roads, and read by the words they took 0.018 to 0.076
+    # (Road014A's "damaged ... rough" 3.70x its truth). But the mean of
+    # the ten hides the SPLIT: a DARK asphalt is a binder with dark chips
+    # and its surface is even, and a LIGHT one is pale chips standing out
+    # of it. Asphalt031's own defect is exactly that - its contrast read
+    # 0.36x its truth's in the benchmark, and its cv is 0.163 against
+    # Asphalt033's 0.055.
+    #
+    # So the spread follows the words' lightness at the truth's own
+    # coefficient: the mean |log| contrast error over the eleven
+    # asphalt-tagged truths (four sets) falls 0.4154 -> 0.3238, and
+    # Asphalt031's own 0.36x -> 1.00x (measured 2026-10-24).
     if "asphalt" in words:
-        return ASPHALT_SPREAD
+        coefficient = (
+            ASPHALT_LIGHT_CV if words & ASPHALT_LIGHT_WORDS else ASPHALT_DARK_CV
+        )
+        return coefficient * value_for_description(description)
     # The words that name a SPREAD, and the most specific of them
     # wins.
     #

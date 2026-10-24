@@ -63,3 +63,40 @@ called "bricks", Bricks076A stone called "bricks", Wood066 red-brown called "bro
   and shakes (F14), the fan's arches at whole-map scale (F11), a plaid's second and third hue (F10),
   basketweave and "large" planks (F19), the moss colour refit (F18).
 
+
+## Round 12 (loop/a5): issue #14's three smaller visual defects
+
+Measured on the six-truth set that contains each asset
+(`ambientcg_wide`, with `ambientcg_top` for the grass reference), recreations
+and scores run from THIS worktree's `golem_blender` (the imported module
+resolved under `/private/tmp/golem-loop/a5/blender/src/golem_blender/__init__.py`).
+
+| defect | before | after |
+|---|---|---|
+| Asphalt031's aggregate too faint | contrast 0.36x | contrast 1.33x |
+| Ground037's grass strokes 3x the truth's scale | scale 3.09x | scale 0.76x |
+| Tiles139/141/143/144 have no pits | 0 pits/tile, coverage 0.00% | 45-68 pits/tile, depth 3.5s, coverage 0.61-0.64% |
+
+The truths' own numbers, measured 2026-10-24:
+
+- The eight asphalt-kind truths split by lightness - a light one's cv 0.163
+  (Asphalt031) against the dark ones' median 0.092 - so the spread is the
+  coefficient times the description's value, and the one flat 0.028 that read
+  Asphalt031 at 0.36x is gone. The mean |log| contrast error over the eleven
+  asphalt-tagged truths falls 0.4154 -> 0.3238.
+- The three grass truths (Ground037 7.2 features across, Grass001 34.1,
+  Grass004 93.1) put their fine power's peak at 13.1-15.5 px at 1024. The
+  blades followed six-per-feature, so a forest floor's 9.8 features became 59
+  blades instead of 71.
+- The four tile truths put 37-47 pits on each tile, 3-4 px across, 3.45-3.75
+  deviations deep, over 0.47-0.78% of the surface, and carry 0.30 of their
+  spread at a 64-px blur and 0.40-0.55 finer than two.
+
+Open after this round, seen on the close sheet and NOT fixed:
+
+- Our asphalt is still too bright (1.33x) and its aggregate is now too coarse
+  in the crop: the pits/aggregate contrast now reads 1.33x where it read
+  0.36x, and the brightness was 1.33x before the change too (a value, not a
+  contrast, defect).
+- Our tiles' grout is wider than the truths' and the floor is browner than
+  the truths' pale grey (a palette value/hue defect, not a face defect).
