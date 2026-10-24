@@ -129,3 +129,29 @@ def test_a_reader_that_returns_an_object_name_is_a_violation():
         "a reader creates or modifies nothing" in v
         for v in contract_violations(reader_that_writes)
     )
+
+
+def test_a_plural_name_parameter_takes_a_list_of_names():
+    """`object_names` is several names, so a list of str is legal there.
+
+    Measured need: join_objects(object_names: list[str], ...) — issue #21.
+    The element rule is unchanged: a list of scene types is refused exactly
+    as a bare scene type is, so the plural form widens the container, not
+    the type.
+    """
+
+    class Mesh:  # a forbidden type token, standing in for bpy.types.Mesh
+        pass
+
+    def plural_ok(object_names: list[str], result_name: str) -> str:
+        """Joins them."""
+        return result_name
+
+    def plural_bpy(object_names: list[Mesh], result_name: str) -> str:
+        """Joins bpy objects."""
+        return result_name
+
+    assert not contract_violations(plural_ok)
+    violations = contract_violations(plural_bpy)
+    assert any("looks like a name" in v for v in violations), violations
+    assert any("a bpy type" in v for v in violations), violations

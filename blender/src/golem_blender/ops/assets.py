@@ -22,7 +22,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from golem_blender.ops._objects import object_by_name
+from golem_blender.ops._objects import ObjectName, object_by_name
 
 MINIMUM_Z_EXTENT_M = 1.0e-6
 
@@ -87,6 +87,171 @@ def _asset_report(
     )
 
 
+@dataclass(frozen=True)
+class JoinReport:
+    """What a join left in the scene: one mesh, measured, and what it ate."""
+
+    object_name: str
+    triangles: int
+    parts_joined: int
+    material_slots: int
+    # Every source, in the order given. They no longer exist.
+    consumed_names: tuple[str, ...]
+    # Measured on the result, so "two overlapping solids intersect and two
+    # touching ones do not" is a number rather than a claim.
+    connected_component_count: int
+    boundary_edge_count: int
+    self_intersecting_face_pair_count: int
+
+
+def _append_part_into(
+    working_mesh, part_mesh, part_world_matrix, slot_of_material
+) -> None:
+    """Append `part_mesh` into `working_mesh`, baked by `part_world_matrix`.
+
+    The arithmetic every "several meshes become one" path needs: bake the
+    world matrix into the vertices (matrix_world evaluates lazily, so a part
+    that was only MOVED reads stale until the dependency graph refreshes),
+    reverse the faces under a mirroring matrix (a negative determinant turns
+    every face inside out), and translate the part's material indices into
+    the target's slots. `_import_joined` and `join_objects` share it so the
+    two cannot disagree about what a join means geometrically.
+
+    `bmesh.from_mesh` APPENDS, which is what makes the accumulation work:
+    the caller calls this once per part and `to_mesh` once at the end.
+    """
+    import bmesh
+    import bpy
+
+    part_slot_to_target_slot = [
+        slot_of_material(part_material.name if part_material else None, part_material)
+        for part_material in part_mesh.materials
+    ]
+
+    part_working_mesh = bmesh.new()
+    part_temporary_mesh = bpy.data.meshes.new("__join_part")
+    try:
+        part_working_mesh.from_mesh(part_mesh)
+        for vertex in part_working_mesh.verts:
+            vertex.co = part_world_matrix @ vertex.co
+        if part_world_matrix.determinant() < 0:
+            bmesh.ops.reverse_faces(
+                part_working_mesh, faces=list(part_working_mesh.faces)
+            )
+        if part_slot_to_target_slot:
+            last_slot = len(part_slot_to_target_slot) - 1
+            for face in part_working_mesh.faces:
+                face.material_index = part_slot_to_target_slot[
+                    min(face.material_index, last_slot)
+                ]
+        part_working_mesh.to_mesh(part_temporary_mesh)
+    finally:
+        part_working_mesh.free()
+    try:
+        working_mesh.from_mesh(part_temporary_mesh)
+    finally:
+        bpy.data.meshes.remove(part_temporary_mesh)
+
+
+def join_objects(
+    object_names: list[str],
+    result_name: str,
+    keep_material_slots: bool = True,
+) -> ObjectName:
+    """Join the named mesh objects into one mesh named result_name and consume the sources.
+
+    The result carries the first object's origin and every part's WORLD
+    transform, so a part that was only moved keeps its place. Material slots
+    are deduplicated by material, so sixteen tufts of one material are ONE
+    slot; keep_material_slots=False keeps the first material only, for a
+    consumer that wants a single draw call. At least two distinct names are
+    required and each is resolved as a MESH first, so a call that cannot
+    succeed consumes nothing.
+    """
+    import bmesh
+    import bpy
+
+    from golem_blender.ops.primitives import NameTaken, remove_object_and_mesh
+    from golem_blender.ops.transforms import _refresh_dependency_graph
+
+    # Everything that can fail is checked BEFORE anything mutates: a join
+    # that raised halfway would have already eaten its sources.
+    if len(object_names) < 2:
+        raise ValueError(
+            f"join_objects needs at least two objects, got {len(object_names)}: "
+            f"joining one object is a rename, not a join (use rename_object)"
+        )
+    if len(set(object_names)) != len(object_names):
+        raise ValueError(
+            f"join_objects got a name twice in {object_names}: joining an object "
+            f"with itself would double its geometry and then delete it"
+        )
+    if not result_name.strip():
+        raise ValueError("result_name must be non-empty")
+    if result_name in bpy.data.objects:
+        raise NameTaken(
+            f"an object named {result_name!r} already exists "
+            f"(remove_object_and_mesh it first, or pick another name)"
+        )
+    sources = [object_by_name(name, "MESH") for name in object_names]
+    _refresh_dependency_graph()
+
+    result_object_matrix = sources[0].matrix_world.copy()
+    inverse_result_matrix = result_object_matrix.inverted()
+
+    joined_materials: list = []  # slot order of the joined mesh; None is an empty slot
+    joined_slot_of: dict[str | None, int] = {}
+
+    def slot_of_material(material_key, material):
+        if not keep_material_slots and joined_materials:
+            return 0  # one slot: the first material seen wins
+        if material_key not in joined_slot_of:
+            joined_slot_of[material_key] = len(joined_materials)
+            joined_materials.append(material)
+        return joined_slot_of[material_key]
+
+    target_mesh = bpy.data.meshes.new(result_name)
+    working_mesh = bmesh.new()
+    try:
+        for source in sources:
+            # Each part is baked in WORLD space and expressed in the FIRST
+            # part's space, so the result's origin is that part's origin and
+            # the piece's base check still means something.
+            _append_part_into(
+                working_mesh,
+                source.data,
+                source.matrix_world @ inverse_result_matrix,
+                slot_of_material,
+            )
+        working_mesh.to_mesh(target_mesh)
+    finally:
+        working_mesh.free()
+    for joined_material in joined_materials:
+        target_mesh.materials.append(joined_material)
+
+    joined_object = bpy.data.objects.new(result_name, target_mesh)
+    bpy.context.scene.collection.objects.link(joined_object)
+    joined_object.matrix_world = result_object_matrix
+
+    for source_name in object_names:
+        remove_object_and_mesh(source_name)
+    _refresh_dependency_graph()
+
+    from golem_blender.analyze.mesh_checks import analyze_object
+
+    measured = analyze_object(joined_object)
+    return JoinReport(
+        object_name=joined_object.name,
+        triangles=measured.triangle_count,
+        parts_joined=len(object_names),
+        material_slots=len(joined_materials),
+        consumed_names=tuple(object_names),
+        connected_component_count=measured.connected_component_count,
+        boundary_edge_count=measured.boundary_edge_count,
+        self_intersecting_face_pair_count=measured.self_intersecting_face_pair_count,
+    )
+
+
 def _import_joined(glb_path: str, object_name: str):
     """Import a .glb as one linked mesh object, materials kept, no recentring.
 
@@ -130,41 +295,22 @@ def _import_joined(glb_path: str, object_name: str):
 
     joined_materials: list = []  # slot order of the joined mesh; None is an empty slot
     joined_slot_of: dict[str | None, int] = {}
+
+    def slot_of_material(material_key, material):
+        if material_key not in joined_slot_of:
+            joined_slot_of[material_key] = len(joined_materials)
+            joined_materials.append(material)
+        return joined_slot_of[material_key]
+
     working_mesh = bmesh.new()
     try:
         for mesh_object in imported_meshes:
-            part_slot_to_joined_slot: list[int] = []
-            for part_material in mesh_object.data.materials:
-                material_key = part_material.name if part_material else None
-                if material_key not in joined_slot_of:
-                    joined_slot_of[material_key] = len(joined_materials)
-                    joined_materials.append(part_material)
-                part_slot_to_joined_slot.append(joined_slot_of[material_key])
-
-            part_working_mesh = bmesh.new()
-            part_mesh = bpy.data.meshes.new(f"{object_name}__part")
-            try:
-                part_working_mesh.from_mesh(mesh_object.data)
-                world_matrix = mesh_object.matrix_world.copy()
-                for vertex in part_working_mesh.verts:
-                    vertex.co = world_matrix @ vertex.co
-                if world_matrix.determinant() < 0:
-                    # A mirroring matrix turns every face inside out.
-                    bmesh.ops.reverse_faces(
-                        part_working_mesh, faces=list(part_working_mesh.faces)
-                    )
-                if part_slot_to_joined_slot:
-                    last_slot = len(part_slot_to_joined_slot) - 1
-                    for face in part_working_mesh.faces:
-                        face.material_index = part_slot_to_joined_slot[
-                            min(face.material_index, last_slot)
-                        ]
-                part_working_mesh.to_mesh(part_mesh)
-            finally:
-                part_working_mesh.free()
-            working_mesh.from_mesh(part_mesh)
-            bpy.data.meshes.remove(part_mesh)
-
+            _append_part_into(
+                working_mesh,
+                mesh_object.data,
+                mesh_object.matrix_world,
+                slot_of_material,
+            )
         joined_mesh = bpy.data.meshes.new(object_name)
         working_mesh.to_mesh(joined_mesh)
     finally:

@@ -8,9 +8,11 @@ from golem_blender.ops.animation import (
 from golem_blender.ops.arrays import linear_array
 from golem_blender.ops.assets import (
     AssetReport,
+    JoinReport,
     duplicate_object,
     import_generated_asset,
     import_glb_piece,
+    join_objects,
 )
 from golem_blender.ops.booleans import (
     BooleanNoOp,
@@ -123,6 +125,7 @@ __all__ = [
     "AnimationReport",
     "ArmatureRotationModeError",
     "AssetReport",
+    "JoinReport",
     "BodyCapsulesReport",
     "BoneSpec",
     "BooleanNoOp",
@@ -182,6 +185,7 @@ __all__ = [
     "duplicate_object",
     "import_generated_asset",
     "import_glb_piece",
+    "join_objects",
     "keyframe_object_transform",
     "keyframe_pose_bone_rotation",
     "linear_array",

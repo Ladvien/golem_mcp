@@ -70,6 +70,21 @@ NUMERIC_ANNOTATIONS = {"int", "float"}
 # scene-wide default (apply_canonical_depth_axis). Nothing else.
 NAME_ANNOTATIONS = {"str", "str | None", "None | str", "Optional[str]"}
 
+# A PLURAL name parameter (`object_names`) carries several names, so it is a
+# list of the same element type. Measured need: `join_objects(object_names:
+# list[str], ...)` — issue #21 — is a list of object names by construction,
+# and demanding a single `str` there would force either one op per arity or a
+# string that has to be re-split. The element type is still checked, so a
+# `list[SomeBpyType]` is refused exactly as a bare `SomeBpyType` is.
+PLURAL_NAME_ANNOTATIONS = {
+    "list[str]",
+    "list[str | None]",
+    "list[None | str]",
+    "list[Optional[str]]",
+    "tuple[str, ...]",
+    "Sequence[str]",
+}
+
 # Names for the object being acted on. Given so the rule "object refs are
 # str" can be checked by NAME too: `blender_object`, `obj`, `mesh_object`
 # were the pre-OT-2 spellings that carried bpy objects.
@@ -238,13 +253,15 @@ def contract_violations(function) -> list[str]:
             violations.append(
                 f"parameter {parameter.name!r} is annotated {annotation_text!r}, a bpy type"
             )
-        if (
-            _OBJECT_NAME_PATTERN.search(parameter.name)
-            and annotation_text not in NAME_ANNOTATIONS
-        ):
-            violations.append(
-                f"parameter {parameter.name!r} looks like a name but is {annotation_text!r}"
-            )
+        if _OBJECT_NAME_PATTERN.search(parameter.name):
+            allowed = NAME_ANNOTATIONS
+            if parameter.name.endswith("_names"):
+                # A plural name parameter: several names, same element rule.
+                allowed = NAME_ANNOTATIONS | PLURAL_NAME_ANNOTATIONS
+            if annotation_text not in allowed:
+                violations.append(
+                    f"parameter {parameter.name!r} looks like a name but is {annotation_text!r}"
+                )
         if _numeric_scalar(annotation_text):
             has_unit = parameter.name.endswith(UNIT_SUFFIXES)
             if not has_unit and parameter.name not in UNITLESS_NUMERIC_NAMES:
