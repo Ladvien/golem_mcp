@@ -136,3 +136,51 @@ harness's own classifier, not the agent's work model — the same probe's
 `purpose=model` entries are `flash:1017`. The six loop children show no such
 entry at all. Reported rather than omitted so the count above cannot be
 misread as "every single API call in the process".
+
+## The per-turn audit, and the field that actually answers the question
+
+Earlier in this run I quoted `model_usage` records — 3 per child. Those are
+billed calls, but they are `purpose=task-completion-probe`, so **3 records out of
+142 work turns** was a badly under-sampled answer that looked complete. The
+record that answers "what did this agent actually run on" is the assistant turn:
+
+```
+type: message, message.role == "assistant"
+  carries provider, model, api, usage, credentialId, ttft, duration
+```
+
+Counted over all six children:
+
+| child | work turns | provider / model | off-pin |
+|---|---|---|---|
+| loop-a1 | 142 | `ollama-cloud / deepseek-v4.1-flash:1017` | 0 |
+| loop-a2 | 135 | `ollama-cloud / deepseek-v4.1-flash:1017` | 0 |
+| loop-a3 | 149 | `ollama-cloud / deepseek-v4.1-flash:1017` | 0 |
+| loop-a4 | 121 | `ollama-cloud / deepseek-v4.1-flash:1017` | 0 |
+| loop-a5 | 212 | `ollama-cloud / deepseek-v4.1-flash:1017` | 0 |
+| loop-a6 | 57 | `ollama-cloud / deepseek-v4.1-flash:1017` | 0 |
+
+**816 work turns, 816 on the required provider and model, 0 off-pin.** Each
+child's `model_change` names the same model with `resolvedModelIsFallback:
+false`, so no retry switched a child mid-run.
+
+Two records that must not be counted as work turns, named so a future audit
+cannot mistake them:
+
+- `purpose=task-completion-probe` usage rows — real billed calls, ~3 per session.
+- `purpose=auto-thinking` rows (e.g. `typesafe/jev-1.14`) — the harness's own
+  classifier, not an agent work model.
+
+`scripts/audit_task_child_models.py` makes the whole audit repeatable and gives
+it an exit status:
+
+```
+$ python3 scripts/audit_task_child_models.py
+TOTAL work turns: 816 | off-pin: 0
+PASS every work turn ran on the required provider and model        # exit 0
+```
+
+Proven it can fail, on a two-agent fixture with one drifted child and a fallback
+resolution: `exit 1`, with
+`FAIL loop-a2: 1 work turn(s) off the required pin` and
+`FAIL loop-a2: resolved through a fallback (['anthropic/claude-haiku-5-5'])`.
