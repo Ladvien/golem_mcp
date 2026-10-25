@@ -33,6 +33,7 @@ OP_MODULE_NAMES = (
     "assets",
     "measure_set",
     "pieces",
+    "layout",
     "modifiers",
     "heal",
     "roughen",

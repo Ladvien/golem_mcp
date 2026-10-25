@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from golem_blender.analyze.interaction import MINIMUM_APPROACH_M, SideAccess
 from golem_blender.analyze.mesh_checks import MeshBudget, MeshReport, analyze_object
 from golem_blender.export.blend import (
     BlendSaveReport,
@@ -69,6 +70,10 @@ class ExportReport:
     expected_material_names: tuple[str, ...] = ()
     # The root node names the file should carry, one per shipped object.
     expected_root_node_names: tuple[str, ...] = ()
+    # The declared interaction sides an assembly's parts could not USE: a
+    # character cannot reach them. Empty for a single-object export and for
+    # an assembly with every side clear.
+    blocked_sides: tuple[SideAccess, ...] = ()
 
     def assembly_failures(self, budget: MeshBudget = MeshBudget()) -> list[str]:
         """Every way a shipped ASSEMBLY fails its own gate (empty = pass).
@@ -117,6 +122,31 @@ class ExportReport:
             found_failures.append("no file report: the artifact was not read back")
         if self.blend is None:
             found_failures.append("no .blend source: an asset without it is not done")
+        # An asset a character cannot use is not done either. A side is
+        # BLOCKED when another part of the same assembly stands inside the
+        # space a player needs to approach it: the ovens facing each other
+        # and the spout sunk in the wall that no structural gate saw. The
+        # sentence names the part, the side, the measured clearance and what
+        # is standing there, so the fix is a rotation or a move rather than
+        # a guess.
+        for blocked_side in self.blocked_sides:
+            blockers = (
+                ", ".join(
+                    f"{name} at {distance:.3f} m"
+                    for name, distance in blocked_side.blocked_by
+                )
+                or "no part named (the face is buried)"
+            )
+            found_failures.append(
+                f"part {blocked_side.object_name!r} cannot be USED: its "
+                f"{blocked_side.side} side has {blocked_side.clearance_m:.3f} m "
+                f"of clear space (median; worst "
+                f"{blocked_side.minimum_clearance_m:.3f} m, "
+                f"{blocked_side.blocked_fraction:.0%} of the face inside "
+                f"{MINIMUM_APPROACH_M} m), blocked by {blockers}. A character "
+                f"must be able to reach the side it uses: rotate or move the "
+                f"part, or declare a different side with declare_interaction_side"
+            )
         for axis_index, axis_name in enumerate(("x", "y", "z")):
             drift_m = abs(
                 self.reimported_dimensions_m[axis_index]

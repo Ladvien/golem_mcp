@@ -256,6 +256,27 @@ class TestInstructionsHead(unittest.TestCase):
         self.assertIn("blend_path", exported.inputSchema["required"])
         self.assertIn("`blend_path`", head)
 
+    def test_head_names_the_grid_layout_tool(self) -> None:
+        # Several models in one scene are laid side by side, not stacked: the
+        # rule names the op, and the op must still be a registered tool — a
+        # rename would leave the head pointing at nothing.
+        head = golem_blender_bridge.MCP_INSTRUCTIONS_HEAD
+        self.assertIn("`lay_out_grid`", head)
+        self.assertIn("lay_out_grid", golem_blender_bridge.GOLEM_BLENDER_TOOL_NAMES)
+
+    def test_head_says_an_assembly_must_declare_the_side_it_is_used_from(
+        self,
+    ) -> None:
+        # The defect the user found by looking: a bakery whose ovens faced each
+        # other and whose spout was sunk in a wall passed every gate. The head
+        # tells every agent to declare the side, and both names must be real
+        # tools so the rule cannot point at nothing.
+        head = golem_blender_bridge.MCP_INSTRUCTIONS_HEAD
+        self.assertIn("`interaction_side`", head)
+        for name in ("define_assembly", "lay_out_grid"):
+            self.assertIn(f"`{name}`", head)
+            self.assertIn(name, golem_blender_bridge.GOLEM_BLENDER_TOOL_NAMES)
+
     def test_readme_states_the_measured_head_length(self) -> None:
         # The README said 1,823 characters while the head was 1,981.
         readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(

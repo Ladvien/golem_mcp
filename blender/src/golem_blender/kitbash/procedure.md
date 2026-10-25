@@ -146,7 +146,7 @@ units: units.yaml            # or ../other_kit/units.yaml (compatible kit; never
 style: style.yaml            # or ../other_kit/style.yaml
 palette_additions: []        # same entry shape as style.palette; for materials only this kit needs
 compatible_with: []          # other kit dirs whose approved .glb pieces join assembly previews
-shelf_pitch_m: 8.0           # spacing of approved pieces on the shelf row (computed, see B9)
+shelf_pitch_m: 8.0           # the shelf grid's offset from the piece under test (computed, see B9)
 catalog:
   - name: Wall_Straight      # CamelCase_With_Underscores, unique within the kit and its compatible kits
     family: walls
@@ -324,11 +324,12 @@ General modelling rules:
   2. `save_blend(object_names=<the piece's objects>, blend_path=<abs kit dir>/blend/<Piece>.blend)` — or `save_blend(piece="<Piece>", blend_path=...)` once `define_piece("<Piece>", <the piece's objects>)` has named the set, which also reports the piece's joint triangles, extents and lowest point. Its report must list every `<Piece>__<Material>` object with the triangle counts snippet F measured. A missing report or a mismatch is a failure, fixed before recording.
   3. Run snippet E on the host and check: roots == [Piece]; tris == the measured total; material names == the piece materials; images == the count of textured materials; inverted == 0; `gltf_min/max` == the Blender bounds mapped (x, z, -y) within 1e-4; and when `filter: nearest`, every sampler `magFilter == 9728`. Any mismatch is a failure, fixed before recording.
   4. Write `pieces/<Piece>.yaml` (section 2, with `measured.zfight`, `export.blend` and `master: recipe`) and set the kit.yaml entry to `status: approved`. Parse-check both files.
-  5. Shelve the piece: `move_object_to` every material object to `(i * shelf_pitch_m, shelf_pitch_m, 0)`, i = count of previously approved pieces, `shelf_pitch_m` = largest catalog `size_m` X or Y + grid_m (written to kit.yaml once).
-  6. Continue with B0 for the next piece.
+  5. Shelve the piece: `lay_out_grid(item_names=<every approved piece name in catalog order>, gap_m=grid_m, origin_m=[0, shelf_pitch_m, 0])`. Each bare piece name moves all of its `<Piece>__<Material>` objects as one cell. Re-run it after every approval so the shelf stays one grid. `shelf_pitch_m` = largest catalog `size_m` X or Y + grid_m (written to kit.yaml once), so row 0 starts clear of the piece under test at the origin.
+  6. Assembled use: when the kit's pieces are placed together, `define_assembly(name, parts, interaction_side="front")` measures every part's usable side against the others — clear space up to the neighbouring parts, with `blocked_sides` naming any part whose side is buried or more than half inside 0.6 m. `export_assembly` REFUSES such an assembly instead of shipping it: an asset a character cannot use is not done. This is the check that catches two ovens facing each other and a spout sunk in a wall, which every structural gate passed.
+  7. Continue with B0 for the next piece.
 
   A project that builds its committed files headless from a code recipe (Sanctuary: `tools/blended/build_kit_models.sh`, see its AGENTS.md "Model sources") replaces steps 1-2 with that build, and the build itself must write the `.blend` (Sanctuary: `game_assets/models/kit/<Piece>.blend`, Git LFS). The requirement is the same: no committed `.glb` without its `.blend`. Record the project's paths in `export.glb` and `export.blend`.
-- **B10. Stop/finish.** Snippet J (restore) if it was saved. Report approved, skipped, remaining and stale counts, the kit dir, the `.glb` and `.blend` written this session, and the objects left in the scene (the shelf row).
+- **B10. Stop/finish.** Snippet J (restore) if it was saved. Report approved, skipped, remaining and stale counts, the kit dir, the `.glb` and `.blend` written this session, and the objects left in the scene (the shelf grid).
 
 ### Z-fight protocol
 
@@ -356,7 +357,7 @@ For organic, irregular or hero pieces: a reference image from the web, restyled 
    - Ask Approve / Retry (seed + 1) / Closer to photo (strength - 0.1, minimum 0.1) / Freer (strength + 0.1, maximum 0.8) / Straight to TRELLIS instead.
 5. **Mesh.** `generate_3d(image=<the generate_image local_path, or the saved entry's big_path for direct>, output_name="<kit slug>_<Piece>_<unix time>", asset_type=<"environments" for classes terrain, rock, plant and water, else "props">, decimation_target=max(2000, 4 * budget_tris), source_prompt=<the restyle prompt, or the reference's title>, source_image_model=<"flux2-klein-9b", or "web reference: <source>">)`. Its `published_to` directory is immutable; the GLB is `<published_to>/asset.glb`.
 6. **Import.** `declare_plan`, then `import_generated_asset(glb_path=<published_to>/asset.glb, object_name="<Piece>__Generated", height_m=<the entry's size_m z>, triangle_count=<budget_tris>)`. It takes the big path as returned and reads it through the Mac mount.
-   - Orientation: run snippet I and take a screenshot. If the piece's front is not facing -Y, `rotate_object_euler` + `apply_object_transform`, and record both calls.
+   - Orientation: run snippet I and take a screenshot. If the piece's front is not facing -Y, `rotate_object_euler` + `apply_object_transform`, and record both calls. Declare the side a character USES with `declare_interaction_side(<Piece>__<Material>, "front")` — a side is intent and cannot be read off the triangles, so it is stated once and measured afterwards.
 7. **Measure, look, demonstrate, approve** per B4-B9 of section 6, with these differences:
    - bounds tolerance is 15 percent (the organic rule of section 5), and the report's `extents_m` and `bounds_min_m` are the numbers;
    - the palette check is replaced by "materials recorded" (the report's `material_names`, written to `kit.yaml`);

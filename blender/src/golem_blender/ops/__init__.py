@@ -23,6 +23,7 @@ from golem_blender.ops.assembly import (
     AssemblyReport,
     PartIntersection,
     assembly_report,
+    declare_interaction_side,
     define_assembly,
     export_assembly,
     render_assembly,
@@ -52,6 +53,11 @@ from golem_blender.ops.canonical_orientation import (
 )
 from golem_blender.ops.heal import weld_and_dissolve
 from golem_blender.ops.lathe import add_lathe, add_shell_lathe
+from golem_blender.ops.layout import (
+    GridCell,
+    GridLayoutReport,
+    lay_out_grid,
+)
 from golem_blender.ops.legs import (
     ImpossibleLeg,
     SplayedLegSpec,
@@ -175,6 +181,8 @@ __all__ = [
     "EdgeSelector",
     "FaceInversion",
     "FaceSelector",
+    "GridCell",
+    "GridLayoutReport",
     "ImpossibleLeg",
     "InvalidSelector",
     "LimbRepairReport",
@@ -232,6 +240,7 @@ __all__ = [
     "center_on_origin_xy",
     "clip_self_intersection_report",
     "decimate_object",
+    "declare_interaction_side",
     "define_assembly",
     "define_piece",
     "deforming_bone_names",
@@ -245,6 +254,7 @@ __all__ = [
     "join_objects",
     "keyframe_object_transform",
     "keyframe_pose_bone_rotation",
+    "lay_out_grid",
     "linear_array",
     "link_into_scene",
     "mark_uv_seams",

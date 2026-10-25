@@ -99,8 +99,10 @@ The add-on executes any code sent to localhost:9876.
 **What the agent is told.** Claude Code delivers only the first 2,048
 characters of an MCP server's instructions (measured 2026-10-07: golem_blender
 sends 24,721). So the instructions open with a must-read head
-(`MCP_INSTRUCTIONS_HEAD`, 2,041 characters of the 2,048 allowed; it was
-1,981 before OT-50 added the rule that every export ships its .blend) that condenses
+(`MCP_INSTRUCTIONS_HEAD`, 2,046 characters of the 2,048 allowed; it was
+1,981 before OT-50 added the rule that every export ships its .blend, and 2,041
+before the grid-layout and interaction-side rules, which replaced the viewport
+paragraph's longer wording to stay inside the limit) that condenses
 working-agreement revision 10; the full text follows it. A test fails
 when the active revision moves, so the head gets reviewed along with it.
 

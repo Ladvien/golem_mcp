@@ -40,6 +40,15 @@ holds — footprint centred on X/Y, lowest point on z=0 — which is what makes
 `lowest_point_m == 0` a fact instead of a hope. `assembly_report` reads and
 changes nothing, so it needs no declared plan.
 
+An assembly that says a CHARACTER USES IT (`define_assembly(interaction_side=...)`)
+is additionally measured for USE: each part's declared side against the other
+parts' clear space, reported as `interaction_sides`/`blocked_sides` and REFUSED
+by `export_assembly`. Measured need, 2026-10-24: two ovens facing each other and
+a spout sunk in a wall passed every gate here, and the user found them by
+looking. The check is opt-in because a structural set of parts is not an asset
+anybody walks up to — see `analyze/interaction.py` for the four geometric
+probes that proved an interaction side cannot be inferred and must be declared.
+
 Every measurement here is SHARED, never re-derived: world bounds come from
 `ops/transforms._world_bounds_m` (the one place world extents are measured,
 OT-34), the pairwise verdict from `analyze.pair_checks.analyze_pair` (the one
@@ -54,9 +63,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from golem_blender.analyze.interaction import (
+    SIDE_LOCAL_NORMAL,
+    InteractionReport,
+    SideAccess,
+    measure_interaction_sides,
+)
 from golem_blender.analyze.pair_checks import CONTACT_DEPTH_TOLERANCE_M
 from golem_blender.export.gltf import ExportReport
 from golem_blender.ops._contract import op
+from golem_blender.ops._objects import ObjectName
 
 # A part whose base sits within this of the floor, or of another part's top,
 # RESTS on it. The same tolerance as resting contact, on purpose: the two
@@ -131,6 +147,19 @@ class AssemblyReport:
     # The name pairs `part_intersections` calls a LAP.
     laps: tuple[tuple[str, str], ...]
     pivot: str = PIVOT_FOOTPRINT_CENTRE_BASE
+    # --- whether a character can USE the assembly (issue: assets facing the wall)
+    # Every declared interaction side, measured against the other parts. Empty
+    # when the assembly declared none, so "no sides declared" and "all clear"
+    # cannot be confused with one another.
+    interaction_sides: tuple[SideAccess, ...] = ()
+    # The sides a character cannot reach: buried in another part, or with less
+    # than MINIMUM_APPROACH_M of clear space over most of the face.
+    # `ExportReport.blocked_sides` carries the same measurement to export, which
+    # REFUSES the assembly naming the part, the side and its blocker.
+    blocked_sides: tuple[SideAccess, ...] = ()
+    # Which side each part's measurement used, so a reader can tell a part that
+    # declared its own side from one that inherited the assembly's.
+    interaction_side_by_part: tuple[tuple[str, str], ...] = ()
 
 
 # The session's assemblies: name -> part names. NAMES only, so a part removed
@@ -139,6 +168,25 @@ class AssemblyReport:
 # object's name — and two assemblies sharing pieces each read their own totals
 # because each holds its own tuple.
 _ASSEMBLIES: dict[str, tuple[str, ...]] = {}
+
+# The interaction side each part DECLARES: part name -> one of
+# `INTERACTION_SIDES`. Module-level like `_ASSEMBLIES`, and keyed by PART
+# rather than by assembly: one part in two assemblies is the same physical
+# side of the same object, so it cannot mean two different things.
+#
+# DECLARING IS OPT-IN, AND THE ASSEMBLY SAYS WHETHER IT IS USED AT ALL. The
+# first design checked every part's `front` by default and failed a wall with
+# a crate 0.2 m from it — a crate beside a wall is not a defect, and a set of
+# parts is not always an asset a character walks up to (measured: the 49-part
+# building fixture, `WallWest0` "blocked" by its own crates). So an assembly
+# states its interaction side (`define_assembly(interaction_side=...)`), and
+# ONLY THEN is every part measured against the others; `None` means this
+# assembly is a structural set and nothing is claimed about use. A part may
+# override the side it personally presents.
+_INTERACTION_SIDES: dict[str, str] = {}
+# assembly name -> the side a character uses it from, or None when the
+# assembly makes no claim.
+_ASSEMBLY_INTERACTION_SIDE: dict[str, str | None] = {}
 
 
 def _mesh_part(object_name: str):
@@ -239,6 +287,35 @@ def _supported_by(part_bounds, other_bounds) -> bool:
     )
 
 
+def _assembly_side(assembly_name: str) -> str | None:
+    """The side this assembly is USED from, or None when it claims nothing."""
+    return _ASSEMBLY_INTERACTION_SIDE.get(assembly_name)
+
+
+def _declared_side(assembly_name: str, object_name: str) -> str | None:
+    """The side one part of this assembly declares, or None when unmeasured.
+
+    A part's own declaration wins, so one piece that faces differently (a
+    shelf's opening, a chimney's flue) says so once. An assembly that claims
+    no side measures nothing; an assembly that claims one measures every
+    part from it unless that part overrode it.
+    """
+    part_side = _INTERACTION_SIDES.get(object_name)
+    if part_side is not None:
+        return part_side
+    return _assembly_side(assembly_name)
+
+
+def _interaction(name: str, part_objects) -> InteractionReport:
+    """Measure the sides this assembly CLAIMS; nothing at all when it claims none."""
+    declared = {
+        part_object.name: side
+        for part_object in part_objects
+        if (side := _declared_side(name, part_object.name)) is not None
+    }
+    return measure_interaction_sides(name, part_objects, declared)
+
+
 def _measure(name: str, object_names: tuple[str, ...]) -> AssemblyReport:
     """The assembly's numbers, measured now from the scene."""
     from golem_blender.analyze.pair_checks import analyze_pair
@@ -294,6 +371,8 @@ def _measure(name: str, object_names: tuple[str, ...]) -> AssemblyReport:
             )
             touching.update((first_index, second_index))
 
+    interaction = _interaction(name, part_objects)
+
     unsupported: list[str] = []
     floating: list[str] = []
     for part_index, bounds in enumerate(part_bounds):
@@ -324,6 +403,13 @@ def _measure(name: str, object_names: tuple[str, ...]) -> AssemblyReport:
             (intersection.first_object_name, intersection.second_object_name)
             for intersection in part_intersections
             if intersection.kind == LAP_KIND
+        ),
+        interaction_sides=interaction.sides,
+        blocked_sides=interaction.blocked,
+        interaction_side_by_part=tuple(
+            (part_object.name, side)
+            for part_object in part_objects
+            if (side := _declared_side(name, part_object.name)) is not None
         ),
     )
 
@@ -381,6 +467,7 @@ def define_assembly(
     name: str,
     object_names: list[str],
     pivot: str = "footprint_centre_base",
+    interaction_side: str | None = None,
 ) -> AssemblyReport:
     """Define the named objects as ONE assembly called `name`, moved so its pivot holds.
 
@@ -392,6 +479,16 @@ def define_assembly(
     name with no mesh yet is kept in `objects` and reported in `unlinked`, so a
     later report says what went missing instead of shrinking silently.
     Re-running under the same name replaces the definition.
+
+    `interaction_side` says a CHARACTER USES this assembly and from which side
+    (`front`, `back`, `left`, `right`, `top`, `bottom`; `front` is the
+    documented local -Y). Every part is then measured: how much clear space
+    its side has, up to the other parts of the assembly, and a part whose
+    usable side is buried or most of it inside 0.6 m appears in
+    `blocked_sides`. `None` (the default) claims nothing and measures nothing —
+    a kit of parts or a structural set is not an asset anybody walks up to,
+    and demanding clear space around every wall would fail a building for
+    having crates in it.
     """
     if not name.strip():
         raise ValueError("an assembly needs a non-empty name")
@@ -410,8 +507,14 @@ def define_assembly(
         for part in (_mesh_part(object_name) for object_name in object_names)
         if part
     ]
+    if interaction_side is not None and interaction_side not in SIDE_LOCAL_NORMAL:
+        raise ValueError(
+            f"interaction_side must be one of {list(SIDE_LOCAL_NORMAL)} or None, "
+            f"got {interaction_side!r}"
+        )
     _apply_pivot(part_objects, pivot)
     _ASSEMBLIES[name] = tuple(object_names)
+    _ASSEMBLY_INTERACTION_SIDE[name] = interaction_side
     return _measure(name, _ASSEMBLIES[name])
 
 
@@ -426,6 +529,39 @@ def assembly_report(name: str) -> AssemblyReport:
     """
     object_names, _part_objects = _resolved_parts(name)
     return _measure(name, object_names)
+
+
+@op()
+def declare_interaction_side(object_name: str, side: str) -> ObjectName:
+    """Declare which side of this part a character uses, so a blocked side can be measured.
+
+    The side is INTENT and cannot be read off the triangles: four geometric
+    probes on a real kit's own opening-bearing pieces (an oven's mouth, a
+    wall's door, a spout, a hopper) all failed to tell an opening from a
+    merely open face, because which side is used is a decision, not a shape.
+    `units.yaml` already carries that decision as `front: "-Y"`, which is the
+    default; this op records a different one for one part.
+
+    Re-declaring replaces the side, so a repair is one call. The declared
+    side is measured by `declare_assembly`/`assembly_report`
+    (`interaction_sides`, `blocked_sides`) and REFUSED by `export_assembly`
+    when a character cannot reach it.
+    """
+    if not isinstance(object_name, str) or not object_name.strip():
+        raise ValueError(
+            f"an object name must be a non-empty string, got {object_name!r}"
+        )
+    if side not in SIDE_LOCAL_NORMAL:
+        raise ValueError(f"side must be one of {list(SIDE_LOCAL_NORMAL)}, got {side!r}")
+    if _mesh_part(object_name) is None:
+        from golem_blender.ops._objects import UnknownObject
+
+        raise UnknownObject(
+            f"no MESH object named {object_name!r} to declare an interaction "
+            f"side for (a side describes geometry, so it needs a mesh)"
+        )
+    _INTERACTION_SIDES[object_name] = side
+    return ObjectName(object_name)
 
 
 def _combined_object(part_objects, name: str):
@@ -630,6 +766,7 @@ def export_assembly(
         )
     )
 
+    interaction = _interaction(name, part_objects)
     combined = _combined_object(part_objects, welded_name)
     try:
         pre_export_report = analyze_object(combined)
@@ -661,6 +798,7 @@ def export_assembly(
         material_names=_material_names_in(output_path),
         expected_material_names=expected_material_names,
         expected_root_node_names=shipped_names,
+        blocked_sides=interaction.blocked,
     )
 
 

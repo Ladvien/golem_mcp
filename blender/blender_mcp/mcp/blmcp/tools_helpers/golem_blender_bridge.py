@@ -228,10 +228,10 @@ Blender: these tools drive the user's OPEN Blender. If one answers
 `{PAUSE_PREFIX}`, stop and tell the user. Never start your own Blender or
 bpy, and do not retry or work around it.
 
-Viewport: every scene-changing golem call (`run_python` too) re-centres the
-user's 3D viewport on what it created or changed and ends with a `viewport:`
-line. An object is framed once it is linked into the scene. To show something
-else, call `{VIEWPORT_FOLLOW_TOOL_NAME}`."""
+Viewport: scene-changing calls re-centre the viewport on what they changed
+and end with a `viewport:` line; `{VIEWPORT_FOLLOW_TOOL_NAME}` shows
+something else. Two or more models: `lay_out_grid` them. An assembly a
+character uses: give `define_assembly` its `interaction_side`."""
 
 
 _MAXIMUM_CAUSE_DEPTH = 8
