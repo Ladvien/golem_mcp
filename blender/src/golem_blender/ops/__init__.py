@@ -24,6 +24,7 @@ from golem_blender.ops.assembly import (
     PartIntersection,
     assembly_report,
     declare_interaction_side,
+    declare_join,
     define_assembly,
     export_assembly,
     render_assembly,
@@ -51,6 +52,7 @@ from golem_blender.ops.canonical_orientation import (
     middle_extent_m,
     orientation_reading,
 )
+from golem_blender.ops.features import FeatureReport, SideDepth, measure_feature
 from golem_blender.ops.heal import weld_and_dissolve
 from golem_blender.ops.lathe import add_lathe, add_shell_lathe
 from golem_blender.ops.layout import (
@@ -181,6 +183,7 @@ __all__ = [
     "EdgeSelector",
     "FaceInversion",
     "FaceSelector",
+    "FeatureReport",
     "GridCell",
     "GridLayoutReport",
     "ImpossibleLeg",
@@ -200,6 +203,7 @@ __all__ = [
     "RoughenReport",
     "RingSkirtSpec",
     "SetReport",
+    "SideDepth",
     "SplayedLegSpec",
     "TargetPlane",
     "UnknownPiece",
@@ -241,6 +245,7 @@ __all__ = [
     "clip_self_intersection_report",
     "decimate_object",
     "declare_interaction_side",
+    "declare_join",
     "define_assembly",
     "define_piece",
     "deforming_bone_names",
@@ -259,6 +264,7 @@ __all__ = [
     "link_into_scene",
     "mark_uv_seams",
     "material_report",
+    "measure_feature",
     "measure_objects",
     "middle_extent_m",
     "move_object_to",

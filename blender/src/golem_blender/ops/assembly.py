@@ -61,7 +61,8 @@ meshes become one" means one thing), and the renders from
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Literal
 
 from golem_blender.analyze.interaction import (
     SIDE_LOCAL_NORMAL,
@@ -105,6 +106,51 @@ SHARED_PLANE_TOLERANCE_M = 1.0e-6
 LAP_KIND = "lap"
 CLASH_KIND = "clash"
 
+# HOW MUCH MEASUREMENT A CALL ASKS FOR. Measured need, 2026-10-24: a 77-part
+# bakery's `export_assembly` outlived the client's 300 s socket timeout, because
+# the full gate measures every part, every pair with triangles and the whole
+# welded mesh. The work was never wrong, it was unbounded — so the caller now
+# says how much it wants, and `none` exists so an export can be written at all
+# when the gate cannot finish.
+#
+#   none      — the files are written and NOTHING is measured: no part gate, no
+#               clearance, no whole-assembly analysis, no re-import. The report
+#               says so, and `assembly_failures` refuses to call it verified.
+#   structure — what can be decided from BOXES and from each part on its own:
+#               the part gate, the clearance check and the pair rows' depths,
+#               WITHOUT the per-pair triangle sweep. Minutes become seconds.
+#   full      — everything, including `analyze_pair` per candidate, the
+#               whole-welded-mesh analysis and the re-import measurement.
+GATE_MODES = ("none", "structure", "full")
+# The wall-clock budget, in seconds. Deliberately well under the client's
+# socket timeout (`connection._TIMEOUT`, 300 s), so a long call returns a
+# TRUNCATED report rather than an unanswered socket: a report the caller can
+# read beats a socket the caller gives up on.
+DEFAULT_BUDGET_S = 120.0
+# How many intersection rows one report carries. A row costs a line of text; a
+# 77-part assembly with 45 overlapping pairs does not need all of them at once,
+# and `part_intersection_count` plus `intersection_offset` page the rest. The
+# DEFECTS (`undeclared_clashes`) and the `laps` are computed from the full list,
+# so nothing that matters can be paged out of view.
+MAXIMUM_INTERSECTION_ROWS = 40
+# The names of the checks, so a report can say which ones did not run.
+PART_GATE_CHECK = "part_gate"
+CLEARANCE_CHECK = "clearance"
+COMBINED_ANALYSIS_CHECK = "combined_analysis"
+REIMPORT_CHECK = "reimport"
+
+
+def _validate_gate_and_budget(gate: str, budget_s: float) -> float:
+    """The two arguments every gated assembly op takes, refused before any work."""
+    if gate not in GATE_MODES:
+        raise ValueError(f"gate must be one of {list(GATE_MODES)}, got {gate!r}")
+    if not budget_s > 0.0:
+        raise ValueError(
+            f"budget_s must be a positive number of seconds, got {budget_s!r}; "
+            f"the default is {DEFAULT_BUDGET_S} s"
+        )
+    return float(budget_s)
+
 
 @dataclass(frozen=True)
 class PartIntersection:
@@ -120,7 +166,15 @@ class PartIntersection:
     overlap_volume_m3: float
     # The triangle pairs that actually intersect. `analyze_pair` reports these
     # only above CONTACT_DEPTH_TOLERANCE_M, so resting contact reads zero.
+    # -1 means NOT MEASURED: `gate="structure"` and a budget that ran out both
+    # decide a pair from its boxes alone, and a zero there would claim a
+    # measurement nobody took.
     intersecting_face_pair_count: int
+    # Why this contact is intended, when `declare_join` recorded one. Empty for
+    # an undeclared clash — which is the whole point of the declaration: the
+    # assembly report can then list `undeclared_clashes` separately from the
+    # junctions a kit was built with.
+    declared_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -160,6 +214,32 @@ class AssemblyReport:
     # Which side each part's measurement used, so a reader can tell a part that
     # declared its own side from one that inherited the assembly's.
     interaction_side_by_part: tuple[tuple[str, str], ...] = ()
+    # --- how much was measured, and whether it finished (the 77-part wedge) ---
+    # The mode this report was measured in: "none", "structure" or "full".
+    gate: str = "full"
+    # True only when `budget_s` cut a check THIS gate asked for. A truncated
+    # report is a real measurement of less than was requested, never a failure.
+    truncated: bool = False
+    # Pairs measured with triangles (`analyze_pair`), against the pairs whose
+    # boxes share volume. Under `gate="structure"` or a spent budget the second
+    # number is the truth and the first is smaller — by design.
+    pairs_checked: int = 0
+    pairs_total: int = 0
+    # How many rows `part_intersections` could hold, and where this page starts:
+    # `part_intersection_count` is the FULL count, so a paged report never
+    # understates what it found.
+    part_intersection_count: int = 0
+    part_intersection_offset: int = 0
+    # The defects, computed from ALL rows and never paged: clashes nobody
+    # declared as intended.
+    undeclared_clashes: tuple[tuple[str, str], ...] = ()
+    # Declared joins whose two parts are both in this assembly but do not touch.
+    # A declaration that stopped being true is a part that moved.
+    declared_without_contact: tuple[tuple[str, str], ...] = ()
+    # The session's safety copy, written before a full gate on a large
+    # assembly started: the scene as it was, on disk, if the call went wrong.
+    scratch_blend_path: str = ""
+    scratch_save_error: str = ""
 
 
 # The session's assemblies: name -> part names. NAMES only, so a part removed
@@ -187,6 +267,14 @@ _INTERACTION_SIDES: dict[str, str] = {}
 # assembly name -> the side a character uses it from, or None when the
 # assembly makes no claim.
 _ASSEMBLY_INTERACTION_SIDE: dict[str, str | None] = {}
+
+# The pairs DECLARED to touch on purpose: frozenset({a, b}) -> why. A frozenset
+# because a join is symmetric — an axle through a hub is the same fact whichever
+# name is written first — so `declare_join(a, b)` and `declare_join(b, a)` are
+# one declaration, and re-declaring replaces the reason. Keyed by PART names,
+# like `_INTERACTION_SIDES`, because it is a fact about two pieces and not about
+# one assembly that happens to hold them.
+_DECLARED_JOINS: dict[frozenset[str], str] = {}
 
 
 def _mesh_part(object_name: str):
@@ -316,10 +404,28 @@ def _interaction(name: str, part_objects) -> InteractionReport:
     return measure_interaction_sides(name, part_objects, declared)
 
 
-def _measure(name: str, object_names: tuple[str, ...]) -> AssemblyReport:
-    """The assembly's numbers, measured now from the scene."""
+def _measure(
+    name: str,
+    object_names: tuple[str, ...],
+    gate: str = "full",
+    budget_s: float = DEFAULT_BUDGET_S,
+    intersection_offset: int = 0,
+) -> AssemblyReport:
+    """The assembly's numbers, measured now from the scene, within `gate` and `budget_s`.
+
+    The pair loop is the expensive half: `analyze_pair` builds two world BVHs and
+    counts the triangle pairs that actually cross, and the 77-part bakery had 45
+    candidate pairs on top of a 77-part gate. So the loop is where the budget is
+    checked and where `gate="structure"` stops measuring: a row's DEPTH comes
+    from the boxes in every mode (it is arithmetic), and only the triangle count
+    needs the sweep.
+    """
     from golem_blender.analyze.pair_checks import analyze_pair
     from golem_blender.ops.transforms import _world_bounds_m
+    from golem_blender.run.call_context import Deadline, report_progress
+
+    deadline = Deadline(budget_s)
+    truncated = False
 
     part_objects = []
     unlinked: list[str] = []
@@ -346,32 +452,66 @@ def _measure(name: str, object_names: tuple[str, ...]) -> AssemblyReport:
             if material is not None:
                 material_names.add(material.name)
 
-    part_intersections: list[PartIntersection] = []
+    # The candidate pairs FIRST, from the boxes alone: the budget has to know how
+    # much work is coming before it decides anything, and `pairs_total` is a
+    # measurement a truncated report must still carry.
+    candidates: list[tuple[int, int, tuple[str, float, float]]] = []
     touching: set[int] = set()
-    for first_index in range(len(part_objects)):
-        for second_index in range(first_index + 1, len(part_objects)):
-            shared = _shared_volume(part_bounds[first_index], part_bounds[second_index])
-            if shared is None:
-                continue
-            kind, _depth_m, volume_m3 = shared
-            pair_report = analyze_pair(
-                part_objects[first_index], part_objects[second_index]
-            )
-            part_intersections.append(
-                PartIntersection(
-                    first_object_name=part_objects[first_index].name,
-                    second_object_name=part_objects[second_index].name,
-                    kind=kind,
-                    penetration_depth_m=float(pair_report.aabb_penetration_depth_m),
-                    overlap_volume_m3=volume_m3,
-                    intersecting_face_pair_count=(
-                        pair_report.intersecting_face_pair_count
-                    ),
+    if gate != "none":
+        for first_index in range(len(part_objects)):
+            for second_index in range(first_index + 1, len(part_objects)):
+                shared = _shared_volume(
+                    part_bounds[first_index], part_bounds[second_index]
                 )
-            )
-            touching.update((first_index, second_index))
+                if shared is None:
+                    continue
+                candidates.append((first_index, second_index, shared))
+                touching.update((first_index, second_index))
 
-    interaction = _interaction(name, part_objects)
+    pairs_total = len(candidates)
+    pairs_checked = 0
+    measured_rows: list[PartIntersection] = []
+    for candidate_index, (first_index, second_index, shared) in enumerate(
+        candidates, start=1
+    ):
+        kind, depth_m, volume_m3 = shared
+        first_object = part_objects[first_index]
+        second_object = part_objects[second_index]
+        report_progress("pair check", candidate_index, pairs_total)
+        measure_with_triangles = gate == "full" and not deadline.expired()
+        if measure_with_triangles:
+            pair_report = analyze_pair(first_object, second_object)
+            depth_m = float(pair_report.aabb_penetration_depth_m)
+            face_pair_count = pair_report.intersecting_face_pair_count
+            pairs_checked += 1
+        else:
+            face_pair_count = -1
+            if gate == "full":
+                truncated = True
+        measured_rows.append(
+            PartIntersection(
+                first_object_name=first_object.name,
+                second_object_name=second_object.name,
+                kind=kind,
+                penetration_depth_m=depth_m,
+                overlap_volume_m3=volume_m3,
+                intersecting_face_pair_count=face_pair_count,
+                declared_reason=_DECLARED_JOINS.get(
+                    frozenset((first_object.name, second_object.name)), ""
+                ),
+            )
+        )
+
+    interaction = InteractionReport(assembly_name=name, sides=(), blocked=())
+    if gate != "none":
+        if deadline.expired():
+            # The clearance check is a ray grid per declared side: real work, and
+            # the first thing to go when the budget is spent.
+            truncated = True
+        else:
+            report_progress("clearance", 0, 1)
+            interaction = _interaction(name, part_objects)
+            report_progress("clearance", 1, 1)
 
     unsupported: list[str] = []
     floating: list[str] = []
@@ -388,6 +528,33 @@ def _measure(name: str, object_names: tuple[str, ...]) -> AssemblyReport:
         if part_index not in touching:
             floating.append(part_objects[part_index].name)
 
+    # A defect sorts before a junction and a junction before a lap, so the page a
+    # caller reads first is the page that matters; the count and the two defect
+    # tuples come from the FULL list, so paging can hide a row but never a fault.
+    ordered_rows = sorted(
+        measured_rows,
+        key=lambda row: (
+            _row_priority(row),
+            row.first_object_name,
+            row.second_object_name,
+        ),
+    )
+    page = tuple(
+        ordered_rows[
+            intersection_offset : intersection_offset + MAXIMUM_INTERSECTION_ROWS
+        ]
+    )
+    present_names = {part_object.name for part_object in part_objects}
+    declared_pairs = {
+        pair: reason
+        for pair, reason in _DECLARED_JOINS.items()
+        if pair <= present_names
+    }
+    candidate_pairs = {
+        frozenset((row.first_object_name, row.second_object_name))
+        for row in measured_rows
+    }
+
     return AssemblyReport(
         object_name=name,
         objects=object_names,
@@ -396,12 +563,12 @@ def _measure(name: str, object_names: tuple[str, ...]) -> AssemblyReport:
         lowest_point_m=lowest_point_m,
         materials=tuple(sorted(material_names)),
         unlinked=tuple(unlinked),
-        part_intersections=tuple(part_intersections),
+        part_intersections=page,
         unsupported=tuple(unsupported),
         floating=tuple(floating),
         laps=tuple(
             (intersection.first_object_name, intersection.second_object_name)
-            for intersection in part_intersections
+            for intersection in measured_rows
             if intersection.kind == LAP_KIND
         ),
         interaction_sides=interaction.sides,
@@ -411,7 +578,32 @@ def _measure(name: str, object_names: tuple[str, ...]) -> AssemblyReport:
             for part_object in part_objects
             if (side := _declared_side(name, part_object.name)) is not None
         ),
+        gate=gate,
+        truncated=truncated,
+        pairs_checked=pairs_checked,
+        pairs_total=pairs_total,
+        part_intersection_count=len(measured_rows),
+        part_intersection_offset=intersection_offset,
+        undeclared_clashes=tuple(
+            (row.first_object_name, row.second_object_name)
+            for row in measured_rows
+            if row.kind == CLASH_KIND and not row.declared_reason
+        ),
+        declared_without_contact=tuple(
+            tuple(sorted(pair))
+            for pair in declared_pairs
+            if pair not in candidate_pairs
+        ),
     )
+
+
+def _row_priority(row: PartIntersection) -> int:
+    """0 for an undeclared clash, 1 for a declared one, 2 for a lap."""
+    if row.kind == CLASH_KIND and not row.declared_reason:
+        return 0
+    if row.kind == CLASH_KIND:
+        return 1
+    return 2
 
 
 def _apply_pivot(part_objects, pivot: str) -> None:
@@ -468,6 +660,8 @@ def define_assembly(
     object_names: list[str],
     pivot: str = "footprint_centre_base",
     interaction_side: str | None = None,
+    gate: Literal["none", "structure", "full"] = "full",
+    budget_s: float = DEFAULT_BUDGET_S,
 ) -> AssemblyReport:
     """Define the named objects as ONE assembly called `name`, moved so its pivot holds.
 
@@ -489,9 +683,16 @@ def define_assembly(
     a kit of parts or a structural set is not an asset anybody walks up to,
     and demanding clear space around every wall would fail a building for
     having crates in it.
+
+    `gate` says how much to measure ("full", "structure", "none"); `budget_s`
+    caps the wall-clock time and returns `truncated: true` rather than running
+    on. A full gate on `SCRATCH_SAVE_MINIMUM_PARTS` or more parts saves the
+    session to `<output>/scratch/define_assembly.blend` first, and reports that
+    path in `scratch_blend_path`.
     """
     if not name.strip():
         raise ValueError("an assembly needs a non-empty name")
+    budget_s = _validate_gate_and_budget(gate, budget_s)
     if not object_names:
         raise ValueError(f"assembly {name!r} names no parts")
     if len(set(object_names)) != len(object_names):
@@ -515,20 +716,64 @@ def define_assembly(
     _apply_pivot(part_objects, pivot)
     _ASSEMBLIES[name] = tuple(object_names)
     _ASSEMBLY_INTERACTION_SIDE[name] = interaction_side
-    return _measure(name, _ASSEMBLIES[name])
+    scratch_blend_path, scratch_save_error = _scratch_before_measuring(
+        "define_assembly", gate, len(part_objects)
+    )
+    report = _measure(name, _ASSEMBLIES[name], gate, budget_s)
+    return replace(
+        report,
+        scratch_blend_path=scratch_blend_path,
+        scratch_save_error=scratch_save_error,
+    )
+
+
+def _scratch_before_measuring(
+    tool_name: str, gate: str, part_count: int
+) -> tuple[str, str]:
+    """Save the session first when a FULL gate on a large assembly is about to run.
+
+    `("", "")` in every other case: no copy was asked for, so no path claims one
+    was written. Never raises — `save_scratch_copy` reports its own failure.
+    """
+    from golem_blender.run.call_context import (
+        SCRATCH_SAVE_MINIMUM_PARTS,
+        save_scratch_copy,
+    )
+
+    if gate != "full" or part_count < SCRATCH_SAVE_MINIMUM_PARTS:
+        return "", ""
+    return save_scratch_copy(tool_name)
 
 
 @op(reads_only=True)
-def assembly_report(name: str) -> AssemblyReport:
+def assembly_report(
+    name: str,
+    gate: Literal["none", "structure", "full"] = "full",
+    budget_s: float = DEFAULT_BUDGET_S,
+    intersection_offset: int = 0,
+) -> AssemblyReport:
     """Re-measure the named assembly as it stands now; changes nothing at all.
 
     Every number is recomputed from the scene, so a part moved, removed or
     replaced since the definition shows up here: a removed part appears in
     `unlinked` and is excluded from every total. Reading is all this does — no
     transform, material or object is touched, so it needs no declared plan.
+
+    `gate` says how much to measure ("full", "structure", "none"); `budget_s`
+    caps the wall-clock time and returns `truncated: true` rather than running
+    on. The scratch copy is NOT taken here — this op is a reader and writes no
+    file side effect a caller did not ask for. `part_intersections` carries at
+    most `MAXIMUM_INTERSECTION_ROWS` rows; `intersection_offset` reads the next
+    page, and `part_intersection_count` is the full count.
     """
+    budget_s = _validate_gate_and_budget(gate, budget_s)
+    if intersection_offset < 0:
+        raise ValueError(
+            f"intersection_offset must be 0 or more, got {intersection_offset!r}; "
+            f"a negative offset would read from the end of the list"
+        )
     object_names, _part_objects = _resolved_parts(name)
-    return _measure(name, object_names)
+    return _measure(name, object_names, gate, budget_s, intersection_offset)
 
 
 @op()
@@ -562,6 +807,51 @@ def declare_interaction_side(object_name: str, side: str) -> ObjectName:
         )
     _INTERACTION_SIDES[object_name] = side
     return ObjectName(object_name)
+
+
+@op()
+def declare_join(first_name: str, second_name: str, reason: str) -> ObjectName:
+    """Declare two parts' contact intended (an axle through its hub), so the assembly report lists it apart from defects.
+
+    A kit's junctions are supposed to overlap: a corner leg laps its wall by one
+    wall thickness, a shelf's tenon sits inside its post. `assembly_report`
+    already tells a LAP (the two boxes end in one plane) from a CLASH (one
+    interior pushed through another's face), and a clash is not always a defect
+    either — an axle genuinely passes through its hub. So the clash's INTENT is
+    declared, the same way an interaction side is, and the report returns two
+    lists a reader can act on: `undeclared_clashes` (the ones nobody claimed)
+    and `declared_without_contact` (a claim that stopped being true, because a
+    part moved).
+
+    Nothing here fails a build: clashes are reported, never refused, exactly as
+    before. What changes is that a report can now separate the junctions the
+    asset was built with from the ones it was not. Re-declaring the pair
+    replaces the reason, so a correction is one call.
+    """
+    for object_name in (first_name, second_name):
+        if not isinstance(object_name, str) or not object_name.strip():
+            raise ValueError(
+                f"an object name must be a non-empty string, got {object_name!r}"
+            )
+        if _mesh_part(object_name) is None:
+            from golem_blender.ops._objects import UnknownObject
+
+            raise UnknownObject(
+                f"no MESH object named {object_name!r} to declare a join for (a "
+                f"join describes two pieces of geometry)"
+            )
+    if first_name == second_name:
+        raise ValueError(
+            f"a join needs two different parts, got {first_name!r} twice: a part "
+            f"does not join itself"
+        )
+    if not reason.strip():
+        raise ValueError(
+            "a join needs a reason: say why the contact is intended (an axle "
+            "through its hub, a tenon in its post)"
+        )
+    _DECLARED_JOINS[frozenset((first_name, second_name))] = reason.strip()
+    return ObjectName(first_name)
 
 
 def _combined_object(part_objects, name: str):
@@ -608,13 +898,18 @@ def _combined_object(part_objects, name: str):
     return combined
 
 
-def _reimport_measurements(glb_path, joined_name: str) -> dict:
+def _reimport_measurements(glb_path, joined_name: str, budget) -> dict:
     """Import the written .glb and measure EXACTLY what it delivers.
 
     The file's own nodes are what an engine walks, so the object count is read
     off a real import and not off the scene that produced it; the triangle
     counts are the joined import measured raw (glTF splits vertices along
     flat-shading seams) and again after welding. Both are removed afterwards.
+
+    `budget` is forwarded to both analyses: it says whether the UV overlap
+    count is asked for at all, and the count is a pairwise test over every UV
+    triangle (30.2 s measured on 131072 triangles), so a budget that allows
+    overlaps must not pay for it.
     """
     import bpy
 
@@ -641,9 +936,9 @@ def _reimport_measurements(glb_path, joined_name: str) -> dict:
         minimum, maximum = _world_bounds_m(imported_meshes)
         joined = _combined_object(imported_meshes, joined_name)
         try:
-            raw_report = analyze_object(joined)
+            raw_report = analyze_object(joined, budget)
             weld_and_dissolve(joined.name)
-            welded_report = analyze_object(joined)
+            welded_report = analyze_object(joined, budget)
         finally:
             remove_object_and_mesh(joined.name)
         return {
@@ -684,16 +979,36 @@ def _write_selection(selected_objects, path) -> int:
     return path.stat().st_size
 
 
-def _part_gate_failures(part_objects, budget) -> tuple[tuple[str, str], ...]:
-    """Every part's own piece-gate verdict: a part is still judged as a prop."""
+def _part_gate_failures(
+    part_objects, budget, deadline=None
+) -> tuple[tuple[tuple[str, str], ...], int, int]:
+    """Every part's own piece-gate verdict, and how much of it was measured.
+
+    Returns `(failures, checked_count, triangle_total)`. A part is still judged
+    as a prop; `checked_count` is how many parts got as far as an analysis, so a
+    `truncated` report can say what it actually looked at, and `triangle_total`
+    is the sum of the parts' own counts — the number the shipped file must carry.
+    """
     from golem_blender.analyze.mesh_checks import analyze_object
+    from golem_blender.run.call_context import report_progress
 
     failures: list[tuple[str, str]] = []
-    for part_object in part_objects:
-        part_failures = analyze_object(part_object, budget).failures(budget)
+    checked_count = 0
+    triangle_total = 0
+    part_count = len(part_objects)
+    for part_index, part_object in enumerate(part_objects, start=1):
+        if deadline is not None and deadline.expired():
+            break
+        report_progress("part gate", part_index, part_count)
+        part_report = analyze_object(part_object, budget)
+        checked_count += 1
+        triangle_total += part_report.triangle_count
+        part_failures = part_report.failures(budget)
         if part_failures:
             failures.append((part_object.name, "; ".join(part_failures)))
-    return tuple(failures)
+    else:
+        report_progress("part gate", part_count, part_count)
+    return tuple(failures), checked_count, triangle_total
 
 
 @op()
@@ -702,6 +1017,8 @@ def export_assembly(
     path: str,
     blend_path: str,
     keep_parts: bool = True,
+    gate: Literal["none", "structure", "full"] = "full",
+    budget_s: float = DEFAULT_BUDGET_S,
 ) -> ExportReport:
     """Ship the named assembly as ONE .glb + .blend, gated per part and verified by re-import.
 
@@ -718,6 +1035,13 @@ def export_assembly(
     `blend_path` is required, as for `export_asset`: an asset without its source
     cannot be edited and re-exported. A part removed since the definition fails
     the export instead of shipping a silently shorter assembly.
+
+    `gate` says how much to measure ("full", "structure", "none") and `budget_s`
+    caps the wall-clock time, returning `truncated: true` with `skipped_checks`
+    naming what did not run. The `.blend` is written BEFORE any of that, so a
+    spent budget still leaves the source; a full gate on
+    `SCRATCH_SAVE_MINIMUM_PARTS` or more parts also saves the whole session to
+    `<output>/scratch/export_assembly.blend` first (`scratch_blend_path`).
     """
     from pathlib import Path
 
@@ -726,6 +1050,7 @@ def export_assembly(
     from golem_blender.export.glb_report import asset_report
     from golem_blender.ops.primitives import remove_object_and_mesh
     from golem_blender.ops.transforms import _world_bounds_m
+    from golem_blender.run.call_context import Deadline, report_progress
 
     object_names, part_objects = _resolved_parts(name)
     unlinked = [
@@ -738,6 +1063,7 @@ def export_assembly(
             f"assembly {name!r} names part(s) {unlinked} with no mesh object in "
             f"the scene; link or re-create them, or re-define the assembly"
         )
+    budget_s = _validate_gate_and_budget(gate, budget_s)
 
     welded_name = f"{name}{WELDED_OBJECT_SUFFIX}"
     shipped_names = (
@@ -749,57 +1075,138 @@ def export_assembly(
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    budget = MeshBudget()
-    part_failures = _part_gate_failures(part_objects, budget)
-    minimum, maximum = _world_bounds_m(part_objects)
-    pre_export_dimensions_m = tuple(
-        float(maximum[axis] - minimum[axis]) for axis in range(3)
+    deadline = Deadline(budget_s)
+    # SAVE FIRST, GATE SECOND. The gate is what can outlive a socket timeout; the
+    # files are what an hour of assembly work is worth. So the session's safety
+    # copy, then the .blend, are written before the first measurement — and the
+    # .blend is the SHIPPED source, verified by `save_blend` re-reading it.
+    scratch_blend_path, scratch_save_error = _scratch_before_measuring(
+        "export_assembly", gate, len(part_objects)
     )
-    expected_material_names = tuple(
-        sorted(
-            {
-                material.name
-                for part_object in part_objects
-                for material in part_object.data.materials
-                if material is not None
-            }
-        )
-    )
+    shipped_objects = part_objects
+    combined = None
+    if not keep_parts or gate == "full":
+        combined = _combined_object(part_objects, welded_name)
+        if not keep_parts:
+            shipped_objects = [combined]
 
-    interaction = _interaction(name, part_objects)
-    combined = _combined_object(part_objects, welded_name)
+    skipped_checks: list[str] = []
+    truncated = False
+    budget = MeshBudget()
+    part_failures: tuple[tuple[str, str], ...] = ()
+    gate_checked_parts = 0
+    expected_triangle_count = 0
+    pre_export_report = None
+    measurements = None
+    interaction = InteractionReport(assembly_name=name, sides=(), blocked=())
+
     try:
-        pre_export_report = analyze_object(combined)
-        shipped_objects = part_objects if keep_parts else [combined]
+        report_progress("save .blend", 0, 1)
+        blend_report = save_blend(shipped_names, blend_destination)
+        report_progress("save .blend", 1, 1)
         file_size_bytes = _write_selection(shipped_objects, output_path)
         file_report = asset_report(output_path)
-        measurements = _reimport_measurements(
-            output_path, f"{name}{REIMPORT_OBJECT_SUFFIX}"
+
+        minimum, maximum = _world_bounds_m(part_objects)
+        pre_export_dimensions_m = tuple(
+            float(maximum[axis] - minimum[axis]) for axis in range(3)
         )
-        blend_report = save_blend(shipped_names, blend_destination)
+        expected_material_names = tuple(
+            sorted(
+                {
+                    material.name
+                    for part_object in part_objects
+                    for material in part_object.data.materials
+                    if material is not None
+                }
+            )
+        )
+
+        if gate == "none":
+            skipped_checks.extend(
+                (
+                    PART_GATE_CHECK,
+                    CLEARANCE_CHECK,
+                    COMBINED_ANALYSIS_CHECK,
+                    REIMPORT_CHECK,
+                )
+            )
+        else:
+            report_progress("part gate", 0, len(part_objects))
+            part_failures, gate_checked_parts, expected_triangle_count = (
+                _part_gate_failures(part_objects, budget, deadline)
+            )
+            if gate_checked_parts < len(part_objects):
+                truncated = True
+
+            if deadline.expired():
+                truncated = True
+                skipped_checks.append(CLEARANCE_CHECK)
+            else:
+                interaction = _interaction(name, part_objects)
+
+            if gate == "full":
+                if deadline.expired():
+                    truncated = True
+                    skipped_checks.append(COMBINED_ANALYSIS_CHECK)
+                elif combined is not None:
+                    report_progress("combined analysis", 0, 1)
+                    pre_export_report = analyze_object(combined, budget)
+                    report_progress("combined analysis", 1, 1)
+                if deadline.expired():
+                    truncated = True
+                    skipped_checks.append(REIMPORT_CHECK)
+                else:
+                    report_progress("re-import", 0, 1)
+                    measurements = _reimport_measurements(
+                        output_path, f"{name}{REIMPORT_OBJECT_SUFFIX}", budget
+                    )
+                    report_progress("re-import", 1, 1)
+            else:
+                skipped_checks.extend((COMBINED_ANALYSIS_CHECK, REIMPORT_CHECK))
     finally:
-        remove_object_and_mesh(welded_name)
+        # The combined mesh is the FULL gate's measurement target as well as a
+        # possible shipped object, so it lives until every check is done; both
+        # files are written by then, so it is removed exactly as before.
+        if combined is not None:
+            remove_object_and_mesh(welded_name)
 
     return ExportReport(
         export_path=output_path,
         file_size_bytes=file_size_bytes,
         pre_export=pre_export_report,
-        reimported_raw=measurements["raw"],
-        reimported_welded=measurements["welded"],
+        reimported_raw=measurements["raw"] if measurements else None,
+        reimported_welded=measurements["welded"] if measurements else None,
         pre_export_dimensions_m=pre_export_dimensions_m,
-        reimported_dimensions_m=measurements["dimensions_m"],
+        reimported_dimensions_m=(
+            measurements["dimensions_m"] if measurements else pre_export_dimensions_m
+        ),
         file_report=file_report,
         blend=blend_report,
         assembly_name=name,
         keep_parts=len(shipped_objects),
         part_count=len(part_objects),
         part_failures=part_failures,
-        reimported_object_count=measurements["object_count"],
+        reimported_object_count=(measurements["object_count"] if measurements else 0),
         material_names=_material_names_in(output_path),
         expected_material_names=expected_material_names,
         expected_root_node_names=shipped_names,
         blocked_sides=interaction.blocked,
+        gate=gate,
+        truncated=truncated,
+        skipped_checks=_ordered_checked_names(skipped_checks),
+        gate_checked_parts=gate_checked_parts,
+        expected_triangle_count=expected_triangle_count,
+        scratch_blend_path=scratch_blend_path,
+        scratch_save_error=scratch_save_error,
     )
+
+
+def _ordered_checked_names(skipped_checks) -> tuple[str, ...]:
+    """The skipped checks in the order the export runs them, so a list reads as a sequence."""
+    order = (PART_GATE_CHECK, CLEARANCE_CHECK, COMBINED_ANALYSIS_CHECK, REIMPORT_CHECK)
+    unique = set(skipped_checks)
+    return tuple(name for name in order if name in unique)
 
 
 def _safe_path_component(text: str) -> str:

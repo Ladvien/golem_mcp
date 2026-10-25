@@ -142,6 +142,9 @@ def main(params: Params) -> Result:
     # pylint: disable-next=import-outside-toplevel
     from golem_blender.viewport_follow import follow_viewport, snapshot_scene
 
+    # pylint: disable-next=import-outside-toplevel
+    from golem_blender.run.call_context import call_context
+
     # The user watches this Blender: a scene-changing call re-centres the
     # viewport on what it created or changed (the scene before and after
     # decides, so a `run_python` chunk that names nothing is covered), and
@@ -149,11 +152,15 @@ def main(params: Params) -> Result:
     # and fails the call loudly, before anything has changed.
     frames = plan_required_for(params.tool_name)
     before = snapshot_scene() if frames else None
-    outcome = dispatch_tool(
-        params.tool_name,
-        json.loads(params.arguments_json),
-        Path(params.output_directory),
-    )
+    # Inside the call's own context: a long op reports progress to
+    # `progress.json` beside this call's outputs, which the MCP bridge reads
+    # and forwards as progress notifications while it waits.
+    with call_context(Path(params.output_directory), params.tool_name):
+        outcome = dispatch_tool(
+            params.tool_name,
+            json.loads(params.arguments_json),
+            Path(params.output_directory),
+        )
     if frames:
         outcome = follow_viewport(outcome, before=before)
     return Result("ok", outcome_to_json(outcome))

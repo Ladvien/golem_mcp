@@ -90,7 +90,9 @@ class TestGolemBlenderBridge(unittest.TestCase):
         _stub_live_blender_probe(self)
         self.addCleanup(self._directory.cleanup)
 
-    def _send_code(self, code: str, strict_json: bool) -> dict[str, object]:
+    def _send_code(
+        self, code: str, strict_json: bool, _timeout_s: float = 1800.0
+    ) -> dict[str, object]:
         self.assertTrue(strict_json)
         self._sent.append(code)
         return self._responses.pop(0)
@@ -149,6 +151,88 @@ class TestGolemBlenderBridge(unittest.TestCase):
 
         self.assertTrue(result.isError)
         self.assertTrue(result.content[0].text.startswith("Tool raised in Blender:"))
+
+    def test_a_long_call_forwards_the_progress_file_as_it_is_written(self) -> None:
+        """A call that writes progress while it runs must reach the client as progress.
+
+        The op runs inside Blender and this server is a different process, so the
+        only thing they share is the call's output directory: the stub writes
+        `progress.json` the way an op would, and the heartbeat must read it and
+        hand it upstream instead of leaving the client to time out.
+        """
+        self._responses = [_ok_response(ToolOutcome("Added Crate"))]
+        received: list[tuple[float, float | None, str]] = []
+        progress_arguments = {"part": 31, "of": 77, "stage": "part gate"}
+
+        def send_code_writing_progress(
+            code: str, strict_json: bool, _timeout_s: float = 1800.0
+        ) -> dict[str, object]:
+            output_directory = next(
+                path
+                for path in (Path(self._directory.name) / "outputs").rglob("mcp-*")
+                if path.is_dir()
+            )
+            (output_directory / "progress.json").write_text(
+                json.dumps(progress_arguments), encoding="utf-8"
+            )
+            time.sleep(0.3)
+            return self._send_code(code, strict_json)
+
+        async def record_progress(
+            progress: float, total: float | None, message: str | None
+        ) -> None:
+            received.append((progress, total, message or ""))
+
+        with (
+            mock.patch.object(
+                golem_blender_bridge, "send_code", send_code_writing_progress
+            ),
+            mock.patch.object(golem_blender_bridge, "PROGRESS_HEARTBEAT_S", 0.05),
+        ):
+            result = asyncio.run(
+                self._session.call(
+                    "assembly_report",
+                    {"name": "Bakery"},
+                    report_progress=record_progress,
+                )
+            )
+
+        self.assertFalse(result.isError)
+        self.assertTrue(received, "the heartbeat sent no progress at all")
+        self.assertTrue(
+            any('"part": 31' in message for _, _, message in received),
+            [message for _, _, message in received],
+        )
+
+    def test_a_timed_out_call_says_blender_is_still_running_and_not_paused(self) -> None:
+        """A timeout is NOT a pause: Blender accepted the call and kept working.
+
+        Measured need, 2026-10-24: a 77-part export outlived the socket timeout,
+        the bridge called it PAUSED, and the agent read a live session as dead.
+        """
+        self._responses = []
+
+        def send_code_that_times_out(
+            _code: str, _strict_json: bool, _timeout_s: float = 1800.0
+        ) -> dict[str, object]:
+            raise golem_blender_bridge.BlenderCallTimedOut(
+                "Blender did not answer within 1800 s at localhost:9876"
+            )
+
+        with mock.patch.object(
+            golem_blender_bridge, "send_code", send_code_that_times_out
+        ):
+            result = self._call("assembly_report", {"name": "Bakery"})
+
+        self.assertTrue(result.isError)
+        text = result.content[0].text
+        self.assertTrue(
+            text.startswith("Blender is still running assembly_report"), text
+        )
+        self.assertIn("it was NOT stopped", text)
+        self.assertIn("Do not re-issue the call", text)
+        self.assertNotIn(golem_blender_bridge.PAUSE_PREFIX, text)
+        self.assertNotIn("PAUSED", text)
 
 
 class TestSourceFingerprint(unittest.TestCase):
@@ -382,7 +466,9 @@ class TestSourceWatcher(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     @staticmethod
-    async def _golem_blender_call(_name: str, _arguments: dict[str, object]) -> None:
+    async def _golem_blender_call(
+        _name: str, _arguments: dict[str, object], **_kwargs: object
+    ) -> None:
         await _HeldOpen()
 
     def _fingerprint(self) -> str:
@@ -526,7 +612,9 @@ class TestHandoff(unittest.TestCase):
         _stub_live_blender_probe(self)
 
     @staticmethod
-    def _send_code(_code: str, _strict_json: bool) -> dict[str, object]:
+    def _send_code(
+        _code: str, _strict_json: bool, _timeout_s: float = 1800.0
+    ) -> dict[str, object]:
         return _ok_response(ToolOutcome("ok"))
 
     def _resume(
@@ -699,6 +787,19 @@ class TestToolcodeReimport(unittest.TestCase):
         (src / "golem_blender" / "viewport_follow.py").write_text(
             "def snapshot_scene():\n    raise AssertionError('snapshotted for a read-only probe')\n\n\n"
             "def follow_viewport(outcome, *, before=None):\n    raise AssertionError('framed a read-only probe')\n",
+            encoding="utf-8",
+        )
+        # The toolcode wraps every dispatch in the call's context, so the fake
+        # checkout carries the same module: a minimal stand-in that does nothing
+        # a probe could observe.
+        run_package = src / "golem_blender" / "run"
+        run_package.mkdir()
+        (run_package / "__init__.py").write_text("", encoding="utf-8")
+        (run_package / "call_context.py").write_text(
+            "from contextlib import contextmanager\n\n\n"
+            "@contextmanager\n"
+            "def call_context(output_directory, tool_name):\n"
+            "    yield None\n",
             encoding="utf-8",
         )
         return src

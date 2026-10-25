@@ -32,6 +32,7 @@ OP_MODULE_NAMES = (
     "alignment",
     "assets",
     "measure_set",
+    "features",
     "pieces",
     "layout",
     "modifiers",

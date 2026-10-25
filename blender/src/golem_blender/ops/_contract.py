@@ -62,6 +62,11 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         # integer that selects one surface out of the noise's family.
         "frequency",
         "seed",
+        # `assembly_report` (the 77-part wedge): a POSITION in the report's own
+        # row list, not a length — it selects a page of rows, and the row count
+        # is the unit-free integer the report already carries as
+        # `part_intersection_count`.
+        "intersection_offset",
     }
 )
 

@@ -25,17 +25,21 @@ code went stale; the MCP client restarts it and re-lists the tools.
 """
 
 __all__ = (
-    "GOLEM_BLENDER_TOOLS",
-    "GOLEM_BLENDER_TOOL_NAMES",
+    "BLENDER_STILL_RUNNING_FORMAT",
     "BLMCP_ROOT",
     "CLAUDE_CODE_INSTRUCTIONS_LIMIT_CHARACTERS",
+    "GOLEM_BLENDER_TOOLS",
+    "GOLEM_BLENDER_TOOL_NAMES",
+    "GOLEM_CALL_TIMEOUT_S",
     "HANDOFF_MAX_AGE_S",
     "MCP_INSTRUCTIONS_HEAD",
     "MCP_INSTRUCTIONS_HEAD_CONDENSES_REVISION",
     "PLUGIN_PACKAGES",
     "PLUGIN_SOURCE_ROOTS",
+    "PROGRESS_HEARTBEAT_S",
     "REPOSITORY_ROOT",
     "REPOSITORY_SRC",
+    "SCRATCH_EXISTS_FORMAT",
     "SOURCE_CHANGED_EXIT_CODE",
     "SOURCE_POLL_INTERVAL_S",
     "SOURCE_RESPONSE_DRAIN_S",
@@ -63,6 +67,7 @@ import sysconfig
 import threading
 import time
 import traceback
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -71,7 +76,11 @@ from typing import Any, NoReturn
 import anyio
 import golem_blender
 from golem_blender.agent.outcome import ToolOutcome, outcome_from_json
-from golem_blender.agent.plan import MISSING_PLAN_REFUSAL, PLAN_TOOL_NAME, plan_required_for
+from golem_blender.agent.plan import (
+    MISSING_PLAN_REFUSAL,
+    PLAN_TOOL_NAME,
+    plan_required_for,
+)
 from golem_blender.agent.system_prompt import build_system_prompt
 from golem_blender.agent.tool_event import (
     TOOL_EVENT_KIND,
@@ -86,6 +95,7 @@ from golem_blender.agent.tools import (
 )
 from golem_blender.agent.transcript import ChatTranscript, default_log_directory
 from golem_blender.plugins import plugin_package_names, plugin_source_roots
+from golem_blender.run.call_context import PROGRESS_FILE_NAME, SCRATCH_DIRECTORY_NAME
 from mcp import types  # pylint: disable=import-error,no-name-in-module
 from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error,no-name-in-module
 
@@ -94,8 +104,8 @@ from blmcp.tools_helpers import (
     toolcode_load_from_filepath,
     toolcode_wrap_with_calling_convention,
 )
+from blmcp.tools_helpers.connection import BlenderCallTimedOut, send_code
 from blmcp.tools_helpers.golem_blender_bridge_toolcode import Params
-from blmcp.tools_helpers.connection import send_code
 from blmcp.tools_helpers.golem_remote import GolemRemote
 from blmcp.tools_helpers.live_blender import (
     PAUSE_PREFIX,
@@ -235,6 +245,43 @@ character uses: give `define_assembly` its `interaction_side`."""
 
 
 _MAXIMUM_CAUSE_DEPTH = 8
+
+# A golem_blender call may legitimately run for minutes: a 77-part assembly's
+# export measures every part and re-imports the file it wrote. The client's
+# default socket timeout (connection._TIMEOUT, 300 s) was shorter than that call
+# and reported it as a dead Blender while Blender was still measuring (measured
+# 2026-10-24), so this lane waits far longer — and says what is happening while
+# it waits.
+GOLEM_CALL_TIMEOUT_S = 1800.0
+# How often the progress heartbeat reads `progress.json` and forwards it.
+PROGRESS_HEARTBEAT_S = 5.0
+BLENDER_STILL_RUNNING_FORMAT = (
+    "Blender is still running {tool} after {elapsed_s:.0f} s and did not answer; "
+    "it was NOT stopped. Do not re-issue the call. {scratch}Wait, then call "
+    "list_scene."
+)
+# What the scratch sentence says when a safety copy exists: the scene is on disk
+# even though this call's answer was lost.
+SCRATCH_EXISTS_FORMAT = "The session was saved before it started to {path}. "
+
+
+def _scratch_sentence(
+    output_directory: Path, tool_name: str, started_wall_s: float
+) -> str:
+    """Say a safety copy exists, when THIS call wrote one; empty otherwise.
+
+    A copy from an earlier call is not evidence about this one, so the file's
+    mtime must be at or after this call's start. The one-second slack absorbs
+    the filesystem's mtime granularity.
+    """
+    scratch_path = output_directory / SCRATCH_DIRECTORY_NAME / f"{tool_name}.blend"
+    try:
+        written_at_s = scratch_path.stat().st_mtime
+    except OSError:
+        return ""
+    if written_at_s < started_wall_s - 1.0:
+        return ""
+    return SCRATCH_EXISTS_FORMAT.format(path=str(scratch_path))
 
 
 def _connection_error_in(error: BaseException) -> ConnectionError | None:
@@ -460,8 +507,75 @@ class GolemBlenderSession:
                 )
         return self._transcript, self._output_directory
 
+    async def _send_reporting_progress(
+        self,
+        code: str,
+        output_directory: Path,
+        tool_name: str,
+        report_progress: Callable[[float, float | None, str], Awaitable[None]] | None,
+    ) -> dict[str, object]:
+        """Send *code* and, while it runs, forward the op's `progress.json` upstream.
+
+        The op writes its progress to a file and this server reads it: the op
+        runs in Blender's main thread inside the add-on's exec, in another
+        process, and the call's output directory is the one thing the two
+        already share. A stale file from the previous call is removed first, so
+        a heartbeat can never report the last call's progress as this one's.
+
+        The heartbeat is CANCELLED when the call returns, and it stops itself
+        after one failed notification: the progress stream is a courtesy to a
+        client that would otherwise time out, and a broken stream must not take
+        the call down with it.
+        """
+        progress_path = output_directory / PROGRESS_FILE_NAME
+        progress_path.unlink(missing_ok=True)
+
+        async def send_progress_notifications() -> None:
+            started_s = time.monotonic()
+            while True:
+                await anyio.sleep(PROGRESS_HEARTBEAT_S)
+                elapsed_s = time.monotonic() - started_s
+                try:
+                    message = progress_path.read_text(encoding="utf-8")
+                    json.loads(message)
+                except (FileNotFoundError, json.JSONDecodeError):
+                    message = json.dumps(
+                        {"tool": tool_name, "elapsed_s": round(elapsed_s)}
+                    )
+                try:
+                    await report_progress(elapsed_s, None, message)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    # The CLIENT went away or refused the notification. The call
+                    # in Blender is unaffected and its answer is what matters.
+                    return
+
+        async with anyio.create_task_group() as task_group:
+            if report_progress is not None:
+                task_group.start_soon(send_progress_notifications)
+            response: dict[str, object] | None = None
+            failure: Exception | None = None
+            try:
+                response = await anyio.to_thread.run_sync(
+                    send_code, code, True, GOLEM_CALL_TIMEOUT_S
+                )
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                # Held and re-raised AFTER the group exits: an exception raised
+                # inside a task group's body is wrapped in an ExceptionGroup, and
+                # the bridge's `except BlenderCallTimedOut` would then never see
+                # the timeout it is here to report as "still running".
+                failure = error
+            finally:
+                task_group.cancel_scope.cancel()
+        if failure is not None:
+            raise failure
+        return response
+
     async def call(
-        self, tool_name: str, arguments: dict[str, Any] | None
+        self,
+        tool_name: str,
+        arguments: dict[str, Any] | None,
+        report_progress: Callable[[float, float | None, str], Awaitable[None]]
+        | None = None,
     ) -> types.CallToolResult:
         arguments = arguments or {}
         transcript, output_directory = self._open()
@@ -507,8 +621,27 @@ class GolemBlenderSession:
             ),
         )
         started = time.perf_counter()
+        started_wall_s = time.time()
         try:
-            response = await anyio.to_thread.run_sync(send_code, code, True)
+            response = await self._send_reporting_progress(
+                code, output_directory, tool_name, report_progress
+            )
+        except BlenderCallTimedOut as error:
+            # NOT a pause: Blender accepted the call and is still working. Saying
+            # "no Blender" here once made an agent abandon a session whose 77
+            # parts were still being measured (2026-10-24).
+            elapsed_s = time.perf_counter() - started
+            transcript.record("error", str(error))
+            still_running = BLENDER_STILL_RUNNING_FORMAT.format(
+                tool=tool_name,
+                elapsed_s=elapsed_s,
+                scratch=_scratch_sentence(output_directory, tool_name, started_wall_s),
+            )
+            transcript.record("result", still_running)
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text=still_running)],
+                isError=True,
+            )
         except ConnectionError as error:
             transcript.record("error", str(error))
             raise
@@ -617,7 +750,9 @@ class GolemBlenderFastMCP(FastMCP):  # type: ignore[misc]
                 # exiting under a job that runs for minutes.
                 return await self._remote.call_tool(name, arguments)
             if name in GOLEM_BLENDER_TOOL_NAMES:
-                return await self._golem_blender.call(name, arguments)
+                return await self._golem_blender.call(
+                    name, arguments, report_progress=self.get_context().report_progress
+                )
             if name not in TOOLS_WITHOUT_BLENDER:
                 await anyio.to_thread.run_sync(require_live_blender)
             return await super().call_tool(name, arguments)

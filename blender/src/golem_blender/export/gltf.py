@@ -31,15 +31,24 @@ from golem_blender.export.glb_report import GlbAssetReport, asset_report
 
 EXPORT_DIMENSION_TOLERANCE_M = 1.0e-4
 REIMPORT_OBJECT_SUFFIX = "_reimport_check"
+# The name `ops/assembly.py` gives the re-import check, so this module can tell
+# "the re-import found nothing wrong" from "the re-import never ran" without
+# importing the ops module (which would be a cycle).
+REIMPORT_CHECK = "reimport"
 
 
 @dataclass(frozen=True)
 class ExportReport:
     export_path: Path
     file_size_bytes: int
-    pre_export: MeshReport
-    reimported_raw: MeshReport
-    reimported_welded: MeshReport
+    # None ONLY for an assembly export whose gate skipped the measurement
+    # (`gate="structure"`/`"none"`, or a spent `budget_s`). `export_glb` and a
+    # full-gated assembly always fill all three, so a caller that reads them
+    # without checking is reading a value that exists — see `gate` and
+    # `skipped_checks` for the two that can be absent.
+    pre_export: MeshReport | None
+    reimported_raw: MeshReport | None
+    reimported_welded: MeshReport | None
     pre_export_dimensions_m: tuple[float, float, float]
     reimported_dimensions_m: tuple[float, float, float]
     # The artifact itself, parsed from its own bytes (stdlib only —
@@ -74,6 +83,28 @@ class ExportReport:
     # character cannot reach them. Empty for a single-object export and for
     # an assembly with every side clear.
     blocked_sides: tuple[SideAccess, ...] = ()
+    # --- how much was measured, and whether it finished (the 77-part wedge) ---
+    # The gate mode this export ran: "none", "structure" or "full".
+    gate: str = "full"
+    # True only when `budget_s` cut a check THIS gate asked for. A truncated
+    # export is a real file with a partial verification, and the report says
+    # exactly which parts of the verification are missing.
+    truncated: bool = False
+    # Every check that did not run, by name, whether because the gate mode does
+    # not include it or because the budget ran out. `("part_gate", "clearance",
+    # "combined_analysis", "reimport")` is the list for `gate="none"`.
+    skipped_checks: tuple[str, ...] = ()
+    # How many parts the per-piece gate actually measured (all of them unless
+    # the budget cut the loop short).
+    gate_checked_parts: int = 0
+    # The triangle count the shipped file must carry, measured from the parts
+    # themselves. `pre_export.triangle_count` is the same number when the
+    # combined mesh was analysed; this one survives a skipped analysis.
+    expected_triangle_count: int = 0
+    # The session's safety copy, when a full gate on a large assembly took one
+    # BEFORE it started measuring: the scene on disk, if the call went wrong.
+    scratch_blend_path: str = ""
+    scratch_save_error: str = ""
 
     def assembly_failures(self, budget: MeshBudget = MeshBudget()) -> list[str]:
         """Every way a shipped ASSEMBLY fails its own gate (empty = pass).
@@ -83,13 +114,31 @@ class ExportReport:
         `part_failures`), and this checks what an ASSEMBLY additionally
         promises — that every part shipped, that the parts are intact pieces,
         and that the file this call wrote really holds them.
+
+        WHAT WAS NOT MEASURED IS ITSELF A FAILURE. `gate="none"` writes files
+        and verifies none of them, so it cannot pass; a `truncated` export can
+        pass the checks that ran but says which ones did not, because "nothing
+        found" and "nothing looked at" must never read the same.
         """
         found_failures: list[str] = []
+        if self.gate == "none":
+            found_failures.append(
+                "unverified: gate='none' skipped every check; re-export with "
+                "gate='structure' or 'full' before shipping"
+            )
+            if self.blend is None:
+                found_failures.append(
+                    "no .blend source: an asset without it is not done"
+                )
+            return found_failures
         for part_name, part_failure in self.part_failures:
             found_failures.append(
                 f"part {part_name!r} fails the piece gate: {part_failure}"
             )
-        if self.reimported_object_count != self.keep_parts:
+        if (
+            REIMPORT_CHECK not in self.skipped_checks
+            and self.reimported_object_count != self.keep_parts
+        ):
             found_failures.append(
                 f"the file re-imported {self.reimported_object_count} objects, "
                 f"{self.keep_parts} were shipped"
@@ -107,10 +156,17 @@ class ExportReport:
                     f"file root nodes are {self.file_report.root_node_names}, "
                     f"expected {list(self.expected_root_node_names)}"
                 )
-            if self.file_report.triangle_count != self.pre_export.triangle_count:
+            # The count the file must carry: the combined mesh's own when it was
+            # analysed, otherwise the parts' sum, which is the same number.
+            expected_triangle_count = (
+                self.pre_export.triangle_count
+                if self.pre_export is not None
+                else self.expected_triangle_count
+            )
+            if self.file_report.triangle_count != expected_triangle_count:
                 found_failures.append(
                     f"file ships {self.file_report.triangle_count} triangles, the "
-                    f"assembly measured {self.pre_export.triangle_count} "
+                    f"assembly measured {expected_triangle_count} "
                     f"(modifier or exporter drift)"
                 )
             if self.file_report.inverted_facet_count > 0:
@@ -147,16 +203,22 @@ class ExportReport:
                 f"must be able to reach the side it uses: rotate or move the "
                 f"part, or declare a different side with declare_interaction_side"
             )
-        for axis_index, axis_name in enumerate(("x", "y", "z")):
-            drift_m = abs(
-                self.reimported_dimensions_m[axis_index]
-                - self.pre_export_dimensions_m[axis_index]
-            )
-            if drift_m > EXPORT_DIMENSION_TOLERANCE_M:
-                found_failures.append(
-                    f"dimension {axis_name} drifted {drift_m:.6f} m through export "
-                    f"(axis-convention or unit error)"
+        if REIMPORT_CHECK not in self.skipped_checks:
+            for axis_index, axis_name in enumerate(("x", "y", "z")):
+                drift_m = abs(
+                    self.reimported_dimensions_m[axis_index]
+                    - self.pre_export_dimensions_m[axis_index]
                 )
+                if drift_m > EXPORT_DIMENSION_TOLERANCE_M:
+                    found_failures.append(
+                        f"dimension {axis_name} drifted {drift_m:.6f} m through "
+                        f"export (axis-convention or unit error)"
+                    )
+        if self.truncated:
+            found_failures.append(
+                f"gate truncated at budget_s: checked {self.gate_checked_parts} "
+                f"of {self.part_count} parts; skipped {list(self.skipped_checks)}"
+            )
         return found_failures
 
     def passes_assembly(self, budget: MeshBudget = MeshBudget()) -> bool:

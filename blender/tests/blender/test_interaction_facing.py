@@ -38,9 +38,11 @@ def empty_scene():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     assembly._ASSEMBLIES.clear()
     assembly._INTERACTION_SIDES.clear()
+    assembly._DECLARED_JOINS.clear()
     yield
     assembly._ASSEMBLIES.clear()
     assembly._INTERACTION_SIDES.clear()
+    assembly._DECLARED_JOINS.clear()
 
 
 def _box(name, size_m=(1.0, 1.0, 1.0), location_m=(0.0, 0.0, 0.0)):
