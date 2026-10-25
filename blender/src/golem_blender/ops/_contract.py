@@ -67,6 +67,9 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         # is the unit-free integer the report already carries as
         # `part_intersection_count`.
         "intersection_offset",
+        # The same for the separation rows (`assembly_report`): a POSITION in
+        # that list, not a length.
+        "separation_offset",
     }
 )
 

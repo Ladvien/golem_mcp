@@ -61,6 +61,7 @@ meshes become one" means one thing), and the renders from
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 from typing import Literal
 
@@ -133,8 +134,18 @@ DEFAULT_BUDGET_S = 120.0
 # DEFECTS (`undeclared_clashes`) and the `laps` are computed from the full list,
 # so nothing that matters can be paged out of view.
 MAXIMUM_INTERSECTION_ROWS = 40
+# The distance two parts may stand apart and still count as JOINED. The
+# resting-contact tolerance, on purpose: a joint that is butted reads as
+# touching, and one with a hand's width of daylight through it does not.
+DEFAULT_GAP_TOLERANCE_M = CONTACT_DEPTH_TOLERANCE_M
+# How far apart two NON-OVERLAPPING parts' boxes may be and still be measured.
+# A corner 0.323 m clear of its wall is a defect no number reported (measured
+# 2026-10-24: only a render caught it); a part across the room is not a joint at
+# all and measuring every such pair would cost a BVH sweep each.
+DEFAULT_SEPARATION_MARGIN_M = 0.5
 # The names of the checks, so a report can say which ones did not run.
 PART_GATE_CHECK = "part_gate"
+SEPARATION_CHECK = "separation"
 CLEARANCE_CHECK = "clearance"
 COMBINED_ANALYSIS_CHECK = "combined_analysis"
 REIMPORT_CHECK = "reimport"
@@ -174,6 +185,40 @@ class PartIntersection:
     # an undeclared clash — which is the whole point of the declaration: the
     # assembly report can then list `undeclared_clashes` separately from the
     # junctions a kit was built with.
+    declared_reason: str = ""
+
+
+@dataclass(frozen=True)
+class PairSeparation:
+    """Two parts' distance apart, when they do NOT share volume.
+
+    `part_intersections` only ever holds pairs whose boxes overlap, so an inner
+    corner placed 0.323 m clear of its wall was not in the report at all — the
+    measured 2026-10-24 case, where a render was the only thing that found it.
+
+    TWO NUMBERS, and they bound the answer from opposite sides:
+
+    - `separation_m` is `analyze_pair.minimum_separation_m`: each mesh's
+      evaluated vertices against the other's closest SURFACE, sampled, both
+      directions. An UPPER bound on the true gap — exact for two butted box
+      faces, but it over-estimates a plus-shaped crossing, where no vertex
+      projects onto the other part's face.
+    - `box_gap_m` is `_box_gap_m`: a LOWER bound from the two world AABBs,
+      exact for boxes and 0.0 whenever they touch or overlap.
+
+    So a structure-mode verdict uses the box gap, which never reports a closed
+    joint as open and can miss a gap on a part that is not box-shaped. -1 in
+    `separation_m` means NOT MEASURED, never a zero: `gate="structure"` and a
+    spent budget both decide the row from the boxes alone.
+    """
+
+    first_object_name: str
+    second_object_name: str
+    separation_m: float
+    box_gap_m: float
+    gap_tolerance_m: float
+    is_open: bool
+    # Why these two are meant to touch, when `declare_join` recorded one.
     declared_reason: str = ""
 
 
@@ -240,6 +285,22 @@ class AssemblyReport:
     # assembly started: the scene as it was, on disk, if the call went wrong.
     scratch_blend_path: str = ""
     scratch_save_error: str = ""
+    # --- how far apart nearby NON-OVERLAPPING pairs stand (the 0.323 m corner)
+    # Pairs whose boxes are within `separation_margin_m` of each other (or that
+    # `declare_join` named, at any distance), measured. Paged like
+    # `part_intersections`, and for the same reason.
+    separations: tuple[PairSeparation, ...] = ()
+    # How many rows `separations` could hold — the FULL count, so a paged report
+    # never understates what it found.
+    separation_count: int = 0
+    separation_offset: int = 0
+    # Rows carrying a real surface measurement; the rest are box bounds.
+    separations_measured: int = 0
+    # The joints with daylight through them, from the FULL list and never paged:
+    # what a caller acts on, in the same words a refusal would use.
+    open_gaps: tuple[str, ...] = ()
+    gap_tolerance_m: float = DEFAULT_GAP_TOLERANCE_M
+    separation_margin_m: float = DEFAULT_SEPARATION_MARGIN_M
 
 
 # The session's assemblies: name -> part names. NAMES only, so a part removed
@@ -350,6 +411,43 @@ def _shared_volume(first_bounds, second_bounds):
     return kind, depth_m, overlaps[0] * overlaps[1] * overlaps[2]
 
 
+def _open_gap_line(row: "PairSeparation") -> str:
+    """One open joint, in the words a caller can act on.
+
+    A measured row states the gap; an unmeasured one states the bound it does
+    have and says so, because "at least X" and "X" are different facts and a
+    structure-mode report must not pass one off as the other.
+    """
+    if row.separation_m >= 0.0:
+        return (
+            f"{row.first_object_name} → {row.second_object_name}: "
+            f"{row.separation_m:.3f} m apart, expected ≤ {row.gap_tolerance_m:.3f} m"
+        )
+    return (
+        f"{row.first_object_name} → {row.second_object_name}: at least "
+        f"{row.box_gap_m:.3f} m apart (bounding boxes; surface not measured), "
+        f"expected ≤ {row.gap_tolerance_m:.3f} m"
+    )
+
+
+def _box_gap_m(first_bounds, second_bounds) -> float:
+    """Euclidean distance between two world AABBs; 0.0 when they touch or overlap.
+
+    An exact LOWER bound on the surface gap between any two shapes inside those
+    boxes: the boxes are supersets of the parts, so anything inside them cannot
+    be closer than this.
+    """
+    squared_gap_m2 = 0.0
+    for axis in range(3):
+        first_minimum, first_maximum = first_bounds[0][axis], first_bounds[1][axis]
+        second_minimum, second_maximum = second_bounds[0][axis], second_bounds[1][axis]
+        axis_gap_m = max(
+            0.0, first_minimum - second_maximum, second_minimum - first_maximum
+        )
+        squared_gap_m2 += axis_gap_m * axis_gap_m
+    return math.sqrt(squared_gap_m2)
+
+
 def _supported_by(part_bounds, other_bounds) -> bool:
     """Does `other` hold `part` up?
 
@@ -410,6 +508,9 @@ def _measure(
     gate: str = "full",
     budget_s: float = DEFAULT_BUDGET_S,
     intersection_offset: int = 0,
+    gap_tolerance_m: float = DEFAULT_GAP_TOLERANCE_M,
+    separation_margin_m: float = DEFAULT_SEPARATION_MARGIN_M,
+    separation_offset: int = 0,
 ) -> AssemblyReport:
     """The assembly's numbers, measured now from the scene, within `gate` and `budget_s`.
 
@@ -502,6 +603,101 @@ def _measure(
             )
         )
 
+    # --- how far apart the NEARBY NON-OVERLAPPING pairs stand
+    #
+    # `candidates` holds only pairs whose boxes share volume, which is why an
+    # inner corner 0.323 m clear of its wall was absent from every number the
+    # report carried (measured 2026-10-24; a render was what found it). This pass
+    # takes the complementary set: pairs close enough to be a joint in intent,
+    # plus every pair somebody DECLARED, and measures how far apart they are.
+    #
+    # Reported, never refused: a gap is a number a writer acts on, and an
+    # assembly under `gate="none"` claims no measurement at all.
+    separation_rows: list[PairSeparation] = []
+    separations_measured = 0
+    if gate != "none":
+        overlapping_pairs = {
+            frozenset((part_objects[first_index].name, part_objects[second_index].name))
+            for first_index, second_index, _shared in candidates
+        }
+        separation_candidates: list[tuple[int, int]] = []
+        for first_index in range(len(part_objects)):
+            for second_index in range(first_index + 1, len(part_objects)):
+                pair = frozenset(
+                    (
+                        part_objects[first_index].name,
+                        part_objects[second_index].name,
+                    )
+                )
+                if pair in overlapping_pairs:
+                    continue
+                if pair in _DECLARED_JOINS:
+                    separation_candidates.append((first_index, second_index))
+                    continue
+                if (
+                    _box_gap_m(part_bounds[first_index], part_bounds[second_index])
+                    <= separation_margin_m
+                ):
+                    separation_candidates.append((first_index, second_index))
+
+        for candidate_index, (first_index, second_index) in enumerate(
+            separation_candidates, start=1
+        ):
+            first_object = part_objects[first_index]
+            second_object = part_objects[second_index]
+            report_progress(
+                "separation check", candidate_index, len(separation_candidates)
+            )
+            measure_with_triangles = gate == "full" and not deadline.expired()
+            separation_m = -1.0
+            if measure_with_triangles:
+                separation_m = float(
+                    analyze_pair(first_object, second_object).minimum_separation_m
+                )
+                if math.isfinite(separation_m):
+                    separations_measured += 1
+                else:
+                    separation_m = -1.0
+            elif gate == "full":
+                truncated = True
+            box_gap_m = _box_gap_m(part_bounds[first_index], part_bounds[second_index])
+            # The SURFACE number when there is one, the box bound otherwise: a
+            # structure-mode verdict must never call a closed joint open.
+            deciding_gap_m = separation_m if separation_m >= 0.0 else box_gap_m
+            separation_rows.append(
+                PairSeparation(
+                    first_object_name=first_object.name,
+                    second_object_name=second_object.name,
+                    separation_m=separation_m,
+                    box_gap_m=box_gap_m,
+                    gap_tolerance_m=gap_tolerance_m,
+                    is_open=deciding_gap_m > gap_tolerance_m,
+                    declared_reason=_DECLARED_JOINS.get(
+                        frozenset((first_object.name, second_object.name)), ""
+                    ),
+                )
+            )
+
+    # The widest gap first, so the page a caller reads names the worst joint; the
+    # open ones before the closed ones for the same reason. `open_gaps` and
+    # `declared_without_contact` come from the FULL list, so paging cannot hide a
+    # joint with daylight in it.
+    ordered_separations = sorted(
+        separation_rows,
+        key=lambda row: (
+            0 if row.is_open else 1,
+            -(row.separation_m if row.separation_m >= 0.0 else row.box_gap_m),
+            row.first_object_name,
+            row.second_object_name,
+        ),
+    )
+    separation_page = tuple(
+        ordered_separations[
+            separation_offset : separation_offset + MAXIMUM_INTERSECTION_ROWS
+        ]
+    )
+    open_gaps = tuple(_open_gap_line(row) for row in ordered_separations if row.is_open)
+
     interaction = InteractionReport(assembly_name=name, sides=(), blocked=())
     if gate != "none":
         if deadline.expired():
@@ -544,16 +740,6 @@ def _measure(
             intersection_offset : intersection_offset + MAXIMUM_INTERSECTION_ROWS
         ]
     )
-    present_names = {part_object.name for part_object in part_objects}
-    declared_pairs = {
-        pair: reason
-        for pair, reason in _DECLARED_JOINS.items()
-        if pair <= present_names
-    }
-    candidate_pairs = {
-        frozenset((row.first_object_name, row.second_object_name))
-        for row in measured_rows
-    }
 
     return AssemblyReport(
         object_name=name,
@@ -589,11 +775,23 @@ def _measure(
             for row in measured_rows
             if row.kind == CLASH_KIND and not row.declared_reason
         ),
+        # A declaration that stopped being true is a part that moved. Measured
+        # from the separation rows, so an exactly butted declared pair — which is
+        # what a declaration is FOR — is not a defect; the old test asked only
+        # whether the pair appeared among the OVERLAPPING candidates, and a
+        # butted joint never does.
         declared_without_contact=tuple(
-            tuple(sorted(pair))
-            for pair in declared_pairs
-            if pair not in candidate_pairs
+            tuple(sorted((row.first_object_name, row.second_object_name)))
+            for row in ordered_separations
+            if row.declared_reason and row.is_open
         ),
+        separations=separation_page,
+        separation_count=len(separation_rows),
+        separation_offset=separation_offset,
+        separations_measured=separations_measured,
+        open_gaps=open_gaps,
+        gap_tolerance_m=gap_tolerance_m,
+        separation_margin_m=separation_margin_m,
     )
 
 
@@ -751,6 +949,9 @@ def assembly_report(
     gate: Literal["none", "structure", "full"] = "full",
     budget_s: float = DEFAULT_BUDGET_S,
     intersection_offset: int = 0,
+    gap_tolerance_m: float = DEFAULT_GAP_TOLERANCE_M,
+    separation_margin_m: float = DEFAULT_SEPARATION_MARGIN_M,
+    separation_offset: int = 0,
 ) -> AssemblyReport:
     """Re-measure the named assembly as it stands now; changes nothing at all.
 
@@ -765,6 +966,18 @@ def assembly_report(
     file side effect a caller did not ask for. `part_intersections` carries at
     most `MAXIMUM_INTERSECTION_ROWS` rows; `intersection_offset` reads the next
     page, and `part_intersection_count` is the full count.
+
+    `separations` is the other half of the same question: `part_intersections`
+    holds only pairs whose boxes OVERLAP, so a corner placed 0.323 m clear of its
+    wall — measured 2026-10-24, found by a render and by no number — used to
+    appear nowhere. Every non-overlapping pair whose boxes are within
+    `separation_margin_m` (default 0.5 m) is measured, and so is every pair
+    `declare_join` named, at any distance; a pair further apart than
+    `gap_tolerance_m` (default 0.002 m, the resting-contact tolerance) is an
+    OPEN joint. `open_gaps` states each of them in one line, from the FULL list
+    and never paged, and `separations`/`separation_offset` page the rows the way
+    `part_intersections` does. A gap is REPORTED, never refused: it is a number
+    a writer acts on, and `export_assembly` is unchanged.
     """
     budget_s = _validate_gate_and_budget(gate, budget_s)
     if intersection_offset < 0:
@@ -772,8 +985,32 @@ def assembly_report(
             f"intersection_offset must be 0 or more, got {intersection_offset!r}; "
             f"a negative offset would read from the end of the list"
         )
+    if gap_tolerance_m < 0:
+        raise ValueError(
+            f"gap_tolerance_m must be 0 or more, got {gap_tolerance_m!r}; it is "
+            f"the distance two parts may stand apart and still count as joined"
+        )
+    if separation_margin_m < 0:
+        raise ValueError(
+            f"separation_margin_m must be 0 or more, got {separation_margin_m!r}; "
+            f"it is how far apart two boxes may be and still be measured"
+        )
+    if separation_offset < 0:
+        raise ValueError(
+            f"separation_offset must be 0 or more, got {separation_offset!r}; "
+            f"a negative offset would read from the end of the list"
+        )
     object_names, _part_objects = _resolved_parts(name)
-    return _measure(name, object_names, gate, budget_s, intersection_offset)
+    return _measure(
+        name,
+        object_names,
+        gate,
+        budget_s,
+        intersection_offset,
+        gap_tolerance_m,
+        separation_margin_m,
+        separation_offset,
+    )
 
 
 @op()

@@ -21,6 +21,7 @@ from golem_blender.ops.arrays import (
 )
 from golem_blender.ops.assembly import (
     AssemblyReport,
+    PairSeparation,
     PartIntersection,
     assembly_report,
     declare_interaction_side,
@@ -38,7 +39,9 @@ from golem_blender.ops.assets import (
     join_objects,
 )
 from golem_blender.ops.booleans import (
+    BooleanCutIncomplete,
     BooleanNoOp,
+    BooleanOperandSelfIntersecting,
     UnlinkedOperand,
     boolean_difference,
     boolean_intersect,
@@ -175,7 +178,9 @@ __all__ = [
     "JoinReport",
     "BodyCapsulesReport",
     "BoneSpec",
+    "BooleanCutIncomplete",
     "BooleanNoOp",
+    "BooleanOperandSelfIntersecting",
     "CapsuleReading",
     "ClipIntersectionReport",
     "ClothBakeReport",
@@ -193,6 +198,7 @@ __all__ = [
     "NameTaken",
     "NoEdgesSelected",
     "PairContour",
+    "PairSeparation",
     "PartIntersection",
     "PbrTextureReport",
     "PieceChangedError",
