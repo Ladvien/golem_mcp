@@ -10,6 +10,7 @@ tier, the unit, the evidence, the commit, the deploy result and what is left.
 | 2026-10-26-01 | 2026-10-26 | 1 (issue) | #21 `join_objects` combines parts into one mesh | `9ad4b71` |
 | 2026-10-26-02 | 2026-10-26 | 1 (issue) x6 | six-way fan-out: #12, #15, #16, #18, #20, #22 | `66be8f8`, `16303df`, `2579653`, `fb104c4`, `add1fa1`, `60397ba` |
 | 2026-10-24-02 | 2026-10-24 | 1 (issue) x6 | six-way fan-out: #25, #26, #23, #17 + PBR #14, #13 | `643b3fe`, `8c4ed4f`, `a5fb116`, `ae1b73e`, `d2dfcd0`, `30bbf21` |
+| 2026-10-24-03 | 2026-10-24 | 1 (issue) | assembly safety: gate modes, budget, save-first, `declare_join`, `measure_feature` | `8ad89db` |
 
 ---
 
@@ -430,3 +431,66 @@ each child's own report carried its `MODEL_ROUTING:` line.
 4. `pbr/noise_curl.py` and `pbr/noise_gabor.py` are unreachable by the same AST
    walk that condemned `splatter.py` — confirm dead, then delete or wire.
 5. #2 — the loose-ground scatter's colour model (stones read as flat discs).
+
+---
+
+## 2026-10-24-03 — a long assembly call cannot wedge the session or lose the scene
+
+**Tier 1 (measured defect + three missing measurements).** Chosen because the
+77-part bakery session's harm is the top of the order: an hour of assembly work
+existed only in memory while the bridge told the agent Blender was gone.
+
+### What was wrong, measured
+
+1. `export_assembly` on 77 parts outlived the client's 300 s socket timeout. The
+   bridge answered `PAUSED:` — "no Blender" — and Blender was still measuring.
+   4 of the 5 defects in that session were found by the user LOOKING at renders,
+   because the session had already been abandoned.
+2. `analyze_object`'s UV-overlap count is a pairwise test the budget only READS
+   when it forbids overlaps, and the welded-assembly analyses passed no budget.
+   Measured on the reproduction's 3,696-triangle welded sheet: **11.74 s with no
+   budget (98,565 overlapping UV pairs) against 0.12 s with `MeshBudget()`** —
+   98x for a number `ExportReport.assembly_failures` never reads.
+3. Four questions (surface height, plane pitch, which side is an opening, which
+   side faces away) had no op, so each was a hand-written `run_python` raycast.
+4. `assembly_report` saw a clash but not whether it was intended, so kit joinery
+   and a real defect read the same.
+
+### What landed
+
+`run/call_context.py` (progress file, safety copy, deadline); gate modes +
+`budget_s` on the three assembly ops; save-first ordering in `export_assembly`;
+paged `part_intersections`; `declare_join`; `measure_feature`;
+`BlenderCallTimedOut` + a 1800 s golem-lane timeout with a progress heartbeat.
+
+### Evidence
+
+- Suites: pure **1726 passed / 1 xfailed**, blender-app **658 passed / 1 skipped**,
+  MCP **OK**, golem **33 passed**.
+- Facade re-measured from its own output: 92 / 83 ops / 62 plan-required /
+  22 readers, `t:53a0be11d45e`.
+- Reproduction: a truncated full gate returned in **5.01 s** with 23 of 77 parts
+  checked and **all four files present** (`.glb`, `.blend`, `progress.json`,
+  `scratch/export_assembly.blend`); the same path completes untruncated (2.71 s,
+  77 of 77) on smaller parts.
+- `docs/loop/runs/2026-10-24-03/deploy.md` carries the four-host table.
+
+### Deploy
+
+All four hosts at `8ad89db`: mac_air already there, big_mac and bmb pulled
+`--ff-only`, big pulled `--ff-only` with its **service code unmoved** so no
+restart; `golem-mcp` stayed `active`. Live smoke on mac_air was **not run**:
+Blender is closed, so `measure_feature` was checked by its schema and its
+Blender tests instead of by a call on the user's scene.
+
+### Top 5 remaining
+
+1. #1 — the full four-set PBR run.
+2. The `render_assembly(focus=[…])` run on the real bakery: the honest
+   end-to-end test of the assembly ops, and now of `measure_feature` too.
+3. A live `measure_feature` smoke once Blender is open — the oven pair and the
+   wall-against-plinth readings are the three results this record could not quote.
+4. The `progress.json` heartbeat is a no-op unless the MCP client sends a
+   `progressToken` (SDK behaviour); worth confirming against omp, since the
+   budget and the non-pause timeout are what actually prevent the wedge.
+5. #2 — the loose-ground scatter's colour model.
