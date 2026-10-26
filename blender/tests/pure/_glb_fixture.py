@@ -130,6 +130,35 @@ def _build_glb(positions, indices, normals=None, materials=()):
     return header + json_chunk + bin_chunk
 
 
+def _with_node(data, translation=None, rotation=None, scale=None, matrix=None):
+    """The same .glb with node 0's transform rewritten.
+
+    A `matrix` wins over TRS, exactly as glTF 2.0 requires. The JSON chunk's
+    length field is regenerated because the padded length depends on the
+    payload, and a hand-patched length is how a fixture stops parsing.
+    """
+    json_length = struct.unpack_from("<I", data, GLB_HEADER_SIZE_BYTES)[0]
+    json_start = GLB_HEADER_SIZE_BYTES + 8
+    gltf = json.loads(data[json_start : json_start + json_length])
+    node = gltf["nodes"][0]
+    for key in ("matrix", "translation", "rotation", "scale"):
+        node.pop(key, None)
+    if matrix is not None:
+        node["matrix"] = list(matrix)
+    else:
+        if translation is not None:
+            node["translation"] = list(translation)
+        if rotation is not None:
+            node["rotation"] = list(rotation)
+        if scale is not None:
+            node["scale"] = list(scale)
+    json_chunk = _json_chunk(json.dumps(gltf).encode("utf-8"))
+    tail = data[json_start + json_length :]
+    declared = GLB_HEADER_SIZE_BYTES + len(json_chunk) + len(tail)
+    header = struct.pack("<III", GLB_MAGIC, 2, declared)
+    return header + json_chunk + tail
+
+
 def _write_glb(tmp_path, data, name="test.glb"):
     path = tmp_path / name
     path.write_bytes(data)

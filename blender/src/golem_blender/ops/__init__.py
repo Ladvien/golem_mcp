@@ -55,6 +55,19 @@ from golem_blender.ops.canonical_orientation import (
     middle_extent_m,
     orientation_reading,
 )
+from golem_blender.ops.coplanar import (
+    CoplanarFix,
+    CoplanarFixReport,
+    CoplanarPair,
+    CoplanarReport,
+    CoplanarSelection,
+    CoplanarSelfTestFailed,
+    CoplanarSettings,
+    coplanar_report,
+    declare_flush,
+    select_coplanar_faces,
+    separate_coplanar_faces,
+)
 from golem_blender.ops.features import FeatureReport, SideDepth, measure_feature
 from golem_blender.ops.heal import weld_and_dissolve
 from golem_blender.ops.lathe import add_lathe, add_shell_lathe
@@ -171,6 +184,13 @@ from golem_blender.ops.weights import (
 __all__ = [
     "AlignReport",
     "AnimationReport",
+    "CoplanarFix",
+    "CoplanarFixReport",
+    "CoplanarPair",
+    "CoplanarReport",
+    "CoplanarSelection",
+    "CoplanarSelfTestFailed",
+    "CoplanarSettings",
     "ArmatureRotationModeError",
     "ArrayReport",
     "AssemblyReport",
@@ -247,6 +267,7 @@ __all__ = [
     "boolean_intersect",
     "boolean_union",
     "canonical_depth_axis_rotation_euler_rad",
+    "coplanar_report",
     "center_on_origin_xy",
     "clip_self_intersection_report",
     "decimate_object",
@@ -254,6 +275,7 @@ __all__ = [
     "declare_join",
     "define_assembly",
     "define_piece",
+    "declare_flush",
     "deforming_bone_names",
     "depth_axis_extent_rank",
     "depth_axis_holds_middle_extent",
@@ -287,10 +309,12 @@ __all__ = [
     "rig_report",
     "rotate_object_euler",
     "roughen_object",
+    "select_coplanar_faces",
     "select_edges",
     "select_faces",
     "select_vertices",
     "set_frame_range",
+    "separate_coplanar_faces",
     "snap_base_to_ground",
     "span_between",
     "splayed_leg_ring",

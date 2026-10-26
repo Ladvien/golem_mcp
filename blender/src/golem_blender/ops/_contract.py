@@ -70,6 +70,10 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         # The same for the separation rows (`assembly_report`): a POSITION in
         # that list, not a length.
         "separation_offset",
+        # `coplanar_report`: a POSITION in the report's own pair list, not a
+        # length — it selects a page of rows, and the row count is the
+        # unit-free integer the report already carries as `pair_count`.
+        "pair_offset",
     }
 )
 

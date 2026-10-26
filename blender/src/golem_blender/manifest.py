@@ -48,6 +48,7 @@ OP_MODULE_NAMES = (
     "canonical_orientation",
     "selectors",
     "motion",
+    "coplanar",
 )
 
 # Config dataclasses that an operation takes as an argument. Listed
@@ -62,6 +63,7 @@ OP_CONFIG_DATACLASSES = (
     ("golem_blender.ops.selectors", "EdgeSelector"),
     ("golem_blender.ops.selectors", "FaceSelector"),
     ("golem_blender.ops.selectors", "VertexSelector"),
+    ("golem_blender.ops.coplanar", "CoplanarSettings"),
 )
 
 CONVENTIONS = (

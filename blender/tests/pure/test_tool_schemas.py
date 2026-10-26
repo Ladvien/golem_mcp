@@ -293,6 +293,7 @@ def test_the_readers_are_the_only_plan_free_op_tools():
         "body_capsules_report",
         "canonical_depth_axis_rotation_euler_rad",
         "clip_self_intersection_report",
+        "coplanar_report",
         "deforming_bone_names",
         "depth_axis_extent_rank",
         "depth_axis_holds_middle_extent",
