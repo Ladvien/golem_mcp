@@ -69,6 +69,13 @@ from golem_blender.ops.coplanar import (
     separate_coplanar_faces,
 )
 from golem_blender.ops.features import FeatureReport, SideDepth, measure_feature
+from golem_blender.ops.glb_measure import (
+    GlbMeasurement,
+    GlbNodeMeasure,
+    GlbProfileSample,
+    GlbTop,
+    measure_glb,
+)
 from golem_blender.ops.heal import weld_and_dissolve
 from golem_blender.ops.lathe import add_lathe, add_shell_lathe
 from golem_blender.ops.layout import (
@@ -191,6 +198,10 @@ __all__ = [
     "CoplanarSelection",
     "CoplanarSelfTestFailed",
     "CoplanarSettings",
+    "GlbMeasurement",
+    "GlbNodeMeasure",
+    "GlbProfileSample",
+    "GlbTop",
     "ArmatureRotationModeError",
     "ArrayReport",
     "AssemblyReport",
@@ -293,6 +304,7 @@ __all__ = [
     "mark_uv_seams",
     "material_report",
     "measure_feature",
+    "measure_glb",
     "measure_objects",
     "middle_extent_m",
     "move_object_to",

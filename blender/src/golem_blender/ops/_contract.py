@@ -74,6 +74,9 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         # length — it selects a page of rows, and the row count is the
         # unit-free integer the report already carries as `pair_count`.
         "pair_offset",
+        # `measure_glb`: a length in the CALL's own `units` (m or ft), so no
+        # single suffix is true — the report states which unit it answered in.
+        "profile_step",
     }
 )
 

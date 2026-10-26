@@ -49,6 +49,7 @@ OP_MODULE_NAMES = (
     "selectors",
     "motion",
     "coplanar",
+    "glb_measure",
 )
 
 # Config dataclasses that an operation takes as an argument. Listed
