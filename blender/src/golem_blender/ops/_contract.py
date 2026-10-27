@@ -77,6 +77,9 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         # `measure_glb`: a length in the CALL's own `units` (m or ft), so no
         # single suffix is true — the report states which unit it answered in.
         "profile_step",
+        # `probe_view`: how many SURFACES one cast reports, front to back — a
+        # depth count, not a length.
+        "hit_layers",
     }
 )
 

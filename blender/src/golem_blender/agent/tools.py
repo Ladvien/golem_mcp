@@ -348,7 +348,10 @@ SERVICE_TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-from golem_blender.agent.tool_schemas import build_tool_schemas, tool_schemas_fingerprint
+from golem_blender.agent.tool_schemas import (
+    build_tool_schemas,
+    tool_schemas_fingerprint,
+)
 from golem_blender.manifest import OP_MODULE_NAMES
 from golem_blender.ops._contract import facade_ops
 from golem_blender.plugins import op_plugins
@@ -465,6 +468,12 @@ def _report_to_dict(report) -> dict:
     return asdict(report)
 
 
+# The ops that SET the working scene, so they must run outside the context that
+# makes it current: `use_scene` reads and writes the selection, and
+# `list_scenes`/`hold_view` report and set the state it is derived from.
+SCENE_SELECTION_TOOLS = frozenset({"use_scene", "list_scenes", "hold_view"})
+
+
 def dispatch_tool(
     tool_name: str,
     arguments: dict,
@@ -508,6 +517,7 @@ def dispatch_tool(
     # above the import.
     op_function = OP_FUNCTIONS.get(tool_name)
     if op_function is not None:
+        from golem_blender import scene_target
         from golem_blender.agent.op_call import call_op, json_returned
         from golem_blender.harness import gate_verdict_json
 
@@ -515,7 +525,22 @@ def dispatch_tool(
         op_arguments = {
             key: value for key, value in arguments.items() if key != PLAN_STEP_ARGUMENT
         }
-        result = call_op(tool_name, op_function, op_arguments)
+        # Every op runs inside the session's WORKING SCENE. The gate, the boolean
+        # operand check and `link_into_scene` resolve through `bpy.context.scene`,
+        # so without this a session that selected a background scene would have
+        # its booleans made in the user's — silently, and in the wrong place.
+        # The three scene ops are exempt: they are how the working scene is set.
+        if tool_name in SCENE_SELECTION_TOOLS:
+            result = call_op(tool_name, op_function, op_arguments)
+        else:
+            try:
+                with scene_target.working_scene_context():
+                    result = call_op(tool_name, op_function, op_arguments)
+            except scene_target.WorkingSceneMissing as error:
+                # A missing working scene is a FAILED CALL, not a crash: the
+                # model reads the reason and re-selects, instead of the loop
+                # dying on a traceback it cannot act on.
+                return ToolOutcome(f"FAILED at execute: {error}", ok=False)
         # A call the binder rejected bound nothing: record what the
         # model sent (plan_step stripped), not an empty dict, so the
         # miner can see WHAT was refused.
@@ -610,7 +635,11 @@ def _dispatch_service_tool(
         )
 
     if tool_name == "run_python":
-        from golem_blender.harness import HarnessSettings, harness_result_gate_json, run_chunk
+        from golem_blender.harness import (
+            HarnessSettings,
+            harness_result_gate_json,
+            run_chunk,
+        )
         from golem_blender.run.executor import run_source_in_process
 
         source_code = arguments["source"]

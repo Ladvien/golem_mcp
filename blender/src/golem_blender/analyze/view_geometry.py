@@ -19,6 +19,7 @@ a sign slip here reports a face visible from the side it faces away from.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 # True isometric: asin(1/sqrt(3)) in degrees. The game's own iso camera uses
 # it so every axis of a cube foreshortens equally.
@@ -95,3 +96,87 @@ def _dot(
     first: tuple[float, float, float], second: tuple[float, float, float]
 ) -> float:
     return first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
+
+
+@dataclass(frozen=True)
+class OrthoCamera:
+    """An orthographic camera looking at a target, and the frame it sees.
+
+    The game's own camera is orthographic (`iso_camera.rs`), so a probe built on
+    this matches what a player sees. `forward` is the direction the rays travel
+    (-`view_direction`); `right` and `up` complete a right-handed frame, and the
+    frame's height follows its width from the pixel aspect, so a square pixel
+    covers the same distance in both axes.
+    """
+
+    target_m: tuple[float, float, float]
+    yaw_deg: float
+    pitch_deg: float
+    frame_width_m: float
+    width_px: int
+    height_px: int
+
+    @property
+    def forward(self) -> tuple[float, float, float]:
+        return _scaled(view_direction(self.yaw_deg, self.pitch_deg), -1.0)
+
+    @property
+    def right(self) -> tuple[float, float, float]:
+        # forward x Z: the camera's own right, independent of its roll. Straight
+        # down (or straight up) makes that cross product degenerate, so the
+        # convention is +X there — the only choice that keeps a top view's
+        # image axes meaning world X and world Y.
+        forward = self.forward
+        if abs(forward[2]) > NEAR_VERTICAL_FORWARD:
+            return (1.0, 0.0, 0.0)
+        return _normalised(_cross(forward, (0.0, 0.0, 1.0)))
+
+    @property
+    def up(self) -> tuple[float, float, float]:
+        return _cross(self.right, self.forward)
+
+    @property
+    def frame_height_m(self) -> float:
+        return self.frame_width_m * self.height_px / self.width_px
+
+
+def ortho_pixel_ray(
+    camera: OrthoCamera, px: float, py: float, back_off_m: float
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """(origin, direction) of the ray through one pixel's CENTRE.
+
+    Pixel (0, 0) is the top-left of the image, as every image format and every
+    screen coordinate system means it: u runs left to right and v downward, so
+    the frame's up axis is negated for v. The origin sits `back_off_m` behind
+    the target plane along -forward, which is what puts the whole target in
+    front of the eye.
+    """
+    u = (px + PIXEL_CENTRE_OFFSET) / camera.width_px - 0.5
+    v = 0.5 - (py + PIXEL_CENTRE_OFFSET) / camera.height_px
+    origin = _add(
+        _add(
+            camera.target_m,
+            _add(
+                _scaled(camera.right, u * camera.frame_width_m),
+                _scaled(camera.up, v * camera.frame_height_m),
+            ),
+        ),
+        _scaled(camera.forward, -back_off_m),
+    )
+    return origin, camera.forward
+
+
+def ortho_project(camera: OrthoCamera, point) -> tuple[float, float]:
+    """The fractional (px, py) of `point`, the exact inverse of `ortho_pixel_ray`.
+
+    The centre of pixel (px, py) projects back to (px + 0.5, py + 0.5), so
+    projecting a ray's own origin returns its own pixel centre — which is the
+    round trip a probe's geometry is checked by.
+    """
+    offset = _subtract(point, camera.target_m)
+    u = _dot(offset, camera.right) / camera.frame_width_m
+    v = _dot(offset, camera.up) / camera.frame_height_m
+    # Pixel EDGE coordinates, the convention `ortho_pixel_ray` reads: pixel px
+    # spans [px, px + 1] and its centre is px + 0.5, so a point at a pixel's
+    # centre projects to that fraction and never to the index.
+    return ((u + 0.5) * camera.width_px, (0.5 - v) * camera.height_px)

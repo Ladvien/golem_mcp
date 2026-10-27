@@ -81,3 +81,73 @@ def test_every_direction_is_a_unit_vector(yaw_deg, pitch_deg):
 def test_the_label_says_the_yaw():
     assert view_label(45.0) == "yaw_45"
     assert view_label(0.0) == "yaw_0"
+
+
+# --- the orthographic camera (phase 3) ---------------------------------------
+
+
+def _camera(yaw_deg, pitch_deg, width_px=512, height_px=512, frame_width_m=2.0):
+    from golem_blender.analyze.view_geometry import OrthoCamera
+
+    return OrthoCamera(
+        target_m=(0.0, 0.0, 0.0),
+        yaw_deg=yaw_deg,
+        pitch_deg=pitch_deg,
+        frame_width_m=frame_width_m,
+        width_px=width_px,
+        height_px=height_px,
+    )
+
+
+@pytest.mark.parametrize(
+    ("yaw_deg", "pitch_deg"), [(0.0, 0.0), (45.0, ISO_PITCH_DEG), (300.0, 80.0)]
+)
+@pytest.mark.parametrize(("px", "py"), [(0, 0), (256, 256), (511, 511), (100, 300)])
+def test_a_pixels_ray_projects_back_to_that_pixel(yaw_deg, pitch_deg, px, py):
+    """The exact inverse: a ray's origin projects to its own pixel's centre."""
+    from golem_blender.analyze.view_geometry import ortho_pixel_ray, ortho_project
+
+    camera = _camera(yaw_deg, pitch_deg)
+    origin, _direction = ortho_pixel_ray(camera, px, py, 2.0)
+    projected = ortho_project(camera, origin)
+    assert projected[0] == pytest.approx(px + 0.5, abs=1e-9)
+    assert projected[1] == pytest.approx(py + 0.5, abs=1e-9)
+
+
+def test_yaw_zero_pitch_zero_looks_along_plus_y():
+    """The camera stands on the -Y side, so its rays travel towards +Y."""
+    from golem_blender.analyze.view_geometry import ortho_pixel_ray
+
+    camera = _camera(0.0, 0.0)
+    origin, direction = ortho_pixel_ray(camera, 256, 256, 2.0)
+    assert direction == pytest.approx((0.0, 1.0, 0.0))
+    # Behind the target by back_off_m, so the target plane is 2 m in front.
+    assert origin[1] == pytest.approx(-2.0)
+
+
+def test_the_frame_height_follows_the_pixel_aspect():
+    camera = _camera(0.0, 0.0, width_px=512, height_px=256, frame_width_m=4.0)
+    assert camera.frame_height_m == pytest.approx(2.0)
+
+
+def test_a_top_view_keeps_world_x_to_the_right():
+    from golem_blender.analyze.view_geometry import ortho_pixel_ray
+
+    camera = _camera(0.0, 90.0)
+    assert camera.right == pytest.approx((1.0, 0.0, 0.0))
+    _origin, direction = ortho_pixel_ray(camera, 256, 256, 1.0)
+    assert direction == pytest.approx((0.0, 0.0, -1.0))
+
+
+def test_the_frame_is_right_handed_and_orthogonal():
+    camera = _camera(37.0, 20.0)
+    forward, right, up = camera.forward, camera.right, camera.up
+
+    def dot(first, second):
+        return sum(first[axis] * second[axis] for axis in range(3))
+
+    assert dot(forward, right) == pytest.approx(0.0)
+    assert dot(forward, up) == pytest.approx(0.0)
+    assert dot(right, up) == pytest.approx(0.0)
+    for vector in (forward, right, up):
+        assert dot(vector, vector) == pytest.approx(1.0)

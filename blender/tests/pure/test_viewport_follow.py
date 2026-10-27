@@ -63,3 +63,26 @@ def test_the_viewport_line_names_a_few_objects_then_counts_the_rest():
         + " and 5 more in 2 3D viewport(s)"
     )
     assert _framed_line(("Crate",), 1) == "viewport: framed Crate in 1 3D viewport(s)"
+
+
+def test_a_held_view_reports_the_veto_and_never_frames(monkeypatch):
+    """The user's veto: the follow must not reach the framing code at all.
+
+    `frame_in_viewports` is replaced with a raising stub, so this fails if the
+    held branch is ever moved below the framing call — which is the only way the
+    veto could break, and the failure it would cause is a user's viewport jumping
+    while a `viewport: held` line claims it did not.
+    """
+    from golem_blender import scene_target, viewport_follow
+
+    def must_not_frame(*args, **kwargs):
+        raise AssertionError("the framing code was reached while the view was held")
+
+    monkeypatch.setattr(viewport_follow, "frame_in_viewports", must_not_frame)
+    scene_target.set_view_held(True)
+    try:
+        outcome = viewport_follow.follow_viewport(ToolOutcome("done"))
+    finally:
+        scene_target.set_view_held(False)
+    assert outcome.text.splitlines()[-1].startswith("viewport: held")
+    assert "done" in outcome.text

@@ -50,6 +50,9 @@ OP_MODULE_NAMES = (
     "motion",
     "coplanar",
     "glb_measure",
+    "view_probe",
+    "enclosure",
+    "scenes",
 )
 
 # Config dataclasses that an operation takes as an argument. Listed

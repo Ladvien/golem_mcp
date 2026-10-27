@@ -135,6 +135,16 @@ def follow_viewport(
     call touched (see `names_to_frame`). A framing error is reported on that
     line, not raised: the tool call already changed the scene, and an error
     result would invite the agent to repeat it."""
+    from golem_blender import scene_target
+
+    if scene_target.view_is_held():
+        # The user's veto: report that the view was left alone rather than frame
+        # the part. `_fit_area` is never reached, so the CAMERA->PERSP flip a
+        # framing pass would make does not happen either.
+        held_line = (
+            f"{VIEWPORT_LINE_PREFIX} held: hold_view is on, the view was not moved"
+        )
+        return dataclasses.replace(outcome, text=f"{outcome.text}\n{held_line}")
     try:
         line = frame_in_viewports(names_to_frame(outcome, before), config).line
     except Exception as error:  # noqa: BLE001 — reported on the viewport line, not swallowed

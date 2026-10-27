@@ -121,6 +121,12 @@ def reset_scene(fps: int = CANONICAL_FPS) -> None:
     """
     import bpy
 
+    from golem_blender import scene_target
+
+    # A wipe leaves no scene to be working IN, and a later call resolving into a
+    # deleted scene would fail confusingly.
+    scene_target.reset()
+
     missing = [
         name for name in WIPE_COLLECTIONS if getattr(bpy.data, name, None) is None
     ]

@@ -158,6 +158,23 @@ class OccluderIndex:
             ray_origin = location + ray_direction * PARITY_RAY_OFFSET_M
         return hits
 
+    def nearest_distance_m(self, point: tuple[float, float, float]) -> float:
+        """How far `point` is from the closest surface, or inf when there is none.
+
+        The clearance test a seam needs: a ray grazing two faces that meet FLUSH
+        is at distance ~0 from both, while a real 2 cm gap puts its centre 1 cm
+        from each. A crossing with no clearance is a degenerate contact, not a
+        passage a character could breathe through.
+        """
+        if self.tree is None:
+            return math.inf
+        from mathutils import Vector
+
+        found = self.tree.find_nearest(Vector(point))
+        if found is None or found[0] is None:
+            return math.inf
+        return found[3]
+
     def nearest_object_names(
         self, point: tuple[float, float, float], count: int = 2
     ) -> tuple[str, ...]:

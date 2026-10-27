@@ -68,6 +68,12 @@ from golem_blender.ops.coplanar import (
     select_coplanar_faces,
     separate_coplanar_faces,
 )
+from golem_blender.ops.enclosure import (
+    EnclosureLeak,
+    EnclosureReport,
+    JunctionVerdict,
+    enclosure_report,
+)
 from golem_blender.ops.features import FeatureReport, SideDepth, measure_feature
 from golem_blender.ops.glb_measure import (
     GlbMeasurement,
@@ -157,6 +163,15 @@ from golem_blender.ops.rigging import (
     rig_report,
 )
 from golem_blender.ops.roughen import FaceInversion, RoughenReport, roughen_object
+from golem_blender.ops.scenes import (
+    SceneEntry,
+    SceneListing,
+    SceneSelection,
+    UnknownScene,
+    hold_view,
+    list_scenes,
+    use_scene,
+)
 from golem_blender.ops.selectors import (
     EdgeSelector,
     FaceSelector,
@@ -173,6 +188,12 @@ from golem_blender.ops.transforms import (
     rotate_object_euler,
     snap_base_to_ground,
     world_bounds,
+)
+from golem_blender.ops.view_probe import (
+    ProbeRay,
+    ViewProbe,
+    ViewShare,
+    probe_view,
 )
 from golem_blender.ops.uv import (
     NoEdgesSelected,
@@ -198,10 +219,17 @@ __all__ = [
     "CoplanarSelection",
     "CoplanarSelfTestFailed",
     "CoplanarSettings",
+    "EnclosureLeak",
+    "EnclosureReport",
     "GlbMeasurement",
     "GlbNodeMeasure",
     "GlbProfileSample",
     "GlbTop",
+    "JunctionVerdict",
+    "SceneEntry",
+    "SceneListing",
+    "SceneSelection",
+    "ProbeRay",
     "ArmatureRotationModeError",
     "ArrayReport",
     "AssemblyReport",
@@ -287,6 +315,8 @@ __all__ = [
     "define_assembly",
     "define_piece",
     "declare_flush",
+    "enclosure_report",
+    "hold_view",
     "deforming_bone_names",
     "depth_axis_extent_rank",
     "depth_axis_holds_middle_extent",
@@ -300,6 +330,7 @@ __all__ = [
     "keyframe_pose_bone_rotation",
     "lay_out_grid",
     "linear_array",
+    "list_scenes",
     "link_into_scene",
     "mark_uv_seams",
     "material_report",
@@ -312,6 +343,7 @@ __all__ = [
     "path_array",
     "pbr_texture_report",
     "piece_report",
+    "probe_view",
     "radial_array",
     "relief_slab_report",
     "remove_object_and_mesh",
@@ -332,6 +364,10 @@ __all__ = [
     "splayed_leg_ring",
     "stand_against",
     "trim_soles_flat",
+    "UnknownScene",
+    "use_scene",
+    "ViewProbe",
+    "ViewShare",
     "unwrap_uvs",
     "weight_report",
     "weld_and_dissolve",
