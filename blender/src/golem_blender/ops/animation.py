@@ -180,7 +180,153 @@ def animation_report(object_name: str) -> AnimationReport:
     )
 
 
+POSE_MOVED_TOLERANCE = 1.0e-4
+"""How far a pose-bone matrix may differ from its rest matrix and still count as unmoved.
+
+A matrix component of the pose bone's armature-space transform, so the
+number is unitless and scale-free: 1e-4 on a 1.75 m rig is 0.2 mm, far
+below anything a viewer sees and far above float32 noise from the
+glTF round trip."""
+
+
+@dataclass(frozen=True)
+class PlayClipReport:
+    """What playing one action on one armature left posed, measured at one frame."""
+
+    object_name: str
+    action_name: str
+    # The OBJECT slot the action was bound through. Empty never reaches
+    # here: an action with no OBJECT slot is refused by `_bind_action`.
+    slot_identifier: str
+    frame: int
+    frame_start: int
+    frame_end: int
+    fcurve_count: int
+    # NLA tracks muted to make THIS action the only thing driving the
+    # pose. A track left unmuted blends its own clip over the named one
+    # and the frame reads a pose no action contains.
+    muted_nla_track_count: int
+    # Bones whose evaluated armature-space matrix differs from their rest
+    # matrix. Zero on a clip that drives nothing — the slot trap's own
+    # signature, and the reason this op exists next to `animation_report`.
+    moved_bone_count: int
+
+
+@op(gated=True)
+def play_clip(armature_name: str, action_name: str, frame: int) -> PlayClipReport:
+    """Pose the named armature with one action at one frame, and measure how many bones moved.
+
+    Binds the action through its OBJECT slot (an action assigned without
+    one evaluates nothing — see `_bind_action`), mutes every NLA track so
+    the named action alone drives the pose, and sets the frame. Every
+    state it changes stays changed: this is the op that puts a character
+    into a pose for a render or a measurement.
+
+    ``frame`` is not clamped: a frame outside the action's own range is
+    refused by number, because a frame outside it reads the pose held at
+    the nearest end and looks like a working clip.
+    """
+    import math
+
+    import bpy
+
+    from golem_blender.ops._objects import object_by_name
+
+    armature_object = object_by_name(armature_name, "ARMATURE")
+    action = bpy.data.actions.get(action_name)
+    if action is None:
+        raise ValueError(
+            f"no action named {action_name!r} in bpy.data.actions "
+            f"(present: {sorted(a.name for a in bpy.data.actions)})"
+        )
+    frame_start = math.floor(action.frame_range[0])
+    frame_end = math.ceil(action.frame_range[1])
+    if not frame_start <= frame <= frame_end:
+        raise ValueError(
+            f"frame {frame} is outside action {action.name!r}'s range "
+            f"{frame_start}..{frame_end}"
+        )
+
+    slot_identifier = _bind_action(armature_object, action)
+    muted_nla_track_count = 0
+    animation_data = armature_object.animation_data
+    for track in animation_data.nla_tracks:
+        if not track.mute:
+            track.mute = True
+            muted_nla_track_count += 1
+
+    bpy.context.scene.frame_set(frame)
+    return PlayClipReport(
+        object_name=armature_object.name,
+        action_name=action.name,
+        slot_identifier=slot_identifier,
+        frame=frame,
+        frame_start=frame_start,
+        frame_end=frame_end,
+        fcurve_count=len(_action_fcurves(armature_object)),
+        muted_nla_track_count=muted_nla_track_count,
+        moved_bone_count=_moved_bone_count(armature_object),
+    )
+
+
+def _moved_bone_count(armature_object) -> int:
+    """Pose bones whose evaluated matrix differs from their rest matrix."""
+    moved = 0
+    for pose_bone in armature_object.pose.bones:
+        rest = pose_bone.bone.matrix_local
+        posed = pose_bone.matrix
+        if any(
+            abs(posed[row][column] - rest[row][column]) > POSE_MOVED_TOLERANCE
+            for row in range(4)
+            for column in range(4)
+        ):
+            moved += 1
+    return moved
+
+
 # -- internals -----------------------------------------------------------
+
+
+def _bind_action(armature_object, action) -> str:
+    """Make ``action`` drive ``armature_object`` through its OBJECT slot; return the slot's identifier.
+
+    The Blender 4.4+ slotted-action trap: assigning ``animation_data.action``
+    leaves ``action_slot`` unset, and an action with an unbound slot
+    evaluates NOTHING. Every frame of playback then reads the rest pose
+    while the action, its fcurves and its keyframes all look present.
+
+    An action carries one slot per target the keyed data belongs to
+    (``target_id_type`` ``"OBJECT"`` for object channels — a bone path is
+    an object channel because the pose lives on the armature object).
+    Exactly one OBJECT slot is the only unambiguous case: with none the
+    action cannot drive an armature at all, and with several the caller
+    would have to say which. Both are refused by name rather than guessed.
+    """
+    animation_data = armature_object.animation_data or (
+        armature_object.animation_data_create()
+    )
+    animation_data.action = action
+    object_slots = [
+        slot for slot in action.slots if slot.target_id_type == "OBJECT"
+    ]
+    if not object_slots:
+        raise ValueError(
+            f"action {action.name!r} has no OBJECT slot; it cannot drive an "
+            f"armature (its slots are {[s.identifier for s in action.slots]})"
+        )
+    if len(object_slots) > 1:
+        raise ValueError(
+            f"action {action.name!r} has {len(object_slots)} OBJECT slots "
+            f"({[s.identifier for s in object_slots]}); which one drives "
+            f"{armature_object.name!r} is not stated"
+        )
+    animation_data.action_slot = object_slots[0]
+    if not _action_fcurves(armature_object):
+        raise ValueError(
+            f"action {action.name!r} drives nothing through slot "
+            f"{object_slots[0].identifier!r}: no fcurves for that slot"
+        )
+    return object_slots[0].identifier
 
 
 def _action_channelbag(obj):

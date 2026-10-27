@@ -290,8 +290,10 @@ def test_the_readers_are_the_only_plan_free_op_tools():
     assert readers == [
         "animation_report",
         "assembly_report",
+        "audit_winding",
         "body_capsules_report",
         "canonical_depth_axis_rotation_euler_rad",
+        "clearance_report",
         "clip_self_intersection_report",
         "coplanar_report",
         "deforming_bone_names",
@@ -313,6 +315,7 @@ def test_the_readers_are_the_only_plan_free_op_tools():
         "select_edges",
         "select_faces",
         "select_vertices",
+        "silhouette_test",
         "weight_report",
         "world_bounds",
     ]

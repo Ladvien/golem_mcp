@@ -48,6 +48,7 @@ from skinclip.intersect import CheckSettings, segment_distance
 from skinclip.model import Clip, Figure, Skeleton, crease_zones, welded_corners
 from skinclip.spec import RingSkirtSpec
 
+from golem_blender.ops._influences import MAXIMUM_INFLUENCES_PER_VERTEX
 from golem_blender.ops._pose_paths import (
     LOCATION_CHANNEL,
     ROTATION_QUATERNION_CHANNEL,
@@ -57,7 +58,11 @@ from golem_blender.ops._pose_paths import (
 )
 from golem_blender.ops.animation import _action_channelbag, _action_fcurves
 from golem_blender.ops.motion import ArmatureRotationModeError
-from golem_blender.ops.rigging import ARMATURE_MODIFIER_TYPE, BoneSpec, _create_edit_bones
+from golem_blender.ops.rigging import (
+    ARMATURE_MODIFIER_TYPE,
+    BoneSpec,
+    _create_edit_bones,
+)
 
 QUATERNION_ROTATION_MODE = "QUATERNION"
 FULL_INHERIT_SCALE = "FULL"
@@ -71,7 +76,6 @@ UNIT_SCALE_TOLERANCE = 1e-4
 # skinclip's own default for a mesh without a material in the slot.
 NO_MATERIAL_LABEL = "mesh"
 
-MAXIMUM_INFLUENCES_PER_VERTEX = 4
 LABEL_CHUNK_TRIANGLES = 20000
 
 # A channel that moves less than this from the rest value does not count

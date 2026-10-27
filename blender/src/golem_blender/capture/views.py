@@ -49,6 +49,13 @@ XRAY_ALPHA_DEFAULT = 0.4
 CAPTURE_LIGHT_NAME = "golem_capture_light"
 CAPTURE_LIGHT_ENERGY = 3.0
 
+# The material a mesh with NO slot gets while its back faces are being
+# culled, and the grey it carries: Workbench draws an unmaterialed mesh in
+# this exact grey, so a culled frame looks like the same mesh, not like a
+# white placeholder.
+CAPTURE_CULL_MATERIAL_NAME = "golem_capture_cull"
+CAPTURE_CULL_MATERIAL_GREY = (0.8, 0.8, 0.8, 1.0)
+
 
 @dataclass(frozen=True)
 class CaptureSettings:
@@ -84,6 +91,28 @@ class CaptureSettings:
     # square frame. The default (False) keeps every existing sheet as it
     # was, framed by the sphere.
     fit_projection: bool = False
+    # Hide back faces, as the engine the asset ships to does: glTF's
+    # `doubleSided: false` makes bevy_gltf render with `cull_mode: Back`, so a
+    # sheet that draws both sides shows surfaces the game never draws.
+    #
+    # The default stays False because every pinned golden `view_sha256` was
+    # captured with both sides drawn, and culling would move all of them.
+    #
+    # WHICH flag does it depends on the engine, measured 2026-10-27 in Blender
+    # 5.2 on a 1 m plane whose normal faces away from the camera (4096
+    # subject pixels at 64x64, of which the plane fills 1024):
+    #
+    #   Workbench: shading.show_backface_culling True -> 0 px;
+    #              material.use_backface_culling True -> 1024 px (ignored)
+    #   EEVEE:     shading.show_backface_culling True -> 1024 px (ignored);
+    #              material.use_backface_culling True -> 0 px
+    #   Cycles:    neither flag culls (1024 px either way)
+    #
+    # So a culled capture sets BOTH and raises if it lands on Cycles. A CLOSED
+    # mesh is byte-identical either way (measured: a cube's render arrays
+    # compare equal), which is where the drift entry's old "0 changed pixels"
+    # came from — the probe that produced was closed.
+    cull_backfaces: bool = False
 
 
 def _carries_an_image_texture(blender_object) -> bool:
@@ -233,6 +262,10 @@ def capture_views(
     if settings.xray:
         shading.show_xray = True
         shading.xray_alpha = settings.xray_alpha
+    previous_backface_culling = shading.show_backface_culling
+    culling_state = None
+    if settings.cull_backfaces:
+        culling_state = _apply_backface_culling(blender_object, extra_objects, shading)
 
     captured_paths: dict[str, Path] = {}
     # A textured object is rendered shader-accurately, so the inspection
@@ -328,12 +361,22 @@ def capture_views(
                 scene.render.engine = engine
                 bpy.ops.render.render(write_still=True)
             except Exception:  # noqa: BLE001 - bpy.ops raises bare RuntimeError
+                if settings.cull_backfaces:
+                    raise RuntimeError(
+                        "backface culling needs Workbench or EEVEE; this render "
+                        "dropped to Cycles, which culls on neither flag "
+                        "(measured: a plane facing away from the camera still "
+                        "fills 1024 of 1024 pixels)"
+                    ) from None
                 scene.render.engine = settings.fallback_engine
                 scene.cycles.samples = settings.fallback_cycles_samples
                 bpy.ops.render.render(write_still=True)
             captured_paths[view_name] = output_path
     finally:
         shading.show_xray, shading.xray_alpha = previous_xray_state
+        shading.show_backface_culling = previous_backface_culling
+        if culling_state is not None:
+            culling_state.restore()
         scene.camera = previous_camera
         scene.render.engine = previous_engine
         scene.render.resolution_x, scene.render.resolution_y = previous_resolution
@@ -345,6 +388,95 @@ def capture_views(
         bpy.data.cameras.remove(camera_data)
 
     return captured_paths
+
+
+class _BackfaceCulling:
+    """The culling flags a capture set, and the way to put every one of them back."""
+
+    def __init__(self, shading, previous_shading_flag: bool):
+        self._shading = shading
+        self._previous_shading_flag = previous_shading_flag
+        self._material_flags: list[tuple[object, bool]] = []
+        self._temporary_slots: list[tuple[object, object]] = []
+        self._temporary_material = None
+
+    def remember_material(self, material, previous: bool) -> None:
+        self._material_flags.append((material, previous))
+
+    def temporary_material(self):
+        """The shared grey material for a slotless mesh, created on first use."""
+        if self._temporary_material is None:
+            self._temporary_material = _cull_material()
+        return self._temporary_material
+
+    def remember_temporary_slot(self, mesh_object, material) -> None:
+        self._temporary_slots.append((mesh_object, material))
+
+    def restore(self) -> None:
+        for material, previous in self._material_flags:
+            material.use_backface_culling = previous
+        for mesh_object, material in self._temporary_slots:
+            mesh_object.data.materials.pop(
+                index=mesh_object.data.materials.find(material.name)
+            )
+        self._shading.show_backface_culling = self._previous_shading_flag
+        if self._temporary_material is not None:
+            import bpy
+
+            for mesh_object, _material in self._temporary_slots:
+                mesh_object.data.update()
+            if self._temporary_material.users == 0:
+                bpy.data.materials.remove(self._temporary_material)
+            self._temporary_material = None
+
+
+def _apply_backface_culling(blender_object, extra_objects, shading) -> _BackfaceCulling:
+    """Turn on back-face culling for every visible mesh; return the undo record.
+
+    BOTH flags are set, because which one works depends on the engine and the
+    capture may land on either (see `CaptureSettings.cull_backfaces` for the
+    measurements): Workbench culls on the SHADING flag alone and ignores the
+    material's, EEVEE the other way round.
+
+    A mesh with no material slot gets a temporary grey one, because
+    `use_backface_culling` is a MATERIAL property and a slotless mesh cannot
+    carry it. The temporary slot is removed afterwards.
+    """
+    import bpy
+
+    culling = _BackfaceCulling(shading, shading.show_backface_culling)
+    shading.show_backface_culling = True
+    view_layer_objects = bpy.context.view_layer.objects
+    for candidate in (blender_object, *extra_objects):
+        if candidate.type != "MESH" or not candidate.visible_get():
+            continue
+        if candidate.name not in view_layer_objects:
+            continue
+        if not candidate.data.materials:
+            temporary = culling.temporary_material()
+            candidate.data.materials.append(temporary)
+            culling.remember_temporary_slot(candidate, temporary)
+        for material in candidate.data.materials:
+            if material is None:
+                continue
+            culling.remember_material(material, material.use_backface_culling)
+            material.use_backface_culling = True
+    return culling
+
+
+def _cull_material():
+    """The shared grey material a slotless mesh gets while culling; created once per scene."""
+    import bpy
+
+    existing = bpy.data.materials.get(CAPTURE_CULL_MATERIAL_NAME)
+    if existing is not None:
+        existing.diffuse_color = CAPTURE_CULL_MATERIAL_GREY
+        existing.use_backface_culling = True
+        return existing
+    material = bpy.data.materials.new(CAPTURE_CULL_MATERIAL_NAME)
+    material.diffuse_color = CAPTURE_CULL_MATERIAL_GREY
+    material.use_backface_culling = True
+    return material
 
 
 def _scene_has_a_light() -> bool:

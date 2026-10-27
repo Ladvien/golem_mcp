@@ -187,6 +187,14 @@ SERVICE_TOOL_SCHEMAS: list[dict] = [
                             "and hidden interior geometry."
                         ),
                     },
+                    "cull": {
+                        "type": "boolean",
+                        "description": (
+                            "Hide back faces as the game does (bevy_gltf draws "
+                            "a non-doubleSided glTF with cull_mode Back). "
+                            "Default true; false shows both sides."
+                        ),
+                    },
                     "look_for": {
                         "type": "string",
                         "description": (
@@ -777,14 +785,17 @@ def _dispatch_service_tool(
         if blender_object is None:
             return failed(f"No object named {object_name!r} in the scene.")
         report = analyze_object(blender_object)
+        xray = bool(arguments.get("xray", False))
+        cull = bool(arguments.get("cull", True))
         sheet_path = capture_contact_sheet(
             blender_object,
             output_directory,
-            settings=CaptureSettings(xray=bool(arguments.get("xray", False))),
+            settings=CaptureSettings(xray=xray, cull_backfaces=cull),
             report=report,
         )
         return done(
-            f"Rendered {object_name} ({'x-ray' if arguments.get('xray') else 'solid'}). "
+            f"Rendered {object_name} ({'x-ray' if xray else 'solid'}, "
+            f"{'culled' if cull else 'double-sided'}). "
             f"Look at the attached contact sheet.",
             (sheet_path,),
         )

@@ -53,6 +53,10 @@ OP_MODULE_NAMES = (
     "view_probe",
     "enclosure",
     "scenes",
+    "winding",
+    "weight_transfer",
+    "garments",
+    "silhouette",
 )
 
 # Config dataclasses that an operation takes as an argument. Listed

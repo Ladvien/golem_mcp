@@ -105,14 +105,25 @@ DRIFT_ENTRIES: tuple[DriftEntry, ...] = (
         changed_in="all",
         error_signature="show_backface_culling",
         fix=(
-            "Backface culling is a VIEWPORT display setting: Workbench "
-            "renders ignore it entirely (measured: 0 changed pixels), so a "
-            "flipped normal cannot be visualized that way headless. Use the "
-            "analyzer's ray-parity flipped_normal_triangle_count, or show "
-            "it via shading contrast. show_xray DOES affect Workbench "
-            "renders and is the supported transparency debug path."
+            "It is a viewport setting AND a render one, and WHICH flag culls "
+            "depends on the engine. Measured 2026-10-27 in Blender 5.2 on a "
+            "1 m open plane facing away from the camera (its pixels: 1024 "
+            "of 4096 at 64x64) — Workbench culls on the SHADING flag alone "
+            "(1024 -> 0 px) and ignores the material's (1024 px, unchanged); "
+            "EEVEE culls on the MATERIAL flag alone (1024 -> 0 px) and "
+            "ignores the shading one; Cycles culls on neither. The old "
+            "reading of 0 changed pixels came from a CLOSED mesh: a cube "
+            "renders byte-identically either way, because its back faces "
+            "are hidden by its front ones. So use render_views(cull=True), "
+            "which sets both flags, or the analyzer's ray-parity "
+            "flipped_normal_triangle_count for the number. show_xray DOES "
+            "affect Workbench renders and is the supported transparency "
+            "debug path."
         ),
-        source="[measured] golem_blender stage-4 pretest, 2026-08-21",
+        source=(
+            "[measured] golem_blender stage-4 pretest 2026-08-21 (closed "
+            "mesh); re-measured 2026-10-27 per engine on an open plane"
+        ),
     ),
     DriftEntry(
         symbol="glTF export splits vertices at flat-shading seams",

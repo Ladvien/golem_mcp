@@ -151,3 +151,53 @@ def test_the_frame_is_right_handed_and_orthogonal():
     assert dot(right, up) == pytest.approx(0.0)
     for vector in (forward, right, up):
         assert dot(vector, vector) == pytest.approx(1.0)
+
+
+def test_fit_ortho_camera_to_height_spans_the_subject_exactly():
+    """The frame is built so the subject is `subject_height_px` tall, measured back off its own axes."""
+    from golem_blender.analyze.view_geometry import (
+        OrthoCamera,
+        fit_ortho_camera_to_height,
+    )
+
+    corners = [
+        (-0.5, -0.3, 0.0),
+        (0.5, -0.3, 0.0),
+        (0.5, 0.3, 0.0),
+        (-0.5, 0.3, 0.0),
+        (-0.5, -0.3, 1.8),
+        (0.5, -0.3, 1.8),
+        (0.5, 0.3, 1.8),
+        (-0.5, 0.3, 1.8),
+    ]
+    camera = fit_ortho_camera_to_height(
+        corners, yaw_deg=0.0, pitch_deg=0.0, subject_height_px=55, margin_px=2
+    )
+    assert camera.width_px > 2 * 2
+    assert camera.height_px == 55 + 2 * 2
+    metres_per_px = camera.frame_width_m / camera.width_px
+    projected = [camera.up[0] * x + camera.up[1] * y + camera.up[2] * z for x, y, z in corners]
+    span_m = max(projected) - min(projected)
+    assert span_m == pytest.approx(55 * metres_per_px, rel=1e-9), (
+        f"the subject spans {span_m:.6f} m of {metres_per_px:.6f} m pixels"
+    )
+    # And the frame covers it with the margin on both sides.
+    assert camera.frame_height_m >= span_m
+    assert camera.target_m[2] == pytest.approx(0.9)
+
+
+def test_fit_ortho_camera_to_height_refuses_a_flat_subject_and_empty_input():
+    from golem_blender.analyze.view_geometry import fit_ortho_camera_to_height
+
+    with pytest.raises(ValueError, match="no extent along the camera's up axis"):
+        fit_ortho_camera_to_height(
+            [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            yaw_deg=0.0,
+            pitch_deg=0.0,
+            subject_height_px=55,
+            margin_px=2,
+        )
+    with pytest.raises(ValueError, match="nothing to frame"):
+        fit_ortho_camera_to_height(
+            [], yaw_deg=0.0, pitch_deg=0.0, subject_height_px=55, margin_px=2
+        )

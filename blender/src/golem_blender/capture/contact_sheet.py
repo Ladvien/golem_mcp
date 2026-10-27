@@ -125,6 +125,13 @@ def capture_contact_sheet(
             f"{report.self_intersecting_face_pair_count} | flipped "
             f"{report.flipped_normal_triangle_count}"
         )
+        summary += " | culled" if settings.cull_backfaces else " | double-sided"
+        if report.inward_area_fraction > 0.0:
+            # A whole shell built inside out passes every other count on
+            # this line: its normals agree with each other, its components
+            # are one, and it intersects nothing. The engine culls its back
+            # faces and draws nothing.
+            summary += f" | inward {report.inward_area_fraction:.0%}"
         verdict_lines = (
             ("GATE: PASS  " + summary,)
             if verdict_passed

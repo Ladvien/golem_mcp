@@ -140,6 +140,69 @@ class OrthoCamera:
         return self.frame_width_m * self.height_px / self.width_px
 
 
+def fit_ortho_camera_to_height(
+    corners_m,
+    yaw_deg: float,
+    pitch_deg: float,
+    subject_height_px: int,
+    margin_px: int,
+) -> OrthoCamera:
+    """The camera that draws a point cloud `subject_height_px` tall on screen.
+
+    This is the whole answer to "does the change read at N pixels": the frame
+    is built so the SUBJECT spans exactly `subject_height_px`, and every other
+    pixel is then a real fraction of the subject. A game character is 55 px
+    tall on screen at the report's own scale, so a fold 1 px deep there is a
+    fold nobody can see.
+
+    The frame is fitted on the subject's UP axis only; its width follows the
+    pixel aspect, and the caller pads both sides with `margin_px` so a subject
+    that pokes past its own height still lands inside the frame.
+
+    `corners_m` is any iterable of (x, y, z) world metres — a bounding box's
+    eight corners, or a mesh's vertices. Pure arithmetic: no bpy, no numpy.
+    """
+    if subject_height_px <= 0:
+        raise ValueError(f"subject_height_px must be positive, got {subject_height_px}")
+    if margin_px < 0:
+        raise ValueError(f"margin_px must be 0 or more, got {margin_px}")
+    points = [tuple(float(coordinate) for coordinate in point) for point in corners_m]
+    if not points:
+        raise ValueError("corners_m is empty: nothing to frame")
+
+    # Only the camera's AXES matter for the fit, so its frame is provisional.
+    axes = OrthoCamera((0.0, 0.0, 0.0), yaw_deg, pitch_deg, 1.0, 1, 1)
+    projected_right = [_dot(point, axes.right) for point in points]
+    projected_up = [_dot(point, axes.up) for point in points]
+    up_span_m = max(projected_up) - min(projected_up)
+    right_span_m = max(projected_right) - min(projected_right)
+    if up_span_m <= 0.0:
+        raise ValueError(
+            "the subject has no extent along the camera's up axis; it is flat "
+            "in this view, so there is no height to fit"
+        )
+
+    metres_per_px = up_span_m / subject_height_px
+    width_px = math.ceil(right_span_m / metres_per_px) + 2 * margin_px
+    height_px = subject_height_px + 2 * margin_px
+    centre = tuple(
+        (
+            min(coordinate[index] for coordinate in points)
+            + max(coordinate[index] for coordinate in points)
+        )
+        / 2.0
+        for index in range(3)
+    )
+    return OrthoCamera(
+        target_m=centre,
+        yaw_deg=yaw_deg,
+        pitch_deg=pitch_deg,
+        frame_width_m=width_px * metres_per_px,
+        width_px=width_px,
+        height_px=height_px,
+    )
+
+
 def ortho_pixel_ray(
     camera: OrthoCamera, px: float, py: float, back_off_m: float
 ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:

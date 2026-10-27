@@ -131,6 +131,7 @@ def gate_summary_lines(
             f"({report.triangle_count} tris, "
             f"{report.connected_component_count} components)"
         )
+        lines.extend(facing_summary_lines(report))
     elif object_type != "MESH":
         lines.append(f"  gate: scene state only ({object_type} has no mesh to analyze)")
     if world_extents_m is not None:
@@ -142,6 +143,33 @@ def gate_summary_lines(
         lines.append(f"  orient: {orientation_reading(world_extents_m)}")
     lines.extend(f"    - {failure}" for failure in gate_failures)
     return lines
+
+
+def facing_summary_lines(report: MeshReport) -> list[str]:
+    """The gate's facing line: inward area, or why nobody measured it.
+
+    Two different "nothing to report" cases, and the text keeps them apart:
+    a shell that IS inward-facing says so with a number, and a mesh too big
+    to measure says so with its size. Silence about a measurement that
+    failed would read exactly like a pass.
+    """
+    from golem_blender.analyze.mesh_checks import WINDING_GATE_TRIANGLE_LIMIT
+
+    if report.inward_area_fraction < 0.0:
+        return [
+            (
+                f"  facing: not measured ({report.triangle_count} triangles > "
+                f"{WINDING_GATE_TRIANGLE_LIMIT})"
+            )
+        ]
+    if report.inward_area_fraction > 0.0:
+        return [
+            (
+                f"  facing: inward {report.inward_area_fraction:.0%} of area, "
+                f"undecided {report.undecided_area_fraction:.0%}"
+            )
+        ]
+    return []
 
 
 def gate_object(blender_object, budget: MeshBudget) -> GateVerdict:

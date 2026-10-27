@@ -31,6 +31,20 @@ DUPLICATE_VERTEX_DISTANCE_M = 1.0e-5
 DEFAULT_PROP_TRIANGLE_BUDGET = 2_000
 
 
+# Faces the gate samples for its facing reading. 256 is an even stride over
+# the whole surface, which answers "is this shell inside out" as well as
+# measuring every face does, at a fraction of the pair count.
+WINDING_GATE_QUERY_LIMIT = 256
+
+# Above this triangle count the gate skips the facing reading and reports
+# -1.0, because the analyzer runs inside the add-on socket's window and a
+# garment or a prop is nowhere near it. Measured 2026-10-27 in Blender 5.2
+# on this Mac: a 49 996-triangle `add_cylinder` costs 0.47 s for the facing
+# reading alone (1.49 s for the whole analyze against 0.48 s without it), so
+# the limit is set where the reading is still under half a second.
+WINDING_GATE_TRIANGLE_LIMIT = 50_000
+
+
 @dataclass(frozen=True)
 class MeshBudget:
     """What a mesh must satisfy to pass the gate."""
@@ -87,6 +101,16 @@ class MeshReport:
     # the pallet's triangle count from 334 to 336.
     volume_m3: float = 0.0
     surface_area_m2: float = 0.0
+    # The generalized winding number over the WORLD-space triangles of the
+    # evaluated mesh, area-weighted over a stride sample of
+    # WINDING_GATE_QUERY_LIMIT faces (Jacobson, Kavan and Sorkine-Hornung
+    # 2013, DOI 10.1145/2461912.2461916). Reported, never failed here: a
+    # room's walls legitimately face inward, so `failures()` says nothing
+    # about it. -1.0 means NOT MEASURED — the mesh was over
+    # WINDING_GATE_TRIANGLE_LIMIT. The two values are different answers and
+    # the gate text says which one it has.
+    inward_area_fraction: float = -1.0
+    undecided_area_fraction: float = -1.0
 
     def failures(self, budget: MeshBudget) -> list[str]:
         """Return human-readable failures against a budget (empty = pass)."""
@@ -172,6 +196,44 @@ class MeshReport:
 
     def passes(self, budget: MeshBudget) -> bool:
         return not self.failures(budget)
+
+
+def _measure_facing(blender_object, evaluated_mesh, triangle_count: int) -> dict:
+    """Area-weighted inward/undecided fractions over a stride sample, or -1.0 when not measured.
+
+    Read WORLD space, from `matrix_world @ vertex`: a negative object scale
+    turns every face inside out on screen, and only the world-space winding
+    says so. `FromObject` and any local read measure the wrong frame.
+
+    A mesh over `WINDING_GATE_TRIANGLE_LIMIT` is NOT measured and says so
+    with -1.0, rather than reporting 0.0 — "no inward faces" and "nobody
+    looked" are different answers and a caller must be able to tell them
+    apart.
+    """
+    unmeasured = {"inward_area_fraction": -1.0, "undecided_area_fraction": -1.0}
+    if triangle_count <= 0 or triangle_count > WINDING_GATE_TRIANGLE_LIMIT:
+        return unmeasured
+    import numpy as np
+
+    from golem_blender.analyze import winding
+
+    evaluated_mesh.calc_loop_triangles()
+    vertices = np.empty(len(evaluated_mesh.vertices) * 3, dtype=float)
+    evaluated_mesh.vertices.foreach_get("co", vertices)
+    matrix = np.array(blender_object.matrix_world, dtype=float)
+    world_vertices = vertices.reshape(-1, 3) @ matrix[:3, :3].T + matrix[:3, 3]
+    flat_indices = np.empty(len(evaluated_mesh.loop_triangles) * 3, dtype=np.int64)
+    evaluated_mesh.loop_triangles.foreach_get("vertices", flat_indices)
+    corners = world_vertices[flat_indices.reshape(-1, 3)]
+    sampled = winding.query_face_sample(len(corners), WINDING_GATE_QUERY_LIMIT)
+    scores = winding.face_orientation_scores(corners, sampled)
+    fractions = winding.area_weighted_fractions(
+        corners[sampled], winding.classify_faces(scores)
+    )
+    return {
+        "inward_area_fraction": fractions["inward_area_fraction"],
+        "undecided_area_fraction": fractions["undecided_area_fraction"],
+    }
 
 
 def _count_connected_components(working_mesh) -> int:
@@ -706,6 +768,7 @@ def analyze_object(blender_object, budget: MeshBudget | None = None) -> MeshRepo
             )
         finally:
             working_mesh.free()
+        facing = _measure_facing(blender_object, evaluated_mesh, triangle_count)
     finally:
         evaluated_object.to_mesh_clear()
 
@@ -730,4 +793,6 @@ def analyze_object(blender_object, budget: MeshBudget | None = None) -> MeshRepo
         uv_coverage_fraction=uv_measurements["uv_coverage_fraction"],
         volume_m3=volume_m3,
         surface_area_m2=surface_area_m2,
+        inward_area_fraction=facing["inward_area_fraction"],
+        undecided_area_fraction=facing["undecided_area_fraction"],
     )

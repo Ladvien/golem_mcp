@@ -32,6 +32,24 @@ from golem_blender.ops._objects import object_by_name
 
 MINIMUM_Z_EXTENT_M = 1.0e-6
 
+GLTF_NOT_EXPORTED_COLLECTION_PREFIX = "glTF_not_exported"
+"""The collection the glTF importer files a file's light/camera proxies under.
+
+Those objects are stand-ins the importer creates so a glTF camera or light
+has a node to hang from; they are not part of the character and would fail
+the gate as extra objects. The idiom is the one `scripts/rig_proxy.py`
+already uses on import.
+"""
+
+GOLEM_IMPORTED_ACTIONS_PROPERTY = "golem_imported_actions"
+"""Custom property on an imported armature: the actions THIS import created.
+
+Written so a re-import under the same name can remove exactly what it made.
+Without it the second import leaves `Idle` behind, the third creates
+`Idle.001`, and a caller that re-imports to pick up a fixed clip keeps
+posing the stale one.
+"""
+
 
 @dataclass(frozen=True)
 class AssetReport:
@@ -391,6 +409,241 @@ def import_glb_piece(glb_path: str, object_name: str) -> AssetReport:
     """
     joined_object = _import_joined(glb_path, object_name)
     return _asset_report(joined_object, source_glb=str(glb_path), scale=1.0)
+
+
+@dataclass(frozen=True)
+class RiggedImportReport:
+    """What a rigged .glb import left: one armature, its meshes, and the clips that came with it."""
+
+    object_name: str
+    source_glb: str
+    mesh_names: tuple[str, ...]
+    bone_count: int
+    # The actions THIS import created, sorted. Read back from
+    # bpy.data.actions after the import, so a caller never has to guess
+    # how the glTF importer named an animation.
+    action_names: tuple[str, ...]
+    active_action_name: str  # "" when the file carried no animation
+    frame_start: int  # 0 when there is no action
+    frame_end: int  # 0 when there is no action
+    nla_track_count: int
+
+
+def _gltf_not_exported_objects() -> list:
+    """Objects the glTF importer parks in a `glTF_not_exported` collection (light/camera proxies)."""
+    import bpy
+
+    return [
+        scene_object
+        for scene_object in bpy.data.objects
+        if any(
+            collection.name.startswith(GLTF_NOT_EXPORTED_COLLECTION_PREFIX)
+            for collection in scene_object.users_collection
+        )
+    ]
+
+
+def _remove_actions_named(action_names, protected_actions=()) -> None:
+    """Remove the named actions that nothing else uses, leaving `protected_actions` alone."""
+    import bpy
+
+    for action_name in action_names:
+        action = bpy.data.actions.get(action_name)
+        if action is None or action.users != 0:
+            continue
+        if action in protected_actions:
+            continue
+        bpy.data.actions.remove(action)
+
+
+def _bound_mesh_objects(armature_object) -> list:
+    """The mesh objects an enabled Armature modifier points at `armature_object`; [] when none.
+
+    Scanned across ALL objects, not down the armature's children: this op
+    clears each bound mesh's parent (the importer parents the mesh to the
+    armature node, which then sits inside the character), so a second call
+    that walked `children_recursive` would find nothing and leave the
+    previous import's mesh in the scene for the re-import to collide with
+    (measured: a re-import left `smoke_body_body.001`).
+    """
+    import bpy
+
+    from golem_blender.ops.rigging import ARMATURE_MODIFIER_TYPE
+
+    meshes = []
+    for scene_object in bpy.data.objects:
+        if scene_object.type != "MESH":
+            continue
+        for modifier in scene_object.modifiers:
+            if (
+                modifier.type == ARMATURE_MODIFIER_TYPE
+                and modifier.object is armature_object
+            ):
+                meshes.append(scene_object)
+                break
+    return meshes
+
+
+def _clear_parent_keep_world(blender_object) -> None:
+    """Drop the parent, keeping the object where the parent put it."""
+    from mathutils import Matrix
+
+    world = blender_object.matrix_world.copy()
+    blender_object.parent = None
+    blender_object.parent_type = "OBJECT"
+    blender_object.parent_bone = ""
+    blender_object.matrix_parent_inverse = Matrix.Identity(4)
+    blender_object.matrix_world = world
+
+
+@op(gated=True)
+def import_rigged_glb(glb_path: str, armature_name: str) -> RiggedImportReport:
+    """Import a rigged .glb as ONE armature named armature_name, with its bound meshes and its clips.
+
+    `import_glb_piece` joins a .glb into one mesh and so throws the skeleton
+    away; a character cannot survive that. This op keeps the rig: the
+    single ARMATURE in the file is renamed, every mesh its enabled Armature
+    modifier deforms becomes `armature_name_<original>`, and every other
+    imported object (empties, cameras, lights, unbound meshes) is removed
+    so the scene holds the character and nothing else.
+
+    Idempotent by name: a re-import removes the previous armature, its
+    meshes and the actions this op recorded on it, so a retry never leaves
+    `.001` siblings behind. A file with no armature, or with several, is
+    refused and leaves NOTHING imported — a failed call is a no-op.
+    """
+    import bpy
+
+    from golem_blender.ops.animation import _bind_action
+    from golem_blender.ops.transforms import _refresh_dependency_graph
+
+    path = Path(glb_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"No GLB at {path}")
+    if not armature_name.strip():
+        raise ValueError("armature_name must be non-empty")
+
+    # Idempotent by name, and the previous import's actions go with it:
+    # an action left behind keeps its name, so the re-import produces
+    # `Idle.001` and a caller that re-imports to pick up a fix silently
+    # poses the OLD clip.
+    previous = bpy.data.objects.get(armature_name)
+    if previous is not None:
+        previous_action_names = list(
+            previous.get(GOLEM_IMPORTED_ACTIONS_PROPERTY, [])
+        )
+        for mesh_object in _bound_mesh_objects(previous):
+            _remove_object_and_data(mesh_object)
+        _remove_object_and_data(previous)
+        _remove_actions_named(previous_action_names)
+        _refresh_dependency_graph()
+
+    objects_before = set(bpy.data.objects)
+    actions_before = set(bpy.data.actions)
+    bpy.ops.import_scene.gltf(filepath=str(path))
+    _refresh_dependency_graph()
+    imported_objects = [
+        scene_object
+        for scene_object in bpy.data.objects
+        if scene_object not in objects_before
+    ]
+    new_actions = [
+        action for action in bpy.data.actions if action not in actions_before
+    ]
+    new_action_names = [action.name for action in new_actions]
+    for proxy_object in _gltf_not_exported_objects():
+        if proxy_object in imported_objects:
+            _remove_object_and_data(proxy_object)
+            imported_objects.remove(proxy_object)
+
+    armatures = [
+        scene_object for scene_object in imported_objects if scene_object.type == "ARMATURE"
+    ]
+    if len(armatures) != 1:
+        for scene_object in imported_objects:
+            _remove_object_and_data(scene_object)
+        _remove_actions_named(new_action_names)
+        if not armatures:
+            raise ValueError(
+                f"no armature in {path}; use import_glb_piece for a static mesh"
+            )
+        raise ValueError(
+            f"{path} carries {len(armatures)} armatures "
+            f"({sorted(a.name for a in armatures)}); which one is the "
+            f"character is not stated"
+        )
+    armature_object = armatures[0]
+
+    bound_meshes = _bound_mesh_objects(armature_object)
+    for stray_object in list(imported_objects):
+        if stray_object is armature_object or stray_object in bound_meshes:
+            continue
+        _remove_object_and_data(stray_object)
+        imported_objects.remove(stray_object)
+
+    _clear_parent_keep_world(armature_object)
+    for mesh_object in bound_meshes:
+        _clear_parent_keep_world(mesh_object)
+
+    # The MESHES are renamed first. The glTF importer names a mesh after its
+    # mesh entry ("body"), so renaming the armature to "body" while that mesh
+    # still holds the name makes Blender silently pick "body.001" — measured:
+    # the first import came back as `body.001` with a `body_body` beside it.
+    for mesh_object in bound_meshes:
+        renamed = f"{armature_name}_{mesh_object.name}"
+        mesh_object.name = renamed
+        mesh_object.data.name = renamed
+    armature_object.name = armature_name
+    armature_object.data.name = armature_name
+    _refresh_dependency_graph()
+
+    animation_data = armature_object.animation_data
+    active_action_name = ""
+    if animation_data is not None and animation_data.action is not None:
+        active_action = animation_data.action
+        active_action_name = active_action.name
+        _bind_action(armature_object, active_action)
+
+    frame_start = 0
+    frame_end = 0
+    if active_action_name:
+        active_action = bpy.data.actions[active_action_name]
+        frame_start = math.floor(active_action.frame_range[0])
+        frame_end = math.ceil(active_action.frame_range[1])
+
+    imported_action_names = tuple(
+        sorted(set(new_action_names) | {active_action_name} - {""})
+    )
+    armature_object[GOLEM_IMPORTED_ACTIONS_PROPERTY] = list(imported_action_names)
+
+    return RiggedImportReport(
+        object_name=armature_object.name,
+        source_glb=str(path),
+        mesh_names=tuple(sorted(mesh_object.name for mesh_object in bound_meshes)),
+        bone_count=len(armature_object.data.bones),
+        action_names=imported_action_names,
+        active_action_name=active_action_name,
+        frame_start=frame_start,
+        frame_end=frame_end,
+        nla_track_count=(
+            len(animation_data.nla_tracks) if animation_data is not None else 0
+        ),
+    )
+
+
+def _remove_object_and_data(blender_object) -> None:
+    """Remove one object and the data only it used.
+
+    `batch_remove` rather than `bpy.data.meshes.remove`: the argument may
+    be mesh data OR armature data (a re-import removes the previous
+    armature), and a type-specific call raised TypeError on the other.
+    """
+    import bpy
+
+    object_data = blender_object.data
+    bpy.data.objects.remove(blender_object)
+    if object_data is not None and object_data.users == 0:
+        bpy.data.batch_remove((object_data,))
 
 
 def import_generated_asset(

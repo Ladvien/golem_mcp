@@ -80,6 +80,19 @@ UNITLESS_NUMERIC_NAMES = frozenset(
         # `probe_view`: how many SURFACES one cast reports, front to back — a
         # depth count, not a length.
         "hit_layers",
+        # `transfer_weights`: how many BONES may move one vertex. glTF's
+        # JOINTS_0/WEIGHTS_0 are VEC4, so four is the ceiling
+        # (MAXIMUM_INFLUENCES_PER_VERTEX), and the count is a bone count, not
+        # a length.
+        "maximum_influence_count",
+        # `fit_garment`: how many PLEATS go round a hem. A count of folds;
+        # `fold_depth_m` carries the metre dimension.
+        "fold_count",
+        # `clearance_report`: how many FRAMES to step between measurements.
+        # A frame is a position in the clip's own timeline, not a duration —
+        # the clip's fps is what would make it seconds, and that is the
+        # scene's.
+        "frame_step",
     }
 )
 
