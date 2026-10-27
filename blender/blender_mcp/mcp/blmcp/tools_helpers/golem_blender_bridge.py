@@ -748,7 +748,9 @@ class GolemBlenderFastMCP(FastMCP):  # type: ignore[misc]
                 # no plan gate, no live-Blender probe. The in-flight count
                 # around this branch keeps --exit-on-source-change from
                 # exiting under a job that runs for minutes.
-                return await self._remote.call_tool(name, arguments)
+                return await self._remote.call_tool(
+                    name, arguments, report_progress=self.get_context().report_progress
+                )
             if name in GOLEM_BLENDER_TOOL_NAMES:
                 return await self._golem_blender.call(
                     name, arguments, report_progress=self.get_context().report_progress

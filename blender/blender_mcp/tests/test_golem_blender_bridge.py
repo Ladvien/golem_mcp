@@ -923,12 +923,31 @@ class _FakeRemote:
         return "remote instructions"
 
     async def call_tool(
-        self, name: str, arguments: dict[str, object]
+        self,
+        name: str,
+        arguments: dict[str, object],
+        report_progress: object = None,
     ) -> mcp_types.CallToolResult:
         self.calls.append((name, arguments))
+        if report_progress is not None:
+            # What big sends while a job waits for the GPU: the bridge must
+            # hand it to its own client, not swallow it.
+            await report_progress(5.0, None, "queued behind voice-serve")
         return mcp_types.CallToolResult(
             content=[mcp_types.TextContent(type="text", text="from big")]
         )
+
+
+class _ProgressRecorder:
+    """Stands in for the bridge's request Context: records progress instead of sending it."""
+
+    def __init__(self) -> None:
+        self.received: list[tuple[float, float | None, str | None]] = []
+
+    async def report_progress(
+        self, progress: float, total: float | None = None, message: str | None = None
+    ) -> None:
+        self.received.append((progress, total, message))
 
 
 def _remote_tool(name: str, description: str = "remote") -> mcp_types.Tool:
@@ -984,6 +1003,13 @@ class TestGolemRemote(unittest.TestCase):
         self.addCleanup(patcher.stop)
         remote = _FakeRemote([_remote_tool("generate_3d")])
         server = self._server(remote)
+        # Outside a real MCP request there is no client to report progress
+        # to; a recorder stands in for it, as in the progress test below.
+        context_patcher = mock.patch.object(
+            server, "get_context", return_value=_ProgressRecorder()
+        )
+        context_patcher.start()
+        self.addCleanup(context_patcher.stop)
         arguments = {"image_path": "/tmp/reference.png", "seed": 7}
 
         async def run() -> object:
@@ -995,6 +1021,24 @@ class TestGolemRemote(unittest.TestCase):
         self.assertEqual(remote.calls, [("generate_3d", arguments)])
         self.assertEqual(result.content[0].text, "from big")
         self.assertEqual(server._in_flight, 0)
+
+    def test_big_progress_reaches_the_bridge_client(self) -> None:
+        """A remote job's progress notifications are forwarded, not dropped at the bridge."""
+        remote = _FakeRemote([_remote_tool("animate_mesh")])
+        server = self._server(remote)
+        recorder = _ProgressRecorder()
+        patcher = mock.patch.object(server, "get_context", return_value=recorder)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        async def run() -> object:
+            await server.list_tools()
+            return await server.call_tool("animate_mesh", {"segments": []})
+
+        result = asyncio.run(run())
+
+        self.assertEqual(recorder.received, [(5.0, None, "queued behind voice-serve")])
+        self.assertEqual(result.content[0].text, "from big")
 
     def test_the_remote_instructions_follow_the_head(self) -> None:
         text = golem_blender_bridge.golem_blender_instructions("upstream text", "remote text")

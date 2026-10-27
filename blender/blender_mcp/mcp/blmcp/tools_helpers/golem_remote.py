@@ -32,6 +32,9 @@ from typing import Any
 
 import httpx
 from mcp import ClientSession, types  # pylint: disable=import-error,no-name-in-module
+from mcp.shared.session import (  # pylint: disable=import-error,no-name-in-module
+    ProgressFnT,
+)
 from mcp.client.streamable_http import (  # pylint: disable=import-error,no-name-in-module
     streamable_http_client,
 )
@@ -111,11 +114,18 @@ class GolemRemote:
         return self._instructions
 
     async def call_tool(
-        self, name: str, arguments: dict[str, Any]
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        report_progress: ProgressFnT | None = None,
     ) -> types.CallToolResult:
         """
         Run *name* on big and return its result unchanged. A failure to reach
         big is an error result the agent can read, not an exception.
+
+        *report_progress* receives big's own progress notifications as they
+        arrive, so a job queued behind another GPU tenant says so to the
+        client instead of going quiet for twenty minutes.
         """
         try:
             async with (
@@ -134,6 +144,7 @@ class GolemRemote:
                     name,
                     arguments,
                     read_timeout_seconds=timedelta(seconds=CALL_TIMEOUT_S),
+                    progress_callback=report_progress,
                 )
         except Exception as error:  # pylint: disable=broad-exception-caught
             return types.CallToolResult(
