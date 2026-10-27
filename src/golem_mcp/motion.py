@@ -5,6 +5,8 @@ This process imports no torch/kimodo. Generation runs in a per-job worker subpro
 """
 
 import base64
+import contextlib
+import functools
 import hashlib
 import importlib.util
 import json
@@ -15,17 +17,23 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import traceback
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import anyio
+import anyio.to_thread
+from fastmcp import Context
 from pydantic import BaseModel, Field
 
 from golem_mcp.app import mcp
-from golem_mcp.gpu import GPU_TENANT, run_gpu_job
+from golem_mcp.gpu import GPU_TENANT, GpuJobError, run_gpu_job, tenant_status
+from golem_mcp.job_retry import RetryPolicy, run_with_retries
 from golem_mcp.paths import RETARGET_DRIVER, SEGVIGEN_PYTHON
 
 KIMODO_OUTPUT_DIR = Path(os.environ.get("KIMODO_OUTPUT_DIR", "/home/ladvien/kimodo/output"))
@@ -70,6 +78,23 @@ WORKER_ENV = {
     "TEXT_ENCODERS_DIR": str(TEXT_ENCODERS_DIR),
     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
 }
+
+# Retrying a generation that failed for a reason time can fix (golem_mcp.job_retry): an OOM kill while another
+# tenant held big's RAM, a VRAM refusal, a queue timeout. Four attempts with a 60 s, 120 s, 240 s backoff spans the
+# few minutes another tenant's job takes to finish, which is what every OOM in the 2026-10-27 report waited behind.
+MOTION_MAXIMUM_ATTEMPTS = 4
+MOTION_FIRST_BACKOFF_S = 60.0
+MOTION_BACKOFF_FACTOR = 2.0
+# After an OOM kill, the retry waits for this much free RAM, polling every MOTION_MEMORY_POLL_S for at most
+# MOTION_MEMORY_WAIT_LIMIT_S. Half an hour is longer than any one GPU job on big runs.
+MOTION_MEMORY_WAIT_LIMIT_S = 1800.0
+MOTION_MEMORY_POLL_S = 30.0
+# PROPOSED (unmeasured): the RAM a generation needs free on big before a retry is worth starting. 16 GiB is the
+# 8B text encoder's own size (the comment at _run_worker), loaded on the CPU on a cache miss. Replace with the
+# measured cache-miss peak_rss_gib x 1.25 from worker_report.json.
+MOTION_RAM_REQUIRED_GIB = 16.0
+# How often the MCP client hears that a long generation is still alive, and where it stands.
+MOTION_PROGRESS_HEARTBEAT_S = 10.0
 
 KIMODO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 KIMODO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -179,13 +204,22 @@ def _tail(text: str) -> str:
     return "\n".join(text.splitlines()[-LOG_TAIL_LINES:])
 
 
-def _run_worker(job_json: Path, report: Path, job_dir: Path, stem: str, timeout: int) -> dict[str, Any]:
+def _run_worker(
+    job_json: Path, report: Path, job_dir: Path, stem: str, timeout: int,
+    on_status: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
     # One job at a time on the card (two would each load a 16 GB encoder and could OOM the host): run_gpu_job serialises.
-    proc = run_gpu_job(
-        [sys.executable, "-m", "golem_mcp.motion_worker", "--job", str(job_json), "--report", str(report)],
-        label="Kimodo generation", note=f"animate_mesh {stem}", need_bytes=MOTION_VRAM_REQUIRED,
-        timeout_s=timeout, env={**os.environ, **WORKER_ENV},
-    )
+    try:
+        proc = run_gpu_job(
+            [sys.executable, "-m", "golem_mcp.motion_worker", "--job", str(job_json), "--report", str(report)],
+            label="Kimodo generation", note=f"animate_mesh {stem}", need_bytes=MOTION_VRAM_REQUIRED,
+            timeout_s=timeout, env={**os.environ, **WORKER_ENV}, on_status=on_status,
+        )
+    except GpuJobError as error:
+        # An OOM-killed job's directory keeps the log of what it printed before it died: without it the retry
+        # report says "OOM-killed" and nobody can see how far the job got.
+        (job_dir / "worker.log").write_text(f"{error.stdout}\n--- stderr ---\n{error.stderr}")
+        raise
     log = f"{proc.stdout}\n--- stderr ---\n{proc.stderr}"
     (job_dir / "worker.log").write_text(log)
     if WORKER_MARKER in proc.stdout and report.exists():
@@ -280,7 +314,8 @@ def _needs_reroll(samples: list[dict[str, Any]], mode: str) -> bool:
 
 
 def _attempt(
-    seed: int, request: _Request, slug: str, data: bytes, source: str, job_dirs: list[Path]
+    seed: int, request: _Request, slug: str, data: bytes, source: str, job_dirs: list[Path],
+    *, on_status: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """One seed: generate, retarget every sample, assess them, write `metadata.json` and publish the job."""
     t0 = time.time()
@@ -300,7 +335,7 @@ def _attempt(
         "transition_frames": request.transition_frames, "start_heading_deg": request.start_heading_deg,
         "root_path": request.root_path_job,
     }, indent=2))
-    report = _run_worker(job_json, job_dir / "worker_report.json", job_dir, stem, request.timeout)
+    report = _run_worker(job_json, job_dir / "worker_report.json", job_dir, stem, request.timeout, on_status)
 
     samples = []
     for s in report["samples"]:
@@ -344,8 +379,24 @@ def _attempt(
     }
 
 
+class _LatestStatus:
+    """The most recent status line from the worker thread, read by the progress heartbeat on the event loop."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._text = "starting"
+
+    def set(self, text: str) -> None:
+        with self._lock:
+            self._text = text
+
+    def get(self) -> str:
+        with self._lock:
+            return self._text
+
+
 @mcp.tool
-def animate_mesh(
+async def animate_mesh(
     segments: Annotated[
         list[MotionSegment],
         Field(min_length=1, max_length=MAX_SEGMENTS, description="Consecutive behaviours; each <=10 s"),
@@ -416,13 +467,73 @@ def animate_mesh(
             description="Seconds generation may run once the GPU is granted; waiting for the GPU adds up to 20 min",
         ),
     ] = 1800,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Generate motion from text with Kimodo and retarget it onto a rigged GLB character.
 
     Returns animated GLB paths (plus the raw BVH/NPZ) under a job directory that is also
     published to /mnt/codex_fs/models/kimodo/. Each sample carries a `self_intersection` assessment; `passed` and
-    `best_sample` summarise the last attempt (null when self_intersection is off).
+    `best_sample` summarise the last attempt (null when self_intersection is off). Out-of-memory kills, VRAM refusals
+    and queue timeouts are retried; progress notifications say what the job is queued behind.
     """
+    latest = _LatestStatus()
+    run = functools.partial(
+        _animate,
+        segments=segments, character_path=character_path, character_base64=character_base64,
+        output_name=output_name, num_samples=num_samples, seed=seed, diffusion_steps=diffusion_steps,
+        text_cfg_weight=text_cfg_weight, constraint_cfg_weight=constraint_cfg_weight,
+        transition_frames=transition_frames, start_heading_deg=start_heading_deg, root_path=root_path,
+        root_motion=root_motion, hip_bob=hip_bob, return_base64=return_base64, self_intersection=self_intersection,
+        max_rerolls=max_rerolls, contour_limit_cm=contour_limit_cm, cloth_materials=cloth_materials,
+        timeout=timeout, on_status=latest.set,
+    )
+    result: dict[str, Any] = {}
+    async with anyio.create_task_group() as group:
+        if ctx is not None:
+            group.start_soon(_heartbeat, ctx, latest)
+        result = await anyio.to_thread.run_sync(run)
+        group.cancel_scope.cancel()
+    return result
+
+
+async def _heartbeat(ctx: Context, latest: _LatestStatus) -> None:
+    """Tell the client the job is alive, and where it stands, every MOTION_PROGRESS_HEARTBEAT_S.
+
+    A progress notification the client cannot take (it sent no progress token, or it went away) must never fail the
+    generation, so every error from `report_progress` is swallowed, as the Mac bridge does with its own.
+    """
+    started = time.monotonic()
+    while True:
+        await anyio.sleep(MOTION_PROGRESS_HEARTBEAT_S)
+        with contextlib.suppress(Exception):
+            await ctx.report_progress(time.monotonic() - started, None, latest.get())
+
+
+def _animate(
+    *,
+    segments: list[MotionSegment],
+    character_path: str,
+    character_base64: str,
+    output_name: str,
+    num_samples: int,
+    seed: int | None,
+    diffusion_steps: int,
+    text_cfg_weight: float,
+    constraint_cfg_weight: float,
+    transition_frames: int,
+    start_heading_deg: float,
+    root_path: list[RootWaypoint] | None,
+    root_motion: bool,
+    hip_bob: bool,
+    return_base64: bool,
+    self_intersection: Literal["off", "score", "repair"],
+    max_rerolls: int,
+    contour_limit_cm: float,
+    cloth_materials: list[str],
+    timeout: int,
+    on_status: Callable[[str], None],
+) -> dict[str, Any]:
+    """`animate_mesh`'s body, run on a worker thread so the event loop stays free for the progress heartbeat."""
     job_dirs: list[Path] = []
     try:
         if root_path and not root_motion:
@@ -445,14 +556,34 @@ def animate_mesh(
         first_seed = seed if seed is not None else secrets.randbelow(2**31)
         attempts: list[dict[str, Any]] = []
         result: dict[str, Any] = {}
+        policy = RetryPolicy(
+            maximum_attempts=MOTION_MAXIMUM_ATTEMPTS, first_backoff_s=MOTION_FIRST_BACKOFF_S,
+            backoff_factor=MOTION_BACKOFF_FACTOR, required_mem_gib=MOTION_RAM_REQUIRED_GIB,
+            memory_wait_limit_s=MOTION_MEMORY_WAIT_LIMIT_S, poll_s=MOTION_MEMORY_POLL_S,
+        )
         for n in range(max_rerolls + 1):
             attempt_seed = first_seed if n == 0 else (first_seed + 100 * n) % 2**31
-            result = _attempt(attempt_seed, request, slug, data, source, job_dirs)
+
+            def one_try(_try: int, kinds: tuple[str, ...], attempt_seed: int = attempt_seed) -> dict[str, Any]:
+                # After an OOM kill the next try generates ONE sample: each sample is a full decode, and one is
+                # what fits beside another tenant's job.
+                this_request = replace(request, num_samples=1) if "oom_killed" in kinds else request
+                return _attempt(attempt_seed, this_request, slug, data, source, job_dirs, on_status=on_status)
+
+            result, retries = run_with_retries(
+                one_try, policy,
+                read_mem_available_gib=_mem_available_gib, sleep=time.sleep, clock=time.monotonic,
+                on_status=on_status,
+            )
             samples = result["samples"]
-            attempts.append({
+            entry: dict[str, Any] = {
                 "seed": attempt_seed, "job_dir": result["job_dir"], "published_to": result["published_to"],
                 "passed_samples": [s["index"] for s in samples if s["self_intersection"]["passed"] is True],
-            })
+                "retries": retries,
+            }
+            if any(r["kind"] == "oom_killed" for r in retries) and request.num_samples != 1:
+                entry["reduced_num_samples_from"] = request.num_samples
+            attempts.append(entry)
             if not _needs_reroll(samples, self_intersection):
                 break
 
@@ -476,7 +607,15 @@ def animate_mesh(
         return {
             "success": False, "error": str(e), "traceback": traceback.format_exc(),
             "job_dir": str(job_dirs[-1]) if job_dirs else None,
+            "job_dirs": [str(d) for d in job_dirs],
+            "retries": getattr(e, "retries", []),
         }
+
+
+def _mem_available_gib() -> float | None:
+    """big's free RAM right now, from `gpu-tenant status`; None when it cannot be read."""
+    status = tenant_status()
+    return status.mem_available_gib if status is not None else None
 
 
 def motion_health() -> dict[str, Any]:

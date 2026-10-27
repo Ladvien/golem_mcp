@@ -35,22 +35,34 @@ def run_probe() -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.parametrize(
-    ("stdout", "stderr", "code", "message"),
+    ("stdout", "stderr", "code", "message", "kind"),
     [
-        ("TIMEOUT after 20m; held by sanctuary-icons@big\n", "", 2, "Probe: GPU queue timed out"),
-        ("REFUSED: held by sanctuary-icons@big (3d) until 12:00\n", "", 1, "gpu-tenant refused: REFUSED: held by"),
-        ("", "VRAM_REFUSED need_gb=16.0 free_gb=3.2\n", 75, "needs ~16 GB VRAM but 3.2 GB is free"),
-        ("", "", 137, "OOM-killed at MemoryMax=22G"),
+        (
+            "TIMEOUT after 20m; held by sanctuary-icons@big\n", "", 2, "Probe: GPU queue timed out",
+            gpu.JOB_ERROR_QUEUE_TIMEOUT,
+        ),
+        (
+            "REFUSED: held by sanctuary-icons@big (3d) until 12:00\n", "", 1, "gpu-tenant refused: REFUSED: held by",
+            gpu.JOB_ERROR_REFUSED,
+        ),
+        (
+            "", "VRAM_REFUSED need_gb=16.0 free_gb=3.2\n", 75, "needs ~16 GB VRAM but 3.2 GB is free",
+            gpu.JOB_ERROR_VRAM_REFUSED,
+        ),
+        ("", "", 137, "OOM-killed at MemoryMax=22G", gpu.JOB_ERROR_OOM_KILLED),
     ],
 )
 def test_a_failure_gpu_tenant_explains_raises_its_reason(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stdout: str, stderr: str, code: int, message: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stdout: str, stderr: str, code: int, message: str, kind: str
 ) -> None:
     fake_gpu_tenant(
         tmp_path, monkeypatch, f"printf %s {shlex.quote(stdout)}\nprintf %s {shlex.quote(stderr)} >&2\nexit {code}"
     )
-    with pytest.raises(gpu.GpuJobError, match=message):
+    with pytest.raises(gpu.GpuJobError, match=message) as raised:
         run_probe()
+    assert raised.value.kind == kind
+    # What the process printed survives on the error, so a caller keeps the log of a job that never finished.
+    assert (raised.value.stdout, raised.value.stderr) == (stdout, stderr)
 
 
 def test_an_unexplained_failure_is_returned_for_the_caller_to_judge(
@@ -116,3 +128,66 @@ def test_a_job_over_its_timeout_is_terminated_and_reported(tmp_path: Path, monke
         f"PIDs {survivors} still running after run_gpu_job raised: the timeout was reported but the job was not stopped"
     )
     assert elapsed_s < TERMINATED_WITHIN_S, f"took {elapsed_s:.1f}s: the job ran to completion instead of being killed"
+
+
+# `gpu-tenant status` as big printed it on 2026-10-27, mid-job.
+SAMPLE_STATUS = (
+    "tenant=3d\n"
+    "vram=21558/24576 MiB  mem_available=1.7 GiB\n"
+    "who=golem-mcp@big since=13:49 expires=13:55 (4m left) paused=- "
+    "note=animate_mesh sanctuary_dead_death_g_s5600_20261027_134955\n"
+    "queue=0\n"
+)
+
+
+def test_tenant_status_is_parsed_from_the_real_output() -> None:
+    status = gpu.parse_tenant_status(SAMPLE_STATUS)
+    assert status.holder_who == "golem-mcp@big"
+    assert status.holder_note == "animate_mesh sanctuary_dead_death_g_s5600_20261027_134955"
+    assert status.queue_length == 0
+    assert status.mem_available_gib == pytest.approx(1.7)
+    assert (status.vram_used_mib, status.vram_total_mib) == (21558, 24576)
+
+
+def test_nobody_holding_the_card_reads_as_an_empty_holder() -> None:
+    idle = gpu.parse_tenant_status("tenant=3d\nvram=900/24576 MiB  mem_available=40.2 GiB\nwho=-\nqueue=2\n")
+    assert (idle.holder_who, idle.holder_note, idle.queue_length) == ("", "", 2)
+    assert gpu.parse_tenant_status("tenant=3d\nqueue=0\n").holder_who == ""
+
+
+def test_a_running_job_reports_that_it_is_on_the_gpu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The watcher reads `gpu-tenant status` while the job runs and says the job holds the card."""
+    note = "probe-running"
+    status = SAMPLE_STATUS.replace(
+        "note=animate_mesh sanctuary_dead_death_g_s5600_20261027_134955", f"note={note}"
+    )
+    fake_gpu_tenant(
+        tmp_path,
+        monkeypatch,
+        f'if [ "$1" = status ]; then printf %s {shlex.quote(status)}; exit 0; fi\nsleep 1\nexit 0',
+    )
+    monkeypatch.setattr(gpu, "GPU_STATUS_POLL_S", 0.1)
+    messages: list[str] = []
+
+    gpu.run_gpu_job(["true"], label="Probe", note=note, need_bytes=1e9, timeout_s=30, on_status=messages.append)
+
+    assert any(message.startswith("running on the GPU") for message in messages), messages
+    assert any("1.7 GiB RAM available" in message for message in messages), messages
+
+
+def test_a_job_queued_behind_another_tenant_says_whom(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_gpu_tenant(
+        tmp_path,
+        monkeypatch,
+        'if [ "$1" = status ]; then printf "who=voice-serve@big since=1 note=diarize call\\nqueue=1\\n'
+        'vram=1/2 MiB  mem_available=3.0 GiB\\n"; exit 0; fi\nsleep 1\nexit 0',
+    )
+    monkeypatch.setattr(gpu, "GPU_STATUS_POLL_S", 0.1)
+    messages: list[str] = []
+
+    gpu.run_gpu_job(["true"], label="Probe", note="mine", need_bytes=1e9, timeout_s=30, on_status=messages.append)
+
+    assert any(
+        message == "queued behind voice-serve@big (diarize call); 1 waiting; big has 3.0 GiB RAM available"
+        for message in messages
+    ), messages

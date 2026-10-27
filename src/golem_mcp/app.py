@@ -18,6 +18,8 @@ INSTRUCTIONS = (
     "in T-pose. Prompts should start with 'A person ...', one or two behaviours per segment, at most "
     "10 s each. There is no finger or face animation. Output is in place unless root_motion is set. "
     "A job takes ~1-3 min, including the GPU queue and loading the CPU text encoder on a cache miss. "
+    "Out-of-memory kills, VRAM refusals and queue timeouts are retried up to 3 times, waiting for free RAM; "
+    "progress notifications say what the job is queued behind. "
     "Optional controls: root_path (waypoints; needs root_motion), start_heading_deg, "
     "text_cfg_weight / constraint_cfg_weight (default 2.0), transition_frames (default 5). "
     "Every sample is checked for its own surface passing through itself (self_intersection: off | score | "

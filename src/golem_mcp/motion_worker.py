@@ -8,6 +8,7 @@ Any failure propagates as a non-zero exit with the traceback on stderr.
 import argparse
 import json
 import math
+import resource
 from pathlib import Path
 from typing import Any
 
@@ -101,6 +102,9 @@ def run(job: dict[str, Any], encoder: Any = None) -> dict[str, Any]:
         "cache_hits": getattr(encoder, "hits", 0),
         "cache_misses": getattr(encoder, "misses", 0),
         "peak_vram_gib": torch.cuda.max_memory_allocated() / 2**30,
+        # The process's own peak resident memory: what MOTION_RAM_REQUIRED_GIB is measured from. ru_maxrss is KiB on
+        # Linux (bytes on macOS, where this worker never runs).
+        "peak_rss_gib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20,
     }
 
 
