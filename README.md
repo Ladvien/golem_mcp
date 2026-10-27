@@ -606,6 +606,14 @@ at `00b1361`.
 - Generation runs in a per-job worker (`golem_mcp.motion_worker`) under a `gpu-tenant`
   lease; the 8B LLM2Vec text encoder runs on the CPU and prompt embeddings are cached
   in `$KIMODO_CACHE_DIR/embeddings`.
+- **Retries and progress**: an OOM kill, a VRAM refusal or a GPU-queue timeout is
+  retried up to 3 times (`golem_mcp.job_retry`, backoff 60 s doubling). After an OOM the
+  retry waits until big has `MOTION_RAM_REQUIRED_GIB` free (polled from
+  `gpu-tenant status`, at most 30 min) and generates one sample. Every 10 s the tool
+  sends an MCP progress notification saying what the job waits behind (golem's own
+  previous job, another tenant, or free RAM) or that it is running, and the Mac bridge
+  forwards it. A failed job keeps its `worker.log`, and the failure lists `retries` and
+  `job_dirs`. The worker report carries `peak_rss_gib`.
 - Retargeting is `scripts/retarget_animation.py` (`--source-map soma`, `.bvh` clips),
   run in SegviGen's bpy venv.
 - Optional generation controls: `text_cfg_weight` / `constraint_cfg_weight` (0-10,

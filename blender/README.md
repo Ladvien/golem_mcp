@@ -162,6 +162,31 @@ Blender's (the venv's site-packages come first on Blender's `sys.path`), so keep
 Mixamo humanoid for capsules and repair; `docs/2026-09-10-specification-and-requirements.md`
 OPS-26 and OPS-27 state what they refuse.
 
+## Dressing a rigged character
+
+A garment on a character is checked the way the engine will draw and animate it:
+
+- `import_rigged_glb` brings in a rigged `.glb` as ONE armature with its bound meshes
+  (`<armature>_<mesh>`) and its clips, idempotent by name. `play_clip` poses it with one
+  action at one frame, binding the action's OBJECT slot (an unbound slot evaluates nothing
+  in Blender 4.4+) and muting NLA, and reports how many bones moved.
+- `audit_winding` says which way each face points by the generalized winding number
+  (Jacobson et al. 2013), on open shells too. The gate prints a `facing:` line when any
+  area faces inward but never fails on it, because a room's walls face inward by design.
+- `transfer_weights` copies a body's weights onto a garment where the match is confident
+  and inpaints the rest (RSWT, Abdrashitov et al. 2023, thresholds 0.05 x diagonal and
+  35 degrees); bind afterwards with `bind_mesh_to_armature(automatic_weights=False)`.
+- `clearance_report` measures signed garment-to-body clearance at rest and over every
+  frame of the named clips, both ways (garment inside body, body through garment), with
+  the worst frame, point and bone. This is where a garment fails on facing.
+- `fit_garment` ports `scripts/garment_fit.py`: turn, scale on height, pleat, drape out
+  with SHRINKWRAP, orient per component, SOLIDIFY, transfer weights, bind, then run the
+  clearance report. A refused fit leaves the garment as it was handed over.
+- `silhouette_test` compares two objects' coverage at the game's 55 px character height
+  by one ray per pixel centre, culling back faces by each triangle's own winding.
+- `render_views` culls back faces by default (`cull=false` shows both sides): Workbench
+  culls on the shading flag and EEVEE on the material flag, so the capture sets both.
+
 ## Op plugins
 
 An installed distribution can add ops to the facade without a change here:

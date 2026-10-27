@@ -201,7 +201,7 @@ The commitments in §1.2 say what the system is. These are the working rules tha
 | `run_python` | `source`, `reason` (both required), `object_name`, `plan_step` | the escape hatch: execute a chunk for what the op tools cannot express and gate the named object; omitting `object_name` runs ungated; a blank `reason` is refused |
 | `inspect_object` | `object_name` (required), `plan_step` | the analyzer report for one object |
 | `inspect_domain` | `object_name`, `domain` in `rig`/`weights`/`animation`/`material` | non-mesh state |
-| `render_views` | `object_name`, `xray`, `look_for`, `plan_step` | contact sheet of the named views |
+| `render_views` | `object_name`, `xray`, `cull` (default true: back faces hidden as the engine culls them), `look_for`, `plan_step` | contact sheet of the named views |
 | `search_ops` | `query` | closest ops by signature |
 | `list_scene` | — | mesh objects with triangle counts and dimensions |
 | `export_asset` | `object_name`, `path`, `blend_path` (all required), `plan_step` | .glb export with re-import verification, plus the editable .blend saved at `blend_path` and re-read (OT-50) |
