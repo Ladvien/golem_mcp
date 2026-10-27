@@ -91,7 +91,9 @@ MOTION_MEMORY_WAIT_LIMIT_S = 1800.0
 MOTION_MEMORY_POLL_S = 30.0
 # PROPOSED (unmeasured): the RAM a generation needs free on big before a retry is worth starting. 16 GiB is the
 # 8B text encoder's own size (the comment at _run_worker), loaded on the CPU on a cache miss. Replace with the
-# measured cache-miss peak_rss_gib x 1.25 from worker_report.json.
+# measured cache-miss peak_rss_gib x 1.25 from worker_report.json. Measured so far (2026-10-27): a cache HIT peaks
+# at 2.94 GiB RSS (encoder not loaded); a cache MISS was OOM-killed loading the encoder with 10.8 GiB available,
+# and big never had more than 13.4 GiB free in the 30 minutes after, so the miss's own peak is still unmeasured.
 MOTION_RAM_REQUIRED_GIB = 16.0
 # How often the MCP client hears that a long generation is still alive, and where it stands.
 MOTION_PROGRESS_HEARTBEAT_S = 10.0

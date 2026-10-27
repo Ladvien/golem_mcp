@@ -191,3 +191,29 @@ def test_a_job_queued_behind_another_tenant_says_whom(tmp_path: Path, monkeypatc
         message == "queued behind voice-serve@big (diarize call); 1 waiting; big has 3.0 GiB RAM available"
         for message in messages
     ), messages
+
+
+def test_a_job_behind_golems_own_previous_job_names_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A second call waits on golem's lock and hears whose job holds it; an uncontended one never says it waits."""
+    import threading
+
+    fake_gpu_tenant(tmp_path, monkeypatch, 'if [ "$1" = status ]; then exit 0; fi\nsleep 1\nexit 0')
+    monkeypatch.setattr(gpu, "GPU_STATUS_POLL_S", 0.05)
+    first_messages: list[str] = []
+    second_messages: list[str] = []
+
+    first = threading.Thread(
+        target=gpu.run_gpu_job,
+        args=(["true"],),
+        kwargs={"label": "First", "note": "first-job", "need_bytes": 1e9, "timeout_s": 30,
+                "on_status": first_messages.append},
+    )
+    first.start()
+    time.sleep(0.3)  # the first call now holds golem's lock for about a second
+    gpu.run_gpu_job(
+        ["true"], label="Second", note="second-job", need_bytes=1e9, timeout_s=30, on_status=second_messages.append
+    )
+    first.join()
+
+    assert "waiting for golem's own previous GPU job (first-job) to finish" in second_messages, second_messages
+    assert not any(message.startswith("waiting for golem's own") for message in first_messages), first_messages

@@ -120,10 +120,18 @@ def tenant_status() -> TenantStatus | None:
     return parse_tenant_status(text)
 
 
-def _status_message(note: str, started: threading.Event) -> str:
-    """One sentence about where a job stands: behind golem's own job, running, or queued behind someone else."""
+def _status_message(note: str, started: threading.Event) -> str | None:
+    """One sentence about where a job stands: behind golem's own job, running, or queued behind someone else.
+
+    None while the job is between asking for golem's lock and starting, with nobody else holding the lock: that is
+    the instant of acquiring it, not a wait (measured: an uncontended call's first poll said it was waiting behind
+    an "unnamed" job).
+    """
     if not started.is_set():
-        return f"waiting for golem's own previous GPU job ({_lock_holder_note or 'unnamed'}) to finish"
+        holder = _lock_holder_note
+        if holder and holder != note:
+            return f"waiting for golem's own previous GPU job ({holder}) to finish"
+        return None
     status = tenant_status()
     if status is None:
         return "GPU status unavailable"
@@ -140,7 +148,9 @@ def _watch(note: str, started: threading.Event, stop: threading.Event, on_status
     """Report the job's state every GPU_STATUS_POLL_S until told to stop. A failing callback never kills the job."""
     while not stop.is_set():
         with contextlib.suppress(Exception):
-            on_status(_status_message(note, started))
+            message = _status_message(note, started)
+            if message is not None:
+                on_status(message)
         stop.wait(GPU_STATUS_POLL_S)
 
 
