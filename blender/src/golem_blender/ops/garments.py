@@ -106,9 +106,10 @@ class ClearanceReport:
     # nothing — a belt beside the body rather than on it — and the second
     # clearance kind then measures nothing at all.
     covered_body_vertex_count: int
-    # `"winding_number"` for a closed garment, `"away_from_body"` for an open
-    # one: which measurement produced the number below, because a closed
-    # garment can be inside out relative to ITSELF and an open one cannot.
+    # Which measurement decided most of the number below: `"winding_number"`
+    # (the garment's own winding, which decides open tubes as well as closed
+    # shells) or `"away_from_body"` (a flat panel the winding cannot decide,
+    # judged by whether it faces the nearest body surface).
     garment_winding_method: str
     garment_inward_area_fraction: float
     # The rest row first, then one row per named clip, in the order given.
@@ -483,65 +484,68 @@ def _as_array(vector):
 
 
 def _garment_facing(rest_garment: _WorldMesh, rest_body: _WorldMesh, winding):
-    """("winding_number" | "away_from_body", inward fraction) over the garment at rest."""
-    from golem_blender.analyze import winding as winding_module
-
-    triangle_count = len(rest_garment.corners)
-    if triangle_count == 0:
+    """("winding_number" | "away_from_body", inward area fraction) over the garment at rest."""
+    if len(rest_garment.corners) == 0:
         raise ValueError("the garment has no faces, so it has no facing to measure")
-    indices = winding_module.query_face_sample(triangle_count, _winding_query_limit())
-    if winding_module.component_is_closed(
-        rest_garment.triangles, _all_true(triangle_count)
-    ):
-        scores = winding_module.face_orientation_scores(rest_garment.corners, indices)
-        fractions = winding_module.area_weighted_fractions(
-            rest_garment.corners[indices], winding_module.classify_faces(scores)
-        )
-        return METHOD_WINDING_NUMBER, fractions["inward_area_fraction"]
-
-    # An OPEN garment cannot be inside out relative to itself, so the only
-    # question it can answer is which way its surface faces relative to the
-    # BODY: a triangle pointing at the body is one the engine culls as a
-    # front face seen from inside.
-    centroids = rest_garment.corners.mean(axis=1)
-    areas = winding_module.triangle_areas(rest_garment.corners)
-    inward_area = 0.0
-    for index in indices:
-        centroid = centroids[index]
-        tri_a, tri_b, tri_c = rest_garment.corners[index]
-        normal = _unit(_cross(tri_b - tri_a, tri_c - tri_a))
-        hit = rest_body.nearest(centroid)
-        if hit is None or hit[0] is None:
-            continue
-        if float(normal @ (_as_array(centroid) - _as_array(hit[0]))) < 0.0:
-            inward_area += float(areas[index])
-    total = float(areas[indices].sum())
-    return METHOD_AWAY_FROM_BODY, (inward_area / total if total > 0.0 else 0.0)
+    return _surface_facing(rest_garment.corners, rest_body.nearest)
 
 
-def _all_true(count: int):
+def _surface_facing(corners, nearest_on_body) -> tuple[str, float]:
+    """Which share of one garment surface faces the body, and which measure decided it.
+
+    The garment's OWN generalized winding number decides first (Jacobson,
+    Kavan and Sorkine-Hornung 2013, DOI 10.1145/2461912.2461916): it works on
+    an open tube as on a closed shell — an outward-wound open tube's faces
+    score 0.57 at the rims and above in the middle (measured, see
+    `analyze/winding.py`), an inverted one the negatives.
+
+    `away_from_body` — does the face's normal point away from the nearest
+    body surface — decides only the area the winding number leaves
+    UNDECIDED, a flat cape or a lone panel with no inside of its own. It is not
+    trusted with more, because it misreads limbs: measured 2026-10-27 on a
+    Kimodo mannequin, a uniformly outward lathe tube fitted up to the armpits
+    read 5% "facing the body" by it alone, every such face one whose nearest
+    body surface was an ARM outside the tube.
+
+    The method reported is the one that decided most of the area.
+    """
     import numpy as np
 
-    return np.ones(count, dtype=bool)
+    from golem_blender.analyze import winding as winding_module
+
+    sampled = winding_module.query_face_sample(len(corners), _winding_query_limit())
+    classified = winding_module.classify_faces(
+        winding_module.face_orientation_scores(corners, sampled)
+    )
+    sampled_corners = corners[sampled]
+    areas = winding_module.triangle_areas(sampled_corners)
+    total_m2 = float(areas.sum())
+    if total_m2 <= 0.0:
+        return METHOD_WINDING_NUMBER, 0.0
+    inward_m2 = float(areas[classified == winding_module.INWARD].sum())
+    undecided = np.flatnonzero(classified == winding_module.UNDECIDED)
+    centroids = sampled_corners.mean(axis=1)
+    for index in undecided:
+        hit = nearest_on_body(centroids[index])
+        if hit is None or hit[0] is None:
+            continue
+        corner_a, corner_b, corner_c = sampled_corners[index]
+        normal = np.cross(corner_b - corner_a, corner_c - corner_a)
+        if float(normal @ (centroids[index] - _as_array(hit[0]))) < 0.0:
+            inward_m2 += float(areas[index])
+    undecided_m2 = float(areas[undecided].sum())
+    method = (
+        METHOD_WINDING_NUMBER
+        if undecided_m2 <= total_m2 / 2.0
+        else METHOD_AWAY_FROM_BODY
+    )
+    return method, inward_m2 / total_m2
 
 
 def _winding_query_limit() -> int:
     from golem_blender.ops.winding import WINDING_AUDIT_QUERY_LIMIT
 
     return WINDING_AUDIT_QUERY_LIMIT
-
-
-def _cross(a, b):
-    import numpy as np
-
-    return np.cross(_as_array(a), _as_array(b))
-
-
-def _unit(vector):
-    import numpy as np
-
-    length = float(np.linalg.norm(vector))
-    return vector / length if length > 0.0 else vector
 
 
 # -- one frame ------------------------------------------------------------
@@ -594,7 +598,15 @@ def _measure_clip(
         hit = garment.nearest(point)
         if hit is None or hit[0] is None:
             continue
-        location, normal, _face, distance = hit[0], hit[1], hit[2], hit[3]
+        location, normal, face, distance = hit[0], hit[1], hit[2], hit[3]
+        # A covered vertex whose nearest garment point is on a RIM has left
+        # through an opening (a thigh out of a hem, an arm out of a sleeve),
+        # not through the cloth — the same rule that keeps a rim out of the
+        # coverage at rest. Measured 2026-10-27 on a Kimodo mannequin kneeling
+        # in a tunic: without it, every frame of the kneel failed at -0.156 m,
+        # a thigh vertex 0.7 m below the hem it had slid out of.
+        if _nearest_point_is_on_a_rim(location, garment, face):
+            continue
         # The body is INSIDE the garment when it is on the garment's inner
         # side, so the sign is inverted relative to the first kind.
         signed = (
@@ -813,6 +825,11 @@ def fit_garment(
 
     previous_pose = armature_object.data.pose_position
     armature_object.data.pose_position = "REST"
+    # A refused fit leaves the garment exactly as it was handed over: the
+    # agent's next move is a retry with another band or offset, and a garment
+    # already turned, scaled and draped by the failed call would be fitted
+    # twice (measured: a refused fit left the mesh placed and draped).
+    snapshot = _GarmentSnapshot(garment)
     try:
         # The band is measured at REST, the pose the garment is fitted in:
         # measured on the tube humanoid, the lowest point at frame 1 of a leg
@@ -841,6 +858,7 @@ def fit_garment(
             garment_points, body_points, band_bottom_m, band_top_m
         )
         placed = garment_placement.apply_placement(garment_points, placement)
+        girth_note = _girth_note(placed, placement, garment_placement)
         if fold_count > 0:
             axis_xy_m = (
                 float(placed[:, 0].mean()),
@@ -856,12 +874,26 @@ def fit_garment(
             )
         _set_vertices(garment, placed)
 
-        vertices_moved_by_drape = _drape(garment, body, offset_m)
-        components_reversed = _orient_components(garment, body, winding_module)
-        if thickness_m > 0.0:
-            _solidify(garment, thickness_m)
-
-        weights = _transfer_and_bind(garment, body, armature_object)
+        try:
+            vertices_moved_by_drape = _drape(garment, body, offset_m)
+            components_reversed = _orient_components(garment, body, winding_module)
+            if thickness_m > 0.0:
+                _solidify(garment, thickness_m)
+            weights = _transfer_and_bind(garment, body, armature_object)
+        except ValueError as error:
+            # A garment too thin for the body is folded by the drape, and the
+            # step that notices is whichever comes next — the facing check, or
+            # the weight transfer finding no face that agrees with the body
+            # (measured: both, on two different garments). The cause is the
+            # girth, so the refusal says so whichever step raised.
+            if girth_note:
+                raise ValueError(f"{error}. Likely cause: {girth_note}") from error
+            raise
+    except BaseException:
+        snapshot.restore()
+        raise
+    else:
+        snapshot.discard()
     finally:
         armature_object.data.pose_position = previous_pose
 
@@ -885,6 +917,68 @@ def fit_garment(
         weights=weights,
         clearance=clearance,
         passed=clearance.passed,
+    )
+
+
+class _GarmentSnapshot:
+    """The garment as it was handed to `fit_garment`, and the way back to it."""
+
+    def __init__(self, garment):
+        self._garment = garment
+        self._mesh = garment.data.copy()
+        self._mesh_name = garment.data.name
+        self._matrix = garment.matrix_world.copy()
+        self._parent = garment.parent
+        self._modifier_names = {modifier.name for modifier in garment.modifiers}
+
+    def restore(self) -> None:
+        """Put the original mesh, transform and modifier stack back; drop what the fit added."""
+        import bpy
+
+        garment = self._garment
+        for modifier in list(garment.modifiers):
+            if modifier.name not in self._modifier_names:
+                garment.modifiers.remove(modifier)
+        for group in list(garment.vertex_groups):
+            garment.vertex_groups.remove(group)
+        fitted_mesh = garment.data
+        garment.data = self._mesh
+        bpy.data.meshes.remove(fitted_mesh)
+        self._mesh.name = self._mesh_name
+        garment.parent = self._parent
+        garment.matrix_world = self._matrix
+        bpy.context.view_layer.update()
+
+    def discard(self) -> None:
+        """The fit succeeded: the copy is not needed."""
+        import bpy
+
+        bpy.data.meshes.remove(self._mesh)
+
+
+def _girth_note(placed, placement, garment_placement) -> str:
+    """Why the drape would crumple this garment, when the reason is its girth; "" otherwise.
+
+    `place_garment` scales on HEIGHT and lets the garment's own proportions
+    decide its girth, so a garment narrower than the body band it was put on is
+    inside the body before the drape — and the drape pushes each vertex out to
+    whichever surface is nearest, folding it over itself. Its faces then point
+    every which way, and the facing check refuses it. That is a girth problem,
+    not a winding one, and the message has to say which.
+    """
+    bottom_m, top_m = placement.band_m
+    extents = garment_placement.horizontal_extents(placed, bottom_m, top_m)
+    if (
+        extents.width_m >= placement.body_width_m
+        and extents.depth_m >= placement.body_depth_m
+    ):
+        return ""
+    return (
+        f"before the drape the garment was {extents.width_m:.3f} x "
+        f"{extents.depth_m:.3f} m across against a {placement.body_width_m:.3f} x "
+        f"{placement.body_depth_m:.3f} m body band, so the drape folded it onto "
+        f"the body. The fit scales on height; give the source garment more girth "
+        f"per metre of height, or fit it to a taller band"
     )
 
 
@@ -1002,7 +1096,11 @@ def _orient_components(garment, body, winding_module) -> int:
 
 
 def _component_inward_fractions(mesh, body_tree, winding_module):
-    """({component: area fraction facing the body}, {component: polygon indices})."""
+    """({component: area fraction facing the body}, {component: polygon indices}).
+
+    Each component is measured by `_surface_facing` on its OWN triangles, so a
+    separate sleeve is not decided by the tunic's winding beside it.
+    """
     import numpy as np
 
     mesh.calc_loop_triangles()
@@ -1015,29 +1113,16 @@ def _component_inward_fractions(mesh, body_tree, winding_module):
         triangles
     ]
     components = winding_module.triangle_components(triangles)
-    areas = winding_module.triangle_areas(corners)
-    centroids = corners.mean(axis=1)
-    normals = np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0])
+
+    def nearest_on_body(point):
+        return body_tree.find_nearest(tuple(float(x) for x in point))
 
     fractions: dict[int, float] = {}
     polygons: dict[int, list[int]] = {}
     for component in sorted(set(components.tolist())):
         in_component = np.flatnonzero(components == component)
-        inward_area_m2 = 0.0
-        for triangle_index in in_component:
-            hit = body_tree.find_nearest(
-                tuple(float(x) for x in centroids[triangle_index])
-            )
-            if hit is None or hit[0] is None:
-                continue
-            away_from_body = centroids[triangle_index] - np.asarray(
-                tuple(hit[0]), dtype=float
-            )
-            if float(normals[triangle_index] @ away_from_body) < 0.0:
-                inward_area_m2 += float(areas[triangle_index])
-        total_area_m2 = float(areas[in_component].sum())
-        fractions[component] = (
-            inward_area_m2 / total_area_m2 if total_area_m2 > 0.0 else 0.0
+        _method, fractions[component] = _surface_facing(
+            corners[in_component], nearest_on_body
         )
         polygons[component] = sorted(set(polygon_of_triangle[in_component].tolist()))
     return fractions, polygons

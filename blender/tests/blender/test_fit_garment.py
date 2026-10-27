@@ -322,3 +322,70 @@ def test_a_fold_count_with_no_depth_is_refused(tmp_path, empty_scene):
             fold_count=3,
             fold_depth_m=0.0,
         )
+
+
+def test_a_garment_too_thin_for_the_body_is_refused_by_girth_and_left_untouched(
+    tmp_path, empty_scene
+):
+    """The plan's original 0.30 x 0.20 m stand-in: scaled on height it is a third of the body's width.
+
+    The drape folds it onto the body and the facing check refuses it — and the
+    refusal must say WHY (girth, not winding: a lathe-built tube is wound one
+    way throughout) and leave the garment as it was handed over, so the
+    retry starts from the source and not from a half-fitted copy.
+    """
+    from golem_blender.ops.garments import fit_garment
+
+    _import_body(tmp_path)
+    wide = _body_wide_axis()
+    thin = "ThinTunic"
+    half_wide, half_narrow = 0.15, 0.10
+    vertices = [
+        (
+            (half_wide if wide == 0 else half_narrow)
+            * math.cos(2 * math.pi * k / GARMENT_AROUND),
+            (half_narrow if wide == 0 else half_wide)
+            * math.sin(2 * math.pi * k / GARMENT_AROUND),
+            GARMENT_HEIGHT_M * ring / GARMENT_RINGS,
+        )
+        for ring in range(GARMENT_RINGS + 1)
+        for k in range(GARMENT_AROUND)
+    ]
+    faces = [
+        (
+            ring * GARMENT_AROUND + k,
+            ring * GARMENT_AROUND + (k + 1) % GARMENT_AROUND,
+            (ring + 1) * GARMENT_AROUND + (k + 1) % GARMENT_AROUND,
+            (ring + 1) * GARMENT_AROUND + k,
+        )
+        for ring in range(GARMENT_RINGS)
+        for k in range(GARMENT_AROUND)
+    ]
+    mesh = bpy.data.meshes.new(thin)
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    bpy.context.scene.collection.objects.link(bpy.data.objects.new(thin, mesh))
+    bpy.context.view_layer.update()
+    before = [tuple(vertex.co) for vertex in bpy.data.objects[thin].data.vertices]
+    meshes_before = len(bpy.data.meshes)
+
+    with pytest.raises(
+        ValueError, match="body band, so the drape folded it onto the body"
+    ):
+        fit_garment(
+            thin,
+            _body_mesh_name(),
+            hem_height_m=HEM_HEIGHT_M,
+            collar_height_m=COLLAR_HEIGHT_M,
+        )
+
+    garment = bpy.data.objects[thin]
+    after = [tuple(vertex.co) for vertex in garment.data.vertices]
+    assert after == before, "the refused fit left the garment moved"
+    assert not garment.modifiers
+    assert not garment.vertex_groups
+    assert garment.parent is None
+    assert garment.data.name == thin
+    assert len(bpy.data.meshes) == meshes_before, (
+        "the refused fit left a mesh copy behind"
+    )

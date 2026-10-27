@@ -152,7 +152,9 @@ def test_a_chest_ring_clears_the_body_at_rest_and_through_a_leg_swing(
     assert resting_worst(report) > 0.0
     assert swinging.passed, report.failures
     assert report.covered_body_vertex_count > 0
-    assert report.garment_winding_method == "away_from_body"
+    # An open ring is decided by its own winding (rim faces score 0.57 and
+    # up), not by the nearest body surface.
+    assert report.garment_winding_method == "winding_number"
     assert report.garment_inward_area_fraction <= 0.02
     assert report.passed, report.failures
 
